@@ -1,0 +1,13 @@
+// Control flow
+let x = 5
+if x > 0 { print("Positive") } else { print("Non-positive") }
+
+match Some(15) {
+    Some(v) if v > 10 { print("Large: " + v) }
+    Some(v) { print("Small: " + v) }
+    None { print("None") }
+}
+
+for int i = 0; i < 3; i += 1 { print(i) }
+while x > 0 { x -= 1 }
+

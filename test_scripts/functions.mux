@@ -1,0 +1,13 @@
+// Functions and lambdas
+func add(int a, int b) returns int {
+    return a + b
+}
+
+func greet(string name, int times = 1) returns void {
+    for i in range(0, times) { print("Hello " + name) }
+}
+
+// Lambda examples
+let square = func(int n) { return n * n }
+let doubled = func(let x) { return x * 2 }
+

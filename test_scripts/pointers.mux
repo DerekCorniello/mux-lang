@@ -1,0 +1,12 @@
+// Pointers
+int val = 10
+let p = &val
+print(*p)
+*p = 20
+print(val)
+
+let arr = [1, 2, 3]
+let q = arr
+q += 1
+print(*q)
+

@@ -1,0 +1,7 @@
+// Imports
+import math
+import utils.logger as _
+
+let pi = math.PI
+print("PI = " + pi)
+

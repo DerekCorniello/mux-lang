@@ -1,0 +1,15 @@
+// Generics
+func max[T comparable](T a, T b) returns T { if a > b { return a } return b }
+
+class Stack[T] {
+    list<T> items
+    func push(T item) returns void { items.append(item) }
+    func pop() returns Optional<T> {
+        if items.isEmpty() { return None }
+        return Some(items.removeLast())
+    }
+}
+
+let s = Stack<int>()
+s.push(42)
+

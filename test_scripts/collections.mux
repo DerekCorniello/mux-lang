@@ -1,0 +1,7 @@
+// Collections
+let nums = [1, 2, 3, 4]
+let scores = {"Alice": 90, "Bob": 85}
+let matrix = [[1, 2], [3, 4]]
+let emptyList = list<int>()
+let emptyMap = map<string, int>()
+

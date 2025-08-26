@@ -1,0 +1,90 @@
+// Full stress-test combining all features
+import math
+import utils.logger as _
+
+// Constants & inference
+const int MAX = 100
+let pi = 3.14159
+let message = "Mux Parser Test"
+
+// Enums
+enum Shape { Circle(float radius), Rectangle(float width, float height), Square(float size) }
+
+// Traits
+interface Drawable { func draw() returns void }
+
+// Classes
+class Circle is Drawable, ShapeLike {
+    float radius
+    func draw() returns void { print("Circle radius=" + radius) }
+    func area() returns float { return pi * radius * radius }
+    func resize(float newRadius, string _) returns void { radius = newRadius }
+}
+
+// Generics
+func max[T comparable](T a, T b) returns T { if a > b { return a } return b }
+class Stack[T] {
+    list<T> items
+    func push(T item) returns void { items.append(item) }
+    func pop() returns Optional<T> {
+        if items.isEmpty() { return None }
+        return Some(items.removeLast())
+    }
+}
+
+// Optionals & Results
+func divide(int a, int b) returns Result<int, string> {
+    if b == 0 { return Err("Division by zero") }
+    return Ok(a / b)
+}
+func findEven(list<int> nums) returns Optional<int> {
+    for let n in nums { if n % 2 == 0 { return Some(n) } }
+}
+
+// Lambdas
+func map[T, U](list<T> items, func(T) returns U transform) returns list<U> {
+    let out = list<U>()
+    for item in items { out.append(transform(item)) }
+    return out
+}
+
+// Main program
+func main() returns void {
+    let explicit = 10
+    let inferred = 42
+    let floatVal = 2.718
+    let (a, _) = (1, 2)
+
+    if inferred > 40 { print("Big number") } else { print("Small number") }
+
+    let maybeNum = Some(15)
+    match maybeNum {
+        Some(v) if v > 10 { print("Large value: " + v) }
+        Some(v) { print("Small value: " + v) }
+        None { print("No value") }
+        _ { print("Unexpected") }
+    }
+
+    let nums = [1, 2, 3]
+    let shapes = [Circle(2.0), Circle(3.5)]
+    for shape in shapes { shape.draw() }
+
+    let maximum = max(7, 12)
+    let stack = Stack<int>()
+    stack.push(99)
+    let popped = stack.pop()
+
+    let res = divide(10, 2)
+    match res { Ok(v) { print(v) } Err(e) { print(e) } }
+
+    let maybeEven = findEven([1, 3, 4, 7])
+    match maybeEven { Some(v) { print(v) } None { print("None") } }
+
+    let square = func(int n) { return n * n }
+    let doubled = map([1, 2, 3], func(let x) { return x * 2 })
+    let squared = map([1, 2, 3], square)
+
+    int val = 10
+    let p = &val
+    *p = 20
+}
