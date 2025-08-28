@@ -48,7 +48,7 @@ int      // 64-bit signed integer
 float    // 64-bit IEEE-754
 bool     // true | false
 char     // Unicode code point
-string   // UTF-8 sequence
+str   // UTF-8 sequence
 ```
 
 ### 3.2 Composite Types
@@ -138,7 +138,7 @@ func processOrdered[T Ordered & Numeric](T value) returns T {
 // Type inference with generics
 let numbers = [1, 2, 3, 4, 5]
 let maximum = max(3, 7)        // Generic T inferred as int
-let pairs = zip(numbers, ["a", "b", "c"])  // T=int, U=string inferred
+let pairs = zip(numbers, ["a", "b", "c"])  // T=int, U=str inferred
 ```
 
 ### 3.5 User-Defined Types
@@ -159,7 +159,7 @@ const int MAX = 100
 // Variables (explicit type required for declarations without inference)
 int x = 5
 bool flag = true
-string name = "MuxLang"
+str name = "MuxLang"
 ```
 
 ### 4.2 Local Type Inference
@@ -170,14 +170,14 @@ Mux supports local type inference using the `let` keyword:
 // Type inferred from initializer
 let x = 42          // inferred as int
 let pi = 3.14159    // inferred as float
-let name = "Mux"    // inferred as string
+let name = "Mux"    // inferred as str
 let items = [1, 2, 3]  // inferred as list<int>
 
 // Type inference in function calls
 let result = calculateDistance(point1, point2)  // type inferred from function return
 
 // Type inference with collections
-let scores = {"Alice": 95, "Bob": 87}  // inferred as map<string, int>
+let scores = {"Alice": 95, "Bob": 87}  // inferred as map<str, int>
 let coords = [1.0, 2.5, 3.7]          // inferred as list<float>
 
 // Unused variables with underscore
@@ -221,13 +221,13 @@ func add(int a, int b) returns int {
     return a + b
 }
 
-func greet(string name, int times = 1) returns void {
+func greet(str name, int times = 1) returns void {
     for i in range(0, times) {
         print("Hello, " + name)
     }
 }
 
-func processData() returns map<string, int> {
+func processData() returns map<str, int> {
     let results = {"processed": 100, "skipped": 5}  // local inference
     let total = results["processed"] + results["skipped"]
     results["total"] = total
@@ -235,7 +235,7 @@ func processData() returns map<string, int> {
 }
 
 // Function with unused parameters
-func callback(string event, int timestamp, string _) returns void {
+func callback(str event, int timestamp, str _) returns void {
     print("Event: " + event + " at " + timestamp)
     // third parameter ignored
 }
@@ -440,7 +440,7 @@ class Circle is Drawable, ShapeLike {
     }
     
     // Method with unused parameters
-    func resize(float newRadius, string _) returns void {
+    func resize(float newRadius, str _) returns void {
         radius = newRadius  // second parameter ignored
     }
 }
@@ -466,7 +466,7 @@ class Stack[T] {
 let circle = Circle(5.0)  // type inferred as Circle
 let shapes = list<Drawable>([circle])  // explicit generic type needed
 let intStack = Stack<int>()  // explicit generic instantiation
-let stringStack = Stack[string]()  // alternative syntax
+let stringStack = Stack[str]()  // alternative syntax
 ```
 
 - `is TraitA, TraitB` declares implemented traits; compiler enforces required methods
@@ -482,19 +482,19 @@ let stringStack = Stack[string]()  // alternative syntax
 ```
 // Explicit typing
 list<int> nums = [1, 2, 3, 4]
-map<string, int> scores = {"Alice": 90, "Bob": 85}
+map<str, int> scores = {"Alice": 90, "Bob": 85}
 
 // With type inference
 let nums = [1, 2, 3, 4]           // inferred as list<int>
-let scores = {"Alice": 90, "Bob": 85}  // inferred as map<string, int>
+let scores = {"Alice": 90, "Bob": 85}  // inferred as map<str, int>
 let mixed = [1, 2.5, 3]           // ERROR: conflicting types, explicit type needed
 
 // Nested collections
 let matrix = [[1, 2], [3, 4]]     // inferred as list<list<int>>
-let lookup = {"users": [1, 2, 3], "admins": [4, 5]}  // inferred as map<string, list<int>>
+let lookup = {"users": [1, 2, 3], "admins": [4, 5]}  // inferred as map<str, list<int>>
 
 // Generic collections
-let pairs = [Pair(1, "one"), Pair(2, "two")]  // inferred as list<Pair<int, string>>
+let pairs = [Pair(1, "one"), Pair(2, "two")]  // inferred as list<Pair<int, str>>
 let containers = list<Container<int>>()  // explicit generic type declaration
 ```
 
@@ -505,7 +505,7 @@ let containers = list<Container<int>>()  // explicit generic type declaration
 ### 11.1 `Result<T, E>`
 
 ```
-func divide(int a, int b) returns Result<int, string> {
+func divide(int a, int b) returns Result<int, str> {
     if b == 0 {
         return Err("division by zero")
     }
@@ -513,7 +513,7 @@ func divide(int a, int b) returns Result<int, string> {
 }
 
 // Usage with inference
-let result = divide(10, 2)  // inferred as Result<int, string>
+let result = divide(10, 2)  // inferred as Result<int, str>
 match result {
     Ok(value) {
         let message = "Result: " + value  // local inference
@@ -661,11 +661,11 @@ import utils.logger as _  // imported but not directly used in this scope
 list<int> empty = []           // empty collection needs explicit type
 let empty = list<int>()       // or explicit constructor
 
-Result<int, string> pending    // uninitialized variables need explicit type
+Result<int, str> pending    // uninitialized variables need explicit type
 
 // Generic instantiation may need explicit types
 let stack = Stack<int>()      // explicit generic parameter
-let pairs = zip<int, string>(numbers, names)  // when inference is ambiguous
+let pairs = zip<int, str>(numbers, names)  // when inference is ambiguous
 ```
 
 ### 15.3 Using Underscore Effectively
@@ -673,7 +673,7 @@ let pairs = zip<int, string>(numbers, names)  // when inference is ambiguous
 ```
 // Good uses of underscore
 let (first, _) = getTuple()           // ignore second element
-func process(int data, string _) { }  // ignore second parameter
+func process(int data, str _) { }  // ignore second parameter
 for _ in range(0, 10) { }            // ignore loop counter
 match result { Ok(_) { } }           // ignore success value
 
@@ -725,14 +725,14 @@ func main() returns void {
     
     for shape in shapes {
         let area = shape.area()  // inferred as float
-        let message = "Area: " + area  // inferred as string
+        let message = "Area: " + area  // inferred as str
         print(message)
     }
     
     // Working with Results and inference
-    let results = list<Result<float, string>>()
+    let results = list<Result<float, str>>()
     for shape in shapes {
-        let areaResult = Ok(shape.area())  // inferred as Result<float, string>
+        let areaResult = Ok(shape.area())  // inferred as Result<float, str>
         results.append(areaResult)
     }
     
@@ -742,7 +742,7 @@ func main() returns void {
     })
     
     let descriptions = map(areas, func(let a) {
-        return "Area: " + a  // inferred as list<string>
+        return "Area: " + a  // inferred as list<str>
     })
     
     // Pattern matching with underscore
@@ -789,7 +789,7 @@ This document outlines a week-by-week schedule for the development of MuxLang's 
 | 2 | **Lexer Implementation** | Implement lexer; test tokenization | Working lexer |
 | 3 | **Parser Implementation** | Parse expressions & statements; build AST | Working parser |
 | 4 | **REPL Prototype** | Minimal REPL to test parsing/evaluation; parser tests | REPL prototype, parser test cases |
-| 5 | **Type System – Core Types** | Implement int, float, bool, string, arrays; AST integration | Core type checker functional |
+| 5 | **Type System – Core Types** | Implement int, float, bool, str, arrays; AST integration | Core type checker functional |
 | 6 | **Type System – Functions & Scope** | Type checking for functions, variables, scopes | Type checker integrated with function support |
 | 7 | **Type System – Traits/Interfaces** | Implement `is Trait` system; write tests | Trait system functional, test suite |
 | 8 | **Memory Management Design** | Decide GC vs manual; design allocator/GC; integrate AST/runtime | Memory management design doc, skeleton allocator/GC |
@@ -797,7 +797,7 @@ This document outlines a week-by-week schedule for the development of MuxLang's 
 | 10 | **LLVM Setup & Expression Codegen** | Install/setup LLVM; codegen for simple expressions | LLVM backend running simple expression programs |
 | 11 | **LLVM Statement & Function Codegen** | Extend codegen to statements, loops, functions | Core constructs codegen functional |
 | 12 | **Integration Testing** | Combine type checker, memory system, LLVM codegen; debug integration | MVP programs running end-to-end |
-| 13 | **Standard Library – Core Types** | Implement I/O, collections, string utilities | Minimal stdlib working |
+| 13 | **Standard Library – Core Types** | Implement I/O, collections, str utilities | Minimal stdlib working |
 | 14 | **Compiler CLI & REPL Improvements** | Implement `mux run/build`; improve REPL; debugging | Usable compiler CLI with REPL |
 | 15 | **Testing & Examples** | Write example programs; test edge cases; fix remaining bugs | Test suite, example programs |
 | 16 | **Polish & Documentation** | Expand stdlib, improve error reporting, finalize docs | Polished MVP, documentation, final project report |
