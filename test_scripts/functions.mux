@@ -10,4 +10,3 @@ func greet(string name, int times = 1) returns void {
 // Lambda examples
 let square = func(int n) { return n * n }
 let doubled = func(let x) { return x * 2 }
-

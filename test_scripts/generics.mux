@@ -12,4 +12,3 @@ class Stack[T] {
 
 let s = Stack<int>()
 s.push(42)
-

@@ -64,6 +64,7 @@ impl Source {
     // consume characters until we see the closing */ or eof
     pub fn consume_multiline_comment(&mut self) -> String {
         let mut buf = String::new();
+        
         while let Some(c) = self.next_char() {
             if c == '*' && self.peek() == Some('/') {
                 self.next_char(); // eat the '/'
@@ -72,7 +73,7 @@ impl Source {
                 buf.push(c);
             }
         }
-        buf
+        buf.trim().to_string()
     }
 
     // consume chars til we get to the stop char
@@ -190,12 +191,12 @@ mod tests {
     fn test_consume_multiline_comment() {
         // the multiline comment will already pass in the text 
         // without the opening comment, thus the missing /*
-        let mut src = Source::from_test_str(" hello\nworld */").unwrap();
+        let mut src = Source::from_test_str(" hello\nworld*/").unwrap();
 
         let result = src.consume_multiline_comment();
-        assert_eq!(result, " hello\nworld ");
+        assert_eq!(result, "hello\nworld");
         assert_eq!(src.line, 2); // should be on line 2 after the newline
-        assert_eq!(src.col, 9); // after "world */"
+        assert_eq!(src.col, 8); // after "world */"
     }
 
     #[test]

@@ -17,10 +17,10 @@ pub enum Token {
     Interface,
     Enum,
     Is,
-    Some,
-    None,
-    Ok,
-    Err,
+    As,
+    In,
+    True,
+    False,
 
     // symbols
     OpenParen,    // (
@@ -30,9 +30,10 @@ pub enum Token {
     OpenBracket,  // [
     CloseBracket, // ]
     Dot,          // .
-    Comma,        // ,
-    Colon,        // :
-    Eq,           // =
+    Comma,        
+    Colon,        
+    Semicolon,
+    Eq,           
     Plus,
     Minus,
     Star,
@@ -45,8 +46,17 @@ pub enum Token {
     EqEq,
     NotEq,
     Bang,
-    Incr, // i++ or ++i
-    Decr, // i-- or --i
+    // increment/decrement operators (prefix and postfix)
+    Incr,    // i++ or ++i
+    Decr,    // i-- or --i
+    // compound assignment operators
+    PlusEq,  // +=
+    MinusEq, // -=
+    StarEq,  // *=
+    SlashEq, // /=
+    Ampersand,
+    And,
+    Or,
 
     // literals
     Int(i64),   // just using 64 bits rn for simplicity
@@ -54,6 +64,7 @@ pub enum Token {
     Bool(bool),
     Char(char),
     Str(String),
+    Underscore,
 
     // identifiers
     Id(String),
@@ -78,12 +89,26 @@ impl<'a> Lexer<'a> {
         Lexer { source }
     }
 
+    pub fn lex_all(&mut self) -> Result<Vec<Token>, String> {
+        let mut tokens = Vec::new();
+
+        loop {
+            let tok = self.next_token()?;
+            if tok == Token::Eof {
+                break;
+            }
+            tokens.push(tok);
+        }
+
+        Ok(tokens)
+    }
+
     fn skip_space(&mut self) {
+        // only skip spaces and tabs, not newlines
         while let Some(ch) = self.source.peek() {
             match ch {
-                ' ' | '\t' | '\r' => {
+                ' ' | '\t' => {
                     self.source.next_char();
-                    continue;
                 }
                 _ => break,
             }
@@ -93,7 +118,14 @@ impl<'a> Lexer<'a> {
     pub fn next_token(&mut self) -> Result<Token, String> {
         self.skip_space();
 
-        if self.source.peek() == Some('\n') {
+        // handle both unix (\n) and windows (\r\n) newlines
+        if let Some('\r') = self.source.peek() {
+            self.source.next_char(); // consume '\r'
+            if self.source.peek() == Some('\n') {
+                self.source.next_char(); // consume '\n'
+            }
+            return Ok(Token::NewLine);
+        } else if self.source.peek() == Some('\n') {
             self.source.next_char();
             return Ok(Token::NewLine);
         }
@@ -113,13 +145,25 @@ impl<'a> Lexer<'a> {
             ']' => Ok(Token::CloseBracket),
             ',' => Ok(Token::Comma),
             ':' => Ok(Token::Colon),
-            '*' => Ok(Token::Star),
+            ';' => Ok(Token::Semicolon),
+            '*' => self.get_star_token(),
             '%' => Ok(Token::Percent),
+            '_' => Ok(Token::Underscore),
+            '&' => Ok(Token::Ampersand),
             '.' => match self.source.peek() {
                 Some(c) if c.is_ascii_digit() => self.read_number(ch, start_loc),
                 _ => Ok(Token::Dot),
             },
             _ => self.get_multichar_token(ch, start_loc),
+        }
+    }
+
+    fn get_star_token(&mut self) -> Result<Token, String> {
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            Ok(Token::StarEq)
+        } else {
+            Ok(Token::Star)
         }
     }
 
@@ -146,19 +190,29 @@ impl<'a> Lexer<'a> {
                 }
             }
             '+' => {
-                if self.source.peek() == Some('+') {
-                    self.source.next_char();
-                    Ok(Token::Incr)
-                } else {
-                    Ok(Token::Plus)
+                match self.source.peek() {
+                    Some('+') => {
+                        self.source.next_char();
+                        Ok(Token::Incr)
+                    }
+                    Some('=') => {
+                        self.source.next_char();
+                        Ok(Token::PlusEq)
+                    }
+                    _ => Ok(Token::Plus),
                 }
             }
             '-' => {
-                if self.source.peek() == Some('-') {
-                    self.source.next_char();
-                    Ok(Token::Decr)
-                } else {
-                    Ok(Token::Minus)
+                match self.source.peek() {
+                    Some('-') => {
+                        self.source.next_char();
+                        Ok(Token::Decr)
+                    }
+                    Some('=') => {
+                        self.source.next_char();
+                        Ok(Token::MinusEq)
+                    }
+                    _ => Ok(Token::Minus),
                 }
             }
             '<' => {
@@ -180,13 +234,19 @@ impl<'a> Lexer<'a> {
             '/' => match self.source.peek() {
                 Some('/') => {
                     self.source.next_char();
+                    self.skip_space();
                     let text = self.source.consume_until('\n');
-                    Ok(Token::LineComment(text))
+                    Ok(Token::LineComment(text.trim().to_string()))
                 }
                 Some('*') => {
                     self.source.next_char();
+                    self.skip_space();
                     let text = self.source.consume_multiline_comment();
-                    Ok(Token::MultilineComment(text))
+                    Ok(Token::MultilineComment(text.trim().to_string()))
+                }
+                Some('=') => {
+                    self.source.next_char();
+                    Ok(Token::SlashEq)
                 }
                 _ => Ok(Token::Slash),
             },
@@ -215,12 +275,12 @@ impl<'a> Lexer<'a> {
                     "interface" => Token::Interface,
                     "enum" => Token::Enum,
                     "is" => Token::Is,
-                    "some" => Token::Some,
-                    "none" => Token::None,
-                    "ok" => Token::Ok,
-                    "err" => Token::Err,
+                    "as" => Token::As,
+                    "in" => Token::In,
                     "true" => Token::Bool(true),
                     "false" => Token::Bool(false),
+                    "and" => Token::And,
+                    "or" => Token::Or,
                     _ => Token::Id(ident),
                 };
                 Ok(token)
@@ -246,15 +306,16 @@ impl<'a> Lexer<'a> {
                         format!("Incomplete escape sequence at {}", err_loc)
                     })?;
                     let esc_char = match esc {
-                        'n' => '\n',
-                        't' => '\t',
-                        'r' => '\r',
-                        '\\' => '\\',
-                        '"' => '"',
-                        '\'' => '\'',
+                        'n' => '\n',    // newline
+                        't' => '\t',    // tab
+                        'r' => '\r',    // carriage return
+                        '0' => '\0',    // null character
+                        '\\' => '\\', // backslash
+                        '\"' => '\"', // double quote
+                        '\'' => '\'',  // single quote
                         _ => {
                             let err_loc = self.source.get_location_string();
-                            return Err(format!("Unknown escape `\\{}` at {}", esc, err_loc));
+                            return Err(format!("Unknown escape sequence `\\{}` at {}", esc, err_loc));
                         }
                     };
                     s.push(esc_char);
@@ -485,57 +546,143 @@ world"
 
     #[test]
     fn test_strings_with_escapes() {
-        let tokens = lex_all(r#""hello\nworld" "tab\tend""#);
+        // basic escapes
         assert_eq!(
-            tokens,
-            Ok(vec![
-                Token::Str("hello\nworld".to_string()),
-                Token::Str("tab\tend".to_string())
-            ])
+            lex_all(r#""a\n\t\\\"\'\r\0""#).unwrap(),
+            vec![Token::Str("a\n\t\\\"'\r\0".to_string())]
         );
+        
+        // test that Some, None, Ok, Err are treated as identifiers
+        assert_eq!(
+            lex_all("Some None Ok Err").unwrap(),
+            vec![
+                Token::Id("Some".to_string()),
+                Token::Id("None".to_string()),
+                Token::Id("Ok".to_string()),
+                Token::Id("Err".to_string()),
+            ]
+        );
+        
+        // test that keywords are case-sensitive
+        assert_eq!(
+            lex_all("some none ok err").unwrap(),
+            vec![
+                Token::Id("some".to_string()),
+                Token::Id("none".to_string()),
+                Token::Id("ok".to_string()),
+                Token::Id("err".to_string()),
+            ]
+        );
+
+        // unterminated string
+        assert!(lex_all("\"unterminated").is_err());
+
+        // unknown escape sequence
+        assert!(lex_all(r#""\a""#).is_err());
+        assert!(lex_all(r#""\c""#).is_err());
     }
 
     #[test]
     fn test_keywords_and_identifiers() {
-        let tokens = lex_all("let func return some ok err none my_var x123");
+        let tokens = lex_all("let x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false and or");
         assert_eq!(
             tokens,
             Ok(vec![
                 Token::Let,
-                Token::Func,
-                Token::Return,
-                Token::Some,
-                Token::Ok,
-                Token::Err,
-                Token::None,
-                Token::Id("my_var".into()),
-                Token::Id("x123".into())
+                Token::Id("x".to_string()),
+                Token::Eq,
+                Token::Int(42),
+                Token::If,
+                Token::Else,
+                Token::For,
+                Token::While,
+                Token::Match,
+                Token::Const,
+                Token::Class,
+                Token::Interface,
+                Token::Enum,
+                Token::Is,
+                Token::As,
+                Token::In,
+                Token::Id("range".to_string()),
+                Token::Id("list".to_string()),
+                Token::Id("map".to_string()),
+                Token::Id("Optional".to_string()),
+                Token::Id("Result".to_string()),
+                Token::Id("Some".to_string()),
+                Token::Id("None".to_string()),
+                Token::Id("Ok".to_string()),
+                Token::Id("Err".to_string()),
+                Token::Bool(true),
+                Token::Bool(false),
+                Token::And,
+                Token::Or,
             ])
         );
     }
 
     #[test]
     fn test_operators() {
-        let tokens = lex_all("= == ! != + ++ - -- < <= > >= / * %");
         assert_eq!(
-            tokens,
-            Ok(vec![
+            lex_all("= == ! != < <= > >=").unwrap(),
+            vec![
                 Token::Eq,
                 Token::EqEq,
                 Token::Bang,
                 Token::NotEq,
-                Token::Plus,
-                Token::Incr,
-                Token::Minus,
-                Token::Decr,
                 Token::Lt,
                 Token::Le,
                 Token::Gt,
                 Token::Ge,
-                Token::Slash,
+            ]
+        );
+
+        // arithmetic operators
+        assert_eq!(
+            lex_all("+ - * / %").unwrap(),
+            vec![
+                Token::Plus,
+                Token::Minus,
                 Token::Star,
+                Token::Slash,
                 Token::Percent
-            ])
+            ]
+        );
+
+        // increment/decrement
+        assert_eq!(
+            lex_all("++ --").unwrap(),
+            vec![Token::Incr, Token::Decr]
+        );
+
+        // compound assignment operators
+        assert_eq!(
+            lex_all("+= -= *= /=").unwrap(),
+            vec![
+                Token::PlusEq,
+                Token::MinusEq,
+                Token::StarEq,
+                Token::SlashEq,
+            ]
+        );
+
+        // test that operators don't merge incorrectly
+        assert_eq!(
+            lex_all("a+=1 b-=2 c*=3 d/=4").unwrap(),
+            vec![
+                Token::Id("a".to_string()),
+                Token::PlusEq,
+                Token::Int(1),
+                Token::Id("b".to_string()),
+                Token::MinusEq,
+                Token::Int(2),
+                Token::Id("c".to_string()),
+                Token::StarEq,
+                Token::Int(3),
+                Token::Id("d".to_string()),
+                Token::SlashEq,
+                Token::Int(4),
+            ]
         );
     }
 
@@ -545,9 +692,9 @@ world"
         assert_eq!(
             tokens,
             Ok(vec![
-                Token::LineComment(" line comment".into()),
+                Token::LineComment("line comment".into()),
                 Token::NewLine,
-                Token::MultilineComment(" multi\nline ".into())
+                Token::MultilineComment("multi\nline".into())
             ])
         );
     }

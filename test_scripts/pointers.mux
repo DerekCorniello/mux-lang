@@ -9,4 +9,3 @@ let arr = [1, 2, 3]
 let q = arr
 q += 1
 print(*q)
-

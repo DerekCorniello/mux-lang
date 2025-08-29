@@ -1,19 +1,14 @@
-// Full stress-test combining all features
 import math
 import utils.logger as _
 
-// Constants & inference
 const int MAX = 100
-let pi = 3.14159
+let flt = 7.82
 let message = "Mux Parser Test"
 
-// Enums
 enum Shape { Circle(float radius), Rectangle(float width, float height), Square(float size) }
 
-// Traits
 interface Drawable { func draw() returns void }
 
-// Classes
 class Circle is Drawable, ShapeLike {
     float radius
     func draw() returns void { print("Circle radius=" + radius) }
@@ -21,7 +16,6 @@ class Circle is Drawable, ShapeLike {
     func resize(float newRadius, string _) returns void { radius = newRadius }
 }
 
-// Generics
 func max[T comparable](T a, T b) returns T { if a > b { return a } return b }
 class Stack[T] {
     list<T> items
@@ -32,7 +26,6 @@ class Stack[T] {
     }
 }
 
-// Optionals & Results
 func divide(int a, int b) returns Result<int, string> {
     if b == 0 { return Err("Division by zero") }
     return Ok(a / b)
@@ -41,18 +34,16 @@ func findEven(list<int> nums) returns Optional<int> {
     for let n in nums { if n % 2 == 0 { return Some(n) } }
 }
 
-// Lambdas
 func map[T, U](list<T> items, func(T) returns U transform) returns list<U> {
     let out = list<U>()
     for item in items { out.append(transform(item)) }
     return out
 }
 
-// Main program
 func main() returns void {
     let explicit = 10
     let inferred = 42
-    let floatVal = 2.718
+    let floatVal = 9.4
     let (a, _) = (1, 2)
 
     if inferred > 40 { print("Big number") } else { print("Small number") }

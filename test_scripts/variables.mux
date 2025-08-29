@@ -1,8 +1,7 @@
 // Variable declarations and type inference
 const int MAX = 100
 int explicit = 42
-let inferred = 3.14
+let inferred = 4.89
 let name = "Mux"
 
 let (x, _) = (1, 2) // underscore usage
-

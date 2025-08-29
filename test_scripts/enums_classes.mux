@@ -7,4 +7,3 @@ class Circle is Drawable {
     float radius
     func draw() returns void { print("Circle radius=" + radius) }
 }
-

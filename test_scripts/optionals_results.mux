@@ -13,4 +13,3 @@ match res {
 func findEven(list<int> nums) returns Optional<int> {
     for n in nums { if n % 2 == 0 { return Some(n) } }
 }
-
