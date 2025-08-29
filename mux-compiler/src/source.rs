@@ -158,7 +158,7 @@ mod tests {
     fn test_multiline_positioning() {
         let mut src = Source::from_test_str("hello\nworld\n").unwrap();
 
-        // Test that positions track correctly across multiple lines
+        // test that positions track correctly across multiple lines
         for expected_char in "hello".chars() {
             assert_eq!(src.next_char(), Some(expected_char));
         }
@@ -222,6 +222,6 @@ mod tests {
     #[test]
     fn test_from_test_str_type_consistency() {
         let src = Source::from_test_str("test").unwrap();
-        assert_eq!(src.input, "test".to_string()); // Should be String, not Vec<char>
+        assert_eq!(src.input, "test".to_string());
     }
 }

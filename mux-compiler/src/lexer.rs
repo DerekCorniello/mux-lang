@@ -19,8 +19,6 @@ pub enum Token {
     Is,
     As,
     In,
-    True,
-    False,
 
     // symbols
     OpenParen,    // (
@@ -306,13 +304,13 @@ impl<'a> Lexer<'a> {
                         format!("Incomplete escape sequence at {}", err_loc)
                     })?;
                     let esc_char = match esc {
-                        'n' => '\n',    // newline
-                        't' => '\t',    // tab
-                        'r' => '\r',    // carriage return
-                        '0' => '\0',    // null character
-                        '\\' => '\\', // backslash
-                        '\"' => '\"', // double quote
-                        '\'' => '\'',  // single quote
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '0' => '\0',
+                        '\\' => '\\',
+                        '\"' => '\"',
+                        '\'' => '\'',
                         _ => {
                             let err_loc = self.source.get_location_string();
                             return Err(format!("Unknown escape sequence `\\{}` at {}", esc, err_loc));
@@ -431,14 +429,12 @@ mod tests {
         let mut source = Source::from_test_str(input).unwrap();
         let mut lexer = Lexer::new(&mut source);
 
-        // Line 1
         assert_eq!(lexer.next_token().unwrap(), Token::Let);
         assert_eq!(lexer.next_token().unwrap(), Token::Id("x".to_string()));
         assert_eq!(lexer.next_token().unwrap(), Token::Eq);
         assert_eq!(lexer.next_token().unwrap(), Token::Int(42));
         assert_eq!(lexer.next_token().unwrap(), Token::NewLine);
 
-        // Line 2
         assert_eq!(lexer.next_token().unwrap(), Token::Func);
         assert_eq!(lexer.next_token().unwrap(), Token::Id("test".to_string()));
         assert_eq!(lexer.next_token().unwrap(), Token::OpenParen);
@@ -446,19 +442,16 @@ mod tests {
         assert_eq!(lexer.next_token().unwrap(), Token::OpenBrace);
         assert_eq!(lexer.next_token().unwrap(), Token::NewLine);
 
-        // Line 3 (with indentation)
         assert_eq!(lexer.next_token().unwrap(), Token::Return);
         assert_eq!(lexer.next_token().unwrap(), Token::Id("x".to_string()));
         assert_eq!(lexer.next_token().unwrap(), Token::NewLine);
 
-        // Line 4
         assert_eq!(lexer.next_token().unwrap(), Token::CloseBrace);
         assert_eq!(lexer.next_token().unwrap(), Token::Eof);
     }
 
     #[test]
     fn test_error_positions_with_actual_positions() {
-        // Test that error messages contain correct line/column information
         let test_cases = vec![
             (
                 "x = 1.2.3",
@@ -489,7 +482,6 @@ mod tests {
         }
     }
 
-    // All your existing tests remain the same...
     #[test]
     fn test_numbers() {
         let tokens = lex_all("42 1_000 3.45 .5 5.");
@@ -560,6 +552,15 @@ world"
                 Token::Id("None".to_string()),
                 Token::Id("Ok".to_string()),
                 Token::Id("Err".to_string()),
+            ]
+        );
+
+        // boolean test
+        assert_eq!(
+            lex_all("true false").unwrap(),
+            vec![
+                Token::Bool(true),
+                Token::Bool(false),
             ]
         );
         

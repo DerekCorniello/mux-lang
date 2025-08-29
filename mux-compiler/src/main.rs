@@ -1,8 +1,10 @@
 mod source;
+mod lexer;
 
 use std::env;
 use std::process;
 use source::Source;
+use lexer::Lexer;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -18,7 +20,12 @@ fn main() {
             process::exit(1);
         }
     };
-    while let Some(ch) = src.next_char() {
-        print!("{}", ch);
+    let mut lex = Lexer::new(&mut src);
+    match lex.lex_all() {
+        Ok(tokens) => print!("Lexer Succeeded:\n\n{:?}", tokens),
+        Err(e) => {
+            eprintln!("Error opening file: {}", e);
+            process::exit(1);
+        }
     }
 }
