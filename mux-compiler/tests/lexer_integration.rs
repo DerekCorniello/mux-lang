@@ -1,5 +1,6 @@
-use Token::*;
-use mux_compiler::lexer::{Lexer, Token};
+use ordered_float::OrderedFloat;
+use mux_compiler::lexer::{Lexer, TokenType};
+use TokenType::*;
 use mux_compiler::source::Source;
 use std::fs;
 use std::option::Option::Some;
@@ -11,12 +12,12 @@ fn test_file_lexer() {
         (
             "collections.mux",
             vec![
-                LineComment("Collections".to_string()), NewLine,
-                Let, Id("nums".to_string()), Eq, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), Comma, Int(4), CloseBracket, NewLine,
-                Let, Id("scores".to_string()), Eq, OpenBrace, Str("Alice".to_string()), Colon, Int(90), Comma, Str("Bob".to_string()), Colon, Int(85), CloseBrace, NewLine,
-                Let, Id("matrix".to_string()), Eq, OpenBracket, OpenBracket, Int(1), Comma, Int(2), CloseBracket, Comma, OpenBracket, Int(3), Comma, Int(4), CloseBracket, CloseBracket, NewLine,
-                Let, Id("emptyList".to_string()), Eq, Id("list".to_string()), Lt, Id("int".to_string()), Gt, OpenParen, CloseParen, NewLine,
-                Let, Id("emptyMap".to_string()), Eq, Id("map".to_string()), Lt, Id("string".to_string()), Comma, Id("int".to_string()), Gt, OpenParen, CloseParen, NewLine,
+                TokenType::LineComment("Collections".to_string()), TokenType::NewLine,
+                TokenType::Let, TokenType::Id("nums".to_string()), TokenType::Eq, TokenType::OpenBracket, TokenType::Int(1), TokenType::Comma, TokenType::Int(2), TokenType::Comma, TokenType::Int(3), TokenType::Comma, TokenType::Int(4), TokenType::CloseBracket, TokenType::NewLine,
+                TokenType::Let, TokenType::Id("scores".to_string()), TokenType::Eq, TokenType::OpenBrace, TokenType::Str("Alice".to_string()), TokenType::Colon, TokenType::Int(90), TokenType::Comma, TokenType::Str("Bob".to_string()), TokenType::Colon, TokenType::Int(85), TokenType::CloseBrace, TokenType::NewLine,
+                TokenType::Let, TokenType::Id("matrix".to_string()), TokenType::Eq, TokenType::OpenBracket, TokenType::OpenBracket, TokenType::Int(1), TokenType::Comma, TokenType::Int(2), TokenType::CloseBracket, TokenType::Comma, TokenType::OpenBracket, TokenType::Int(3), TokenType::Comma, TokenType::Int(4), TokenType::CloseBracket, TokenType::CloseBracket, TokenType::NewLine,
+                TokenType::Let, TokenType::Id("emptyList".to_string()), TokenType::Eq, TokenType::Id("list".to_string()), TokenType::Lt, TokenType::Id("int".to_string()), TokenType::Gt, TokenType::OpenParen, TokenType::CloseParen, TokenType::NewLine,
+                TokenType::Let, TokenType::Id("emptyMap".to_string()), TokenType::Eq, TokenType::Id("map".to_string()), TokenType::Lt, TokenType::Id("string".to_string()), TokenType::Comma, TokenType::Id("int".to_string()), TokenType::Gt, TokenType::OpenParen, TokenType::CloseParen, TokenType::NewLine,
             ]
 
         ),
@@ -198,7 +199,7 @@ fn test_file_lexer() {
                 LineComment("Variable declarations and type inference".to_string()), NewLine,
                 Const, Id("int".to_string()), Id("MAX".to_string()), Eq, Int(100), NewLine,
                 Id("int".to_string()), Id("explicit".to_string()), Eq, Int(42), NewLine,
-                Let, Id("inferred".to_string()), Eq, Float(4.89), NewLine,
+                Let, Id("inferred".to_string()), Eq, Float(OrderedFloat(4.89)), NewLine,
                 Let, Id("name".to_string()), Eq, Str("Mux".to_string()), NewLine, NewLine,
                 Let, OpenParen, Id("x".to_string()), Comma, Underscore, CloseParen, Eq, OpenParen, Int(1), Comma, Int(2), CloseParen, LineComment("underscore usage".to_string()), NewLine,
                 Let, Id("flag".to_string()), Eq, Bool(true), NewLine,
@@ -212,7 +213,7 @@ fn test_file_lexer() {
                 Id("import".to_string()), Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
 
                 Const, Id("int".to_string()), Id("MAX".to_string()), Eq, Int(100), NewLine,
-                Let, Id("flt".to_string()), Eq, Float(7.82), NewLine,
+                Let, Id("flt".to_string()), Eq, Float(OrderedFloat(7.82)), NewLine,
                 Let, Id("message".to_string()), Eq, Str("Mux Parser Test".to_string()), NewLine, NewLine,
 
                 Enum, Id("Shape".to_string()), OpenBrace, Id("Circle".to_string()), OpenParen, Id("float".to_string()), Id("radius".to_string()), CloseParen, Comma, Id("Rectangle".to_string()), OpenParen, Id("float".to_string()), Id("width".to_string()), Comma, Id("float".to_string()), Id("height".to_string()), CloseParen, Comma, Id("Square".to_string()), OpenParen, Id("float".to_string()), Id("size".to_string()), CloseParen, CloseBrace, NewLine, NewLine,
@@ -253,7 +254,7 @@ fn test_file_lexer() {
                 Func, Id("main".to_string()), OpenParen, CloseParen, Returns, Id("void".to_string()), OpenBrace, NewLine,
                 Let, Id("explicit".to_string()), Eq, Int(10), NewLine,
                 Let, Id("inferred".to_string()), Eq, Int(42), NewLine,
-                Let, Id("floatVal".to_string()), Eq, Float(9.4), NewLine,
+                Let, Id("floatVal".to_string()), Eq, Float(OrderedFloat(9.4)), NewLine,
                 Let, OpenParen, Id("a".to_string()), Comma, Underscore, CloseParen, Eq, OpenParen, Int(1), Comma, Int(2), CloseParen, NewLine, NewLine,
 
                 If, Id("inferred".to_string()), Gt, Int(40), OpenBrace, Id("print".to_string()), OpenParen, Str("Big number".to_string()), CloseParen, CloseBrace, Else, OpenBrace, Id("print".to_string()), OpenParen, Str("Small number".to_string()), CloseParen, CloseBrace, NewLine,
@@ -267,7 +268,7 @@ fn test_file_lexer() {
                 CloseBrace, NewLine, NewLine,
 
                 Let, Id("nums".to_string()), Eq, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, NewLine,
-                Let, Id("shapes".to_string()), Eq, OpenBracket, Id("Circle".to_string()), OpenParen, Float(2.0), CloseParen, Comma, Id("Circle".to_string()), OpenParen, Float(3.5), CloseParen, CloseBracket, NewLine,
+                Let, Id("shapes".to_string()), Eq, OpenBracket, Id("Circle".to_string()), OpenParen, Float(OrderedFloat(2.0)), CloseParen, Comma, Id("Circle".to_string()), OpenParen, Float(OrderedFloat(3.5)), CloseParen, CloseBracket, NewLine,
                 For, Id("shape".to_string()), In, Id("shapes".to_string()), OpenBrace, Id("shape".to_string()), Dot, Id("draw".to_string()), OpenParen, CloseParen, CloseBrace, NewLine, NewLine,
 
                 Let, Id("maximum".to_string()), Eq, Id("max".to_string()), OpenParen, Int(7), Comma, Int(12), CloseParen, NewLine,
@@ -320,9 +321,10 @@ fn test_file_lexer() {
                     .lex_all()
                     .unwrap_or_else(|e| panic!("Lexing failed for file {}: {}", file_name, e));
 
+                let actual_token_types: Vec<_> = actual_tokens.into_iter().map(|t| t.token_type).collect();
                 assert_eq!(
-                    actual_tokens, *expected_tokens,
-                    "Tokens did not match for file: {}",
+                    actual_token_types, *expected_tokens,
+                    "Token types did not match for file: {}",
                     file_name
                 );
             }

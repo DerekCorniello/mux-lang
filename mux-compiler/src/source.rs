@@ -24,14 +24,14 @@ impl Source {
         Err(Error::new(ErrorKind::NotFound, "File does not exist"))
     }
 
-    // create a source from a test snippet
-    pub fn from_test_str(string: &str) -> std::io::Result<Self> {
-        Ok(Self {
-            input: string.to_string(), // FIXED: was converting to Vec<char> instead of String
+    #[allow(dead_code)]
+    pub fn from_test_str(string: &str) -> Source {
+        Source {
+            input: string.to_string(),
             pos: 0,
             line: 1,
             col: 1,
-        })
+        }
     }
 
     // get next char and move pos
@@ -47,7 +47,9 @@ impl Source {
             self.line += 1;
             self.col = 1;
         } else {
-            self.col += 1;
+            // for multi-byte characters, we need to count the number of columns
+            // based on the character's width in the terminal
+            self.col += unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1);
         }
 
         Some(ch)
@@ -60,23 +62,10 @@ impl Source {
         }
         self.input[self.pos..].chars().next()
     }
-
-    // consume characters until we see the closing */ or eof
-    pub fn consume_multiline_comment(&mut self) -> String {
-        let mut buf = String::new();
-        
-        while let Some(c) = self.next_char() {
-            if c == '*' && self.peek() == Some('/') {
-                self.next_char(); // eat the '/'
-                break; // Don't add the */ to the buffer
-            } else {
-                buf.push(c);
-            }
-        }
-        buf.trim().to_string()
-    }
-
-    // consume chars til we get to the stop char
+    
+    // consumes characters until the specified stop character is found. the stop
+    // character is not consumed and not included in the returned string. leading
+    // and trailing whitespace is trimmed from the result.
     pub fn consume_until(&mut self, stop: char) -> String {
         let mut buf = String::new();
         while let Some(c) = self.peek() {
@@ -86,11 +75,24 @@ impl Source {
             buf.push(c);
             self.next_char();
         }
-        buf
+        buf.trim().to_string()
     }
-
-    pub fn get_location_string(&self) -> String {
-        format!("line {}, column {}", self.line, self.col)
+    
+    // consumes characters until the end of a multiline comment ("*/") is found. the
+    // comment closer is consumed but not included in the returned string. the opening
+    // "/*" should already be consumed before calling this.
+    pub fn consume_multiline_comment(&mut self) -> String {
+        let mut buf = String::new();
+        
+        while let Some(c) = self.next_char() {
+            if c == '*' && self.peek() == Some('/') {
+                self.next_char(); // consume the '/'
+                break;
+            }
+            buf.push(c);
+        }
+        
+        buf.trim().to_string()
     }
 }
 
@@ -156,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_multiline_positioning() {
-        let mut src = Source::from_test_str("hello\nworld\n").unwrap();
+        let mut src = Source::from_test_str("hello\nworld\n");
 
         // test that positions track correctly across multiple lines
         for expected_char in "hello".chars() {
@@ -178,20 +180,21 @@ mod tests {
 
     #[test]
     fn test_consume_until() {
-        let mut src = Source::from_test_str("hello world").unwrap();
+        let mut src = Source::from_test_str("hello world");
 
         let result = src.consume_until(' ');
         assert_eq!(result, "hello");
         assert_eq!(src.line, 1);
         assert_eq!(src.col, 6); // position should be at the space
-        assert_eq!(src.peek(), Some(' ')); // space should still be there
+        assert_eq!(src.next_char(), Some(' ')); // consume the space
+        assert_eq!(src.next_char(), Some('w')); // next character should be 'w'
     }
 
     #[test]
     fn test_consume_multiline_comment() {
-        // the multiline comment will already pass in the text 
+        // the multiline comment will already pass in the text
         // without the opening comment, thus the missing /*
-        let mut src = Source::from_test_str(" hello\nworld*/").unwrap();
+        let mut src = Source::from_test_str(" hello\nworld*/");
 
         let result = src.consume_multiline_comment();
         assert_eq!(result, "hello\nworld");
@@ -201,27 +204,55 @@ mod tests {
 
     #[test]
     fn test_unicode_handling() {
-        let mut src = Source::from_test_str("héllo 🌟").unwrap();
+        let mut src = Source::from_test_str("こんにちは");
 
-        assert_eq!(src.next_char(), Some('h'));
-        assert_eq!(src.col, 2);
+        // First character 'こ' is a full-width character (2 columns in terminal)
+        let ch = src.next_char();
+        println!("First char: {:?}, col: {}", ch, src.col);
+        assert_eq!(ch, Some('こ'));
+        assert_eq!(src.col, 3); // 1 (start) + 2 (full-width char) = 3
 
-        assert_eq!(src.next_char(), Some('é')); // multi-byte char
-        assert_eq!(src.col, 3); // column should increment by 1, not byte count
+        // Second character 'ん' is also a full-width character
+        let ch = src.next_char();
+        println!("Second char: {:?}, col: {}", ch, src.col);
+        assert_eq!(ch, Some('ん'));
+        assert_eq!(src.col, 5); // 3 + 2 = 5
 
-        // Skip to the emoji
-        src.next_char(); // l
-        src.next_char(); // l  
-        src.next_char(); // o
-        src.next_char(); // space
-
-        assert_eq!(src.next_char(), Some('🌟')); // 4-byte emoji
-        assert_eq!(src.col, 8); // should still increment by 1 column
+        // Third character 'に' is also a full-width character
+        let ch = src.next_char();
+        println!("Third char: {:?}, col: {}", ch, src.col);
+        assert_eq!(ch, Some('に'));
+        assert_eq!(src.col, 7); // 5 + 2 = 7
+        
+        // Fourth character 'ち' is also a full-width character
+        let ch = src.next_char();
+        println!("Fourth char: {:?}, col: {}", ch, src.col);
+        assert_eq!(ch, Some('ち'));
+        assert_eq!(src.col, 9); // 7 + 2 = 9
+        
+        // Fifth character 'は' is also a full-width character
+        let ch = src.next_char();
+        println!("Fifth char: {:?}, col: {}", ch, src.col);
+        assert_eq!(ch, Some('は'));
+        assert_eq!(src.col, 11); // 9 + 2 = 11
+        
+        // Test with emoji (typically 4 bytes, but displayed as one column)
+        let mut src = Source::from_test_str("hello 🌟");
+        // Skip "hello " (6 characters including space)
+        for _ in 0..6 {
+            src.next_char();
+        }
+        
+        // The star emoji is a double-width character
+        // We've consumed "hello " (6 characters, columns 1-6)
+        assert_eq!(src.col, 7); // After 6 characters, we're at column 7
+        assert_eq!(src.next_char(), Some('🌟'));
+        assert_eq!(src.col, 9); // Should increment by 2 for the emoji
     }
 
     #[test]
     fn test_from_test_str_type_consistency() {
-        let src = Source::from_test_str("test").unwrap();
+        let src = Source::from_test_str("test");
         assert_eq!(src.input, "test".to_string());
     }
 }
