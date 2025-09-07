@@ -1,5 +1,6 @@
 use std::fs;
 use mux_compiler::source::Source;
+use insta::assert_snapshot;
 
 #[test]
 fn test_file_output_matches_cat() {
@@ -24,6 +25,8 @@ fn test_file_output_matches_cat() {
             }
 
             assert_eq!(expected, actual, "File mismatch in {}", file_path);
+            assert_snapshot!(format!("{:#?}", expected));
+            // TODO: need to test the full tokens as well with the positions
         }
     }
 }

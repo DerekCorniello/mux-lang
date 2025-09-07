@@ -1,3 +1,4 @@
+use insta::assert_snapshot;
 use ordered_float::OrderedFloat;
 use mux_compiler::lexer::{Lexer, TokenType};
 use TokenType::*;
@@ -327,6 +328,8 @@ fn test_file_lexer() {
                     "Token types did not match for file: {}",
                     file_name
                 );
+                assert_snapshot!(format!("{:#?}", actual_token_types.to_owned()));
+                // TODO: need to test the full tokens as well with the positions
             }
         }
     }

@@ -1,0 +1,57 @@
+---
+source: tests/lexer_integration.rs
+expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
+---
+[
+    LineComment(
+        "Imports",
+    ),
+    NewLine,
+    Id(
+        "import",
+    ),
+    Id(
+        "math",
+    ),
+    NewLine,
+    Id(
+        "import",
+    ),
+    Id(
+        "utils",
+    ),
+    Dot,
+    Id(
+        "logger",
+    ),
+    As,
+    Underscore,
+    NewLine,
+    NewLine,
+    Let,
+    Id(
+        "pi",
+    ),
+    Eq,
+    Id(
+        "math",
+    ),
+    Dot,
+    Id(
+        "PI",
+    ),
+    NewLine,
+    Id(
+        "print",
+    ),
+    OpenParen,
+    Str(
+        "PI = ",
+    ),
+    Plus,
+    Id(
+        "pi",
+    ),
+    CloseParen,
+    NewLine,
+]

@@ -1,0 +1,5 @@
+---
+source: tests/source_integration.rs
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Variable declarations and type inference\nconst int MAX = 100\nint explicit = 42\nlet inferred = 4.89\nlet name = \"Mux\"\n\nlet (x, _) = (1, 2) // underscore usage\nlet flag = true\nlet otherflag = false\n"

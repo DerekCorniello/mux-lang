@@ -1,0 +1,5 @@
+---
+source: tests/source_integration.rs
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Pointers\nint val = 10\nlet p = &val\nprint(*p)\n*p = 20\nprint(val)\n\nlet arr = [1, 2, 3]\nlet q = arr\nq += 1\nprint(*q)\n"

@@ -1,0 +1,5 @@
+---
+source: tests/source_integration.rs
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Collections\nlet nums = [1, 2, 3, 4]\nlet scores = {\"Alice\": 90, \"Bob\": 85}\nlet matrix = [[1, 2], [3, 4]]\nlet emptyList = list<int>()\nlet emptyMap = map<string, int>()\n"
