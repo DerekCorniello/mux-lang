@@ -1,15 +1,204 @@
-use crate::lexer::Token;
+use crate::lexer::{Span, Token, TokenType};
+use std::iter::Peekable;
+use std::slice::Iter;
+
+impl std::error::Error for ParserError {}
+
+pub type ParserResult<T> = Result<T, ParserError>;
 
 #[derive(Debug, Clone)]
-pub enum AstNode {
-    Declaration(DeclarationNode),
-    Statement(StatementNode),
-    Expression(ExpressionNode),
-    Type(TypeNode),
+pub struct ParserError {
+    pub message: String,
+    pub span: Span,
+}
+
+impl ParserError {
+    pub fn new(message: impl Into<String>, span: Span) -> Self {
+        Self {
+            message: message.into(),
+            span,
+        }
+    }
+
+    pub fn from_token(message: impl Into<String>, token: &Token) -> Self {
+        Self {
+            message: message.into(),
+            span: token.span,
+        }
+    }
+
+    pub fn with_context(&self, source: &str) -> String {
+        let start_line = self.span.row_start.saturating_sub(1);
+        let end_line = self
+            .span
+            .row_end
+            .unwrap_or(self.span.row_start)
+            .saturating_sub(1);
+
+        let lines: Vec<&str> = source
+            .lines()
+            .skip(start_line)
+            .take(end_line - start_line + 1)
+            .collect();
+
+        let line_numbers: Vec<String> = (start_line..=end_line)
+            .map(|n| format!("{} | ", n + 1))
+            .collect();
+
+        let max_line_num_len = line_numbers.last().map_or(0, |s| s.len());
+
+        let mut message = String::new();
+        message.push_str(&format!(
+            "Error at {}:{} - {}\n",
+            self.span.row_start, self.span.col_start, self.message
+        ));
+
+        for (i, (line_num, line)) in line_numbers.into_iter().zip(lines).enumerate() {
+            message.push_str(&format!(
+                "{:width$}{}\n",
+                line_num,
+                line,
+                width = max_line_num_len
+            ));
+
+            // Add error indicator
+            if i == 0 {
+                let indent = max_line_num_len + self.span.col_start.saturating_sub(1);
+                let width = if start_line == end_line {
+                    self.span.col_end.unwrap_or(self.span.col_start) - self.span.col_start
+                } else {
+                    1
+                };
+                message.push_str(&format!("{}^~\n", " ".repeat(indent)));
+            }
+        }
+
+        message
+    }
+}
+
+impl std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Parser error at {}:{} - {}",
+            self.span.row_start, self.span.col_start, self.message
+        )
+    }
+}
+
+pub trait SpanExt {
+    fn combine(&self, other: &Span) -> Span;
+
+    fn from_token(token: &Token) -> Span;
+
+    fn from_tokens(start: &Token, end: &Token) -> Span;
+
+    fn is_valid(&self) -> bool;
+}
+
+impl SpanExt for Span {
+    fn combine(&self, other: &Span) -> Span {
+        let mut span = *self;
+        if let (Some(end_row), Some(end_col)) = (other.row_end, other.col_end) {
+            span.complete(end_row, end_col);
+        }
+        span
+    }
+
+    fn from_token(token: &Token) -> Span {
+        token.span
+    }
+
+    fn from_tokens(start: &Token, end: &Token) -> Span {
+        let mut span = start.span;
+        if let (Some(row_end), Some(col_end)) = (end.span.row_end, end.span.col_end) {
+            span.complete(row_end, col_end);
+        }
+        span
+    }
+
+    fn is_valid(&self) -> bool {
+        self.row_end.is_some() && self.col_end.is_some()
+    }
+}
+
+pub trait Spanned {
+    fn span(&self) -> &Span;
+
+    fn start_pos(&self) -> (usize, usize) {
+        let span = self.span();
+        (span.row_start, span.col_start)
+    }
+
+    fn end_pos(&self) -> Option<(usize, usize)> {
+        let span = self.span();
+        span.row_end.zip(span.col_end)
+    }
+}
+
+macro_rules! impl_spanned {
+    ($t:ty) => {
+        impl Spanned for $t {
+            fn span(&self) -> &Span {
+                &self.span
+            }
+        }
+    };
+}
+#[derive(Debug, Clone)]
+pub enum DeclarationKind {
+    Function {
+        name: String,
+        type_params: Vec<(String, Vec<TraitBound>)>,
+        params: Vec<Param>,
+        return_type: TypeKind,
+        body: Vec<StatementNode>,
+    },
+    Class {
+        name: String,
+        type_params: Vec<(String, Vec<TraitBound>)>,
+        traits: Vec<TraitRef>,
+        fields: Vec<Field>,
+        methods: Vec<FunctionNode>,
+    },
+    Interface {
+        name: String,
+        type_params: Vec<(String, Vec<TraitBound>)>,
+        methods: Vec<FunctionNode>,
+    },
+    Enum {
+        name: String,
+        type_params: Vec<(String, Vec<TraitBound>)>,
+        variants: Vec<EnumVariant>,
+    },
+    TypeAlias {
+        name: String,
+        type_params: Vec<(String, Vec<TraitBound>)>,
+        target: TypeKind,
+    },
+    Const {
+        name: String,
+        type_: Option<TypeKind>,
+        value: ExpressionNode,
+    },
+    Let {
+        name: String,
+        type_: Option<TypeKind>,
+        value: ExpressionNode,
+    },
 }
 
 #[derive(Debug, Clone)]
-pub enum DeclarationNode {
+pub struct DeclarationNode {
+    pub kind: DeclarationKind,
+    pub span: Span,
+}
+
+impl_spanned!(DeclarationNode);
+
+#[derive(Debug, Clone)]
+pub enum AstNode {
     Function {
         name: String,
         type_params: Vec<(String, Vec<TraitBound>)>,
@@ -52,10 +241,10 @@ pub enum DeclarationNode {
 }
 
 #[derive(Debug, Clone)]
-pub enum StatementNode {
+pub enum StatementKind {
     Let {
         name: String,
-        type_: Option<TypeNode>,
+        type_: Option<TypeKind>,
         value: ExpressionNode,
     },
     Return(Option<ExpressionNode>),
@@ -80,7 +269,15 @@ pub enum StatementNode {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExpressionNode {
+pub struct StatementNode {
+    pub kind: StatementKind,
+    pub span: Span,
+}
+
+impl_spanned!(StatementNode);
+
+#[derive(Debug, Clone)]
+pub enum ExpressionKind {
     Literal(LiteralNode),
     Identifier(String),
     Binary {
@@ -120,6 +317,14 @@ pub enum ExpressionNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct ExpressionNode {
+    pub kind: ExpressionKind,
+    pub span: Span,
+}
+
+impl_spanned!(ExpressionNode);
+
+#[derive(Debug, Clone)]
 pub enum PrimitiveType {
     Int,
     Float,
@@ -129,7 +334,7 @@ pub enum PrimitiveType {
 }
 
 #[derive(Debug, Clone)]
-pub enum TypeNode {
+pub enum TypeKind {
     Primitive(PrimitiveType),
     Named(String),
     Generic {
@@ -149,6 +354,14 @@ pub enum TypeNode {
     },
     Alias(String),
 }
+
+#[derive(Debug, Clone)]
+pub struct TypeNode {
+    pub kind: TypeKind,
+    pub span: Span,
+}
+
+impl_spanned!(TypeNode);
 
 #[derive(Debug, Clone)]
 pub struct TraitBound {
