@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Pointers\nint val = 10\nlet p = &val\nprint(*p)\n*p = 20\nprint(val)\n\nlet arr = [1, 2, 3]\nlet q = arr\nq += 1\nprint(*q)\n"
+"// Variable declarations and type inference\nconst int MAX = 100\nint explicit = 42\nauto inferred = 4.89\nauto name = \"Mux\"\n\nauto (x, _) = (1, 2) // underscore usage\nauto flag = true\nauto otherflag = false\n"

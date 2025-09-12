@@ -4,158 +4,64 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Optionals & Results",
+        "Pointers",
     ),
     NewLine,
-    Func,
-    Id(
-        "divide",
-    ),
-    OpenParen,
     Id(
         "int",
     ),
     Id(
-        "a",
-    ),
-    Comma,
-    Id(
-        "int",
-    ),
-    Id(
-        "b",
-    ),
-    CloseParen,
-    Returns,
-    Id(
-        "Result",
-    ),
-    Lt,
-    Id(
-        "int",
-    ),
-    Comma,
-    Id(
-        "string",
-    ),
-    Gt,
-    OpenBrace,
-    NewLine,
-    If,
-    Id(
-        "b",
-    ),
-    EqEq,
-    Int(
-        0,
-    ),
-    OpenBrace,
-    Return,
-    Id(
-        "Err",
-    ),
-    OpenParen,
-    Str(
-        "Division by zero",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    Return,
-    Id(
-        "Ok",
-    ),
-    OpenParen,
-    Id(
-        "a",
-    ),
-    Slash,
-    Id(
-        "b",
-    ),
-    CloseParen,
-    NewLine,
-    CloseBrace,
-    NewLine,
-    NewLine,
-    Let,
-    Id(
-        "res",
+        "val",
     ),
     Eq,
-    Id(
-        "divide",
-    ),
-    OpenParen,
     Int(
         10,
     ),
-    Comma,
+    NewLine,
+    Auto,
+    Id(
+        "p",
+    ),
+    Eq,
+    Ampersand,
+    Id(
+        "val",
+    ),
+    NewLine,
+    Id(
+        "print",
+    ),
+    OpenParen,
+    Star,
+    Id(
+        "p",
+    ),
+    CloseParen,
+    NewLine,
+    Star,
+    Id(
+        "p",
+    ),
+    Eq,
     Int(
-        2,
+        20,
     ),
-    CloseParen,
     NewLine,
-    Match,
-    Id(
-        "res",
-    ),
-    OpenBrace,
-    NewLine,
-    Id(
-        "Ok",
-    ),
-    OpenParen,
-    Id(
-        "v",
-    ),
-    CloseParen,
-    OpenBrace,
     Id(
         "print",
     ),
     OpenParen,
-    Str(
-        "Result: ",
-    ),
-    Plus,
     Id(
-        "v",
+        "val",
     ),
     CloseParen,
-    CloseBrace,
-    NewLine,
-    Id(
-        "Err",
-    ),
-    OpenParen,
-    Id(
-        "e",
-    ),
-    CloseParen,
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "Error: ",
-    ),
-    Plus,
-    Id(
-        "e",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    CloseBrace,
     NewLine,
     NewLine,
-    Func,
+    Auto,
     Id(
-        "findEven",
+        "arr",
     ),
-    OpenParen,
+    Eq,
     Id(
         "list",
     ),
@@ -164,55 +70,47 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
         "int",
     ),
     Gt,
-    Id(
-        "nums",
+    OpenParen,
+    OpenBracket,
+    Int(
+        1,
     ),
-    CloseParen,
-    Returns,
-    Id(
-        "Optional",
-    ),
-    Lt,
-    Id(
-        "int",
-    ),
-    Gt,
-    OpenBrace,
-    NewLine,
-    For,
-    Id(
-        "n",
-    ),
-    In,
-    Id(
-        "nums",
-    ),
-    OpenBrace,
-    If,
-    Id(
-        "n",
-    ),
-    Percent,
+    Comma,
     Int(
         2,
     ),
-    EqEq,
+    Comma,
     Int(
-        0,
+        3,
     ),
-    OpenBrace,
-    Return,
+    CloseBracket,
+    CloseParen,
+    NewLine,
+    Auto,
     Id(
-        "Some",
+        "q",
+    ),
+    Eq,
+    Id(
+        "arr",
+    ),
+    NewLine,
+    Id(
+        "q",
+    ),
+    PlusEq,
+    Int(
+        1,
+    ),
+    NewLine,
+    Id(
+        "print",
     ),
     OpenParen,
+    Star,
     Id(
-        "n",
+        "q",
     ),
     CloseParen,
-    CloseBrace,
-    CloseBrace,
-    NewLine,
-    CloseBrace,
     NewLine,
 ]

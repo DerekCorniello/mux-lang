@@ -4,54 +4,215 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Imports",
+        "Optionals & Results",
     ),
     NewLine,
+    Func,
     Id(
-        "import",
+        "divide",
+    ),
+    OpenParen,
+    Id(
+        "int",
     ),
     Id(
-        "math",
+        "a",
     ),
+    Comma,
+    Id(
+        "int",
+    ),
+    Id(
+        "b",
+    ),
+    CloseParen,
+    Returns,
+    Id(
+        "Result",
+    ),
+    Lt,
+    Id(
+        "int",
+    ),
+    Comma,
+    Id(
+        "string",
+    ),
+    Gt,
+    OpenBrace,
     NewLine,
+    If,
     Id(
-        "import",
+        "b",
     ),
+    EqEq,
+    Int(
+        0,
+    ),
+    OpenBrace,
+    Return,
     Id(
-        "utils",
+        "Err",
     ),
-    Dot,
+    OpenParen,
+    Str(
+        "Division by zero",
+    ),
+    CloseParen,
+    CloseBrace,
+    NewLine,
+    Return,
     Id(
-        "logger",
+        "Ok",
     ),
-    As,
-    Underscore,
+    OpenParen,
+    Id(
+        "a",
+    ),
+    Slash,
+    Id(
+        "b",
+    ),
+    CloseParen,
+    NewLine,
+    CloseBrace,
     NewLine,
     NewLine,
-    Let,
+    Auto,
     Id(
-        "pi",
+        "res",
     ),
     Eq,
     Id(
-        "math",
+        "divide",
     ),
-    Dot,
-    Id(
-        "PI",
+    OpenParen,
+    Int(
+        10,
     ),
+    Comma,
+    Int(
+        2,
+    ),
+    CloseParen,
     NewLine,
+    Match,
+    Id(
+        "res",
+    ),
+    OpenBrace,
+    NewLine,
+    Id(
+        "Ok",
+    ),
+    OpenParen,
+    Id(
+        "v",
+    ),
+    CloseParen,
+    OpenBrace,
     Id(
         "print",
     ),
     OpenParen,
     Str(
-        "PI = ",
+        "Result: ",
     ),
     Plus,
     Id(
-        "pi",
+        "v",
     ),
     CloseParen,
+    CloseBrace,
+    NewLine,
+    Id(
+        "Err",
+    ),
+    OpenParen,
+    Id(
+        "e",
+    ),
+    CloseParen,
+    OpenBrace,
+    Id(
+        "print",
+    ),
+    OpenParen,
+    Str(
+        "Error: ",
+    ),
+    Plus,
+    Id(
+        "e",
+    ),
+    CloseParen,
+    CloseBrace,
+    NewLine,
+    CloseBrace,
+    NewLine,
+    NewLine,
+    Func,
+    Id(
+        "findEven",
+    ),
+    OpenParen,
+    Id(
+        "list",
+    ),
+    Lt,
+    Id(
+        "int",
+    ),
+    Gt,
+    Id(
+        "nums",
+    ),
+    CloseParen,
+    Returns,
+    Id(
+        "Optional",
+    ),
+    Lt,
+    Id(
+        "int",
+    ),
+    Gt,
+    OpenBrace,
+    NewLine,
+    For,
+    Id(
+        "n",
+    ),
+    In,
+    Id(
+        "nums",
+    ),
+    OpenBrace,
+    If,
+    Id(
+        "n",
+    ),
+    Percent,
+    Int(
+        2,
+    ),
+    EqEq,
+    Int(
+        0,
+    ),
+    OpenBrace,
+    Return,
+    Id(
+        "Some",
+    ),
+    OpenParen,
+    Id(
+        "n",
+    ),
+    CloseParen,
+    CloseBrace,
+    CloseBrace,
+    NewLine,
+    CloseBrace,
     NewLine,
 ]

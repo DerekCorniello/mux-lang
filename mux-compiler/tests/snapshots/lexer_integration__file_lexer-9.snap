@@ -4,61 +4,15 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Variable declarations and type inference",
+        "Collections",
     ),
     NewLine,
-    Const,
+    Auto,
     Id(
-        "int",
-    ),
-    Id(
-        "MAX",
+        "nums",
     ),
     Eq,
-    Int(
-        100,
-    ),
-    NewLine,
-    Id(
-        "int",
-    ),
-    Id(
-        "explicit",
-    ),
-    Eq,
-    Int(
-        42,
-    ),
-    NewLine,
-    Let,
-    Id(
-        "inferred",
-    ),
-    Eq,
-    Float(
-        4.89,
-    ),
-    NewLine,
-    Let,
-    Id(
-        "name",
-    ),
-    Eq,
-    Str(
-        "Mux",
-    ),
-    NewLine,
-    NewLine,
-    Let,
-    OpenParen,
-    Id(
-        "x",
-    ),
-    Comma,
-    Underscore,
-    CloseParen,
-    Eq,
-    OpenParen,
+    OpenBracket,
     Int(
         1,
     ),
@@ -66,27 +20,112 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
     Int(
         2,
     ),
+    Comma,
+    Int(
+        3,
+    ),
+    Comma,
+    Int(
+        4,
+    ),
+    CloseBracket,
+    NewLine,
+    Auto,
+    Id(
+        "scores",
+    ),
+    Eq,
+    Id(
+        "map",
+    ),
+    Lt,
+    Id(
+        "string",
+    ),
+    Comma,
+    Id(
+        "int",
+    ),
+    Gt,
+    OpenBrace,
+    Str(
+        "Alice",
+    ),
+    Colon,
+    Int(
+        90,
+    ),
+    Comma,
+    Str(
+        "Bob",
+    ),
+    Colon,
+    Int(
+        85,
+    ),
+    CloseBrace,
+    NewLine,
+    Auto,
+    Id(
+        "matrix",
+    ),
+    Eq,
+    OpenBracket,
+    OpenBracket,
+    Int(
+        1,
+    ),
+    Comma,
+    Int(
+        2,
+    ),
+    CloseBracket,
+    Comma,
+    OpenBracket,
+    Int(
+        3,
+    ),
+    Comma,
+    Int(
+        4,
+    ),
+    CloseBracket,
+    CloseBracket,
+    NewLine,
+    Auto,
+    Id(
+        "emptyList",
+    ),
+    Eq,
+    Id(
+        "list",
+    ),
+    Lt,
+    Id(
+        "int",
+    ),
+    Gt,
+    OpenParen,
     CloseParen,
-    LineComment(
-        "underscore usage",
-    ),
     NewLine,
-    Let,
+    Auto,
     Id(
-        "flag",
+        "emptyMap",
     ),
     Eq,
-    Bool(
-        true,
-    ),
-    NewLine,
-    Let,
     Id(
-        "otherflag",
+        "map",
     ),
-    Eq,
-    Bool(
-        false,
+    Lt,
+    Id(
+        "string",
     ),
+    Comma,
+    Id(
+        "int",
+    ),
+    Gt,
+    OpenParen,
+    CloseParen,
     NewLine,
 ]

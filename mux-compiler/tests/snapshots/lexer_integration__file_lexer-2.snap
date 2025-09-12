@@ -4,75 +4,91 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Control flow",
+        "Enums and Classes",
     ),
     NewLine,
-    Let,
+    Enum,
     Id(
-        "x",
-    ),
-    Eq,
-    Int(
-        5,
-    ),
-    NewLine,
-    If,
-    Id(
-        "x",
-    ),
-    Gt,
-    Int(
-        0,
+        "Shape",
     ),
     OpenBrace,
     Id(
-        "print",
+        "Circle",
     ),
     OpenParen,
-    Str(
-        "Positive",
+    Id(
+        "float",
+    ),
+    Id(
+        "r",
+    ),
+    CloseParen,
+    Comma,
+    Id(
+        "Rectangle",
+    ),
+    OpenParen,
+    Id(
+        "float",
+    ),
+    Id(
+        "w",
+    ),
+    Comma,
+    Id(
+        "float",
+    ),
+    Id(
+        "h",
     ),
     CloseParen,
     CloseBrace,
-    Else,
-    OpenBrace,
+    NewLine,
+    NewLine,
+    Interface,
     Id(
-        "print",
+        "Drawable",
+    ),
+    OpenBrace,
+    Func,
+    Id(
+        "draw",
     ),
     OpenParen,
-    Str(
-        "Non-positive",
-    ),
     CloseParen,
+    Returns,
+    Id(
+        "void",
+    ),
     CloseBrace,
     NewLine,
     NewLine,
-    Match,
+    Class,
     Id(
-        "Some",
+        "Circle",
     ),
-    OpenParen,
-    Int(
-        15,
+    Is,
+    Id(
+        "Drawable",
     ),
-    CloseParen,
     OpenBrace,
     NewLine,
     Id(
-        "Some",
+        "float",
+    ),
+    Id(
+        "radius",
+    ),
+    NewLine,
+    Func,
+    Id(
+        "draw",
     ),
     OpenParen,
-    Id(
-        "v",
-    ),
     CloseParen,
-    If,
+    Returns,
     Id(
-        "v",
-    ),
-    Gt,
-    Int(
-        10,
+        "void",
     ),
     OpenBrace,
     Id(
@@ -80,109 +96,15 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
     ),
     OpenParen,
     Str(
-        "Large: ",
+        "Circle radius=",
     ),
     Plus,
     Id(
-        "v",
+        "radius",
     ),
     CloseParen,
     CloseBrace,
     NewLine,
-    Id(
-        "Some",
-    ),
-    OpenParen,
-    Id(
-        "v",
-    ),
-    CloseParen,
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "Small: ",
-    ),
-    Plus,
-    Id(
-        "v",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    Id(
-        "None",
-    ),
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "None",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    CloseBrace,
-    NewLine,
-    NewLine,
-    For,
-    Id(
-        "int",
-    ),
-    Id(
-        "i",
-    ),
-    Eq,
-    Int(
-        0,
-    ),
-    Semicolon,
-    Id(
-        "i",
-    ),
-    Lt,
-    Int(
-        3,
-    ),
-    Semicolon,
-    Id(
-        "i",
-    ),
-    PlusEq,
-    Int(
-        1,
-    ),
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Id(
-        "i",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    While,
-    Id(
-        "x",
-    ),
-    Gt,
-    Int(
-        0,
-    ),
-    OpenBrace,
-    Id(
-        "x",
-    ),
-    MinusEq,
-    Int(
-        1,
-    ),
     CloseBrace,
     NewLine,
 ]

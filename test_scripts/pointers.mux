@@ -1,11 +1,11 @@
 // Pointers
 int val = 10
-let p = &val
+auto p = &val
 print(*p)
 *p = 20
 print(val)
 
-let arr = [1, 2, 3]
-let q = arr
+auto arr = list<int>([1, 2, 3])
+auto q = arr
 q += 1
 print(*q)

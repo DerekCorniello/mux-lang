@@ -8,5 +8,5 @@ func greet(string name, int times = 1) returns void {
 }
 
 // Lambda examples
-let square = func(int n) { return n * n }
-let doubled = func(let x) { return x * 2 }
+auto square = func(int n) { return n * n }
+auto doubled = func(auto x) { return x * 2 }

@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Generics\nfunc max[T comparable](T a, T b) returns T { if a > b { return a } return b }\n\nclass Stack[T] {\n    list<T> items\n    func push(T item) returns void { items.append(item) }\n    func pop() returns Optional<T> {\n        if items.isEmpty() { return None }\n        return Some(items.removeLast())\n    }\n}\n\nlet s = Stack<int>()\ns.push(42)\n"
+"// Imports\nimport math\nimport utils.logger as _\n\nauto pi = math.PI\nprint(\"PI = \" + pi)\n"

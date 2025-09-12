@@ -10,5 +10,5 @@ class Stack[T] {
     }
 }
 
-let s = Stack<int>()
+auto s = Stack<int>()
 s.push(42)

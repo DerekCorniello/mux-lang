@@ -2,5 +2,5 @@
 import math
 import utils.logger as _
 
-let pi = math.PI
+auto pi = math.PI
 print("PI = " + pi)

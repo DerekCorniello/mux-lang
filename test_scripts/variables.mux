@@ -1,9 +1,9 @@
 // Variable declarations and type inference
 const int MAX = 100
 int explicit = 42
-let inferred = 4.89
-let name = "Mux"
+auto inferred = 4.89
+auto name = "Mux"
 
-let (x, _) = (1, 2) // underscore usage
-let flag = true
-let otherflag = false
+auto (x, _) = (1, 2) // underscore usage
+auto flag = true
+auto otherflag = false

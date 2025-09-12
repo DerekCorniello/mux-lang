@@ -33,7 +33,7 @@ Mux (fully "MuxLang") is a statically-typed, garbage-collected language that com
 - **Statement termination**: by end-of-line only (no semicolons)
 - **Underscore placeholder**: `_` can be used for unused parameters, variables, or pattern matching wildcards
 - **Keywords**:
-  `func`, `returns`, `const`, `let`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `Some`, `None`, `Ok`, `Err`
+  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `Some`, `None`, `Ok`, `Err`
 
 ---
 
@@ -58,7 +58,7 @@ Optional<T>
 Result<T, E>
 list<T>
 map<K,V>
-T[n]         // fixed-size array of n elements
+list<T>       // fixed-size list of elements (use const list<T> for immutable collections)
 ```
 
 ### 3.3 Generics
@@ -76,8 +76,8 @@ func max[T comparable](T a, T b) returns T {
 
 // Generic function with multiple type parameters
 func zip[T, U](list<T> first, list<U> second) returns list<(T, U)> {
-    let result = list<(T, U)>()
-    let minLen = min(first.length(), second.length())
+    auto result = list<(T, U)>()
+    T minLen = min(first.length(), second.length())
     for int i = 0; i < minLen; i += 1 {
         result.append((first[i], second[i]))
     }
@@ -122,7 +122,7 @@ func sort[T comparable](list<T> items) returns void {
 
 // Using custom constraints
 func sum[T Numeric](list<T> numbers) returns T {
-    let result = numbers[0]
+    int result = numbers[0]
     for int i = 1; i < numbers.length(); i += 1 {
         result = result.add(numbers[i])
     }
@@ -136,9 +136,9 @@ func processOrdered[T Ordered & Numeric](T value) returns T {
 }
 
 // Type inference with generics
-let numbers = [1, 2, 3, 4, 5]
-let maximum = max(3, 7)        // Generic T inferred as int
-let pairs = zip(numbers, ["a", "b", "c"])  // T=int, U=str inferred
+Vec<int> numbers = [1, 2, 3, 4, 5]
+int maximum = max(3, 7)        // Generic T inferred as int
+auto pairs = zip(numbers, ["a", "b", "c"])  // T=int, U=str inferred
 ```
 
 ### 3.5 User-Defined Types
@@ -162,55 +162,38 @@ bool flag = true
 str name = "MuxLang"
 ```
 
-### 4.2 Local Type Inference
+### 4.2 Variable Declarations
 
-Mux supports local type inference using the `let` keyword:
-
-```
-// Type inferred from initializer
-let x = 42          // inferred as int
-let pi = 3.14159    // inferred as float
-let name = "Mux"    // inferred as str
-let items = [1, 2, 3]  // inferred as list<int>
-
-// Type inference in function calls
-let result = calculateDistance(point1, point2)  // type inferred from function return
-
-// Type inference with collections
-let scores = {"Alice": 95, "Bob": 87}  // inferred as map<str, int>
-let coords = [1.0, 2.5, 3.7]          // inferred as list<float>
-
-// Unused variables with underscore
-let _ = expensiveCalculation()  // result ignored
-let (value, _) = getTuple()    // second element ignored
-```
-
-### 4.3 Inference Rules
-
-- `let` can only be used when an initializer is present
-- The type is inferred from the right-hand side expression
-- Once inferred, the variable maintains that type (no dynamic typing)
-- Function parameters and return types must still be explicitly declared
-- Class fields must be explicitly typed
-- Use `_` for unused variables to avoid compiler warnings
+Mux supports both explicit types and type inference with `auto`:
 
 ```
+// Type inferred with 'auto'
+auto x = 42          // inferred as int
+auto pi = 3.14159    // inferred as float
+auto name = "Mux"    // inferred as str
+
+// Explicit type annotation
+int count = 0
+list[str] names = []
+map[str, any] user = {"name": "Alice", "age": 30}
+
 // Valid inference
-let value = someFunction()
-let list = [1, 2, 3]
-let map = {"key": "value"}
+auto value = someFunction()
+auto numbers = [1, 2, 3]
+map[str, str] userMap = {"key": "value"}
 
-// Invalid - no initializer
-let x  // ERROR: cannot infer type without initializer
+// Invalid - no initializer with 'auto'
+auto x  // ERROR: cannot infer type without initializer
 
-// Invalid - function parameters must be explicit
-func process(let item) returns void { }  // ERROR
+// Function parameters must be explicitly typed
+func process(auto item) returns void { }  // ERROR
+func process(int item) returns void { }   // Valid
 
-// Valid - unused parameter
+// Unused parameter
 func process(int item, int _) returns void { }  // second parameter unused
 ```
 
-All declarations require either an explicit type or `let` with an initializer; semicolons are not used.
+All declarations require either an explicit type or `auto` with an initializer; semicolons are not used.
 
 ---
 
@@ -228,8 +211,8 @@ func greet(str name, int times = 1) returns void {
 }
 
 func processData() returns map<str, int> {
-    let results = {"processed": 100, "skipped": 5}  // local inference
-    let total = results["processed"] + results["skipped"]
+    map<str, int> results = {"processed": 100, "skipped": 5}
+    auto total = results["processed"] + results["skipped"]
     results["total"] = total
     return results
 }
@@ -245,7 +228,7 @@ func callback(str event, int timestamp, str _) returns void {
 - Parameter list with explicit types; default values optional
 - `returns` clause for return type (explicit, no inference)
 - Body enclosed in `{…}`; no semicolons
-- Local variables within functions can use `let` inference
+- Local variables within functions can use `auto` inference
 - Use `_` for unused parameters
 
 ---
@@ -254,27 +237,27 @@ func callback(str event, int timestamp, str _) returns void {
 
 ```
 // Block-form lambda with explicit types
-let square = func(int n) {
+auto square = func(int n) {
     return n * n
 }
 
-let doubler = func(let x) {
+auto doubler = func(auto x) {
     return x * 2  // parameter type can be inferred in some contexts
 }
 
 // Passing lambdas to functions
-let result = apply(10, func(int x) {
+auto result = apply(10, func(int x) {
     return x + 5
 })
 
 // Lambda with unused parameters
-let processFirst = func(int first, int _) {
+auto processFirst = func(int first, int _) {
     return first * 2  // second parameter ignored
 }
 
 // Block-form lambda with mixed explicit/inferred types
-let filter = func(list<int> nums, func(int) returns bool cond) returns list<int> {
-    let out = list<int>()  // explicit constructor, or could use []
+auto filter = func(list<int> nums, func(int) returns bool cond) returns list<int> {
+    list<int> out = []
     for n in nums {
         if cond(n) {
             out.append(n)
@@ -285,7 +268,7 @@ let filter = func(list<int> nums, func(int) returns bool cond) returns list<int>
 ```
 
 - All lambdas use block syntax with `func(params) { ... }`
-- Lambda parameters can use `let` when type can be inferred from context
+- Lambda parameters can use `auto` when type can be inferred from context
 - Use `_` for unused lambda parameters
 - Optional capture list in `[…]` form [needs more clarification]
 
@@ -305,7 +288,7 @@ if x > 0 {
 }
 
 // With type inference
-let message = if x > 0 { "positive" } else { "non-positive" }
+auto message = if x > 0 { "positive" } else { "non-positive" }
 ```
 
 ### 7.2 Match with Guards
@@ -313,7 +296,7 @@ let message = if x > 0 { "positive" } else { "non-positive" }
 ```
 match (value) {
     Some(v) if v > 10 {
-        let msg = "large: " + v  // local inference
+        auto msg = "large: " + v  // local inference
         print(msg)
     }
     Some(v) {
@@ -346,12 +329,12 @@ for int i = 0; i < 5; i += 1 {
 }
 
 for item in myList {
-    let processed = transform(item)  // type inferred
+    auto processed = transform(item)  // type inferred
     print(processed)
 }
 
 // Iterator with inference
-for let item in collection {
+for item in collection {
     // item type inferred from collection element type
     process(item)
 }
@@ -371,7 +354,7 @@ for (key, _) in keyValuePairs {
 
 ```
 while cond {
-    let currentTime = getCurrentTime()  // local inference
+    auto currentTime = getCurrentTime()  // local inference
     // ...
 }
 ```
@@ -392,8 +375,8 @@ enum Shape {
 }
 
 // Usage with inference
-let myShape = Circle(5.0)  // type inferred as Shape
-let shapes = [Circle(1.0), Rectangle(2.0, 3.0)]  // inferred as list<Shape>
+auto myShape = Circle(5.0)  // type inferred as Shape
+list<Shape> shapes = [Circle(1.0), Rectangle(2.0, 3.0)]
 
 // Pattern matching with unused enum data
 match (shape) {
@@ -430,12 +413,12 @@ class Circle is Drawable, ShapeLike {
     float radius  // explicit type required for fields
 
     func draw() returns void {
-        let message = "Circle radius=" + radius  // local inference in methods
+        auto message = "Circle radius=" + radius  // local inference in methods
         print(message)
     }
 
     func area() returns float {
-        const let PI = 3.1415  // inferred as float
+        const float PI = 3.1415  // inferred as float
         return PI * radius * radius
     }
     
@@ -457,22 +440,22 @@ class Stack[T] {
         if items.isEmpty() {
             return None
         }
-        let item = items.removeLast()
+        auto item = items.removeLast()
         return Some(item)
     }
 }
 
 // Usage with inference
-let circle = Circle(5.0)  // type inferred as Circle
-let shapes = list<Drawable>([circle])  // explicit generic type needed
-let intStack = Stack<int>()  // explicit generic instantiation
-let stringStack = Stack[str]()  // alternative syntax
+auto circle = Circle(5.0)  // type inferred as Circle
+list<Drawable> shapes = [circle]
+Stack<int> intStack = Stack<int>()  // explicit generic instantiation
+Stack<str> stringStack = Stack[str]()  // alternative syntax
 ```
 
 - `is TraitA, TraitB` declares implemented traits; compiler enforces required methods
 - No `implements` keyword, no `@Override`
 - Class fields must be explicitly typed
-- Local variables in methods can use `let` inference
+- Local variables in methods can use `auto` inference
 - Use `_` for unused method parameters
 
 ---
@@ -485,17 +468,17 @@ list<int> nums = [1, 2, 3, 4]
 map<str, int> scores = {"Alice": 90, "Bob": 85}
 
 // With type inference
-let nums = [1, 2, 3, 4]           // inferred as list<int>
-let scores = {"Alice": 90, "Bob": 85}  // inferred as map<str, int>
-let mixed = [1, 2.5, 3]           // ERROR: conflicting types, explicit type needed
+auto nums = [1, 2, 3, 4]           // inferred as list<int>
+map<str, int> scores = {"Alice": 90, "Bob": 85}
+// mixed = [1, 2.5, 3]           // ERROR: conflicting types, explicit type needed
 
 // Nested collections
-let matrix = [[1, 2], [3, 4]]     // inferred as list<list<int>>
-let lookup = {"users": [1, 2, 3], "admins": [4, 5]}  // inferred as map<str, list<int>>
+list<list<int>> matrix = [[1, 2], [3, 4]]
+map<str, list<int>> lookup = {"users": [1, 2, 3], "admins": [4, 5]}
 
 // Generic collections
-let pairs = [Pair(1, "one"), Pair(2, "two")]  // inferred as list<Pair<int, str>>
-let containers = list<Container<int>>()  // explicit generic type declaration
+list<Pair<int, str>> pairs = [Pair(1, "one"), Pair(2, "two")]
+list<Container<int>> containers = list<Container<int>>()
 ```
 
 ---
@@ -513,10 +496,10 @@ func divide(int a, int b) returns Result<int, str> {
 }
 
 // Usage with inference
-let result = divide(10, 2)  // inferred as Result<int, str>
+auto result = divide(10, 2)  // inferred as Result<int, str>
 match result {
     Ok(value) {
-        let message = "Result: " + value  // local inference
+        auto message = "Result: " + value  // local inference
         print(message)
     }
     Err(error) {
@@ -551,7 +534,7 @@ func findEven(list<int> xs) returns Optional<int> {
 }
 
 // Usage with inference
-let maybeEven = findEven([1, 3, 4, 7])  // inferred as Optional<int>
+Optional<int> maybeEven = findEven([1, 3, 4, 7])  // inferred as Optional<int>
 
 match maybeEven {
     Some(value) {
@@ -595,22 +578,22 @@ Mux supports C-like pointers with type inference:
 - `*T` denotes pointer to `T`
 - `&expr` takes address of `expr`
 - `*expr` dereferences pointer
-- Pointer arithmetic allowed on arrays
+- Pointer arithmetic allowed on lists
 
 ```
 int x = 10
-let p = &x        // inferred as int*
+int* p = &x
 print(*p)         // 10
 *p = 20
 print(x)          // 20
 
-let arr = [1, 2, 3, 4, 5]  // inferred as int[5]
-let q = arr                // inferred as int*
+Vec<int> arr = [1, 2, 3, 4, 5]  // inferred as int[5]
+auto q = arr                // inferred as int*
 q += 2
 print(*q)         // 3
 
 // Using underscore with pointers when values aren't needed
-let (_, secondPtr) = getPointerPair()  // first pointer ignored
+auto (_, secondPtr) = getPointerPair()  // first pointer ignored
 ```
 
 ---
@@ -622,8 +605,8 @@ import math
 import shapes.circle as circle
 
 // Usage with inference
-let pi = math.PI         // type inferred from math module
-let c = circle.new(5.0)  // type inferred from constructor
+float pi = math.PI         // type inferred from math module
+auto c = circle.new(5.0)  // type inferred from constructor
 
 // Import with unused alias for completeness
 import utils.logger as _  // imported but not directly used in this scope
@@ -638,7 +621,7 @@ import utils.logger as _  // imported but not directly used in this scope
 
 ## 15. Type Inference Guidelines
 
-### 15.1 When to Use `let`
+### 15.1 When to Use `auto`
 
 **Recommended:**
 
@@ -659,20 +642,20 @@ import utils.logger as _  // imported but not directly used in this scope
 ```
 // These require explicit types due to ambiguity
 list<int> empty = []           // empty collection needs explicit type
-let empty = list<int>()       // or explicit constructor
+auto empty = list<int>()       // or explicit constructor
 
 Result<int, str> pending    // uninitialized variables need explicit type
 
 // Generic instantiation may need explicit types
-let stack = Stack<int>()      // explicit generic parameter
-let pairs = zip<int, str>(numbers, names)  // when inference is ambiguous
+Stack<int> stack = Stack<int>()      // explicit generic parameter
+auto pairs = zip<int, str>(numbers, names)  // when inference is ambiguous
 ```
 
 ### 15.3 Using Underscore Effectively
 
 ```
 // Good uses of underscore
-let (first, _) = getTuple()           // ignore second element
+auto (first, _) = getTuple()           // ignore second element
 func process(int data, str _) { }  // ignore second parameter
 for _ in range(0, 10) { }            // ignore loop counter
 match result { Ok(_) { } }           // ignore success value
@@ -692,7 +675,7 @@ func calculate(int width, int height, float _) returns float { }
 ```
 import math
 
-const let PI = 3.14159  // inferred as float
+const float PI = 3.14159  // inferred as float
 
 enum MaybeValue<T> { 
     Some(T) 
@@ -713,7 +696,7 @@ class Circle is Shape {
 
 // Generic utility function
 func map[T, U](list<T> items, func(T) returns U transform) returns list<U> {
-    let result = list<U>()
+    auto result = list<U>()
     for item in items {
         result.append(transform(item))
     }
@@ -721,27 +704,27 @@ func map[T, U](list<T> items, func(T) returns U transform) returns list<U> {
 }
 
 func main() returns void {
-    let shapes = [Circle(2.0), Circle(3.5)]  // inferred as list<Circle>
+    auto shapes = [Circle(2.0), Circle(3.5)]  // inferred as list<Circle>
     
     for shape in shapes {
-        let area = shape.area()  // inferred as float
-        let message = "Area: " + area  // inferred as str
+        float area = shape.area()  // inferred as float
+        str message = "Area: " + area  // inferred as str
         print(message)
     }
     
     // Working with Results and inference
-    let results = list<Result<float, str>>()
+    auto results = list<Result<float, str>>()
     for shape in shapes {
-        let areaResult = Ok(shape.area())  // inferred as Result<float, str>
+        auto areaResult = Ok(shape.area())  // inferred as Result<float, str>
         results.append(areaResult)
     }
     
     // Using generics with inference and lambdas
-    let areas = map(shapes, func(let s) {
+    auto areas = map(shapes, func(Shape s) {
         return s.area()  // inferred as list<float>
     })
     
-    let descriptions = map(areas, func(let a) {
+    auto descriptions = map(areas, func(str a) {
         return "Area: " + a  // inferred as list<str>
     })
     
@@ -764,7 +747,7 @@ func main() returns void {
 The Mux compiler performs type inference during the semantic analysis phase:
 
 1. **Parse** the source code into an AST
-2. **Infer** types for `let` declarations based on initializer expressions
+2. **Infer** types for `auto` declarations based on initializer expressions
 3. **Resolve** generic type parameters and constraints
 4. **Check** type compatibility and enforce explicit typing rules
 5. **Generate** code with full type information

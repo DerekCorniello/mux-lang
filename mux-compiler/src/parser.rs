@@ -1,6 +1,4 @@
-use crate::lexer::{Span, Token, TokenType};
-use std::iter::Peekable;
-use std::slice::Iter;
+use crate::lexer::{Span, Token};
 
 impl std::error::Error for ParserError {}
 
@@ -64,7 +62,7 @@ impl ParserError {
             // Add error indicator
             if i == 0 {
                 let indent = max_line_num_len + self.span.col_start.saturating_sub(1);
-                let width = if start_line == end_line {
+                let _width = if start_line == end_line {
                     self.span.col_end.unwrap_or(self.span.col_start) - self.span.col_start
                 } else {
                     1
@@ -235,7 +233,7 @@ pub enum AstNode {
     },
     Let {
         name: String,
-        type_: Option<TypeNode>,
+        type_: TypeNode,  // No longer optional, must be a type or 'auto'
         value: ExpressionNode,
     },
 }
@@ -244,7 +242,7 @@ pub enum AstNode {
 pub enum StatementKind {
     Let {
         name: String,
-        type_: Option<TypeKind>,
+        type_: TypeKind,  // No longer optional, must be a type or 'auto'
         value: ExpressionNode,
     },
     Return(Option<ExpressionNode>),
@@ -335,6 +333,7 @@ pub enum PrimitiveType {
 
 #[derive(Debug, Clone)]
 pub enum TypeKind {
+    Auto,  // For type inference with 'auto' keyword
     Primitive(PrimitiveType),
     Named(String),
     Generic {
@@ -451,8 +450,7 @@ pub enum UnaryOp {
     Not,
 }
 
-fn parse_from_tokens(tokens: Vec<Token>) -> Vec<AstNode> {
+fn parse_from_tokens(_tokens: Vec<Token>) -> Vec<AstNode> {
     let parsed_result: Vec<AstNode> = Vec::new();
-
     parsed_result
 }

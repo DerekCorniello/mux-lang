@@ -42,7 +42,7 @@ impl Token {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
-    Let,
+    Auto,
     Func,
     Returns,
     Return,
@@ -391,7 +391,7 @@ impl<'a> Lexer<'a> {
                 }
                 start_span.complete(self.source.line, self.source.col);
                 let token_type = match ident.as_str() {
-                    "let" => TokenType::Let,
+                    "auto" => TokenType::Auto,
                     "func" => TokenType::Func,
                     "return" => TokenType::Return,
                     "returns" => TokenType::Returns,
@@ -647,11 +647,11 @@ mod tests {
     #[test]
     fn test_position_tracking_across_lines() {
         // Test a more complex example across multiple lines
-        let input = "let x = 42\nfunc test() {\n  return x\n}";
+        let input = "auto x = 42\nfunc test() {\n  return x\n}";
         let mut source = Source::from_test_str(input);
         let mut lexer = Lexer::new(&mut source);
 
-        assert_eq!(lexer.next_token().unwrap().token_type, TokenType::Let);
+        assert_eq!(lexer.next_token().unwrap().token_type, TokenType::Auto);
         assert_eq!(
             lexer.next_token().unwrap().token_type,
             TokenType::Id("x".to_string())
@@ -693,7 +693,7 @@ mod tests {
     #[test]
     fn test_error_positions_with_actual_positions() {
         // Test char literal with multiple characters
-        let mut source = Source::from_test_str("let x = 'ab'");
+        let mut source = Source::from_test_str("auto x = 'ab'");
         let mut lexer = Lexer::new(&mut source);
         let result = lexer.lex_all();
         assert!(
@@ -702,7 +702,7 @@ mod tests {
         );
         let error = result.unwrap_err();
         assert!(
-            error.contains("char literal must be exactly one character at line 1, column 10"),
+            error.contains("char literal must be exactly one character at line 1, column 11"),
             "Error should be about char literal length, got: {}",
             error
         );
@@ -921,7 +921,7 @@ world"
 
     #[test]
     fn test_keywords_and_identifiers() {
-        let input = "let x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false and or";
+        let input = "auto x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false and or";
         let mut source = Source::from_test_str(input);
         let mut lexer = Lexer::new(&mut source);
         let tokens: Vec<_> = lexer.lex_all().unwrap().into_iter().collect();
@@ -930,7 +930,7 @@ world"
 
         match &token_types[..] {
             [
-                TokenType::Let,
+                TokenType::Auto,
                 TokenType::Id(x),
                 TokenType::Eq,
                 TokenType::Int(42),

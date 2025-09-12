@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Functions and lambdas\nfunc add(int a, int b) returns int {\n    return a + b\n}\n\nfunc greet(string name, int times = 1) returns void {\n    for i in range(0, times) { print(\"Hello \" + name) }\n}\n\n// Lambda examples\nlet square = func(int n) { return n * n }\nlet doubled = func(let x) { return x * 2 }\n"
+"// Generics\nfunc max[T comparable](T a, T b) returns T { if a > b { return a } return b }\n\nclass Stack[T] {\n    list<T> items\n    func push(T item) returns void { items.append(item) }\n    func pop() returns Optional<T> {\n        if items.isEmpty() { return None }\n        return Some(items.removeLast())\n    }\n}\n\nauto s = Stack<int>()\ns.push(42)\n"

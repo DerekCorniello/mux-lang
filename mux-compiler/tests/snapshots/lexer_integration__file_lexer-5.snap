@@ -4,197 +4,53 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Generics",
+        "Imports",
     ),
     NewLine,
-    Func,
     Id(
-        "max",
-    ),
-    OpenBracket,
-    Id(
-        "T",
+        "import",
     ),
     Id(
-        "comparable",
-    ),
-    CloseBracket,
-    OpenParen,
-    Id(
-        "T",
-    ),
-    Id(
-        "a",
-    ),
-    Comma,
-    Id(
-        "T",
-    ),
-    Id(
-        "b",
-    ),
-    CloseParen,
-    Returns,
-    Id(
-        "T",
-    ),
-    OpenBrace,
-    If,
-    Id(
-        "a",
-    ),
-    Gt,
-    Id(
-        "b",
-    ),
-    OpenBrace,
-    Return,
-    Id(
-        "a",
-    ),
-    CloseBrace,
-    Return,
-    Id(
-        "b",
-    ),
-    CloseBrace,
-    NewLine,
-    NewLine,
-    Class,
-    Id(
-        "Stack",
-    ),
-    OpenBracket,
-    Id(
-        "T",
-    ),
-    CloseBracket,
-    OpenBrace,
-    NewLine,
-    Id(
-        "list",
-    ),
-    Lt,
-    Id(
-        "T",
-    ),
-    Gt,
-    Id(
-        "items",
+        "math",
     ),
     NewLine,
-    Func,
     Id(
-        "push",
-    ),
-    OpenParen,
-    Id(
-        "T",
+        "import",
     ),
     Id(
-        "item",
-    ),
-    CloseParen,
-    Returns,
-    Id(
-        "void",
-    ),
-    OpenBrace,
-    Id(
-        "items",
+        "utils",
     ),
     Dot,
     Id(
-        "append",
+        "logger",
     ),
-    OpenParen,
-    Id(
-        "item",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    Func,
-    Id(
-        "pop",
-    ),
-    OpenParen,
-    CloseParen,
-    Returns,
-    Id(
-        "Optional",
-    ),
-    Lt,
-    Id(
-        "T",
-    ),
-    Gt,
-    OpenBrace,
-    NewLine,
-    If,
-    Id(
-        "items",
-    ),
-    Dot,
-    Id(
-        "isEmpty",
-    ),
-    OpenParen,
-    CloseParen,
-    OpenBrace,
-    Return,
-    Id(
-        "None",
-    ),
-    CloseBrace,
-    NewLine,
-    Return,
-    Id(
-        "Some",
-    ),
-    OpenParen,
-    Id(
-        "items",
-    ),
-    Dot,
-    Id(
-        "removeLast",
-    ),
-    OpenParen,
-    CloseParen,
-    CloseParen,
-    NewLine,
-    CloseBrace,
-    NewLine,
-    CloseBrace,
+    As,
+    Underscore,
     NewLine,
     NewLine,
-    Let,
+    Auto,
     Id(
-        "s",
+        "pi",
     ),
     Eq,
     Id(
-        "Stack",
-    ),
-    Lt,
-    Id(
-        "int",
-    ),
-    Gt,
-    OpenParen,
-    CloseParen,
-    NewLine,
-    Id(
-        "s",
+        "math",
     ),
     Dot,
     Id(
-        "push",
+        "PI",
+    ),
+    NewLine,
+    Id(
+        "print",
     ),
     OpenParen,
-    Int(
-        42,
+    Str(
+        "PI = ",
+    ),
+    Plus,
+    Id(
+        "pi",
     ),
     CloseParen,
     NewLine,

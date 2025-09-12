@@ -13,12 +13,12 @@ fn test_file_lexer() {
         (
             "collections.mux",
             vec![
-                TokenType::LineComment("Collections".to_string()), TokenType::NewLine,
-                TokenType::Let, TokenType::Id("nums".to_string()), TokenType::Eq, TokenType::OpenBracket, TokenType::Int(1), TokenType::Comma, TokenType::Int(2), TokenType::Comma, TokenType::Int(3), TokenType::Comma, TokenType::Int(4), TokenType::CloseBracket, TokenType::NewLine,
-                TokenType::Let, TokenType::Id("scores".to_string()), TokenType::Eq, TokenType::OpenBrace, TokenType::Str("Alice".to_string()), TokenType::Colon, TokenType::Int(90), TokenType::Comma, TokenType::Str("Bob".to_string()), TokenType::Colon, TokenType::Int(85), TokenType::CloseBrace, TokenType::NewLine,
-                TokenType::Let, TokenType::Id("matrix".to_string()), TokenType::Eq, TokenType::OpenBracket, TokenType::OpenBracket, TokenType::Int(1), TokenType::Comma, TokenType::Int(2), TokenType::CloseBracket, TokenType::Comma, TokenType::OpenBracket, TokenType::Int(3), TokenType::Comma, TokenType::Int(4), TokenType::CloseBracket, TokenType::CloseBracket, TokenType::NewLine,
-                TokenType::Let, TokenType::Id("emptyList".to_string()), TokenType::Eq, TokenType::Id("list".to_string()), TokenType::Lt, TokenType::Id("int".to_string()), TokenType::Gt, TokenType::OpenParen, TokenType::CloseParen, TokenType::NewLine,
-                TokenType::Let, TokenType::Id("emptyMap".to_string()), TokenType::Eq, TokenType::Id("map".to_string()), TokenType::Lt, TokenType::Id("string".to_string()), TokenType::Comma, TokenType::Id("int".to_string()), TokenType::Gt, TokenType::OpenParen, TokenType::CloseParen, TokenType::NewLine,
+                LineComment("Collections".to_string()), NewLine,
+                Auto, Id("nums".to_string()), Eq, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), Comma, Int(4), CloseBracket, NewLine,
+                Auto, Id("scores".to_string()), Eq, Id("map".to_string()), Lt, Id("string".to_string()), Comma, Id("int".to_string()), Gt, OpenBrace, Str("Alice".to_string()), Colon, Int(90), Comma, Str("Bob".to_string()), Colon, Int(85), CloseBrace, NewLine,
+                Auto, Id("matrix".to_string()), Eq, OpenBracket, OpenBracket, Int(1), Comma, Int(2), CloseBracket, Comma, OpenBracket, Int(3), Comma, Int(4), CloseBracket, CloseBracket, NewLine,
+                Auto, Id("emptyList".to_string()), Eq, Id("list".to_string()), Lt, Id("int".to_string()), Gt, OpenParen, CloseParen, NewLine,
+                Auto, Id("emptyMap".to_string()), Eq, Id("map".to_string()), Lt, Id("string".to_string()), Comma, Id("int".to_string()), Gt, OpenParen, CloseParen, NewLine,
             ]
 
         ),
@@ -26,7 +26,7 @@ fn test_file_lexer() {
             "control_flow.mux",
             vec![
                 LineComment("Control flow".to_string()), NewLine,
-                Let, Id("x".to_string()), Eq, Int(5), NewLine,
+                Auto, Id("x".to_string()), Eq, Int(5), NewLine,
                 If, Id("x".to_string()), Gt, Int(0), OpenBrace, Id("print".to_string()), OpenParen, Str("Positive".to_string()), CloseParen, CloseBrace,
                 Else, OpenBrace, Id("print".to_string()), OpenParen, Str("Non-positive".to_string()), CloseParen, CloseBrace, NewLine, NewLine,
                 Match, Id("Some".to_string()), OpenParen, Int(15), CloseParen, OpenBrace, NewLine,
@@ -90,12 +90,12 @@ fn test_file_lexer() {
                 CloseBrace, NewLine, NewLine,
                 
                 LineComment("Lambda examples".to_string()), NewLine,
-                Let, Id("square".to_string()), Eq, 
+                Auto, Id("square".to_string()), Eq, 
                     Func, OpenParen, Id("int".to_string()), Id("n".to_string()), CloseParen, 
                     OpenBrace, Return, Id("n".to_string()), Star, Id("n".to_string()), CloseBrace, NewLine,
                     
-                Let, Id("doubled".to_string()), Eq, 
-                    Func, OpenParen, Let, Id("x".to_string()), CloseParen, 
+                Auto, Id("doubled".to_string()), Eq, 
+                    Func, OpenParen, Auto, Id("x".to_string()), CloseParen, 
                     OpenBrace, Return, Id("x".to_string()), Star, Int(2), CloseBrace, NewLine,
             ]
         ),
@@ -131,7 +131,7 @@ fn test_file_lexer() {
                         NewLine, CloseBrace, NewLine,
                 CloseBrace, NewLine, NewLine,
 
-                Let, Id("s".to_string()), Eq, Id("Stack".to_string()), Lt, Id("int".to_string()), Gt, OpenParen, CloseParen, NewLine,
+                Auto, Id("s".to_string()), Eq, Id("Stack".to_string()), Lt, Id("int".to_string()), Gt, OpenParen, CloseParen, NewLine,
                 Id("s".to_string()), Dot, Id("push".to_string()), OpenParen, Int(42), CloseParen, NewLine,
             ],
         ),
@@ -143,7 +143,7 @@ fn test_file_lexer() {
                 Id("import".to_string()), Id("math".to_string()), NewLine,
                 Id("import".to_string()), Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
 
-                Let, Id("pi".to_string()), Eq, Id("math".to_string()), Dot, Id("PI".to_string()), NewLine,
+                Auto, Id("pi".to_string()), Eq, Id("math".to_string()), Dot, Id("PI".to_string()), NewLine,
                 Id("print".to_string()), OpenParen, Str("PI = ".to_string()), Plus, Id("pi".to_string()), CloseParen, NewLine,
             ],
         ),
@@ -159,7 +159,7 @@ fn test_file_lexer() {
                     Return, Id("Ok".to_string()), OpenParen, Id("a".to_string()), Slash, Id("b".to_string()), CloseParen, NewLine,
                 CloseBrace, NewLine, NewLine,
 
-                Let, Id("res".to_string()), Eq, Id("divide".to_string()), OpenParen, Int(10), Comma, Int(2), CloseParen, NewLine,
+                Auto, Id("res".to_string()), Eq, Id("divide".to_string()), OpenParen, Int(10), Comma, Int(2), CloseParen, NewLine,
                 Match, Id("res".to_string()), OpenBrace, NewLine,
                     Id("Ok".to_string()), OpenParen, Id("v".to_string()), CloseParen, OpenBrace, Id("print".to_string()), OpenParen, Str("Result: ".to_string()), Plus, Id("v".to_string()), CloseParen, CloseBrace, NewLine,
                     Id("Err".to_string()), OpenParen, Id("e".to_string()), CloseParen, OpenBrace, Id("print".to_string()), OpenParen, Str("Error: ".to_string()), Plus, Id("e".to_string()), CloseParen, CloseBrace, NewLine,
@@ -182,13 +182,13 @@ fn test_file_lexer() {
             vec![
                 LineComment("Pointers".to_string()), NewLine,
                 Id("int".to_string()), Id("val".to_string()), Eq, Int(10), NewLine,
-                Let, Id("p".to_string()), Eq, Ampersand, Id("val".to_string()), NewLine,
+                Auto, Id("p".to_string()), Eq, Ampersand, Id("val".to_string()), NewLine,
                 Id("print".to_string()), OpenParen, Star, Id("p".to_string()), CloseParen, NewLine,
                 Star, Id("p".to_string()), Eq, Int(20), NewLine,
                 Id("print".to_string()), OpenParen, Id("val".to_string()), CloseParen, NewLine, NewLine,
 
-                Let, Id("arr".to_string()), Eq, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, NewLine,
-                Let, Id("q".to_string()), Eq, Id("arr".to_string()), NewLine,
+                Auto, Id("arr".to_string()), Eq, Id("list".to_string()), Lt, Id("int".to_string()), Gt, OpenParen, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, CloseParen, NewLine,
+                Auto, Id("q".to_string()), Eq, Id("arr".to_string()), NewLine,
                 Id("q".to_string()), PlusEq, Int(1), NewLine,
                 Id("print".to_string()), OpenParen, Star, Id("q".to_string()), CloseParen, NewLine,
             ],
@@ -200,11 +200,11 @@ fn test_file_lexer() {
                 LineComment("Variable declarations and type inference".to_string()), NewLine,
                 Const, Id("int".to_string()), Id("MAX".to_string()), Eq, Int(100), NewLine,
                 Id("int".to_string()), Id("explicit".to_string()), Eq, Int(42), NewLine,
-                Let, Id("inferred".to_string()), Eq, Float(OrderedFloat(4.89)), NewLine,
-                Let, Id("name".to_string()), Eq, Str("Mux".to_string()), NewLine, NewLine,
-                Let, OpenParen, Id("x".to_string()), Comma, Underscore, CloseParen, Eq, OpenParen, Int(1), Comma, Int(2), CloseParen, LineComment("underscore usage".to_string()), NewLine,
-                Let, Id("flag".to_string()), Eq, Bool(true), NewLine,
-                Let, Id("otherflag".to_string()), Eq, Bool(false), NewLine,
+                Auto, Id("inferred".to_string()), Eq, Float(OrderedFloat(4.89)), NewLine,
+                Auto, Id("name".to_string()), Eq, Str("Mux".to_string()), NewLine, NewLine,
+                Auto, OpenParen, Id("x".to_string()), Comma, Underscore, CloseParen, Eq, OpenParen, Int(1), Comma, Int(2), CloseParen, LineComment("underscore usage".to_string()), NewLine,
+                Auto, Id("flag".to_string()), Eq, Bool(true), NewLine,
+                Auto, Id("otherflag".to_string()), Eq, Bool(false), NewLine,
             ],
         ),
         (
@@ -214,8 +214,8 @@ fn test_file_lexer() {
                 Id("import".to_string()), Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
 
                 Const, Id("int".to_string()), Id("MAX".to_string()), Eq, Int(100), NewLine,
-                Let, Id("flt".to_string()), Eq, Float(OrderedFloat(7.82)), NewLine,
-                Let, Id("message".to_string()), Eq, Str("Mux Parser Test".to_string()), NewLine, NewLine,
+                Auto, Id("flt".to_string()), Eq, Float(OrderedFloat(7.82)), NewLine,
+                Auto, Id("message".to_string()), Eq, Str("Mux Parser Test".to_string()), NewLine, NewLine,
 
                 Enum, Id("Shape".to_string()), OpenBrace, Id("Circle".to_string()), OpenParen, Id("float".to_string()), Id("radius".to_string()), CloseParen, Comma, Id("Rectangle".to_string()), OpenParen, Id("float".to_string()), Id("width".to_string()), Comma, Id("float".to_string()), Id("height".to_string()), CloseParen, Comma, Id("Square".to_string()), OpenParen, Id("float".to_string()), Id("size".to_string()), CloseParen, CloseBrace, NewLine, NewLine,
 
@@ -243,24 +243,24 @@ fn test_file_lexer() {
                 Return, Id("Ok".to_string()), OpenParen, Id("a".to_string()), Slash, Id("b".to_string()), CloseParen, NewLine,
                 CloseBrace, NewLine,
                 Func, Id("findEven".to_string()), OpenParen, Id("list".to_string()), Lt, Id("int".to_string()), Gt, Id("nums".to_string()), CloseParen, Returns, Id("Optional".to_string()), Lt, Id("int".to_string()), Gt, OpenBrace, NewLine,
-                For, Let, Id("n".to_string()), In, Id("nums".to_string()), OpenBrace, If, Id("n".to_string()), Percent, Int(2), EqEq, Int(0), OpenBrace, Return, Id("Some".to_string()), OpenParen, Id("n".to_string()), CloseParen, CloseBrace, CloseBrace, NewLine,
+                For, Id("n".to_string()), In, Id("nums".to_string()), OpenBrace, If, Id("n".to_string()), Percent, Int(2), EqEq, Int(0), OpenBrace, Return, Id("Some".to_string()), OpenParen, Id("n".to_string()), CloseParen, CloseBrace, CloseBrace, NewLine,
                 CloseBrace, NewLine, NewLine,
 
                 Func, Id("map".to_string()), OpenBracket, Id("T".to_string()), Comma, Id("U".to_string()), CloseBracket, OpenParen, Id("list".to_string()), Lt, Id("T".to_string()), Gt, Id("items".to_string()), Comma, Func, OpenParen, Id("T".to_string()), CloseParen, Returns, Id("U".to_string()), Id("transform".to_string()), CloseParen, Returns, Id("list".to_string()), Lt, Id("U".to_string()), Gt, OpenBrace, NewLine,
-                Let, Id("out".to_string()), Eq, Id("list".to_string()), Lt, Id("U".to_string()), Gt, OpenParen, CloseParen, NewLine,
+                Auto, Id("out".to_string()), Eq, Id("list".to_string()), Lt, Id("U".to_string()), Gt, OpenParen, CloseParen, NewLine,
                 For, Id("item".to_string()), In, Id("items".to_string()), OpenBrace, Id("out".to_string()), Dot, Id("append".to_string()), OpenParen, Id("transform".to_string()), OpenParen, Id("item".to_string()), CloseParen, CloseParen, CloseBrace, NewLine,
                 Return, Id("out".to_string()), NewLine,
                 CloseBrace, NewLine, NewLine,
 
                 Func, Id("main".to_string()), OpenParen, CloseParen, Returns, Id("void".to_string()), OpenBrace, NewLine,
-                Let, Id("explicit".to_string()), Eq, Int(10), NewLine,
-                Let, Id("inferred".to_string()), Eq, Int(42), NewLine,
-                Let, Id("floatVal".to_string()), Eq, Float(OrderedFloat(9.4)), NewLine,
-                Let, OpenParen, Id("a".to_string()), Comma, Underscore, CloseParen, Eq, OpenParen, Int(1), Comma, Int(2), CloseParen, NewLine, NewLine,
+                Auto, Id("explicit".to_string()), Eq, Int(10), NewLine,
+                Auto, Id("inferred".to_string()), Eq, Int(42), NewLine,
+                Auto, Id("floatVal".to_string()), Eq, Float(OrderedFloat(9.4)), NewLine,
+                Auto, OpenParen, Id("a".to_string()), Comma, Underscore, CloseParen, Eq, OpenParen, Int(1), Comma, Int(2), CloseParen, NewLine, NewLine,
 
                 If, Id("inferred".to_string()), Gt, Int(40), OpenBrace, Id("print".to_string()), OpenParen, Str("Big number".to_string()), CloseParen, CloseBrace, Else, OpenBrace, Id("print".to_string()), OpenParen, Str("Small number".to_string()), CloseParen, CloseBrace, NewLine,
  NewLine,
-                Let, Id("maybeNum".to_string()), Eq, Id("Some".to_string()), OpenParen, Int(15), CloseParen, NewLine,
+                Auto, Id("maybeNum".to_string()), Eq, Id("Some".to_string()), OpenParen, Int(15), CloseParen, NewLine,
                 Match, Id("maybeNum".to_string()), OpenBrace, NewLine,
                 Id("Some".to_string()), OpenParen, Id("v".to_string()), CloseParen, If, Id("v".to_string()), Gt, Int(10), OpenBrace, Id("print".to_string()), OpenParen, Str("Large value: ".to_string()), Plus, Id("v".to_string()), CloseParen, CloseBrace, NewLine,
                 Id("Some".to_string()), OpenParen, Id("v".to_string()), CloseParen, OpenBrace, Id("print".to_string()), OpenParen, Str("Small value: ".to_string()), Plus, Id("v".to_string()), CloseParen, CloseBrace, NewLine,
@@ -268,27 +268,27 @@ fn test_file_lexer() {
                 Underscore, OpenBrace, Id("print".to_string()), OpenParen, Str("Unexpected".to_string()), CloseParen, CloseBrace, NewLine,
                 CloseBrace, NewLine, NewLine,
 
-                Let, Id("nums".to_string()), Eq, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, NewLine,
-                Let, Id("shapes".to_string()), Eq, OpenBracket, Id("Circle".to_string()), OpenParen, Float(OrderedFloat(2.0)), CloseParen, Comma, Id("Circle".to_string()), OpenParen, Float(OrderedFloat(3.5)), CloseParen, CloseBracket, NewLine,
+                Auto, Id("nums".to_string()), Eq, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, NewLine,
+                Auto, Id("shapes".to_string()), Eq, OpenBracket, Id("Circle".to_string()), OpenParen, Float(OrderedFloat(2.0)), CloseParen, Comma, Id("Circle".to_string()), OpenParen, Float(OrderedFloat(3.5)), CloseParen, CloseBracket, NewLine,
                 For, Id("shape".to_string()), In, Id("shapes".to_string()), OpenBrace, Id("shape".to_string()), Dot, Id("draw".to_string()), OpenParen, CloseParen, CloseBrace, NewLine, NewLine,
 
-                Let, Id("maximum".to_string()), Eq, Id("max".to_string()), OpenParen, Int(7), Comma, Int(12), CloseParen, NewLine,
-                Let, Id("stack".to_string()), Eq, Id("Stack".to_string()), Lt, Id("int".to_string()), Gt, OpenParen, CloseParen, NewLine,
+                Auto, Id("maximum".to_string()), Eq, Id("max".to_string()), OpenParen, Int(7), Comma, Int(12), CloseParen, NewLine,
+                Auto, Id("stack".to_string()), Eq, Id("Stack".to_string()), Lt, Id("int".to_string()), Gt, OpenParen, CloseParen, NewLine,
                 Id("stack".to_string()), Dot, Id("push".to_string()), OpenParen, Int(99), CloseParen, NewLine,
-                Let, Id("popped".to_string()), Eq, Id("stack".to_string()), Dot, Id("pop".to_string()), OpenParen, CloseParen, NewLine, NewLine,
+                Auto, Id("popped".to_string()), Eq, Id("stack".to_string()), Dot, Id("pop".to_string()), OpenParen, CloseParen, NewLine, NewLine,
 
-                Let, Id("res".to_string()), Eq, Id("divide".to_string()), OpenParen, Int(10), Comma, Int(2), CloseParen, NewLine,
+                Auto, Id("res".to_string()), Eq, Id("divide".to_string()), OpenParen, Int(10), Comma, Int(2), CloseParen, NewLine,
                 Match, Id("res".to_string()), OpenBrace, Id("Ok".to_string()), OpenParen, Id("v".to_string()), CloseParen, OpenBrace, Id("print".to_string()), OpenParen, Id("v".to_string()), CloseParen, CloseBrace, Id("Err".to_string()), OpenParen, Id("e".to_string()), CloseParen, OpenBrace, Id("print".to_string()), OpenParen, Id("e".to_string()), CloseParen, CloseBrace, CloseBrace, NewLine, NewLine,
 
-                Let, Id("maybeEven".to_string()), Eq, Id("findEven".to_string()), OpenParen, OpenBracket, Int(1), Comma, Int(3), Comma, Int(4), Comma, Int(7), CloseBracket, CloseParen, NewLine,
+                Auto, Id("maybeEven".to_string()), Eq, Id("findEven".to_string()), OpenParen, OpenBracket, Int(1), Comma, Int(3), Comma, Int(4), Comma, Int(7), CloseBracket, CloseParen, NewLine,
                 Match, Id("maybeEven".to_string()), OpenBrace, Id("Some".to_string()), OpenParen, Id("v".to_string()), CloseParen, OpenBrace, Id("print".to_string()), OpenParen, Id("v".to_string()), CloseParen, CloseBrace, Id("None".to_string()), OpenBrace, Id("print".to_string()), OpenParen, Str("None".to_string()), CloseParen, CloseBrace, CloseBrace, NewLine, NewLine,
 
-                Let, Id("square".to_string()), Eq, Func, OpenParen, Id("int".to_string()), Id("n".to_string()), CloseParen, OpenBrace, Return, Id("n".to_string()), Star, Id("n".to_string()), CloseBrace, NewLine,
-                Let, Id("doubled".to_string()), Eq, Id("map".to_string()), OpenParen, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, Comma, Func, OpenParen, Let, Id("x".to_string()), CloseParen, OpenBrace, Return, Id("x".to_string()), Star, Int(2), CloseBrace, CloseParen, NewLine,
-                Let, Id("squared".to_string()), Eq, Id("map".to_string()), OpenParen, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, Comma, Id("square".to_string()), CloseParen, NewLine, NewLine,
+                Auto, Id("square".to_string()), Eq, Func, OpenParen, Id("int".to_string()), Id("n".to_string()), CloseParen, OpenBrace, Return, Id("n".to_string()), Star, Id("n".to_string()), CloseBrace, NewLine,
+                Auto, Id("doubled".to_string()), Eq, Id("map".to_string()), OpenParen, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, Comma, Func, OpenParen, Auto, Id("x".to_string()), CloseParen, OpenBrace, Return, Id("x".to_string()), Star, Int(2), CloseBrace, CloseParen, NewLine,
+                Auto, Id("squared".to_string()), Eq, Id("map".to_string()), OpenParen, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, Comma, Id("square".to_string()), CloseParen, NewLine, NewLine,
 
                 Id("int".to_string()), Id("val".to_string()), Eq, Int(10), NewLine,
-                Let, Id("p".to_string()), Eq, Ampersand, Id("val".to_string()), NewLine,
+                Auto, Id("p".to_string()), Eq, Ampersand, Id("val".to_string()), NewLine,
                 Star, Id("p".to_string()), Eq, Int(20), NewLine,
                 CloseBrace, NewLine,
             ],
