@@ -1,5 +1,5 @@
-use crate::lexer::{Span, Token};
-
+use crate::lexer::{Span, Token, TokenType};
+use ordered_float::OrderedFloat;
 impl std::error::Error for ParserError {}
 
 pub type ParserResult<T> = Result<T, ParserError>;
@@ -62,11 +62,6 @@ impl ParserError {
             // Add error indicator
             if i == 0 {
                 let indent = max_line_num_len + self.span.col_start.saturating_sub(1);
-                let _width = if start_line == end_line {
-                    self.span.col_end.unwrap_or(self.span.col_start) - self.span.col_start
-                } else {
-                    1
-                };
                 message.push_str(&format!("{}^~\n", " ".repeat(indent)));
             }
         }
@@ -370,10 +365,34 @@ pub struct TraitBound {
 
 #[derive(Debug, Clone)]
 pub enum LiteralNode {
-    Number(f64),
+    Float(OrderedFloat<f64>),
+    Integer(i64),
     String(String),
     Boolean(bool),
     Char(char),
+}
+
+impl LiteralNode {
+    pub fn parse(token: Token) -> Result<LiteralNode, ParserError> {
+        match token.token_type {
+            TokenType::Char(char) => {
+                Ok (LiteralNode::Char(char))
+            }
+            TokenType::Str(str) => {
+                Ok (LiteralNode::String(str))
+            }
+            TokenType::Int(integer) => {
+                Ok (LiteralNode::Integer(integer))
+            }
+            TokenType::Float(float) => {
+                Ok (LiteralNode::Float(float))
+            }
+            TokenType::Bool(bool) => {
+                Ok (LiteralNode::Boolean(bool))
+            }
+            _ => {Err (ParserError{message: format!("Invalid literal token: {:?}", token.token_type).to_string(), span: token.span})}
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
