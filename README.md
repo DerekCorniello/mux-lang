@@ -91,7 +91,7 @@ struct Pair[T, U] {
 }
 
 // Generic interface with type constraints
-interface Container[T any] {
+interface Container[T] {
     func add(T item) returns void
     func get(int index) returns T
     func size() returns int
@@ -109,7 +109,6 @@ interface Numeric {
 
 // Built-in constraint aliases
 // comparable - types that support == and !=
-// any - any type (equivalent to no constraint)
 ```
 
 ### 3.4 Generic Type Constraints
@@ -175,7 +174,7 @@ auto name = "Mux"    // inferred as str
 // Explicit type annotation
 int count = 0
 list[str] names = []
-map[str, any] user = {"name": "Alice", "age": 30}
+map[str, str | int] user = {"name": "Alice", "age": 30}
 
 // Valid inference
 auto value = someFunction()
