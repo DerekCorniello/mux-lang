@@ -1,5 +1,49 @@
 use crate::lexer::{Span, Token, TokenType};
 use ordered_float::OrderedFloat;
+
+#[derive(Debug)]
+pub struct Parser<'a> {
+    tokens: &'a [Token],
+    current: usize,
+}
+
+impl<'a> Parser<'a> {
+    pub fn new(tokens: &'a [Token], source: &'a str) -> Self {
+        Self { tokens, current: 0 }
+    }
+
+    pub fn parse(&mut self) -> ParserResult<Vec<AstNode>> {
+        let mut nodes = Vec::new();
+        while !self.is_at_end() {
+            todo!("parsing will happen here");
+        }
+        Ok(nodes)
+    }
+
+    fn is_at_end(&self) -> bool {
+        self.current >= self.tokens.len()
+    }
+
+    fn peek(&self) -> &Token {
+        &self.tokens[self.current]
+    }
+
+    fn consume(&mut self) -> &Token {
+        let ret = &self.tokens[self.current];
+        self.current += 1;
+        ret
+    }
+
+    fn consume_until(&mut self, token_type: TokenType) -> &[Token] {
+        let start = self.current;
+        while !self.is_at_end() && self.peek().token_type != token_type {
+            self.consume();
+        }
+        let end = self.current;
+        &self.tokens[start..end]
+    }
+}
+
 impl std::error::Error for ParserError {}
 
 pub type ParserResult<T> = Result<T, ParserError>;
@@ -228,7 +272,7 @@ pub enum AstNode {
     },
     Let {
         name: String,
-        type_: TypeNode,  // No longer optional, must be a type or 'auto'
+        type_: TypeNode,
         value: ExpressionNode,
     },
 }
@@ -237,7 +281,7 @@ pub enum AstNode {
 pub enum StatementKind {
     Let {
         name: String,
-        type_: TypeKind,  // No longer optional, must be a type or 'auto'
+        type_: TypeKind,
         value: ExpressionNode,
     },
     Return(Option<ExpressionNode>),
@@ -309,6 +353,274 @@ pub enum ExpressionKind {
     },
 }
 
+impl From<(Box<ExpressionNode>, BinaryOp, Box<ExpressionNode>)> for ExpressionKind {
+    fn from(value: (Box<ExpressionNode>, BinaryOp, Box<ExpressionNode>)) -> Self {
+        ExpressionKind::Binary {
+            left: value.0,
+            op: value.1,
+            right: value.2,
+        }
+    }
+}
+
+impl From<(UnaryOp, Box<ExpressionNode>)> for ExpressionKind {
+    fn from((op, expr): (UnaryOp, Box<ExpressionNode>)) -> Self {
+        ExpressionKind::Unary { op, expr }
+    }
+}
+
+impl From<(Box<ExpressionNode>, String)> for ExpressionKind {
+    fn from((expr, field): (Box<ExpressionNode>, String)) -> Self {
+        ExpressionKind::FieldAccess { expr, field }
+    }
+}
+
+impl From<(Box<ExpressionNode>, Box<ExpressionNode>)> for ExpressionKind {
+    fn from((expr, index): (Box<ExpressionNode>, Box<ExpressionNode>)) -> Self {
+        ExpressionKind::ArrayAccess { expr, index }
+    }
+}
+
+impl From<LiteralNode> for ExpressionKind {
+    fn from(lit: LiteralNode) -> Self {
+        ExpressionKind::Literal(lit)
+    }
+}
+
+impl From<OrderedFloat<f64>> for LiteralNode {
+    fn from(f: OrderedFloat<f64>) -> Self {
+        LiteralNode::Float(f)
+    }
+}
+
+impl From<i64> for LiteralNode {
+    fn from(i: i64) -> Self {
+        LiteralNode::Integer(i)
+    }
+}
+
+impl From<String> for LiteralNode {
+    fn from(s: String) -> Self {
+        LiteralNode::String(s)
+    }
+}
+
+impl From<&str> for LiteralNode {
+    fn from(s: &str) -> Self {
+        LiteralNode::String(s.to_string())
+    }
+}
+
+impl From<bool> for LiteralNode {
+    fn from(b: bool) -> Self {
+        LiteralNode::Boolean(b)
+    }
+}
+
+impl From<char> for LiteralNode {
+    fn from(c: char) -> Self {
+        LiteralNode::Char(c)
+    }
+}
+
+impl From<String> for ExpressionKind {
+    fn from(ident: String) -> Self {
+        ExpressionKind::Identifier(ident)
+    }
+}
+
+impl From<&str> for ExpressionNode {
+    fn from(ident: &str) -> Self {
+        ExpressionNode {
+            kind: ExpressionKind::Identifier(ident.to_string()),
+            span: Span::new(0, 0),
+        }
+    }
+}
+
+impl From<String> for ExpressionNode {
+    fn from(ident: String) -> Self {
+        ExpressionNode {
+            kind: ExpressionKind::Identifier(ident),
+            span: Span::new(0, 0),
+        }
+    }
+}
+
+impl From<LiteralNode> for ExpressionNode {
+    fn from(lit: LiteralNode) -> Self {
+        ExpressionNode {
+            kind: ExpressionKind::Literal(lit),
+            span: Span::new(0, 0),
+        }
+    }
+}
+
+impl From<&str> for ExpressionKind {
+    fn from(ident: &str) -> Self {
+        ExpressionKind::Identifier(ident.to_string())
+    }
+}
+
+impl From<ExpressionNode> for StatementKind {
+    fn from(expr: ExpressionNode) -> Self {
+        StatementKind::Expression(expr)
+    }
+}
+
+impl From<ExpressionNode> for StatementNode {
+    fn from(expr: ExpressionNode) -> Self {
+        StatementNode {
+            kind: expr.to_owned().into(),
+            span: expr.span,
+        }
+    }
+}
+
+impl From<StatementKind> for StatementNode {
+    fn from(kind: StatementKind) -> Self {
+        StatementNode {
+            kind,
+            span: Span::new(0, 0),
+        }
+    }
+}
+
+impl From<ExpressionNode> for Vec<StatementNode> {
+    fn from(expr: ExpressionNode) -> Self {
+        vec![StatementNode {
+            kind: StatementKind::Expression(expr.to_owned()),
+            span: expr.span,
+        }]
+    }
+}
+
+impl From<Vec<StatementNode>> for StatementKind {
+    fn from(stmts: Vec<StatementNode>) -> Self {
+        StatementKind::Block(stmts)
+    }
+}
+
+impl From<PrimitiveType> for TypeKind {
+    fn from(prim: PrimitiveType) -> Self {
+        TypeKind::Primitive(prim)
+    }
+}
+
+impl From<&str> for TypeNode {
+    fn from(s: &str) -> Self {
+        TypeNode {
+            kind: TypeKind::Named(s.to_string()),
+            span: Span::new(0, 0),
+        }
+    }
+}
+
+impl From<String> for TypeNode {
+    fn from(s: String) -> Self {
+        TypeNode {
+            kind: TypeKind::Named(s),
+            span: Span::new(0, 0),
+        }
+    }
+}
+
+impl From<PrimitiveType> for TypeNode {
+    fn from(prim: PrimitiveType) -> Self {
+        TypeNode {
+            kind: prim.into(),
+            span: Span::new(0, 0),
+        }
+    }
+}
+
+impl From<&str> for TypeKind {
+    fn from(s: &str) -> Self {
+        TypeKind::Named(s.to_string())
+    }
+}
+
+impl From<String> for TypeKind {
+    fn from(s: String) -> Self {
+        TypeKind::Named(s)
+    }
+}
+
+impl From<LiteralNode> for PatternNode {
+    fn from(lit: LiteralNode) -> Self {
+        PatternNode::Literal(lit)
+    }
+}
+
+impl From<&str> for PatternNode {
+    fn from(s: &str) -> Self {
+        PatternNode::Identifier(s.to_string())
+    }
+}
+
+impl From<String> for PatternNode {
+    fn from(s: String) -> Self {
+        PatternNode::Identifier(s)
+    }
+}
+
+impl From<(Box<ExpressionNode>, Vec<ExpressionNode>)> for ExpressionKind {
+    fn from((func, args): (Box<ExpressionNode>, Vec<ExpressionNode>)) -> Self {
+        ExpressionKind::Call { func, args }
+    }
+}
+
+impl From<(Vec<Param>, Vec<StatementNode>)> for ExpressionKind {
+    fn from((params, body): (Vec<Param>, Vec<StatementNode>)) -> Self {
+        ExpressionKind::Lambda { params, body }
+    }
+}
+
+impl
+    From<(
+        Box<ExpressionNode>,
+        Vec<StatementNode>,
+        Option<Vec<StatementNode>>,
+    )> for ExpressionKind
+{
+    fn from(
+        (cond, then_block, else_block): (
+            Box<ExpressionNode>,
+            Vec<StatementNode>,
+            Option<Vec<StatementNode>>,
+        ),
+    ) -> Self {
+        ExpressionKind::IfExpr {
+            cond,
+            then_block,
+            else_block,
+        }
+    }
+}
+
+impl From<(Box<ExpressionNode>, Vec<MatchArm>)> for ExpressionKind {
+    fn from((expr, arms): (Box<ExpressionNode>, Vec<MatchArm>)) -> Self {
+        ExpressionKind::Match { expr, arms }
+    }
+}
+
+impl ExpressionKind {
+    pub fn parse(token: Token) -> ParserResult<Self> {
+        match token.token_type {
+            TokenType::Int(_)
+            | TokenType::Float(_)
+            | TokenType::Str(_)
+            | TokenType::Char(_)
+            | TokenType::Bool(_) => LiteralNode::parse(token).map(ExpressionKind::Literal),
+            TokenType::Id(ident) => Ok(ExpressionKind::Identifier(ident)),
+            _ => Err(ParserError::new(
+                format!("Unexpected token in expression: {:?}", token.token_type),
+                token.span,
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExpressionNode {
     pub kind: ExpressionKind,
@@ -326,9 +638,31 @@ pub enum PrimitiveType {
     Str,
 }
 
+impl PrimitiveType {
+    pub fn parse(token: Token) -> ParserResult<PrimitiveType> {
+        match token.token_type {
+            TokenType::Id(value) => match value.as_str() {
+                "int" => Ok(PrimitiveType::Int),
+                "float" => Ok(PrimitiveType::Float),
+                "bool" => Ok(PrimitiveType::Bool),
+                "char" => Ok(PrimitiveType::Char),
+                "str" => Ok(PrimitiveType::Str),
+                _ => Err(ParserError {
+                    message: format!("Unknown primitive type: {}", value),
+                    span: token.span,
+                }),
+            },
+            _ => Err(ParserError {
+                message: format!("Expected an identifier, found {:?}", token.token_type),
+                span: token.span,
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TypeKind {
-    Auto,  // For type inference with 'auto' keyword
+    Auto,
     Primitive(PrimitiveType),
     Named(String),
     Generic {
@@ -373,24 +707,17 @@ pub enum LiteralNode {
 }
 
 impl LiteralNode {
-    pub fn parse(token: Token) -> Result<LiteralNode, ParserError> {
+    pub fn parse(token: Token) -> ParserResult<LiteralNode> {
         match token.token_type {
-            TokenType::Char(char) => {
-                Ok (LiteralNode::Char(char))
-            }
-            TokenType::Str(str) => {
-                Ok (LiteralNode::String(str))
-            }
-            TokenType::Int(integer) => {
-                Ok (LiteralNode::Integer(integer))
-            }
-            TokenType::Float(float) => {
-                Ok (LiteralNode::Float(float))
-            }
-            TokenType::Bool(bool) => {
-                Ok (LiteralNode::Boolean(bool))
-            }
-            _ => {Err (ParserError{message: format!("Invalid literal token: {:?}", token.token_type).to_string(), span: token.span})}
+            TokenType::Char(char) => Ok(LiteralNode::Char(char)),
+            TokenType::Str(str) => Ok(LiteralNode::String(str)),
+            TokenType::Int(integer) => Ok(LiteralNode::Integer(integer)),
+            TokenType::Float(float) => Ok(LiteralNode::Float(float)),
+            TokenType::Bool(bool) => Ok(LiteralNode::Boolean(bool)),
+            _ => Err(ParserError {
+                message: format!("Invalid literal token: {:?}", token.token_type).to_string(),
+                span: token.span,
+            }),
         }
     }
 }
@@ -453,20 +780,84 @@ pub enum BinaryOp {
     Mul,
     Div,
     Mod,
+    And,
+    Or,
+}
+
+impl BinaryOp {
+    pub fn parse(token: Token) -> ParserResult<BinaryOp> {
+        match token.token_type {
+            TokenType::Plus => Ok(BinaryOp::Add),
+            TokenType::Minus => Ok(BinaryOp::Sub),
+            TokenType::Star => Ok(BinaryOp::Mul),
+            TokenType::Slash => Ok(BinaryOp::Div),
+            TokenType::Percent => Ok(BinaryOp::Mod),
+            TokenType::And => Ok(BinaryOp::Sub),
+            TokenType::Or => Ok(BinaryOp::Mul),
+            _ => Err(ParserError {
+                message: format!(
+                    "Unexpected token type for binary operation: {:?}",
+                    token.token_type
+                )
+                .to_string(),
+                span: token.span,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum BinaryComp {
     Eq,
     Neq,
     Lt,
     Gt,
     Leq,
     Geq,
-    And,
-    Or,
+}
+
+impl BinaryComp {
+    pub fn parse(token: Token) -> ParserResult<BinaryComp> {
+        match token.token_type {
+            TokenType::Eq => Ok(BinaryComp::Eq),
+            TokenType::NotEq => Ok(BinaryComp::Neq),
+            TokenType::Lt => Ok(BinaryComp::Lt),
+            TokenType::Gt => Ok(BinaryComp::Gt),
+            TokenType::Le => Ok(BinaryComp::Leq),
+            TokenType::Ge => Ok(BinaryComp::Geq),
+            _ => Err(ParserError {
+                message: format!(
+                    "Unexpected token type for binary comparison: {:?}",
+                    token.token_type
+                )
+                .to_string(),
+                span: token.span,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum UnaryOp {
     Neg,
     Not,
+}
+
+impl UnaryOp {
+    pub fn parse(token: Token) -> ParserResult<UnaryOp> {
+        match token.token_type {
+            TokenType::Minus => Ok(UnaryOp::Neg),
+            TokenType::Bang => Ok(UnaryOp::Not),
+            _ => Err(ParserError {
+                message: format!(
+                    "Unexpected token type for unary operation: {:?}",
+                    token.token_type
+                )
+                .to_string(),
+                span: token.span,
+            }),
+        }
+    }
 }
 
 fn parse_from_tokens(_tokens: Vec<Token>) -> Vec<AstNode> {
