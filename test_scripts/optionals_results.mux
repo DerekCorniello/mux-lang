@@ -1,0 +1,15 @@
+// Optionals & Results
+func divide(int a, int b) returns Result<int, string> {
+    if b == 0 { return Err("Division by zero") }
+    return Ok(a / b)
+}
+
+auto res = divide(10, 2)
+match res {
+    Ok(v) { print("Result: " + v) }
+    Err(e) { print("Error: " + e) }
+}
+
+func findEven(list<int> nums) returns Optional<int> {
+    for n in nums { if n % 2 == 0 { return Some(n) } }
+}

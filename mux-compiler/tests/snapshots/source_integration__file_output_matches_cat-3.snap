@@ -1,0 +1,5 @@
+---
+source: tests/source_integration.rs
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Functions and lambdas\nfunc add(int a, int b) returns int {\n    return a + b\n}\n\nfunc greet(string name, int times = 1) returns void {\n    for i in range(0, times) { print(\"Hello \" + name) }\n}\n\n// Lambda examples\nauto square = func(int n) { return n * n }\nauto doubled = func(auto x) { return x * 2 }\n"

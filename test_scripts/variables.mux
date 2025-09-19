@@ -1,0 +1,9 @@
+// Variable declarations and type inference
+const int MAX = 100
+int explicit = 42
+auto inferred = 4.89
+auto name = "Mux"
+
+auto (x, _) = (1, 2) // underscore usage
+auto flag = true
+auto otherflag = false

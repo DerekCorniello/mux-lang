@@ -1,0 +1,11 @@
+[package]
+name = "mux_compiler"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ordered-float = "4.2"
+unicode-width = "0.1.11"
+
+[dev-dependencies]
+insta = { version = "1.43.1", features = ["yaml"] }
