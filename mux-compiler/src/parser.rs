@@ -1,15 +1,55 @@
 use crate::lexer::{Span, Token, TokenType};
 use ordered_float::OrderedFloat;
+use std::fmt;
 
 #[derive(Debug)]
 pub struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
+    source: &'a str,
+}
+
+impl Precedence {
+    pub fn next_higher(self) -> Self {
+        match self {
+            Precedence::Assignment => Precedence::Or,
+            Precedence::Or => Precedence::And,
+            Precedence::And => Precedence::Equality,
+            Precedence::Equality => Precedence::Comparison,
+            Precedence::Comparison => Precedence::Term,
+            Precedence::Term => Precedence::Factor,
+            Precedence::Factor => Precedence::Unary,
+            Precedence::Unary => Precedence::Call,
+            Precedence::Call => Precedence::Primary,
+            Precedence::Primary => Precedence::Primary,
+        }
+    }
+
+    /// Check if this precedence level is for assignment operators
+    pub fn is_assignment(&self) -> bool {
+        matches!(self, Precedence::Assignment)
+    }
+
+    /// Check if this operator is right-associative
+    pub fn is_right_associative(&self) -> bool {
+        // Assignment operators are right-associative: a = b = c is a = (b = c)
+        self.is_assignment()
+    }
+}
+
+impl fmt::Display for Precedence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl<'a> Parser<'a> {
     pub fn new(tokens: &'a [Token], source: &'a str) -> Self {
-        Self { tokens, current: 0 }
+        Self { 
+            tokens, 
+            current: 0,
+            source,
+        }
     }
 
     pub fn parse(&mut self) -> ParserResult<Vec<AstNode>> {
@@ -41,6 +81,433 @@ impl<'a> Parser<'a> {
         }
         let end = self.current;
         &self.tokens[start..end]
+    }
+
+    // Pratt Parser Implementation
+    /// Entry point for parsing any expression
+    pub fn parse_expression(&mut self) -> ParserResult<ExpressionNode> {
+        self.parse_precedence(Precedence::Assignment)
+    }
+
+    /// Parse an expression with the given minimum precedence
+    fn parse_precedence(&mut self, min_precedence: Precedence) -> ParserResult<ExpressionNode> {
+        let mut left = self.parse_unary()?;
+        let mut value = Box::new(left);
+        
+        while let Some(op_token) = self.consume_operator() {
+            // Check if the operator has higher precedence than our minimum
+            let op_precedence = self.get_operator_precedence(&op_token)?;
+            if op_precedence < min_precedence {
+                break;
+            }
+            
+            // For right-associative operators, we parse with the current precedence
+            // For left-associative, we use the next higher precedence
+            let next_precedence = if op_token.is_right_associative() {
+                op_precedence
+            } else {
+                op_precedence.next_higher()
+            };
+            
+            // Parse the right-hand side
+            let right = self.parse_precedence(next_precedence)?;
+            
+            // Create the binary expression
+            let left_span = *value.span();
+            let right_span = *right.span();
+            let left_expr = value.clone();
+            let new_value = ExpressionNode {
+                kind: ExpressionKind::Binary {
+                    left: left_expr,
+                    op: op_token,
+                    right: Box::new(right),
+                },
+                span: left_span.combine(&right_span),
+            };
+            value = Box::new(new_value);
+        }
+        
+        Ok(*value)
+    }
+
+    /// Parse a unary operator or primary expression
+    fn parse_unary(&mut self) -> ParserResult<ExpressionNode> {
+        if let Some(op_token) = self.consume_if_unary_operator() {
+            let expr = self.parse_precedence(Precedence::Unary)?;
+            let expr_span = *expr.span();
+            Ok(ExpressionNode {
+                kind: ExpressionKind::Unary {
+                    op: UnaryOp::parse(op_token.clone())?,
+                    expr: Box::new(expr),
+                },
+                span: op_token.span.combine(&expr_span),
+            })
+        } else {
+            let expr = self.parse_primary()?;
+            self.parse_postfix_operators(expr)
+        }
+    }
+
+    /// Parse a primary expression (literals, variables, parenthesized expressions)
+    fn parse_primary(&mut self) -> ParserResult<ExpressionNode> {
+        if self.is_at_end() {
+            return Err(ParserError::new("Expected expression, found end of input", Span::new(0, 0)));
+        }
+        
+        // Store the current token and its type
+        let token = self.consume();
+        let token_type = token.token_type.clone();
+        let token_span = token.span;
+        
+        // Match on the token type directly instead of borrowing it
+        match token_type {
+            // Parenthesized expressions
+            TokenType::OpenParen => {
+                let expr = self.parse_expression()?;
+                self.consume_token(TokenType::CloseParen, "Expected ')' after expression")?;
+                self.parse_postfix_operators(expr)
+            }
+            
+            // Literals
+            TokenType::Int(n) => {
+                let expr = ExpressionNode {
+                    kind: ExpressionKind::Literal(LiteralNode::Integer(n)),
+                    span: token_span,
+                };
+                self.parse_postfix_operators(expr)
+            },
+            
+            TokenType::Str(s) => {
+                // Check if this is an identifier or a string literal by peeking at the next token
+                let is_identifier = if let Some(next_token) = self.tokens.get(self.current) {
+                    matches!(
+                        next_token.token_type,
+                        TokenType::Colon | TokenType::OpenParen | TokenType::Dot | TokenType::OpenBracket
+                    )
+                } else {
+                    false
+                };
+                
+                let expr = if is_identifier {
+                    // This is an identifier being used in an expression
+                    ExpressionNode {
+                        kind: ExpressionKind::Identifier(s),
+                        span: token_span,
+                    }
+                } else {
+                    // This is a string literal
+                    ExpressionNode {
+                        kind: ExpressionKind::Literal(LiteralNode::String(s)),
+                        span: token_span,
+                    }
+                };
+                
+                self.parse_postfix_operators(expr)
+            },
+            
+            TokenType::Bool(b) => {
+                let expr = ExpressionNode {
+                    kind: ExpressionKind::Literal(LiteralNode::Boolean(b)),
+                    span: token_span,
+                };
+                self.parse_postfix_operators(expr)
+            },
+            
+            // Array literals
+            TokenType::OpenBracket => {
+                let start_span = token_span;
+                let mut elements = Vec::new();
+                
+                // Parse array elements
+                if !self.check(TokenType::CloseBracket) {
+                    loop {
+                        elements.push(self.parse_expression()?);
+                        
+                        if !self.matches(&[TokenType::Comma]) {
+                            break;
+                        }
+                    }
+                }
+                
+                let end_span = self.consume_token(TokenType::CloseBracket, "Expected ']' after array elements")?;
+                let expr = ExpressionNode {
+                    kind: ExpressionKind::ArrayLiteral(elements),
+                    span: start_span.combine(&end_span),
+                };
+                
+                self.parse_postfix_operators(expr)
+            },
+            
+            // Map literals
+            TokenType::OpenBrace => {
+                let start_span = token_span;
+                let mut entries = Vec::new();
+                
+                if !self.check(TokenType::CloseBrace) {
+                    loop {
+                        // Parse key
+                        let key = self.parse_expression()?;
+                        
+                        // Consume colon
+                        self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
+                        
+                        // Parse value
+                        let value = self.parse_expression()?;
+                        
+                        entries.push((key, value));
+                        
+                        // Check for comma or closing brace
+                        if self.matches(&[TokenType::Comma]) {
+                            if self.check(TokenType::CloseBrace) {
+                                // Trailing comma before closing brace
+                                break;
+                            }
+                            continue;
+                        } else if self.check(TokenType::CloseBrace) {
+                            break;
+                        } else {
+                            return Err(ParserError::new(
+                                "Expected ',' or '}' after map entry",
+                                self.peek().span,
+                            ));
+                        }
+                    }
+                }
+                
+                let end_span = self.consume_token(TokenType::CloseBrace, "Expected '}' after map entries")?;
+                let expr = ExpressionNode {
+                    kind: ExpressionKind::MapLiteral(entries),
+                    span: start_span.combine(&end_span),
+                };
+                
+                self.parse_postfix_operators(expr)
+            },
+            
+            _ => Err(ParserError::from_token("Expected expression", &Token {
+                token_type,
+                span: token_span,
+            })),
+        }
+    }
+    
+    /// Parse postfix operators (function calls, member access, array access)
+    fn parse_postfix_operators(&mut self, mut expr: ExpressionNode) -> ParserResult<ExpressionNode> {
+        loop {
+            if self.matches(&[TokenType::OpenParen]) {
+                // Function call
+                let mut args = Vec::new();
+                if !self.check(TokenType::CloseParen) {
+                    loop {
+                        args.push(self.parse_expression()?);
+                        
+                        if !self.matches(&[TokenType::Comma]) {
+                            break;
+                        }
+                    }
+                }
+                let end_span = self.consume_token(TokenType::CloseParen, "Expected ')' after arguments")?;
+                let expr_span = *expr.span();
+                expr = ExpressionNode {
+                    kind: ExpressionKind::Call {
+                        func: Box::new(expr),
+                        args,
+                    },
+                    span: expr_span.combine(&end_span),
+                };
+            } else if self.matches(&[TokenType::Dot]) {
+                // Member access
+                let field = self.consume_identifier("Expected field name after '.'")?;
+                let expr_span = *expr.span();
+                let field_span = self.tokens[self.current - 1].span;
+                expr = ExpressionNode {
+                    kind: ExpressionKind::FieldAccess {
+                        expr: Box::new(expr),
+                        field,
+                    },
+                    span: expr_span.combine(&field_span),
+                };
+            } else if self.matches(&[TokenType::OpenBracket]) {
+                // Array access
+                let index = self.parse_expression()?;
+                let end_span = self.consume_token(TokenType::CloseBracket, "Expected ']' after index")?;
+                let expr_span = *expr.span();
+                expr = ExpressionNode {
+                    kind: ExpressionKind::ArrayAccess {
+                        expr: Box::new(expr),
+                        index: Box::new(index),
+                    },
+                    span: expr_span.combine(&end_span),
+                };
+            } else {
+                break;
+            }
+        }
+        
+        Ok(expr)
+    }
+    
+    /// Helper to check if current token matches any of the given types
+    fn matches(&mut self, types: &[TokenType]) -> bool {
+        for ty in types {
+            if self.check(ty.clone()) {
+                self.current += 1;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Helper to check current token type without consuming it
+    fn check(&self, ty: TokenType) -> bool {
+        if self.is_at_end() {
+            return false;
+        }
+        self.peek().token_type == ty
+    }
+    
+    /// Helper to consume a specific token or return an error
+    fn consume_token(&mut self, expected: TokenType, error_msg: &str) -> ParserResult<Span> {
+        if self.is_at_end() {
+            return Err(ParserError::new(
+                error_msg,
+                self.tokens.last().map(|t| t.span).unwrap_or_else(|| Span {
+                    row_start: 0,
+                    row_end: None,
+                    col_start: 0,
+                    col_end: None,
+                }),
+            ));
+        }
+        
+        let token = &self.tokens[self.current];
+        if token.token_type == expected {
+            self.current += 1;
+            Ok(token.span)
+        } else {
+            Err(ParserError::new(error_msg, token.span))
+        }
+    }
+    
+    /// Helper to consume an identifier token
+    fn consume_identifier(&mut self, error_msg: &str) -> ParserResult<String> {
+        if self.is_at_end() {
+            return Err(ParserError::new(error_msg, self.peek().span));
+        }
+        
+        match &self.peek().token_type {
+            TokenType::Str(name) => {
+                let name_clone = name.clone();
+                self.current += 1;
+                Ok(name_clone)
+            }
+            _ => Err(ParserError::new(error_msg, self.peek().span)),
+        }
+    }
+    
+    /// Helper to check the next token type without consuming anything
+    fn check_next(&self, ty: TokenType) -> bool {
+        if self.current + 1 >= self.tokens.len() {
+            return false;
+        }
+        self.tokens[self.current + 1].token_type == ty
+    }
+    
+    /// Check if an expression is a valid assignment target (lvalue)
+    fn is_valid_assignment_target(expr: &ExpressionNode) -> bool {
+        match &expr.kind {
+            ExpressionKind::Identifier(_) => true,
+            ExpressionKind::FieldAccess { .. } => true,
+            ExpressionKind::ArrayAccess { .. } => true,
+            ExpressionKind::MapLiteral(_) => {
+                // Map literals are not valid lvalues on their own, but map access is
+                // This is handled by the ArrayAccess case above
+                false
+            },
+            _ => false,
+        }
+    }
+
+    /// Check if the current token is a binary operator and consume it if it is
+    fn consume_operator(&mut self) -> Option<BinaryOp> {
+        if self.is_at_end() {
+            return None;
+        }
+        
+        let token = self.peek();
+        let result = match token.token_type {
+            TokenType::Plus => Some(BinaryOp::Add),
+            TokenType::Minus => Some(BinaryOp::Subtract),
+            TokenType::Star => Some(BinaryOp::Multiply),
+            TokenType::Slash => Some(BinaryOp::Divide),
+            TokenType::Percent => Some(BinaryOp::Modulo),
+            TokenType::Eq => Some(BinaryOp::Assign),
+            TokenType::EqEq => Some(BinaryOp::Equal),
+            TokenType::NotEq => Some(BinaryOp::NotEqual),
+            TokenType::Lt => Some(BinaryOp::Less),
+            TokenType::Gt => Some(BinaryOp::Greater),
+            TokenType::Le => Some(BinaryOp::LessEqual),
+            TokenType::Ge => Some(BinaryOp::GreaterEqual),
+            TokenType::And => Some(BinaryOp::LogicalAnd),
+            TokenType::Or => Some(BinaryOp::LogicalOr),
+            TokenType::PlusEq => Some(BinaryOp::AddAssign),
+            TokenType::MinusEq => Some(BinaryOp::SubtractAssign),
+            TokenType::StarEq => Some(BinaryOp::MultiplyAssign),
+            TokenType::SlashEq => Some(BinaryOp::DivideAssign),
+            _ => None,
+        };
+        
+        if result.is_some() {
+            self.current += 1;
+        }
+        result
+    }
+
+    /// Check if the current token is a unary operator and consume it if it is
+    fn consume_if_unary_operator(&mut self) -> Option<Token> {
+        if self.is_at_end() {
+            return None;
+        }
+        
+        let token = self.peek();
+        match &token.token_type {
+            TokenType::Minus | TokenType::Bang => {
+                let token_clone = token.clone();
+                self.current += 1;
+                Some(token_clone)
+            }
+            _ => None,
+        }
+    }
+
+    /// Helper to get the precedence of an operator
+    fn get_operator_precedence(&self, op: &BinaryOp) -> ParserResult<Precedence> {
+        let precedence = match op {
+            // Assignment operators
+            BinaryOp::Assign | 
+            BinaryOp::AddAssign | BinaryOp::SubtractAssign |
+            BinaryOp::MultiplyAssign | BinaryOp::DivideAssign |
+            BinaryOp::ModuloAssign => Precedence::Assignment,
+            
+            // Logical OR
+            BinaryOp::LogicalOr => Precedence::Or,
+            
+            // Logical AND
+            BinaryOp::LogicalAnd => Precedence::And,
+            
+            // Equality/inequality
+            BinaryOp::Equal | BinaryOp::NotEqual => Precedence::Equality,
+            
+            // Comparisons
+            BinaryOp::Less | BinaryOp::LessEqual |
+            BinaryOp::Greater | BinaryOp::GreaterEqual => Precedence::Comparison,
+            
+            // Addition, subtraction
+            BinaryOp::Add | BinaryOp::Subtract => Precedence::Term,
+            
+            // Multiplication, division, modulo
+            BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => Precedence::Factor,
+        };
+        Ok(precedence)
     }
 }
 
@@ -338,6 +805,8 @@ pub enum ExpressionKind {
         expr: Box<ExpressionNode>,
         index: Box<ExpressionNode>,
     },
+    ArrayLiteral(Vec<ExpressionNode>),
+    MapLiteral(Vec<(ExpressionNode, ExpressionNode)>),
     Lambda {
         params: Vec<Param>,
         body: Vec<StatementNode>,
@@ -351,6 +820,21 @@ pub enum ExpressionKind {
         expr: Box<ExpressionNode>,
         arms: Vec<MatchArm>,
     },
+}
+
+// higher precedence stored as lower number
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Precedence {
+    Assignment,
+    Or,
+    And,
+    Equality,
+    Comparison,
+    Term,
+    Factor,
+    Unary,
+    Call,
+    Primary,
 }
 
 impl From<(Box<ExpressionNode>, BinaryOp, Box<ExpressionNode>)> for ExpressionKind {
@@ -773,36 +1257,92 @@ pub enum PatternNode {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
+    // Arithmetic
     Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    And,
-    Or,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+    
+    // Comparison
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    
+    // Logical
+    LogicalAnd,
+    LogicalOr,
+    
+    // Assignment
+    Assign,
+    AddAssign,
+    SubtractAssign,
+    MultiplyAssign,
+    DivideAssign,
+    ModuloAssign,
 }
 
 impl BinaryOp {
     pub fn parse(token: Token) -> ParserResult<BinaryOp> {
         match token.token_type {
+            // Arithmetic operators
             TokenType::Plus => Ok(BinaryOp::Add),
-            TokenType::Minus => Ok(BinaryOp::Sub),
-            TokenType::Star => Ok(BinaryOp::Mul),
-            TokenType::Slash => Ok(BinaryOp::Div),
-            TokenType::Percent => Ok(BinaryOp::Mod),
-            TokenType::And => Ok(BinaryOp::Sub),
-            TokenType::Or => Ok(BinaryOp::Mul),
+            TokenType::Minus => Ok(BinaryOp::Subtract),
+            TokenType::Star => Ok(BinaryOp::Multiply),
+            TokenType::Slash => Ok(BinaryOp::Divide),
+            TokenType::Percent => Ok(BinaryOp::Modulo),
+            
+            // Comparison operators
+            TokenType::Eq => Ok(BinaryOp::Assign),  // Single = is assignment
+            TokenType::EqEq => Ok(BinaryOp::Equal),  // == is equality comparison
+            TokenType::NotEq => Ok(BinaryOp::NotEqual),
+            TokenType::Lt => Ok(BinaryOp::Less),
+            TokenType::Le => Ok(BinaryOp::LessEqual),
+            TokenType::Gt => Ok(BinaryOp::Greater),
+            TokenType::Ge => Ok(BinaryOp::GreaterEqual),
+            
+            // Logical operators
+            TokenType::And => Ok(BinaryOp::LogicalAnd),
+            TokenType::Or => Ok(BinaryOp::LogicalOr),
+            
+            // Assignment operators
+            TokenType::PlusEq => Ok(BinaryOp::AddAssign),
+            TokenType::MinusEq => Ok(BinaryOp::SubtractAssign),
+            TokenType::StarEq => Ok(BinaryOp::MultiplyAssign),
+            TokenType::SlashEq => Ok(BinaryOp::DivideAssign),
+            
             _ => Err(ParserError {
                 message: format!(
                     "Unexpected token type for binary operation: {:?}",
                     token.token_type
-                )
-                .to_string(),
+                ),
                 span: token.span,
             }),
         }
+    }
+    
+    /// Check if this binary operator is an assignment operator
+    pub fn is_assignment(&self) -> bool {
+        matches!(
+            self,
+            BinaryOp::Assign |
+            BinaryOp::AddAssign |
+            BinaryOp::SubtractAssign |
+            BinaryOp::MultiplyAssign |
+            BinaryOp::DivideAssign |
+            BinaryOp::ModuloAssign
+        )
+    }
+    
+    /// Check if this operator is right-associative
+    pub fn is_right_associative(&self) -> bool {
+        // Assignment operators are right-associative: a = b = c is a = (b = c)
+        self.is_assignment()
     }
 }
 
@@ -858,9 +1398,4 @@ impl UnaryOp {
             }),
         }
     }
-}
-
-fn parse_from_tokens(_tokens: Vec<Token>) -> Vec<AstNode> {
-    let parsed_result: Vec<AstNode> = Vec::new();
-    parsed_result
 }
