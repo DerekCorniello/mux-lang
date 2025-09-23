@@ -83,6 +83,16 @@ impl<'a> Parser<'a> {
     fn declaration(&mut self) -> ParserResult<AstNode> {
         if self.matches(&[TokenType::Auto]) {
             self.auto_declaration()
+        } else if self.matches(&[TokenType::Const]) {
+            self.const_declaration()
+        } else if self.matches(&[TokenType::Class]) {
+            self.class_declaration()
+        } else if self.matches(&[TokenType::Interface]) {
+            self.interface_declaration()
+        } else if self.matches(&[TokenType::Enum]) {
+            self.enum_declaration()
+        } else if self.matches(&[TokenType::Import]) {
+            self.import_declaration()
         } else if self.matches(&[TokenType::Func]) {
             self.function_declaration()
         } else if matches!(self.peek().token_type, TokenType::Id(_)) {
@@ -136,6 +146,319 @@ impl<'a> Parser<'a> {
         Ok(AstNode::Statement(StatementNode {
             kind: StatementKind::AutoDecl(name, type_node, value),
             span,
+        }))
+    }
+
+    fn const_declaration(&mut self) -> ParserResult<AstNode> {
+        let start_span = self.peek().span;
+        self.consume_token(TokenType::Const, "Expected 'const' keyword")?;
+
+        let type_node = self.parse_type()?;
+        let name = self.consume_identifier("Expected constant name after type")?;
+
+        self.consume_token(TokenType::Eq, "Expected '=' after constant name")?;
+        let value = self.parse_expression()?;
+        let span = start_span.combine(&value.span);
+
+        Ok(AstNode::Statement(StatementNode {
+            kind: StatementKind::ConstDecl(name, type_node, value),
+            span,
+        }))
+    }
+
+    fn class_declaration(&mut self) -> ParserResult<AstNode> {
+        let start_span = self.tokens[self.current - 1].span;
+        self.consume_token(TokenType::Class, "Expected 'class' keyword")?;
+
+        let name = self.consume_identifier("Expected class name")?;
+
+        let type_params = if self.matches(&[TokenType::Lt]) {
+            let mut params = Vec::new();
+            if !self.check(TokenType::Gt) {
+                loop {
+                    let param = self.consume_identifier("Expected type parameter name")?;
+                    let mut bounds = Vec::new();
+
+                    if self.matches(&[TokenType::Colon]) {
+                        loop {
+                            let bound_name = self.consume_identifier("Expected trait name in bound")?;
+                            let type_args = if self.matches(&[TokenType::Lt]) {
+                                let args = self.parse_type_arguments()?;
+                                self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
+                                args
+                            } else {
+                                Vec::new()
+                            };
+
+                            bounds.push(TraitBound {
+                                name: bound_name,
+                                type_params: type_args,
+                            });
+
+                            if !self.matches(&[TokenType::Plus]) {
+                                break;
+                            }
+                        }
+                    }
+
+                    params.push((param, bounds));
+
+                    if !self.matches(&[TokenType::Comma]) {
+                        break;
+                    }
+                }
+            }
+            self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
+            params
+        } else {
+            Vec::new()
+        };
+
+        let traits = if self.matches(&[TokenType::Is]) {
+            let mut traits_list = Vec::new();
+            loop {
+                let trait_name = self.consume_identifier("Expected trait name")?;
+                let type_args = if self.matches(&[TokenType::Lt]) {
+                    let args = self.parse_type_arguments()?;
+                    self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
+                    args
+                } else {
+                    Vec::new()
+                };
+
+                traits_list.push(TraitRef {
+                    name: trait_name,
+                    type_args,
+                });
+
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+            traits_list
+        } else {
+            Vec::new()
+        };
+
+        self.consume_token(TokenType::OpenBrace, "Expected '{' after class header")?;
+
+        let mut fields = Vec::new();
+        let mut methods = Vec::new();
+
+        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
+            match self.peek().token_type {
+                TokenType::Func => {
+                    let func_node = self.function_declaration()?;
+                    match func_node {
+                        AstNode::Function(func) => methods.push(func),
+                        _ => return Err(ParserError::new("Expected function in class", start_span)),
+                    }
+                }
+                _ => {
+                    // Parse field
+                    let field_type = self.parse_type()?;
+                    let field_name = self.consume_identifier("Expected field name")?;
+                    fields.push(Field {
+                        name: field_name,
+                        type_: field_type,
+                    });
+                }
+            }
+        }
+
+        let end_span = self.consume_token(TokenType::CloseBrace, "Expected '}' after class body")?;
+
+        Ok(AstNode::Class {
+            name,
+            type_params,
+            traits,
+            fields,
+            methods,
+        })
+    }
+
+    fn interface_declaration(&mut self) -> ParserResult<AstNode> {
+        let start_span = self.tokens[self.current - 1].span;
+        self.consume_token(TokenType::Interface, "Expected 'interface' keyword")?;
+
+        let name = self.consume_identifier("Expected interface name")?;
+
+        let type_params = if self.matches(&[TokenType::Lt]) {
+            let mut params = Vec::new();
+            if !self.check(TokenType::Gt) {
+                loop {
+                    let param = self.consume_identifier("Expected type parameter name")?;
+                    let mut bounds = Vec::new();
+
+                    if self.matches(&[TokenType::Colon]) {
+                        loop {
+                            let bound_name = self.consume_identifier("Expected trait name in bound")?;
+                            let type_args = if self.matches(&[TokenType::Lt]) {
+                                let args = self.parse_type_arguments()?;
+                                self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
+                                args
+                            } else {
+                                Vec::new()
+                            };
+
+                            bounds.push(TraitBound {
+                                name: bound_name,
+                                type_params: type_args,
+                            });
+
+                            if !self.matches(&[TokenType::Plus]) {
+                                break;
+                            }
+                        }
+                    }
+
+                    params.push((param, bounds));
+
+                    if !self.matches(&[TokenType::Comma]) {
+                        break;
+                    }
+                }
+            }
+            self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
+            params
+        } else {
+            Vec::new()
+        };
+
+        self.consume_token(TokenType::OpenBrace, "Expected '{' after interface header")?;
+
+        let mut methods = Vec::new();
+
+        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
+            if self.matches(&[TokenType::Func]) {
+                let func_node = self.function_declaration()?;
+                match func_node {
+                    AstNode::Function(func) => methods.push(func),
+                    _ => return Err(ParserError::new("Expected function in interface", start_span)),
+                }
+            } else {
+                return Err(ParserError::new("Expected function declaration in interface", self.peek().span));
+            }
+        }
+
+        let end_span = self.consume_token(TokenType::CloseBrace, "Expected '}' after interface body")?;
+
+        Ok(AstNode::Interface {
+            name,
+            type_params,
+            methods,
+        })
+    }
+
+    fn enum_declaration(&mut self) -> ParserResult<AstNode> {
+        let start_span = self.tokens[self.current - 1].span;
+        self.consume_token(TokenType::Enum, "Expected 'enum' keyword")?;
+
+        let name = self.consume_identifier("Expected enum name")?;
+
+        let type_params = if self.matches(&[TokenType::Lt]) {
+            let mut params = Vec::new();
+            if !self.check(TokenType::Gt) {
+                loop {
+                    let param = self.consume_identifier("Expected type parameter name")?;
+                    let mut bounds = Vec::new();
+
+                    if self.matches(&[TokenType::Colon]) {
+                        loop {
+                            let bound_name = self.consume_identifier("Expected trait name in bound")?;
+                            let type_args = if self.matches(&[TokenType::Lt]) {
+                                let args = self.parse_type_arguments()?;
+                                self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
+                                args
+                            } else {
+                                Vec::new()
+                            };
+
+                            bounds.push(TraitBound {
+                                name: bound_name,
+                                type_params: type_args,
+                            });
+
+                            if !self.matches(&[TokenType::Plus]) {
+                                break;
+                            }
+                        }
+                    }
+
+                    params.push((param, bounds));
+
+                    if !self.matches(&[TokenType::Comma]) {
+                        break;
+                    }
+                }
+            }
+            self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
+            params
+        } else {
+            Vec::new()
+        };
+
+        self.consume_token(TokenType::OpenBrace, "Expected '{' after enum header")?;
+
+        let mut variants = Vec::new();
+
+        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
+            let variant_name = self.consume_identifier("Expected variant name")?;
+
+            let data = if self.matches(&[TokenType::OpenParen]) {
+                let mut types = Vec::new();
+                if !self.check(TokenType::CloseParen) {
+                    loop {
+                        types.push(self.parse_type()?);
+                        if !self.matches(&[TokenType::Comma]) {
+                            break;
+                        }
+                    }
+                }
+                self.consume_token(TokenType::CloseParen, "Expected ')' after variant data")?;
+                Some(types)
+            } else {
+                None
+            };
+
+            variants.push(EnumVariant {
+                name: variant_name,
+                data,
+            });
+
+            // Check for trailing comma
+            if self.matches(&[TokenType::Comma]) {
+                if self.check(TokenType::CloseBrace) {
+                    break; // Trailing comma
+                }
+            } else {
+                break; // No comma, end of variants
+            }
+        }
+
+        let end_span = self.consume_token(TokenType::CloseBrace, "Expected '}' after enum variants")?;
+
+        Ok(AstNode::Enum {
+            name,
+            type_params,
+            variants,
+        })
+    }
+
+    fn import_declaration(&mut self) -> ParserResult<AstNode> {
+        let start_span = self.tokens[self.current - 1].span;
+
+        let module_path = self.consume_identifier("Expected module path after 'import'")?;
+
+        let alias = if self.matches(&[TokenType::As]) {
+            Some(self.consume_identifier("Expected alias after 'as'")?)
+        } else {
+            None
+        };
+
+        Ok(AstNode::Statement(StatementNode {
+            kind: StatementKind::Import { module_path, alias },
+            span: start_span,
         }))
     }
 
@@ -262,6 +585,12 @@ impl<'a> Parser<'a> {
             self.while_statement()
         } else if self.matches(&[TokenType::For]) {
             self.for_statement()
+        } else if self.matches(&[TokenType::Match]) {
+            self.match_statement()
+        } else if self.matches(&[TokenType::Break]) {
+            self.break_statement()
+        } else if self.matches(&[TokenType::Continue]) {
+            self.continue_statement()
         } else if self.matches(&[TokenType::Return]) {
             self.return_statement()
         } else if self.matches(&[TokenType::OpenBrace]) {
@@ -374,39 +703,279 @@ impl<'a> Parser<'a> {
 
         self.consume_token(TokenType::OpenParen, "Expected '(' after 'for'")?;
 
-        let var = self.consume_identifier("Expected loop variable name")?;
+        // Check if this is a traditional for loop (type var = init; condition; increment)
+        if let Some(next_token) = self.tokens.get(self.current) {
+            if matches!(next_token.token_type, TokenType::Id(_)) {
+                // Check if next token is a type name
+                let type_name = match &next_token.token_type {
+                    TokenType::Id(name) => name.clone(),
+                    _ => return Err(ParserError::new("Expected type name in for loop", next_token.span)),
+                };
 
-        self.consume_token(TokenType::In, "Expected 'in' after loop variable")?;
+                if type_name == "int" || type_name == "float" || type_name == "bool" || type_name == "char" || type_name == "str" {
+                    // Traditional for loop: for int i = 0; i < 10; i += 1
+                    self.current += 1; // consume type
+                    let var = self.consume_identifier("Expected variable name after type")?;
+                    self.consume_token(TokenType::Eq, "Expected '=' after variable name")?;
+                    let init = self.parse_expression()?;
+                    self.consume_token(TokenType::Semicolon, "Expected ';' after initialization")?;
+                    let condition = self.parse_expression()?;
+                    self.consume_token(TokenType::Semicolon, "Expected ';' after condition")?;
+                    let increment = self.parse_expression()?;
+                    self.consume_token(TokenType::CloseParen, "Expected ')' after increment")?;
 
-        let iter = self.parse_expression()?;
+                    let body = self.block_statement()?;
+                    let body_statements = match body {
+                        AstNode::Statement(stmt) => match stmt.kind {
+                            StatementKind::Block(block) => block,
+                            _ => vec![stmt],
+                        },
+                        _ => {
+                            return Err(ParserError::new(
+                                "Expected block statement after for loop",
+                                start_span,
+                            ));
+                        }
+                    };
 
-        self.consume_token(TokenType::CloseParen, "Expected ')' after for loop header")?;
+                    let end_span = body_statements.last().map(|s| s.span).unwrap_or(start_span);
+                    let span = start_span.combine(&end_span);
 
-        let body = self.block_statement()?;
-        let body_statements = match body {
-            AstNode::Statement(stmt) => match stmt.kind {
-                StatementKind::Block(block) => block,
-                _ => vec![stmt],
-            },
-            _ => {
-                return Err(ParserError::new(
-                    "Expected block statement after for loop",
-                    start_span,
-                ));
+                    Ok(AstNode::Statement(StatementNode {
+                        kind: StatementKind::For {
+                            var: var.clone(),
+                            iter: ExpressionNode {
+                                kind: ExpressionKind::Binary {
+                                    left: Box::new(init),
+                                    op: BinaryOp::Assign,
+                                    right: Box::new(ExpressionNode {
+                                        kind: ExpressionKind::Binary {
+                                            left: Box::new(ExpressionNode {
+                                                kind: ExpressionKind::Binary {
+                                                    left: Box::new(ExpressionNode {
+                                                        kind: ExpressionKind::Identifier(var.clone()),
+                                                        span: start_span,
+                                                    }),
+                                                    op: BinaryOp::Less,
+                                                    right: Box::new(condition),
+                                                },
+                                                span: start_span,
+                                            }),
+                                            op: BinaryOp::Assign,
+                                            right: Box::new(ExpressionNode {
+                                                kind: ExpressionKind::Binary {
+                                                    left: Box::new(ExpressionNode {
+                                                        kind: ExpressionKind::Identifier(var.clone()),
+                                                        span: start_span,
+                                                    }),
+                                                    op: BinaryOp::AddAssign,
+                                                    right: Box::new(increment),
+                                                },
+                                                span: start_span,
+                                            }),
+                                        },
+                                        span: start_span,
+                                    }),
+                                },
+                                span: start_span,
+                            },
+                            body: body_statements,
+                        },
+                        span,
+                    }))
+                } else {
+                    // For-in loop: for item in collection
+                    let var = self.consume_identifier("Expected variable name")?;
+                    self.consume_token(TokenType::In, "Expected 'in' after variable")?;
+                    let iter = self.parse_expression()?;
+                    self.consume_token(TokenType::CloseParen, "Expected ')' after for loop header")?;
+
+                    let body = self.block_statement()?;
+                    let body_statements = match body {
+                        AstNode::Statement(stmt) => match stmt.kind {
+                            StatementKind::Block(block) => block,
+                            _ => vec![stmt],
+                        },
+                        _ => {
+                            return Err(ParserError::new(
+                                "Expected block statement after for loop",
+                                start_span,
+                            ));
+                        }
+                    };
+
+                    let end_span = body_statements.last().map(|s| s.span).unwrap_or(start_span);
+                    let span = start_span.combine(&end_span);
+
+                    Ok(AstNode::Statement(StatementNode {
+                        kind: StatementKind::For {
+                            var,
+                            iter,
+                            body: body_statements,
+                        },
+                        span,
+                    }))
+                }
+            } else {
+                // For-in loop: for item in collection
+                let var = self.consume_identifier("Expected variable name")?;
+                self.consume_token(TokenType::In, "Expected 'in' after variable")?;
+                let iter = self.parse_expression()?;
+                self.consume_token(TokenType::CloseParen, "Expected ')' after for loop header")?;
+
+                let body = self.block_statement()?;
+                let body_statements = match body {
+                    AstNode::Statement(stmt) => match stmt.kind {
+                        StatementKind::Block(block) => block,
+                        _ => vec![stmt],
+                    },
+                    _ => {
+                        return Err(ParserError::new(
+                            "Expected block statement after for loop",
+                            start_span,
+                        ));
+                    }
+                };
+
+                let end_span = body_statements.last().map(|s| s.span).unwrap_or(start_span);
+                let span = start_span.combine(&end_span);
+
+                Ok(AstNode::Statement(StatementNode {
+                    kind: StatementKind::For {
+                        var,
+                        iter,
+                        body: body_statements,
+                    },
+                    span,
+                }))
             }
-        };
+        } else {
+            return Err(ParserError::new("Unexpected end of input in for loop", start_span));
+        }
+    }
 
-        let end_span = body_statements.last().map(|s| s.span).unwrap_or(start_span);
-        let span = start_span.combine(&end_span);
+    fn match_statement(&mut self) -> ParserResult<AstNode> {
+        let start_span = self.tokens[self.current - 1].span;
+
+        self.consume_token(TokenType::OpenParen, "Expected '(' after 'match'")?;
+        let expr = self.parse_expression()?;
+        self.consume_token(TokenType::CloseParen, "Expected ')' after match expression")?;
+
+        self.consume_token(TokenType::OpenBrace, "Expected '{' after match expression")?;
+
+        let mut arms = Vec::new();
+        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
+            // Parse pattern
+            let pattern = self.parse_pattern()?;
+
+            // Parse optional guard (if condition)
+            let guard = if self.matches(&[TokenType::If]) {
+                Some(self.parse_expression()?)
+            } else {
+                None
+            };
+
+            // Parse body
+            let body = self.block_statement()?;
+            let body_statements = match body {
+                AstNode::Statement(stmt) => match stmt.kind {
+                    StatementKind::Block(block) => block,
+                    _ => vec![stmt],
+                },
+                _ => {
+                    return Err(ParserError::new(
+                        "Expected block statement for match arm body",
+                        start_span,
+                    ));
+                }
+            };
+
+            arms.push(MatchArm { pattern, guard, body: body_statements });
+
+            // Check for trailing comma
+            if self.matches(&[TokenType::Comma]) {
+                if self.check(TokenType::CloseBrace) {
+                    break; // Trailing comma
+                }
+            }
+        }
+
+        let end_span = self.consume_token(TokenType::CloseBrace, "Expected '}' after match arms")?;
 
         Ok(AstNode::Statement(StatementNode {
-            kind: StatementKind::For {
-                var,
-                iter,
-                body: body_statements,
-            },
-            span,
+            kind: StatementKind::Match { expr, arms },
+            span: start_span.combine(&end_span),
         }))
+    }
+
+    fn parse_pattern(&mut self) -> ParserResult<PatternNode> {
+        match &self.peek().token_type {
+            TokenType::Str(name) => {
+                let name_clone = name.clone();
+                self.current += 1; // consume the identifier
+
+                // Check if this is an enum variant pattern (e.g., Some, None, Ok, Err)
+                match name_clone.as_str() {
+                    "Some" | "None" | "Ok" | "Err" => {
+                        // Parse enum variant pattern
+                        if self.matches(&[TokenType::OpenParen]) {
+                            // Has arguments
+                            let mut args = Vec::new();
+                            if !self.check(TokenType::CloseParen) {
+                                loop {
+                                    args.push(self.parse_pattern()?);
+                                    if !self.matches(&[TokenType::Comma]) {
+                                        break;
+                                    }
+                                }
+                            }
+                            self.consume_token(TokenType::CloseParen, "Expected ')' after enum variant arguments")?;
+                            Ok(PatternNode::EnumVariant { name: name_clone, args })
+                        } else {
+                            // No arguments
+                            Ok(PatternNode::EnumVariant { name: name_clone, args: Vec::new() })
+                        }
+                    }
+                    _ => {
+                        // Regular identifier pattern
+                        Ok(PatternNode::Identifier(name_clone))
+                    }
+                }
+            }
+            TokenType::Underscore => {
+                self.current += 1; // consume the underscore
+                Ok(PatternNode::Wildcard)
+            }
+            TokenType::OpenParen => {
+                // Tuple pattern
+                self.current += 1; // consume the opening paren
+                let mut elements = Vec::new();
+
+                if !self.check(TokenType::CloseParen) {
+                    loop {
+                        elements.push(self.parse_pattern()?);
+                        if !self.matches(&[TokenType::Comma]) {
+                            break;
+                        }
+                    }
+                }
+
+                self.consume_token(TokenType::CloseParen, "Expected ')' after tuple pattern")?;
+                Ok(PatternNode::Tuple(elements))
+            }
+            _ => {
+                // Try to parse as literal
+                let token = self.consume();
+                match &token.token_type {
+                    TokenType::Int(n) => Ok(PatternNode::Literal(LiteralNode::Integer(*n))),
+                    TokenType::Float(f) => Ok(PatternNode::Literal(LiteralNode::Float(*f))),
+                    TokenType::Bool(b) => Ok(PatternNode::Literal(LiteralNode::Boolean(*b))),
+                    TokenType::Char(c) => Ok(PatternNode::Literal(LiteralNode::Char(*c))),
+                    TokenType::Str(s) => Ok(PatternNode::Literal(LiteralNode::String(s.clone()))),
+                    _ => Err(ParserError::from_token("Expected pattern", token)),
+                }
+            }
+        }
     }
 
     fn return_statement(&mut self) -> ParserResult<AstNode> {
@@ -427,6 +996,24 @@ impl<'a> Parser<'a> {
         Ok(AstNode::Statement(StatementNode {
             kind: StatementKind::Return(value),
             span: start_span.combine(&end_span),
+        }))
+    }
+
+    fn break_statement(&mut self) -> ParserResult<AstNode> {
+        let start_span = self.tokens[self.current - 1].span;
+
+        Ok(AstNode::Statement(StatementNode {
+            kind: StatementKind::Break,
+            span: start_span,
+        }))
+    }
+
+    fn continue_statement(&mut self) -> ParserResult<AstNode> {
+        let start_span = self.tokens[self.current - 1].span;
+
+        Ok(AstNode::Statement(StatementNode {
+            kind: StatementKind::Continue,
+            span: start_span,
         }))
     }
 
@@ -563,9 +1150,15 @@ impl<'a> Parser<'a> {
                 }
                 TokenType::Func
                 | TokenType::Auto
+                | TokenType::Const
+                | TokenType::Class
+                | TokenType::Interface
+                | TokenType::Enum
+                | TokenType::Import
                 | TokenType::If
                 | TokenType::While
                 | TokenType::For
+                | TokenType::Match
                 | TokenType::Return
                 | TokenType::OpenBrace => {
                     // New statement found
@@ -751,46 +1344,64 @@ impl<'a> Parser<'a> {
                 self.parse_postfix_operators(expr)
             }
 
-            // Map literals
-            TokenType::OpenBrace => {
+            // Lambda expressions
+            TokenType::Func => {
                 let start_span = token_span;
-                let mut entries = Vec::new();
+                self.current += 1; // consume 'func'
 
-                if !self.check(TokenType::CloseBrace) {
+                // Parse parameters
+                self.consume_token(TokenType::OpenParen, "Expected '(' after 'func' in lambda")?;
+                let mut params = Vec::new();
+
+                if !self.check(TokenType::CloseParen) {
                     loop {
-                        // Parse key
-                        let key = self.parse_expression()?;
+                        let param_name = self.consume_identifier("Expected parameter name")?;
+                        self.consume_token(TokenType::Colon, "Expected ':' after parameter name")?;
+                        let param_type = self.parse_type()?;
+                        params.push(Param {
+                            name: param_name,
+                            type_: param_type,
+                        });
 
-                        // Consume colon
-                        self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
-
-                        // Parse value
-                        let value = self.parse_expression()?;
-
-                        entries.push((key, value));
-
-                        // Check for comma or closing brace
-                        if self.matches(&[TokenType::Comma]) {
-                            if self.check(TokenType::CloseBrace) {
-                                // Trailing comma before closing brace
-                                break;
-                            }
-                            continue;
-                        } else if self.check(TokenType::CloseBrace) {
+                        if !self.matches(&[TokenType::Comma]) {
                             break;
-                        } else {
-                            return Err(ParserError::new(
-                                "Expected ',' or '}' after map entry",
-                                self.peek().span,
-                            ));
                         }
                     }
                 }
 
-                let end_span =
-                    self.consume_token(TokenType::CloseBrace, "Expected '}' after map entries")?;
+                self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
+
+                // Parse return type
+                let _return_type = if self.matches(&[TokenType::Returns]) {
+                    self.parse_type()?
+                } else {
+                    TypeNode {
+                        kind: TypeKind::Primitive(PrimitiveType::Void),
+                        span: self.peek().span,
+                    }
+                };
+
+                // Parse body
+                let body = self.block_statement()?;
+                let body_statements = match body {
+                    AstNode::Statement(stmt) => match stmt.kind {
+                        StatementKind::Block(block) => block,
+                        _ => vec![stmt],
+                    },
+                    _ => {
+                        return Err(ParserError::new(
+                            "Expected block statement for lambda body",
+                            start_span,
+                        ));
+                    }
+                };
+
+                let end_span = body_statements.last().map(|s| s.span).unwrap_or(start_span);
                 let expr = ExpressionNode {
-                    kind: ExpressionKind::MapLiteral(entries),
+                    kind: ExpressionKind::Lambda {
+                        params,
+                        body: body_statements,
+                    },
                     span: start_span.combine(&end_span),
                 };
 
@@ -1244,6 +1855,12 @@ pub enum StatementKind {
     AutoDecl(String, TypeNode, ExpressionNode),
     ConstDecl(String, TypeNode, ExpressionNode),
 
+    // Import statements
+    Import {
+        module_path: String,
+        alias: Option<String>,
+    },
+
     // Control flow
     Return(Option<ExpressionNode>),
     If {
@@ -1259,6 +1876,10 @@ pub enum StatementKind {
         var: String,
         iter: ExpressionNode,
         body: Vec<StatementNode>,
+    },
+    Match {
+        expr: ExpressionNode,
+        arms: Vec<MatchArm>,
     },
     Break,
     Continue,
@@ -1555,6 +2176,7 @@ pub struct EnumVariant {
 #[derive(Debug, Clone)]
 pub struct MatchArm {
     pub pattern: PatternNode,
+    pub guard: Option<ExpressionNode>,
     pub body: Vec<StatementNode>,
 }
 

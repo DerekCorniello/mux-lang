@@ -55,9 +55,12 @@ pub enum TokenType {
     Class,
     Interface,
     Enum,
+    Import,
     Is,
     As,
     In,
+    Break,
+    Continue,
 
     OpenParen,    // (
     CloseParen,   // )
@@ -404,9 +407,12 @@ impl<'a> Lexer<'a> {
                     "class" => TokenType::Class,
                     "interface" => TokenType::Interface,
                     "enum" => TokenType::Enum,
+                    "import" => TokenType::Import,
                     "is" => TokenType::Is,
                     "as" => TokenType::As,
                     "in" => TokenType::In,
+                    "break" => TokenType::Break,
+                    "continue" => TokenType::Continue,
                     "true" => TokenType::Bool(true),
                     "false" => TokenType::Bool(false),
                     "and" => TokenType::And,
