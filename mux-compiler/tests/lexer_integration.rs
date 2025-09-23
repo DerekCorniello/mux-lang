@@ -140,8 +140,8 @@ fn test_file_lexer() {
             "imports.mux",
             vec![
                 LineComment("Imports".to_string()), NewLine,
-                Id("import".to_string()), Id("math".to_string()), NewLine,
-                Id("import".to_string()), Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
+                Import, Id("math".to_string()), NewLine,
+                Import, Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
 
                 Auto, Id("pi".to_string()), Eq, Id("math".to_string()), Dot, Id("PI".to_string()), NewLine,
                 Id("print".to_string()), OpenParen, Str("PI = ".to_string()), Plus, Id("pi".to_string()), CloseParen, NewLine,
@@ -210,8 +210,8 @@ fn test_file_lexer() {
         (
             "full_test.mux",
             vec![
-                Id("import".to_string()), Id("math".to_string()), NewLine,
-                Id("import".to_string()), Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
+                Import, Id("math".to_string()), NewLine,
+                Import, Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
 
                 Const, Id("int".to_string()), Id("MAX".to_string()), Eq, Int(100), NewLine,
                 Auto, Id("flt".to_string()), Eq, Float(OrderedFloat(7.82)), NewLine,

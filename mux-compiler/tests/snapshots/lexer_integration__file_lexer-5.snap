@@ -7,16 +7,12 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
         "Imports",
     ),
     NewLine,
-    Id(
-        "import",
-    ),
+    Import,
     Id(
         "math",
     ),
     NewLine,
-    Id(
-        "import",
-    ),
+    Import,
     Id(
         "utils",
     ),

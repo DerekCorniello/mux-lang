@@ -3,16 +3,12 @@ source: tests/lexer_integration.rs
 expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
-    Id(
-        "import",
-    ),
+    Import,
     Id(
         "math",
     ),
     NewLine,
-    Id(
-        "import",
-    ),
+    Import,
     Id(
         "utils",
     ),
