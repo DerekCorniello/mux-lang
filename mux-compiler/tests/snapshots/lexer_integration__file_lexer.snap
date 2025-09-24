@@ -136,26 +136,19 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
     Id(
         "i",
     ),
-    Eq,
+    In,
+    Id(
+        "range",
+    ),
+    OpenParen,
     Int(
         0,
     ),
-    Semicolon,
-    Id(
-        "i",
-    ),
-    Lt,
+    Comma,
     Int(
         3,
     ),
-    Semicolon,
-    Id(
-        "i",
-    ),
-    PlusEq,
-    Int(
-        1,
-    ),
+    CloseParen,
     OpenBrace,
     Id(
         "print",

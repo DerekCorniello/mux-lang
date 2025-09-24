@@ -323,10 +323,6 @@ match (tuple) {
 ### 7.3 For Loops
 
 ```
-for int i = 0; i < 5; i += 1 {
-    print(i)
-}
-
 for item in myList {
     auto processed = transform(item)  // type inferred
     print(processed)

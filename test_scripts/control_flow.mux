@@ -8,5 +8,5 @@ match Some(15) {
     None { print("None") }
 }
 
-for int i = 0; i < 3; i += 1 { print(i) }
+for int i in range(0, 3) { print(i) }
 while x > 0 { x -= 1 }

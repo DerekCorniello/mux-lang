@@ -36,7 +36,7 @@ fn test_file_lexer() {
                     Id("print".to_string()), OpenParen, Str("Small: ".to_string()), Plus, Id("v".to_string()), CloseParen, CloseBrace, NewLine,
                 Id("None".to_string()), OpenBrace, Id("print".to_string()), OpenParen, Str("None".to_string()), CloseParen, CloseBrace, NewLine,
                 CloseBrace, NewLine, NewLine,
-                For, Id("int".to_string()), Id("i".to_string()), Eq, Int(0), Semicolon, Id("i".to_string()), Lt, Int(3), Semicolon, Id("i".to_string()), PlusEq, Int(1), OpenBrace, 
+                For, Id("int".to_string()), Id("i".to_string()), In, Id("range".to_string()), OpenParen, Int(0), Comma, Int(3), CloseParen, OpenBrace, 
                     Id("print".to_string()), OpenParen, Id("i".to_string()), CloseParen, CloseBrace, NewLine,
                 While, Id("x".to_string()), Gt, Int(0), OpenBrace, 
                     Id("x".to_string()), MinusEq, Int(1), CloseBrace, NewLine,
