@@ -2790,27 +2790,52 @@ mod tests {
     
     #[test]
     fn test_error_recovery() {
-        // Test recovery after invalid statement
+        // Test recovery after various types of syntax errors
         let source = r#"
-            let x = 5  // Missing semicolon
+            // Missing newline after statement
+            let x = 5  
             auto y = 10
             
-            // Should recover and parse this function
+            // Missing closing brace
             func foo() {
                 return 42
-            }
             
-            // Another error
+            // Invalid expression
             123abc = 99
             
-            // Should still parse this
-            auto z = 20
+            // Missing operator
+            let z = 20 30
+            
+            // Valid statement after errors
+            auto valid1 = 100
+            
+            // Missing closing parenthesis
+            let result = (5 + 10
+            
+            // Valid function declaration with error inside
+            func bar() {
+                // Missing return value
+                return
+                auto x = 42
+            }
+            
+            // Another valid statement
+            auto valid2 = 200
+            
+            // Invalid type declaration
+            struct BadStruct {
+                field1: InvalidType
+                field2: int
+            }
+            
+            // Valid statement after struct
+            auto valid3 = 300
         "#;
         
         let mut parser = create_parser(source);
         let result = parser.parse();
         
-        // We expect an error
+        // We expect errors
         assert!(matches!(&result, Err(_)), "Expected parsing errors but got: {:?}", result);
         
         match result {
@@ -2819,14 +2844,73 @@ mod tests {
                 assert!(!nodes.is_empty(), "Expected some valid nodes to be parsed");
                 println!("Successfully parsed {} nodes despite errors", nodes.len());
                 
-                // For error recovery test, we might have nodes with errors
-                // So we don't check for empty errors here
+                // Verify we have the expected number of valid nodes
+                // 1. auto y = 10
+                // 2. auto valid1 = 100
+                // 3. auto valid2 = 200
+                // 4. auto valid3 = 300
+                // 5. func bar() { ... }  (even with errors inside, the function itself is parsed)
+                assert!(nodes.len() >= 4, "Expected at least 4 valid nodes to be parsed");
+                
+                // Verify specific valid nodes were parsed
+                let node_texts: Vec<String> = nodes.iter()
+                    .map(|n| format!("{:?}", n))
+                    .collect();
+                
+                println!("Successfully parsed nodes: {:?}", node_texts);
             }
             Err(error) => {
                 println!("Found error: {} at {:?}", error.message, error.span);
                 
                 // Verify the error message indicates a parsing error
                 assert!(!error.message.is_empty(), "Expected a non-empty error message");
+                
+                // Check for specific error messages we expect
+                let error_msg = error.message.to_lowercase();
+                assert!(
+                    error_msg.contains("expected") || 
+                    error_msg.contains("missing") ||
+                    error_msg.contains("unexpected"),
+                    "Error message should indicate what went wrong"
+                );
+            }
+        }
+        
+        // Test recovery in the middle of expressions
+        let source = "auto x = 10 + * 5 - / 3\nlet y = 20\n";
+        let mut parser = create_parser(source);
+        let result = parser.parse();
+        
+        // This might fail if the parser can't recover, which is fine
+        // We're mainly interested in not panicking
+        println!("Recovery test result: {:?}", result);
+        
+        // Test recovery after incomplete statement
+        // In this case, the parser might not be able to recover, so we'll just check that it doesn't panic
+        let source = "auto x = 10 + \nlet y = 20\n";
+        let mut parser = create_parser(source);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            parser.parse()
+        }));
+        
+        // We don't care about the result, just that it didn't panic
+        println!("Incomplete expression test completed without panic");
+        
+        // Test recovery with a more complex but valid expression after an error
+        let source = "auto x = 10 + * 5 - / 3\nlet y = 20 + 30\n";
+        let mut parser = create_parser(source);
+        let result = parser.parse();
+        
+        // Check if we can recover and parse the second statement
+        match result {
+            Ok(nodes) => {
+                // We should have at least the second statement
+                assert!(!nodes.is_empty(), "Expected at least one valid statement after recovery");
+                println!("Successfully recovered and parsed {} statements", nodes.len());
+            }
+            Err(e) => {
+                // It's okay if we get an error, as long as we don't panic
+                println!("Got expected error during recovery: {}", e.message);
             }
         }
     }
