@@ -90,6 +90,7 @@ pub enum TokenType {
     MinusEq,
     StarEq,
     SlashEq,
+    PercentEq,
     Ampersand,
     And,
     Or,
@@ -217,7 +218,14 @@ impl<'a> Lexer<'a> {
             ']' => Ok(Token::new(TokenType::CloseBracket, start_span)),
             ',' => Ok(Token::new(TokenType::Comma, start_span)),
             ':' => Ok(Token::new(TokenType::Colon, start_span)),
-            '%' => Ok(Token::new(TokenType::Percent, start_span)),
+            '%' => {
+                if self.source.peek() == Some('=') {
+                    self.source.next_char();
+                    Ok(Token::new(TokenType::PercentEq, start_span))
+                } else {
+                    Ok(Token::new(TokenType::Percent, start_span))
+                }
+            },
             '_' => Ok(Token::new(TokenType::Underscore, start_span)),
             '.' => match self.source.peek() {
                 Some(c) if c.is_ascii_digit() => self.read_number(c, start_span),

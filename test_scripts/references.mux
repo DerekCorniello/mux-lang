@@ -1,0 +1,19 @@
+// References
+int val = 10
+auto r = &val
+print(r)
+r = 20
+print(val)
+
+// References to list elements
+auto numbers = [1, 2, 3, 4, 5]
+auto first = &numbers[0]
+print(first)
+
+// Function taking a reference
+func update(ref: &int) {
+    ref = ref + 1
+}
+
+update(&val)
+print(val)
