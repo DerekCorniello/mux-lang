@@ -246,6 +246,8 @@ impl<'a> Parser<'a> {
             self.interface_declaration().map(Some)
         } else if self.check(TokenType::Enum) {
             self.enum_declaration().map(Some)
+        } else if self.check(TokenType::Import) {
+            self.import_declaration().map(Some)
         } else {
             self.statement().map(Some)
         };
@@ -1061,7 +1063,6 @@ impl<'a> Parser<'a> {
                 None
             };
 
-            // Parse body
             let body = self.block_statement()?;
             let body_statements = match body {
                 AstNode::Statement(stmt) => match stmt.kind {
@@ -1442,7 +1443,7 @@ impl<'a> Parser<'a> {
                 })
             },
             
-            _ => Err(ParserError::from_token("Expected type", &token)),
+            _ => Err(ParserError::from_token("Expected type", token)),
         }
     }
 
@@ -1519,30 +1520,11 @@ impl<'a> Parser<'a> {
     fn peek(&self) -> &Token {
         &self.tokens[self.current]
     }
-    
-    fn peek_identifier(&self) -> Option<String> {
-        if self.is_at_end() {
-            return None;
-        }
-        match &self.peek().token_type {
-            TokenType::Id(name) => Some(name.clone()),
-            _ => None,
-        }
-    }
 
     fn consume(&mut self) -> &Token {
         let ret = &self.tokens[self.current];
         self.current += 1;
         ret
-    }
-
-    fn consume_until(&mut self, token_type: TokenType) -> &[Token] {
-        let start = self.current;
-        while !self.is_at_end() && self.peek().token_type != token_type {
-            self.consume();
-        }
-        let end = self.current;
-        &self.tokens[start..end]
     }
 
     pub fn parse_expression(&mut self) -> ParserResult<ExpressionNode> {
@@ -1691,6 +1673,34 @@ impl<'a> Parser<'a> {
                 self.parse_postfix_operators(expr)
             }
 
+            // Map literals
+            TokenType::OpenBrace => {
+                let start_span = token_span;
+                let mut entries = Vec::new();
+
+                if !self.check(TokenType::CloseBrace) {
+                    loop {
+                        let key = self.parse_expression()?;
+                        self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
+                        let value = self.parse_expression()?;
+                        entries.push((key, value));
+
+                        if !self.matches(&[TokenType::Comma]) {
+                            break;
+                        }
+                    }
+                }
+
+                let end_span =
+                    self.consume_token(TokenType::CloseBrace, "Expected '}' after map entries")?;
+                let expr = ExpressionNode {
+                    kind: ExpressionKind::MapLiteral(entries),
+                    span: start_span.combine(&end_span),
+                };
+
+                self.parse_postfix_operators(expr)
+            }
+
             // Lambda expressions
             TokenType::Func => {
                 let start_span = token_span;
@@ -1752,11 +1762,33 @@ impl<'a> Parser<'a> {
                 self.parse_postfix_operators(expr)
             }
 
-            TokenType::Id(name) => {
+            // If expressions
+            TokenType::If => {
+                let start_span = token_span;
+
+                // Parse condition
+                let cond = self.parse_expression()?;
+
+                // Parse then branch
+                self.consume_token(TokenType::OpenBrace, "Expected '{' after if condition")?;
+                let then_expr = self.parse_expression()?;
+                self.consume_token(TokenType::CloseBrace, "Expected '}' after then expression")?;
+
+                // Parse else branch
+                self.consume_token(TokenType::Else, "Expected 'else' after then branch")?;
+                self.consume_token(TokenType::OpenBrace, "Expected '{' after else")?;
+                let else_expr = self.parse_expression()?;
+                self.consume_token(TokenType::CloseBrace, "Expected '}' after else expression")?;
+
                 let expr = ExpressionNode {
-                    kind: ExpressionKind::Identifier(name),
-                    span: token_span,
+                    kind: ExpressionKind::If {
+                        cond: Box::new(cond),
+                        then_expr: Box::new(then_expr),
+                        else_expr: Box::new(else_expr),
+                    },
+                    span: start_span.combine(&self.previous().span),
                 };
+
                 self.parse_postfix_operators(expr)
             }
             
@@ -1882,25 +1914,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn check_next(&self, ty: TokenType) -> bool {
-        if self.current + 1 >= self.tokens.len() {
-            return false;
-        }
-        self.tokens[self.current + 1].token_type == ty
-    }
-
-    fn is_valid_assignment_target(expr: &ExpressionNode) -> bool {
-        match &expr.kind {
-            ExpressionKind::Identifier(_) => true,
-            ExpressionKind::FieldAccess { .. } => true,
-            ExpressionKind::ListAccess { .. } => true,
-            ExpressionKind::MapLiteral(_) => {
-                false
-            }
-            _ => false,
-        }
-    }
-
     fn consume_operator(&mut self) -> Option<BinaryOp> {
         if self.is_at_end() {
             return None;
@@ -1983,7 +1996,7 @@ impl std::error::Error for ParserError {}
 
 pub type ParserResult<T> = Result<T, ParserError>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParserError {
     pub message: String,
     pub span: Span,
@@ -2003,50 +2016,6 @@ impl ParserError {
             span: token.span,
         }
     }
-
-    pub fn with_context(&self, source: &str) -> String {
-        let start_line = self.span.row_start.saturating_sub(1);
-        let end_line = self
-            .span
-            .row_end
-            .unwrap_or(self.span.row_start)
-            .saturating_sub(1);
-
-        let lines: Vec<&str> = source
-            .lines()
-            .skip(start_line)
-            .take(end_line - start_line + 1)
-            .collect();
-
-        let line_numbers: Vec<String> = (start_line..=end_line)
-            .map(|n| format!("{} | ", n + 1))
-            .collect();
-
-        let max_line_num_len = line_numbers.last().map_or(0, |s| s.len());
-
-        let mut message = String::new();
-        message.push_str(&format!(
-            "Error at {}:{} - {}\n",
-            self.span.row_start, self.span.col_start, self.message
-        ));
-
-        for (i, (line_num, line)) in line_numbers.into_iter().zip(lines).enumerate() {
-            message.push_str(&format!(
-                "{:width$}{}\n",
-                line_num,
-                line,
-                width = max_line_num_len
-            ));
-
-            // Add error indicator
-            if i == 0 {
-                let indent = max_line_num_len + self.span.col_start.saturating_sub(1);
-                message.push_str(&format!("{}^~\n", " ".repeat(indent)));
-            }
-        }
-
-        message
-    }
 }
 
 impl std::fmt::Display for ParserError {
@@ -2061,12 +2030,6 @@ impl std::fmt::Display for ParserError {
 
 pub trait SpanExt {
     fn combine(&self, other: &Span) -> Span;
-
-    fn from_token(token: &Token) -> Span;
-
-    fn from_tokens(start: &Token, end: &Token) -> Span;
-
-    fn is_valid(&self) -> bool;
 }
 
 impl SpanExt for Span {
@@ -2077,36 +2040,10 @@ impl SpanExt for Span {
         }
         span
     }
-
-    fn from_token(token: &Token) -> Span {
-        token.span
-    }
-
-    fn from_tokens(start: &Token, end: &Token) -> Span {
-        let mut span = start.span;
-        if let (Some(row_end), Some(col_end)) = (end.span.row_end, end.span.col_end) {
-            span.complete(row_end, col_end);
-        }
-        span
-    }
-
-    fn is_valid(&self) -> bool {
-        self.row_end.is_some() && self.col_end.is_some()
-    }
 }
 
 pub trait Spanned {
     fn span(&self) -> &Span;
-
-    fn start_pos(&self) -> (usize, usize) {
-        let span = self.span();
-        (span.row_start, span.col_start)
-    }
-
-    fn end_pos(&self) -> Option<(usize, usize)> {
-        let span = self.span();
-        span.row_end.zip(span.col_end)
-    }
 }
 
 macro_rules! impl_spanned {
@@ -2118,12 +2055,8 @@ macro_rules! impl_spanned {
         }
     };
 }
-// ===== Top-level AST Node =====
-
-/// Top-level AST node that can represent any construct in the Mux language
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AstNode {
-    // Declarations
     Function(FunctionNode),
     Class {
         name: String,
@@ -2142,29 +2075,10 @@ pub enum AstNode {
         type_params: Vec<(String, Vec<TraitBound>)>,
         variants: Vec<EnumVariant>,
     },
-    ConstDecl(ConstDeclNode),
-    AutoDecl(AutoDeclNode),
-
     Statement(StatementNode),
-
-    Expression(ExpressionNode),
-
-    Type(TypeNode),
 }
 
-// ===== Declaration Nodes =====
-
-/// Auto variable declaration (type-inferred or explicitly typed)
-#[derive(Debug, Clone)]
-pub struct AutoDeclNode {
-    pub name: String,
-    pub type_: TypeNode,
-    pub value: ExpressionNode,
-    pub span: Span,
-}
-
-/// Constant declaration (must have explicit type)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConstDeclNode {
     pub name: String,
     pub type_: TypeNode,
@@ -2172,17 +2086,12 @@ pub struct ConstDeclNode {
     pub span: Span,
 }
 
-impl_spanned!(AutoDeclNode);
 impl_spanned!(ConstDeclNode);
 
 impl AstNode {
     pub fn into_statement(self) -> Option<StatementNode> {
         match self {
             AstNode::Statement(stmt) => Some(stmt),
-            AstNode::Expression(expr) => Some(StatementNode {
-                kind: StatementKind::Expression(expr.clone()),
-                span: *expr.span(),
-            }),
             AstNode::Function(func) => {
                 let span = func.span;
                 Some(StatementNode {
@@ -2195,23 +2104,16 @@ impl AstNode {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StatementKind {
-    // Declaration statements
     AutoDecl(String, TypeNode, ExpressionNode),
     TypedDecl(String, TypeNode, ExpressionNode),
     ConstDecl(String, TypeNode, ExpressionNode),
-
-    // Function declaration
     Function(FunctionNode),
-    
-    // Import statements
     Import {
         module_path: String,
         alias: Option<String>,
     },
-
-    // Control flow
     Return(Option<ExpressionNode>),
     If {
         cond: ExpressionNode,
@@ -2233,15 +2135,11 @@ pub enum StatementKind {
     },
     Break,
     Continue,
-
-    // Expression statement
     Expression(ExpressionNode),
-
-    // Block statement
     Block(Vec<StatementNode>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StatementNode {
     pub kind: StatementKind,
     pub span: Span,
@@ -2249,13 +2147,10 @@ pub struct StatementNode {
 
 impl_spanned!(StatementNode);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ExpressionKind {
-    // Literals
     Literal(LiteralNode),
     Identifier(String),
-
-    // Operations
     Binary {
         left: Box<ExpressionNode>,
         op: BinaryOp,
@@ -2265,8 +2160,6 @@ pub enum ExpressionKind {
         op: UnaryOp,
         expr: Box<ExpressionNode>,
     },
-
-    // Function calls and member access
     Call {
         func: Box<ExpressionNode>,
         args: Vec<ExpressionNode>,
@@ -2279,31 +2172,20 @@ pub enum ExpressionKind {
         expr: Box<ExpressionNode>,
         index: Box<ExpressionNode>,
     },
-
-    // Collection literals
     ListLiteral(Vec<ExpressionNode>),
     MapLiteral(Vec<(ExpressionNode, ExpressionNode)>),
-
-    // Control flow expressions
     If {
         cond: Box<ExpressionNode>,
         then_expr: Box<ExpressionNode>,
         else_expr: Box<ExpressionNode>,
     },
-    Match {
-        expr: Box<ExpressionNode>,
-        arms: Vec<MatchArm>,
-    },
-    Block(Vec<StatementNode>),
-
-    // Functions and closures
     Lambda {
         params: Vec<Param>,
         body: Vec<StatementNode>,
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionNode {
     pub kind: ExpressionKind,
     pub span: Span,
@@ -2315,16 +2197,15 @@ impl_spanned!(ExpressionNode);
 pub enum TypeKind {
     Primitive(PrimitiveType),
     Named(String, Vec<TypeNode>),
-    TraitObject(Box<TypeNode>),  // dyn Trait
-    TypeVar(String),             // 'a, 'b, etc.
+    TraitObject(Box<TypeNode>),
+    TypeVar(String),
     Function {
         params: Vec<TypeNode>,
         returns: Box<TypeNode>,
     },
-    Pointer(Box<TypeNode>),
-    Reference(Box<TypeNode>),  // &T for references
+    Reference(Box<TypeNode>),
     List(Box<TypeNode>),
-    Map(Box<TypeNode>, Box<TypeNode>),  // Map[K, V]
+    Map(Box<TypeNode>, Box<TypeNode>),
     Tuple(Vec<TypeNode>),
     Auto,
 }
@@ -2372,7 +2253,6 @@ impl PrimitiveType {
     }
 }
 
-// Literal conversions
 impl From<OrderedFloat<f64>> for LiteralNode {
     fn from(f: OrderedFloat<f64>) -> Self {
         LiteralNode::Float(f)
@@ -2460,7 +2340,7 @@ pub struct TraitBound {
     pub type_params: Vec<TypeNode>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LiteralNode {
     Float(OrderedFloat<f64>),
     Integer(i64),
@@ -2469,19 +2349,19 @@ pub enum LiteralNode {
     Char(char),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub name: String,
     pub type_: TypeNode,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub name: String,
     pub type_: TypeNode,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionNode {
     pub name: String,
     pub type_params: Vec<(String, Vec<TraitBound>)>,
@@ -2491,26 +2371,26 @@ pub struct FunctionNode {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TraitRef {
     pub name: String,
     pub type_args: Vec<TypeNode>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariant {
     pub name: String,
     pub data: Option<Vec<TypeNode>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
     pub pattern: PatternNode,
     pub guard: Option<ExpressionNode>,
     pub body: Vec<StatementNode>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PatternNode {
     Literal(LiteralNode),
     Identifier(String),
@@ -2565,13 +2445,12 @@ impl BinaryOp {
         )
     }
 
-    /// Check if this operator is right-associative
     pub fn is_right_associative(&self) -> bool {
         self.is_assignment()
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
     Neg,
     Not,
