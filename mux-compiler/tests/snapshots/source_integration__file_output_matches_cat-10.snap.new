@@ -1,0 +1,6 @@
+---
+source: tests/source_integration.rs
+assertion_line: 28
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Collections\nauto nums = [1, 2, 3, 4]\nauto scores = map<string, int>{\"Alice\": 90, \"Bob\": 85}\nauto matrix = [[1, 2], [3, 4]]\nauto emptyList = list<int>()\nauto emptyMap = map<string, int>()\n"
