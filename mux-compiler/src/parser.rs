@@ -4,7 +4,7 @@ use std::fmt;
 
 #[derive(Debug)]
 pub struct Parser<'a> {
-    tokens: &'a [Token],
+    tokens: Vec<&'a Token>,
     current: usize,
     pub errors: Vec<ParserError>,
     in_function_body: bool,
@@ -50,7 +50,9 @@ impl fmt::Display for Precedence {
 impl<'a> Parser<'a> {
     pub fn new(tokens: &'a [Token]) -> Self {
         Self {
-            tokens,
+            tokens: tokens.iter()
+                .filter(|&token| !matches!(token.token_type, TokenType::LineComment(_) | TokenType::MultilineComment(_)))
+                .collect(),
             current: 0,
             errors: Vec::new(),
             in_function_body: false,
@@ -71,7 +73,7 @@ impl<'a> Parser<'a> {
     }
     
     fn previous(&self) -> &Token {
-        &self.tokens[(self.current - 1).max(0)]
+        self.tokens[(self.current - 1).max(0)]
     }
 
     fn check_statement_termination(&self) -> ParserResult<()> {
@@ -1322,16 +1324,13 @@ impl<'a> Parser<'a> {
 
         match token.token_type {
             TokenType::Id(ref name) => {
-                // First try to parse as a primitive type
-                if let Ok(prim_type) = PrimitiveType::parse(token.clone()) {
+                if let Ok(prim_type) = PrimitiveType::parse(token.to_owned().clone()) {
                     return Ok(TypeNode {
                         kind: TypeKind::Primitive(prim_type),
                         span: start_span,
                     });
                 }
                 
-                // If not a primitive, it's a named type
-                let name_clone = name.clone();
                 let type_args = if self.matches(&[TokenType::OpenBracket]) {
                     let args = self.parse_type_arguments()?;
                     self.consume_token(TokenType::CloseBracket, "Expected ']' after type arguments")?;
@@ -1340,18 +1339,9 @@ impl<'a> Parser<'a> {
                     Vec::new()
                 };
 
-                // Check for trait object syntax: `dyn Trait`
                 if name == "dyn" && !type_args.is_empty() {
                     return Ok(TypeNode {
                         kind: TypeKind::TraitObject(Box::new(type_args[0].clone())),
-                        span: start_span,
-                    });
-                }
-
-                // Check for type variable syntax: `'a`
-                if name.starts_with('\'') {
-                    return Ok(TypeNode {
-                        kind: TypeKind::TypeVar(name_clone),
                         span: start_span,
                     });
                 }
@@ -1518,7 +1508,7 @@ impl<'a> Parser<'a> {
     }
 
     fn peek(&self) -> &Token {
-        &self.tokens[self.current]
+        self.tokens[self.current]
     }
 
     fn consume(&mut self) -> &Token {
@@ -2179,7 +2169,6 @@ pub enum TypeKind {
     Primitive(PrimitiveType),
     Named(String, Vec<TypeNode>),
     TraitObject(Box<TypeNode>),
-    TypeVar(String),
     Function {
         params: Vec<TypeNode>,
         returns: Box<TypeNode>,
