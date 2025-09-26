@@ -1620,31 +1620,12 @@ impl<'a> Parser<'a> {
                 self.parse_postfix_operators(expr)
             }
 
-            TokenType::Str(s) => {
-                let is_identifier = if let Some(next_token) = self.tokens.get(self.current) {
-                    matches!(
-                        next_token.token_type,
-                        TokenType::Colon
-                            | TokenType::OpenParen
-                            | TokenType::Dot
-                            | TokenType::OpenBracket
-                    )
-                } else {
-                    false
+            // Identifier expressions
+            TokenType::Id(name) => {
+                let expr = ExpressionNode {
+                    kind: ExpressionKind::Identifier(name),
+                    span: token_span,
                 };
-
-                let expr = if is_identifier {
-                    ExpressionNode {
-                        kind: ExpressionKind::Identifier(s),
-                        span: token_span,
-                    }
-                } else {
-                    ExpressionNode {
-                        kind: ExpressionKind::Literal(LiteralNode::String(s)),
-                        span: token_span,
-                    }
-                };
-
                 self.parse_postfix_operators(expr)
             }
 
@@ -1793,7 +1774,7 @@ impl<'a> Parser<'a> {
             }
             
             _ => Err(ParserError::from_token(
-                "Expected expression",
+                format!("Expected expression, got {:?}", token_type),
                 &Token {
                     token_type,
                     span: token_span,
