@@ -182,7 +182,7 @@ fn test_file_lexer() {
             vec![
                 LineComment("References".to_string()), NewLine,
                 Id("int".to_string()), Id("val".to_string()), Eq, Int(10), NewLine,
-                Auto, Id("r".to_string()), Eq, Ampersand, Id("val".to_string()), NewLine,
+                Auto, Id("r".to_string()), Eq, Ref, Id("val".to_string()), NewLine,
                 Id("print".to_string()), OpenParen, Id("r".to_string()), CloseParen, NewLine,
                 Id("r".to_string()), Eq, Int(20), NewLine,
                 Id("print".to_string()), OpenParen, Id("val".to_string()), CloseParen, NewLine, NewLine,
@@ -190,16 +190,16 @@ fn test_file_lexer() {
                 // References to list elements
                 LineComment("References to list elements".to_string()), NewLine,
                 Auto, Id("numbers".to_string()), Eq, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), Comma, Int(4), Comma, Int(5), CloseBracket, NewLine,
-                Auto, Id("first".to_string()), Eq, Ampersand, Id("numbers".to_string()), OpenBracket, Int(0), CloseBracket, NewLine,
+                Auto, Id("first".to_string()), Eq, Ref, Id("numbers".to_string()), OpenBracket, Int(0), CloseBracket, NewLine,
                 Id("print".to_string()), OpenParen, Id("first".to_string()), CloseParen, NewLine, NewLine,
 
                 // Function taking a reference
                 LineComment("Function taking a reference".to_string()), NewLine,
-                Func, Id("update".to_string()), OpenParen, Id("ref".to_string()), Colon, Ampersand, Id("int".to_string()), CloseParen, OpenBrace, NewLine,
+                Func, Id("update".to_string()), OpenParen, Id("ref".to_string()), Colon, Ref, Id("int".to_string()), CloseParen, OpenBrace, NewLine,
                 Id("ref".to_string()), Eq, Id("ref".to_string()), Plus, Int(1), NewLine,
                 CloseBrace, NewLine, NewLine,
 
-                Id("update".to_string()), OpenParen, Ampersand, Id("val".to_string()), CloseParen, NewLine,
+                Id("update".to_string()), OpenParen, Ref, Id("val".to_string()), CloseParen, NewLine,
                 Id("print".to_string()), OpenParen, Id("val".to_string()), CloseParen, NewLine,
             ],
         ),
@@ -298,7 +298,7 @@ fn test_file_lexer() {
                 Auto, Id("squared".to_string()), Eq, Id("map".to_string()), OpenParen, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, Comma, Id("square".to_string()), CloseParen, NewLine, NewLine,
 
                 Id("int".to_string()), Id("val".to_string()), Eq, Int(10), NewLine,
-                Auto, Id("p".to_string()), Eq, Ampersand, Id("val".to_string()), NewLine,
+                Auto, Id("p".to_string()), Eq, Ref, Id("val".to_string()), NewLine,
                 Star, Id("p".to_string()), Eq, Int(20), NewLine,
                 CloseBrace, NewLine,
             ],

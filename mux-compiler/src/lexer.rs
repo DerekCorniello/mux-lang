@@ -91,9 +91,9 @@ pub enum TokenType {
     StarEq,
     SlashEq,
     PercentEq,
-    Ampersand,
     And,
     Or,
+    Ref,
 
     Int(i64),
     Float(OrderedFloat<f64>),
@@ -331,7 +331,7 @@ impl<'a> Lexer<'a> {
                     Ok(Token::new(TokenType::And, start_span))
                 } else {
                     start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Ampersand, start_span))
+                    Ok(Token::new(TokenType::Ref, start_span))
                 }
             }
             '/' => {

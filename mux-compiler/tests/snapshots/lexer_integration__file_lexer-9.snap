@@ -23,7 +23,7 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
         "r",
     ),
     Eq,
-    Ampersand,
+    Ref,
     Id(
         "val",
     ),
@@ -91,7 +91,7 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
         "first",
     ),
     Eq,
-    Ampersand,
+    Ref,
     Id(
         "numbers",
     ),
@@ -124,7 +124,7 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
         "ref",
     ),
     Colon,
-    Ampersand,
+    Ref,
     Id(
         "int",
     ),
@@ -150,7 +150,7 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
         "update",
     ),
     OpenParen,
-    Ampersand,
+    Ref,
     Id(
         "val",
     ),

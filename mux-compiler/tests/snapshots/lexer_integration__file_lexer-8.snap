@@ -1185,7 +1185,7 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
         "p",
     ),
     Eq,
-    Ampersand,
+    Ref,
     Id(
         "val",
     ),
