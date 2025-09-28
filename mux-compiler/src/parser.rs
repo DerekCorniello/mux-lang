@@ -1680,6 +1680,7 @@ impl<'a> Parser<'a> {
                 kind: ExpressionKind::Unary {
                     op: UnaryOp::parse(op_token.clone())?,
                     expr: Box::new(expr),
+                    postfix: false,
                 },
                 span: op_token.span.combine(&expr_span),
             })
@@ -1952,6 +1953,26 @@ impl<'a> Parser<'a> {
                     },
                     span: expr_span.combine(&end_span),
                 };
+            } else if self.matches(&[TokenType::Incr]) {
+                let expr_span = *expr.span();
+                expr = ExpressionNode {
+                    kind: ExpressionKind::Unary {
+                        op: UnaryOp::Incr,
+                        expr: Box::new(expr),
+                        postfix: true,
+                    },
+                    span: expr_span.combine(&self.previous().span),
+                };
+            } else if self.matches(&[TokenType::Decr]) {
+                let expr_span = *expr.span();
+                expr = ExpressionNode {
+                    kind: ExpressionKind::Unary {
+                        op: UnaryOp::Decr,
+                        expr: Box::new(expr),
+                        postfix: true,
+                    },
+                    span: expr_span.combine(&self.previous().span),
+                };
             } else {
                 break;
             }
@@ -2065,7 +2086,7 @@ impl<'a> Parser<'a> {
 
         let token = self.peek();
         match &token.token_type {
-            TokenType::Minus | TokenType::Bang | TokenType::Ref => {
+            TokenType::Minus | TokenType::Bang | TokenType::Ref | TokenType::Incr | TokenType::Decr => {
                 let token_clone = token.clone();
                 self.current += 1;
                 Some(token_clone)
@@ -2269,6 +2290,7 @@ pub enum ExpressionKind {
     Unary {
         op: UnaryOp,
         expr: Box<ExpressionNode>,
+        postfix: bool,
     },
     Call {
         func: Box<ExpressionNode>,
@@ -2560,6 +2582,8 @@ pub enum UnaryOp {
     Neg,
     Not,
     Ref,
+    Incr,
+    Decr,
 }
 
 impl UnaryOp {
@@ -2568,6 +2592,8 @@ impl UnaryOp {
             TokenType::Minus => Ok(UnaryOp::Neg),
             TokenType::Bang => Ok(UnaryOp::Not),
             TokenType::Ref => Ok(UnaryOp::Ref),
+            TokenType::Incr => Ok(UnaryOp::Incr),
+            TokenType::Decr => Ok(UnaryOp::Decr),
             _ => Err(ParserError {
                 message: format!(
                     "Unexpected token type for unary operation: {:?}",
