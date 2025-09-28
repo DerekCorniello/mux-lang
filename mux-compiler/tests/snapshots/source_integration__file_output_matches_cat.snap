@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Control flow\nauto x = 5\nif x > 0 { print(\"Positive\") } else { print(\"Non-positive\") }\n\nmatch Some(15) {\n    Some(v) if v > 10 { print(\"Large: \" + v) }\n    Some(v) { print(\"Small: \" + v) }\n    None { print(\"None\") }\n}\n\nfor int i in range(0, 3) { print(i) }\nwhile x > 0 { x -= 1 }\n"
+"// Collections\nauto nums = [1, 2, 3, 4]\nauto scores = map<string, int>{\"Alice\": 90, \"Bob\": 85}\nauto matrix = [[1, 2], [3, 4]]\nauto emptyList = list<int>()\nauto emptyMap = map<string, int>()\n"

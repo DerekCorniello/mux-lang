@@ -4,23 +4,31 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Optionals & Results",
+        "Generics",
     ),
     NewLine,
     Func,
     Id(
-        "divide",
+        "max",
     ),
+    OpenBracket,
+    Id(
+        "T",
+    ),
+    Id(
+        "comparable",
+    ),
+    CloseBracket,
     OpenParen,
     Id(
-        "int",
+        "T",
     ),
     Id(
         "a",
     ),
     Comma,
     Id(
-        "int",
+        "T",
     ),
     Id(
         "b",
@@ -28,145 +36,89 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
     CloseParen,
     Returns,
     Id(
-        "Result",
+        "T",
     ),
-    Lt,
-    Id(
-        "int",
-    ),
-    Comma,
-    Id(
-        "string",
-    ),
-    Gt,
     OpenBrace,
-    NewLine,
     If,
-    Id(
-        "b",
-    ),
-    EqEq,
-    Int(
-        0,
-    ),
-    OpenBrace,
-    Return,
-    Id(
-        "Err",
-    ),
-    OpenParen,
-    Str(
-        "Division by zero",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    Return,
-    Id(
-        "Ok",
-    ),
-    OpenParen,
     Id(
         "a",
     ),
-    Slash,
+    Gt,
     Id(
         "b",
     ),
-    CloseParen,
-    NewLine,
+    OpenBrace,
+    Return,
+    Id(
+        "a",
+    ),
+    CloseBrace,
+    Return,
+    Id(
+        "b",
+    ),
     CloseBrace,
     NewLine,
     NewLine,
-    Auto,
+    Class,
     Id(
-        "res",
+        "Stack",
     ),
-    Eq,
+    OpenBracket,
     Id(
-        "divide",
+        "T",
     ),
-    OpenParen,
-    Int(
-        10,
-    ),
-    Comma,
-    Int(
-        2,
-    ),
-    CloseParen,
-    NewLine,
-    Match,
-    Id(
-        "res",
-    ),
+    CloseBracket,
     OpenBrace,
     NewLine,
-    Id(
-        "Ok",
-    ),
-    OpenParen,
-    Id(
-        "v",
-    ),
-    CloseParen,
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "Result: ",
-    ),
-    Plus,
-    Id(
-        "v",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    Id(
-        "Err",
-    ),
-    OpenParen,
-    Id(
-        "e",
-    ),
-    CloseParen,
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "Error: ",
-    ),
-    Plus,
-    Id(
-        "e",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    CloseBrace,
-    NewLine,
-    NewLine,
-    Func,
-    Id(
-        "findEven",
-    ),
-    OpenParen,
     Id(
         "list",
     ),
     Lt,
     Id(
-        "int",
+        "T",
     ),
     Gt,
     Id(
-        "nums",
+        "items",
     ),
+    NewLine,
+    Func,
+    Id(
+        "push",
+    ),
+    OpenParen,
+    Id(
+        "T",
+    ),
+    Id(
+        "item",
+    ),
+    CloseParen,
+    Returns,
+    Id(
+        "void",
+    ),
+    OpenBrace,
+    Id(
+        "items",
+    ),
+    Dot,
+    Id(
+        "append",
+    ),
+    OpenParen,
+    Id(
+        "item",
+    ),
+    CloseParen,
+    CloseBrace,
+    NewLine,
+    Func,
+    Id(
+        "pop",
+    ),
+    OpenParen,
     CloseParen,
     Returns,
     Id(
@@ -174,45 +126,76 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
     ),
     Lt,
     Id(
-        "int",
+        "T",
     ),
     Gt,
     OpenBrace,
     NewLine,
-    For,
-    Id(
-        "n",
-    ),
-    In,
-    Id(
-        "nums",
-    ),
-    OpenBrace,
     If,
     Id(
-        "n",
+        "items",
     ),
-    Percent,
-    Int(
-        2,
+    Dot,
+    Id(
+        "isEmpty",
     ),
-    EqEq,
-    Int(
-        0,
-    ),
+    OpenParen,
+    CloseParen,
     OpenBrace,
+    Return,
+    Id(
+        "None",
+    ),
+    CloseBrace,
+    NewLine,
     Return,
     Id(
         "Some",
     ),
     OpenParen,
     Id(
-        "n",
+        "items",
     ),
+    Dot,
+    Id(
+        "removeLast",
+    ),
+    OpenParen,
     CloseParen,
-    CloseBrace,
+    CloseParen,
+    NewLine,
     CloseBrace,
     NewLine,
     CloseBrace,
+    NewLine,
+    NewLine,
+    Auto,
+    Id(
+        "s",
+    ),
+    Eq,
+    Id(
+        "Stack",
+    ),
+    Lt,
+    Id(
+        "int",
+    ),
+    Gt,
+    OpenParen,
+    CloseParen,
+    NewLine,
+    Id(
+        "s",
+    ),
+    Dot,
+    Id(
+        "push",
+    ),
+    OpenParen,
+    Int(
+        42,
+    ),
+    CloseParen,
     NewLine,
 ]

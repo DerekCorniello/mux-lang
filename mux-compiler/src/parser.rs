@@ -2697,6 +2697,118 @@ mod tests {
             }
         }
     }
+    
+    #[test]
+    fn test_span_propagation() {
+        // Using a simpler input since the function parsing is more complex
+        let input = r#"
+        auto x = 42
+        auto y = "hello"
+        "#;
+        
+        let stmts = parse_stmts(input);
+        assert!(!stmts.is_empty(), "No statements were parsed");
+        assert!(stmts.len() >= 2, "Expected at least 2 statements");
+        
+        // Test first variable declaration span
+        if let StatementKind::AutoDecl(_, _, expr) = &stmts[0].kind {
+            assert_eq!(stmts[0].span.row_start, 2);
+            assert!(stmts[0].span.col_start > 0);
+            
+            // The expression should have its own span
+            assert_eq!(expr.span.row_start, 2);
+            assert!(expr.span.col_start > 0);
+            
+            if let ExpressionKind::Literal(lit) = &expr.kind {
+                // The literal value should be 42
+                if let LiteralNode::Integer(val) = lit {
+                    assert_eq!(*val, 42);
+                } else {
+                    panic!("Expected Integer literal, got {:?}", lit);
+                }
+            } else {
+                panic!("Expected literal expression, got {:?}", expr.kind);
+            }
+        } else {
+            panic!("Expected AutoDecl statement, got {:?}", stmts[0].kind);
+        }
+        
+        // Test second variable declaration with string literal
+        if let StatementKind::AutoDecl(_, _, expr) = &stmts[1].kind {
+            assert_eq!(stmts[1].span.row_start, 3);
+            assert!(stmts[1].span.col_start > 0);
+            
+            if let ExpressionKind::Literal(lit) = &expr.kind {
+                assert_eq!(expr.span.row_start, 3);
+                assert!(expr.span.col_start > 0);
+                
+                if let LiteralNode::String(s) = lit {
+                    assert_eq!(s, "hello");
+                } else {
+                    panic!("Expected String literal, got {:?}", lit);
+                }
+            } else {
+                panic!("Expected literal expression, got {:?}", expr.kind);
+            }
+        } else {
+            panic!("Expected AutoDecl statement, got {:?}", stmts[1].kind);
+        }
+    }
+    
+    #[test]
+    fn test_binary_expression_span() {
+        let input = "1 + 2 * 3";
+        let expr = parse_expr(input);
+        
+        // The binary expression should span the entire input
+        if let ExpressionKind::Binary { left, op: _, right } = &expr.kind {
+            // The entire expression should span from the start of the first token to the end of the last token
+            assert_eq!(expr.span.row_start, 1);
+            assert_eq!(expr.span.col_start, 1);
+            assert_eq!(expr.span.col_end, Some(10)); // 1-based, inclusive of last character
+            
+            // The left and right operands should have their own spans
+            assert_eq!(left.span.row_start, 1);
+            assert_eq!(left.span.col_start, 1);
+            assert_eq!(right.span.row_start, 1);
+            assert!(right.span.col_start > left.span.col_start);
+        } else {
+            panic!("Expected binary expression, got {:?}", expr.kind);
+        }
+    }
+    
+    #[test]
+    fn test_function_call_span() {
+        let input = "add(1, 2 + 3)";
+        let expr = parse_expr(input);
+        
+        // The function call should span the entire input
+        if let ExpressionKind::Call { func, args } = &expr.kind {
+            assert_eq!(expr.span.row_start, 1);
+            assert_eq!(expr.span.col_start, 1);
+            
+            // The function name should have its own span
+            assert_eq!(func.span.row_start, 1);
+            assert_eq!(func.span.col_start, 1);
+            
+            // Arguments should have their own spans
+            assert_eq!(args.len(), 2);
+            assert_eq!(args[0].span.row_start, 1);
+            assert_eq!(args[0].span.col_start, 5);
+            
+            // The second argument is a binary expression
+            if let ExpressionKind::Binary { left, op: _, right } = &args[1].kind {
+                assert_eq!(left.span.row_start, 1);
+                assert_eq!(left.span.col_start, 8);
+                assert_eq!(right.span.row_start, 1);
+                assert_eq!(right.span.col_start, 12);
+            } else {
+                panic!("Expected binary expression as second argument, got {:?}", args[1].kind);
+            }
+        } else {
+            panic!("Expected function call expression, got {:?}", expr.kind);
+        }
+    }
 
     #[test]
     fn test_newline_termination() {

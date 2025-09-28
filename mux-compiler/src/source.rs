@@ -63,6 +63,14 @@ impl Source {
         self.input[self.pos..].chars().next()
     }
     
+    // gets the nth character ahead without consuming
+    pub fn peek_nth(&self, n: usize) -> Option<char> {
+        if self.pos >= self.input.len() {
+            return None;
+        }
+        self.input[self.pos..].chars().nth(n)
+    }
+    
     // consumes characters until the specified stop character is found. the stop
     // character is not consumed and not included in the returned string. leading
     // and trailing whitespace is trimmed from the result.

@@ -4,91 +4,25 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Enums and Classes",
+        "Control flow",
     ),
     NewLine,
-    Enum,
+    Auto,
     Id(
-        "Shape",
+        "x",
     ),
-    OpenBrace,
-    Id(
-        "Circle",
-    ),
-    OpenParen,
-    Id(
-        "float",
-    ),
-    Id(
-        "r",
-    ),
-    CloseParen,
-    Comma,
-    Id(
-        "Rectangle",
-    ),
-    OpenParen,
-    Id(
-        "float",
-    ),
-    Id(
-        "w",
-    ),
-    Comma,
-    Id(
-        "float",
-    ),
-    Id(
-        "h",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    NewLine,
-    Interface,
-    Id(
-        "Drawable",
-    ),
-    OpenBrace,
-    Func,
-    Id(
-        "draw",
-    ),
-    OpenParen,
-    CloseParen,
-    Returns,
-    Id(
-        "void",
-    ),
-    CloseBrace,
-    NewLine,
-    NewLine,
-    Class,
-    Id(
-        "Circle",
-    ),
-    Is,
-    Id(
-        "Drawable",
-    ),
-    OpenBrace,
-    NewLine,
-    Id(
-        "float",
-    ),
-    Id(
-        "radius",
+    Eq,
+    Int(
+        5,
     ),
     NewLine,
-    Func,
+    If,
     Id(
-        "draw",
+        "x",
     ),
-    OpenParen,
-    CloseParen,
-    Returns,
-    Id(
-        "void",
+    Gt,
+    Int(
+        0,
     ),
     OpenBrace,
     Id(
@@ -96,15 +30,152 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
     ),
     OpenParen,
     Str(
-        "Circle radius=",
+        "Positive",
     ),
-    Plus,
+    CloseParen,
+    CloseBrace,
+    Else,
+    OpenBrace,
     Id(
-        "radius",
+        "print",
+    ),
+    OpenParen,
+    Str(
+        "Non-positive",
     ),
     CloseParen,
     CloseBrace,
     NewLine,
+    NewLine,
+    Match,
+    Id(
+        "Some",
+    ),
+    OpenParen,
+    Int(
+        15,
+    ),
+    CloseParen,
+    OpenBrace,
+    NewLine,
+    Id(
+        "Some",
+    ),
+    OpenParen,
+    Id(
+        "v",
+    ),
+    CloseParen,
+    If,
+    Id(
+        "v",
+    ),
+    Gt,
+    Int(
+        10,
+    ),
+    OpenBrace,
+    Id(
+        "print",
+    ),
+    OpenParen,
+    Str(
+        "Large: ",
+    ),
+    Plus,
+    Id(
+        "v",
+    ),
+    CloseParen,
+    CloseBrace,
+    NewLine,
+    Id(
+        "Some",
+    ),
+    OpenParen,
+    Id(
+        "v",
+    ),
+    CloseParen,
+    OpenBrace,
+    Id(
+        "print",
+    ),
+    OpenParen,
+    Str(
+        "Small: ",
+    ),
+    Plus,
+    Id(
+        "v",
+    ),
+    CloseParen,
+    CloseBrace,
+    NewLine,
+    Id(
+        "None",
+    ),
+    OpenBrace,
+    Id(
+        "print",
+    ),
+    OpenParen,
+    Str(
+        "None",
+    ),
+    CloseParen,
+    CloseBrace,
+    NewLine,
+    CloseBrace,
+    NewLine,
+    NewLine,
+    For,
+    Id(
+        "int",
+    ),
+    Id(
+        "i",
+    ),
+    In,
+    Id(
+        "range",
+    ),
+    OpenParen,
+    Int(
+        0,
+    ),
+    Comma,
+    Int(
+        3,
+    ),
+    CloseParen,
+    OpenBrace,
+    Id(
+        "print",
+    ),
+    OpenParen,
+    Id(
+        "i",
+    ),
+    CloseParen,
+    CloseBrace,
+    NewLine,
+    While,
+    Id(
+        "x",
+    ),
+    Gt,
+    Int(
+        0,
+    ),
+    OpenBrace,
+    Id(
+        "x",
+    ),
+    MinusEq,
+    Int(
+        1,
+    ),
     CloseBrace,
     NewLine,
 ]

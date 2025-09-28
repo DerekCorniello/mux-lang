@@ -4,178 +4,128 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Control flow",
+        "Collections",
     ),
     NewLine,
     Auto,
     Id(
-        "x",
+        "nums",
     ),
     Eq,
+    OpenBracket,
     Int(
-        5,
+        1,
     ),
-    NewLine,
-    If,
-    Id(
-        "x",
-    ),
-    Gt,
+    Comma,
     Int(
-        0,
-    ),
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "Positive",
-    ),
-    CloseParen,
-    CloseBrace,
-    Else,
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "Non-positive",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    NewLine,
-    Match,
-    Id(
-        "Some",
-    ),
-    OpenParen,
-    Int(
-        15,
-    ),
-    CloseParen,
-    OpenBrace,
-    NewLine,
-    Id(
-        "Some",
-    ),
-    OpenParen,
-    Id(
-        "v",
-    ),
-    CloseParen,
-    If,
-    Id(
-        "v",
-    ),
-    Gt,
-    Int(
-        10,
-    ),
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "Large: ",
-    ),
-    Plus,
-    Id(
-        "v",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    Id(
-        "Some",
-    ),
-    OpenParen,
-    Id(
-        "v",
-    ),
-    CloseParen,
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "Small: ",
-    ),
-    Plus,
-    Id(
-        "v",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    Id(
-        "None",
-    ),
-    OpenBrace,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Str(
-        "None",
-    ),
-    CloseParen,
-    CloseBrace,
-    NewLine,
-    CloseBrace,
-    NewLine,
-    NewLine,
-    For,
-    Id(
-        "int",
-    ),
-    Id(
-        "i",
-    ),
-    In,
-    Id(
-        "range",
-    ),
-    OpenParen,
-    Int(
-        0,
+        2,
     ),
     Comma,
     Int(
         3,
     ),
-    CloseParen,
-    OpenBrace,
-    Id(
-        "print",
+    Comma,
+    Int(
+        4,
     ),
-    OpenParen,
-    Id(
-        "i",
-    ),
-    CloseParen,
-    CloseBrace,
+    CloseBracket,
     NewLine,
-    While,
+    Auto,
     Id(
-        "x",
+        "scores",
+    ),
+    Eq,
+    Id(
+        "map",
+    ),
+    Lt,
+    Id(
+        "string",
+    ),
+    Comma,
+    Id(
+        "int",
     ),
     Gt,
-    Int(
-        0,
-    ),
     OpenBrace,
-    Id(
-        "x",
+    Str(
+        "Alice",
     ),
-    MinusEq,
+    Colon,
+    Int(
+        90,
+    ),
+    Comma,
+    Str(
+        "Bob",
+    ),
+    Colon,
+    Int(
+        85,
+    ),
+    CloseBrace,
+    NewLine,
+    Auto,
+    Id(
+        "matrix",
+    ),
+    Eq,
+    OpenBracket,
+    OpenBracket,
     Int(
         1,
     ),
-    CloseBrace,
+    Comma,
+    Int(
+        2,
+    ),
+    CloseBracket,
+    Comma,
+    OpenBracket,
+    Int(
+        3,
+    ),
+    Comma,
+    Int(
+        4,
+    ),
+    CloseBracket,
+    CloseBracket,
+    NewLine,
+    Auto,
+    Id(
+        "emptyList",
+    ),
+    Eq,
+    Id(
+        "list",
+    ),
+    Lt,
+    Id(
+        "int",
+    ),
+    Gt,
+    OpenParen,
+    CloseParen,
+    NewLine,
+    Auto,
+    Id(
+        "emptyMap",
+    ),
+    Eq,
+    Id(
+        "map",
+    ),
+    Lt,
+    Id(
+        "string",
+    ),
+    Comma,
+    Id(
+        "int",
+    ),
+    Gt,
+    OpenParen,
+    CloseParen,
     NewLine,
 ]

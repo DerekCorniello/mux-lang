@@ -4,50 +4,160 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Imports",
+        "Functions and lambdas",
     ),
     NewLine,
-    Import,
+    Func,
     Id(
-        "math",
+        "add",
+    ),
+    OpenParen,
+    Id(
+        "int",
+    ),
+    Id(
+        "a",
+    ),
+    Comma,
+    Id(
+        "int",
+    ),
+    Id(
+        "b",
+    ),
+    CloseParen,
+    Returns,
+    Id(
+        "int",
+    ),
+    OpenBrace,
+    NewLine,
+    Return,
+    Id(
+        "a",
+    ),
+    Plus,
+    Id(
+        "b",
     ),
     NewLine,
-    Import,
-    Id(
-        "utils",
-    ),
-    Dot,
-    Id(
-        "logger",
-    ),
-    As,
-    Underscore,
+    CloseBrace,
     NewLine,
     NewLine,
-    Auto,
+    Func,
     Id(
-        "pi",
+        "greet",
+    ),
+    OpenParen,
+    Id(
+        "string",
+    ),
+    Id(
+        "name",
+    ),
+    Comma,
+    Id(
+        "int",
+    ),
+    Id(
+        "times",
     ),
     Eq,
-    Id(
-        "math",
+    Int(
+        1,
     ),
-    Dot,
+    CloseParen,
+    Returns,
     Id(
-        "PI",
+        "void",
     ),
+    OpenBrace,
     NewLine,
+    For,
+    Id(
+        "i",
+    ),
+    In,
+    Id(
+        "range",
+    ),
+    OpenParen,
+    Int(
+        0,
+    ),
+    Comma,
+    Id(
+        "times",
+    ),
+    CloseParen,
+    OpenBrace,
     Id(
         "print",
     ),
     OpenParen,
     Str(
-        "PI = ",
+        "Hello ",
     ),
     Plus,
     Id(
-        "pi",
+        "name",
     ),
     CloseParen,
+    CloseBrace,
+    NewLine,
+    CloseBrace,
+    NewLine,
+    NewLine,
+    LineComment(
+        "Lambda examples",
+    ),
+    NewLine,
+    Auto,
+    Id(
+        "square",
+    ),
+    Eq,
+    Func,
+    OpenParen,
+    Id(
+        "int",
+    ),
+    Id(
+        "n",
+    ),
+    CloseParen,
+    OpenBrace,
+    Return,
+    Id(
+        "n",
+    ),
+    Star,
+    Id(
+        "n",
+    ),
+    CloseBrace,
+    NewLine,
+    Auto,
+    Id(
+        "doubled",
+    ),
+    Eq,
+    Func,
+    OpenParen,
+    Auto,
+    Id(
+        "x",
+    ),
+    CloseParen,
+    OpenBrace,
+    Return,
+    Id(
+        "x",
+    ),
+    Star,
+    Int(
+        2,
+    ),
+    CloseBrace,
     NewLine,
 ]

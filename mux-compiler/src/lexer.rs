@@ -388,7 +388,19 @@ impl<'a> Lexer<'a> {
             }
             '0'..='9' => self.read_number(first_char, start_span),
             '\'' => self.read_char(start_span),
-            '"' => self.read_string(start_span),
+            '"' => {
+                // Check for triple quotes
+                if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
+                    // Skip the next two quotes
+                    self.source.next_char();
+                    self.source.next_char();
+                    // Read the string with triple quotes
+                    self.read_string(start_span)
+                } else {
+                    // Regular double-quoted string
+                    self.read_string(start_span)
+                }
+            },
             'a'..='z' | 'A'..='Z' | '_' => {
                 let mut ident = first_char.to_string();
                 while let Some(ch) = self.source.peek() {
@@ -436,19 +448,46 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    // Helper function to check for triple quotes
+    fn is_triple_quote(&self) -> bool {
+        let next1 = self.source.peek();
+        let next2 = self.source.peek_nth(1);
+        next1 == Some('"') && next2 == Some('"')
+    }
+
     fn read_string(&mut self, mut start_span: Span) -> Result<Token, String> {
         let mut s = String::new();
         let mut escaped = false;
+        let is_triple = self.is_triple_quote();
+        
+        // Skip the next two quotes if this is a triple-quoted string
+        if is_triple {
+            self.source.next_char(); // consume second quote
+            self.source.next_char(); // consume third quote
+        }
 
         while let Some(c) = self.source.next_char() {
+            // Handle escape sequences
             if c == '\\' && !escaped {
                 escaped = true;
                 continue;
             }
 
+            // Check for end of string
             if c == '"' && !escaped {
-                start_span.complete(self.source.line, self.source.col);
-                return Ok(Token::new(TokenType::Str(s), start_span));
+                // For triple-quoted strings, check for two more quotes
+                if is_triple {
+                    if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
+                        self.source.next_char(); // consume second quote
+                        self.source.next_char(); // consume third quote
+                        start_span.complete(self.source.line, self.source.col);
+                        return Ok(Token::new(TokenType::Str(s), start_span));
+                    }
+                } else {
+                    // For regular strings, a single quote ends it
+                    start_span.complete(self.source.line, self.source.col);
+                    return Ok(Token::new(TokenType::Str(s), start_span));
+                }
             }
 
             if escaped {
@@ -474,8 +513,10 @@ impl<'a> Lexer<'a> {
                 s.push(c);
             }
         }
-
-        Err("Unterminated string".to_string())
+        
+        // If we get here, the string wasn't properly terminated
+        start_span.complete(self.source.line, self.source.col);
+        Err("unterminated string".to_string())
     }
 
     fn read_char(&mut self, mut start_span: Span) -> Result<Token, String> {
@@ -728,7 +769,7 @@ mod tests {
         assert!(result.is_err(), "Expected error for unterminated string");
         let error = result.unwrap_err();
         assert!(
-            error.contains("Unterminated string"),
+            error.to_lowercase().contains("unterminated string"),
             "Error should be about unterminated string, got: {}",
             error
         );
@@ -1151,23 +1192,112 @@ world"
             TokenType::Float(f) => assert!((f.into_inner() - 1.2).abs() < f64::EPSILON),
             _ => panic!("Expected Float(1.2), got {:?}", tokens[0]),
         }
+        assert_eq!(tokens[0].span.row_start, 1);
+        assert_eq!(tokens[0].span.col_start, 1);
 
         // First newline
         assert_eq!(tokens[1].token_type, TokenType::NewLine);
+        assert_eq!(tokens[1].span.row_start, 1);
+        assert_eq!(tokens[1].span.col_start, 4);
 
         // Second float
         match &tokens[2].token_type {
             TokenType::Float(f) => assert!((f.into_inner() - 3.4).abs() < f64::EPSILON),
             _ => panic!("Expected Float(3.4), got {:?}", tokens[2]),
         }
+        assert_eq!(tokens[2].span.row_start, 2);
+        assert_eq!(tokens[2].span.col_start, 1);
 
         // Second newline
         assert_eq!(tokens[3].token_type, TokenType::NewLine);
+        assert_eq!(tokens[3].span.row_start, 2);
+        assert_eq!(tokens[3].span.col_start, 4);
 
         // Third float
         match &tokens[4].token_type {
             TokenType::Float(f) => assert!((f.into_inner() - 5.6).abs() < f64::EPSILON),
             _ => panic!("Expected Float(5.6), got {:?}", tokens[4]),
         }
+        assert_eq!(tokens[4].span.row_start, 3);
+        assert_eq!(tokens[4].span.col_start, 1);
+    }
+    
+    #[test]
+    fn test_span_calculation() {
+        // Test spans for various token types
+        let input = r#"
+        auto x = 42
+        auto y = "hello"
+        fn add(a: int, b: int) -> int { a + b }
+        "#;
+        
+        let mut source = Source::from_test_str(input);
+        let mut lexer = Lexer::new(&mut source);
+        let tokens = lexer.lex_all().unwrap();
+        
+        // Find the 'auto' token
+        let auto_token = tokens.iter()
+            .find(|t| t.token_type == TokenType::Auto)
+            .expect("'auto' token not found");
+        assert_eq!(auto_token.span.row_start, 2);
+        assert_eq!(auto_token.span.col_start, 9);
+        
+        // Find the string literal
+        let string_token = tokens.iter()
+            .find(|t| matches!(t.token_type, TokenType::Str(_)))
+            .expect("String token not found");
+        if let TokenType::Str(s) = &string_token.token_type {
+            assert_eq!(s, "hello");
+            assert_eq!(string_token.span.row_start, 3);
+            assert_eq!(string_token.span.col_start, 18);
+            // Check that the span includes the quotes
+            assert_eq!(string_token.span.col_end, Some(25));
+        } else {
+            panic!("Expected Str token");
+        }
+        
+        // Find the function definition
+        let fn_token = tokens.iter()
+            .position(|t| t.token_type == TokenType::Func)
+            .expect("'fn' token not found");
+            
+        // The function should span multiple tokens until the closing brace
+        let mut i = fn_token;
+        while i < tokens.len() && tokens[i].token_type != TokenType::CloseBrace {
+            i += 1;
+        }
+        assert!(i > fn_token, "Function should have multiple tokens");
+        assert_eq!(tokens[fn_token].span.row_start, 4);
+        assert_eq!(tokens[i].span.row_start, 4);
+    }
+    
+    #[test]
+    fn test_multiline_span() {
+        // Using raw string literal with triple quotes to avoid escape sequence issues
+        // Note: The first line is empty due to the newline after the opening """
+        let input = r###"
+        let message = """This is a 
+        multi-line 
+        string"""
+        "###;
+        
+        let mut source = Source::from_test_str(input);
+        let mut lexer = Lexer::new(&mut source);
+        let tokens = lexer.lex_all().unwrap();
+        
+        // Find the string token
+        let string_token = tokens.iter()
+            .find(|t| matches!(t.token_type, TokenType::Str(_)))
+            .expect("String token not found");
+            
+        // The string should span multiple lines
+        // The first line of the input is empty, so the string starts on line 2
+        // The column should be the start of the triple quotes (after the indentation)
+        assert_eq!(string_token.span.row_start, 2);
+        assert_eq!(string_token.span.col_start, 23);
+        // The string ends at column 16 on the last line (after "string" and before the closing triple quotes)
+        assert_eq!(string_token.span.col_end, Some(16));
+        // The string should span 3 lines (from row 2 to row 4)
+        assert_eq!(string_token.span.row_end, Some(4));
     }
 }

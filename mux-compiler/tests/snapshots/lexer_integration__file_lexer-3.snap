@@ -4,160 +4,107 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Functions and lambdas",
+        "Enums and Classes",
     ),
     NewLine,
-    Func,
+    Enum,
     Id(
-        "add",
+        "Shape",
+    ),
+    OpenBrace,
+    Id(
+        "Circle",
     ),
     OpenParen,
     Id(
-        "int",
+        "float",
     ),
     Id(
-        "a",
+        "r",
+    ),
+    CloseParen,
+    Comma,
+    Id(
+        "Rectangle",
+    ),
+    OpenParen,
+    Id(
+        "float",
+    ),
+    Id(
+        "w",
     ),
     Comma,
     Id(
-        "int",
+        "float",
     ),
     Id(
-        "b",
+        "h",
     ),
     CloseParen,
-    Returns,
-    Id(
-        "int",
-    ),
-    OpenBrace,
-    NewLine,
-    Return,
-    Id(
-        "a",
-    ),
-    Plus,
-    Id(
-        "b",
-    ),
-    NewLine,
     CloseBrace,
     NewLine,
     NewLine,
+    Interface,
+    Id(
+        "Drawable",
+    ),
+    OpenBrace,
     Func,
     Id(
-        "greet",
+        "draw",
     ),
     OpenParen,
+    CloseParen,
+    Returns,
     Id(
-        "string",
+        "void",
+    ),
+    CloseBrace,
+    NewLine,
+    NewLine,
+    Class,
+    Id(
+        "Circle",
+    ),
+    Is,
+    Id(
+        "Drawable",
+    ),
+    OpenBrace,
+    NewLine,
+    Id(
+        "float",
     ),
     Id(
-        "name",
+        "radius",
     ),
-    Comma,
+    NewLine,
+    Func,
     Id(
-        "int",
+        "draw",
     ),
-    Id(
-        "times",
-    ),
-    Eq,
-    Int(
-        1,
-    ),
+    OpenParen,
     CloseParen,
     Returns,
     Id(
         "void",
     ),
     OpenBrace,
-    NewLine,
-    For,
-    Id(
-        "i",
-    ),
-    In,
-    Id(
-        "range",
-    ),
-    OpenParen,
-    Int(
-        0,
-    ),
-    Comma,
-    Id(
-        "times",
-    ),
-    CloseParen,
-    OpenBrace,
     Id(
         "print",
     ),
     OpenParen,
     Str(
-        "Hello ",
+        "Circle radius=",
     ),
     Plus,
     Id(
-        "name",
+        "radius",
     ),
     CloseParen,
     CloseBrace,
     NewLine,
-    CloseBrace,
-    NewLine,
-    NewLine,
-    LineComment(
-        "Lambda examples",
-    ),
-    NewLine,
-    Auto,
-    Id(
-        "square",
-    ),
-    Eq,
-    Func,
-    OpenParen,
-    Id(
-        "int",
-    ),
-    Id(
-        "n",
-    ),
-    CloseParen,
-    OpenBrace,
-    Return,
-    Id(
-        "n",
-    ),
-    Star,
-    Id(
-        "n",
-    ),
-    CloseBrace,
-    NewLine,
-    Auto,
-    Id(
-        "doubled",
-    ),
-    Eq,
-    Func,
-    OpenParen,
-    Auto,
-    Id(
-        "x",
-    ),
-    CloseParen,
-    OpenBrace,
-    Return,
-    Id(
-        "x",
-    ),
-    Star,
-    Int(
-        2,
-    ),
     CloseBrace,
     NewLine,
 ]
