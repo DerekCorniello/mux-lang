@@ -55,9 +55,12 @@ pub enum TokenType {
     Class,
     Interface,
     Enum,
+    Import,
     Is,
     As,
     In,
+    Break,
+    Continue,
 
     OpenParen,    // (
     CloseParen,   // )
@@ -65,10 +68,9 @@ pub enum TokenType {
     CloseBrace,   // }
     OpenBracket,  // [
     CloseBracket, // ]
-    Dot,          // .
+    Dot,   // .
     Comma,
     Colon,
-    Semicolon,
     Eq,
     Plus,
     Minus,
@@ -88,9 +90,10 @@ pub enum TokenType {
     MinusEq,
     StarEq,
     SlashEq,
-    Ampersand,
+    PercentEq,
     And,
     Or,
+    Ref,
 
     Int(i64),
     Float(OrderedFloat<f64>),
@@ -133,7 +136,7 @@ impl<'a> Lexer<'a> {
         Ok(tokens)
     }
 
-    fn skip_space(&mut self) {
+    fn skip_space(&mut self) -> Result<(), String> {
         // skip spaces and tabs, but not newlines
         while let Some(ch) = self.source.peek() {
             match ch {
@@ -143,10 +146,11 @@ impl<'a> Lexer<'a> {
                 _ => break,
             }
         }
+        Ok(())
     }
 
     pub fn next_token(&mut self) -> Result<Token, String> {
-        self.skip_space();
+        self.skip_space()?;
 
         match self.source.peek() {
             None => {
@@ -214,8 +218,14 @@ impl<'a> Lexer<'a> {
             ']' => Ok(Token::new(TokenType::CloseBracket, start_span)),
             ',' => Ok(Token::new(TokenType::Comma, start_span)),
             ':' => Ok(Token::new(TokenType::Colon, start_span)),
-            ';' => Ok(Token::new(TokenType::Semicolon, start_span)),
-            '%' => Ok(Token::new(TokenType::Percent, start_span)),
+            '%' => {
+                if self.source.peek() == Some('=') {
+                    self.source.next_char();
+                    Ok(Token::new(TokenType::PercentEq, start_span))
+                } else {
+                    Ok(Token::new(TokenType::Percent, start_span))
+                }
+            },
             '_' => Ok(Token::new(TokenType::Underscore, start_span)),
             '.' => match self.source.peek() {
                 Some(c) if c.is_ascii_digit() => self.read_number(c, start_span),
@@ -321,7 +331,7 @@ impl<'a> Lexer<'a> {
                     Ok(Token::new(TokenType::And, start_span))
                 } else {
                     start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Ampersand, start_span))
+                    Ok(Token::new(TokenType::Ref, start_span))
                 }
             }
             '/' => {
@@ -392,6 +402,7 @@ impl<'a> Lexer<'a> {
                 start_span.complete(self.source.line, self.source.col);
                 let token_type = match ident.as_str() {
                     "auto" => TokenType::Auto,
+                    "fn" => TokenType::Func,
                     "func" => TokenType::Func,
                     "return" => TokenType::Return,
                     "returns" => TokenType::Returns,
@@ -404,9 +415,12 @@ impl<'a> Lexer<'a> {
                     "class" => TokenType::Class,
                     "interface" => TokenType::Interface,
                     "enum" => TokenType::Enum,
+                    "import" => TokenType::Import,
                     "is" => TokenType::Is,
                     "as" => TokenType::As,
                     "in" => TokenType::In,
+                    "break" => TokenType::Break,
+                    "continue" => TokenType::Continue,
                     "true" => TokenType::Bool(true),
                     "false" => TokenType::Bool(false),
                     "and" => TokenType::And,

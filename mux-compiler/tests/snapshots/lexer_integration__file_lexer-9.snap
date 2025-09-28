@@ -4,128 +4,165 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Collections",
+        "References",
     ),
     NewLine,
-    Auto,
-    Id(
-        "nums",
-    ),
-    Eq,
-    OpenBracket,
-    Int(
-        1,
-    ),
-    Comma,
-    Int(
-        2,
-    ),
-    Comma,
-    Int(
-        3,
-    ),
-    Comma,
-    Int(
-        4,
-    ),
-    CloseBracket,
-    NewLine,
-    Auto,
-    Id(
-        "scores",
-    ),
-    Eq,
-    Id(
-        "map",
-    ),
-    Lt,
-    Id(
-        "string",
-    ),
-    Comma,
     Id(
         "int",
     ),
-    Gt,
-    OpenBrace,
-    Str(
-        "Alice",
+    Id(
+        "val",
     ),
-    Colon,
+    Eq,
     Int(
-        90,
+        10,
     ),
-    Comma,
-    Str(
-        "Bob",
-    ),
-    Colon,
-    Int(
-        85,
-    ),
-    CloseBrace,
     NewLine,
     Auto,
     Id(
-        "matrix",
+        "r",
     ),
     Eq,
-    OpenBracket,
-    OpenBracket,
-    Int(
-        1,
+    Ref,
+    Id(
+        "val",
     ),
-    Comma,
-    Int(
-        2,
-    ),
-    CloseBracket,
-    Comma,
-    OpenBracket,
-    Int(
-        3,
-    ),
-    Comma,
-    Int(
-        4,
-    ),
-    CloseBracket,
-    CloseBracket,
     NewLine,
-    Auto,
     Id(
-        "emptyList",
+        "print",
     ),
-    Eq,
-    Id(
-        "list",
-    ),
-    Lt,
-    Id(
-        "int",
-    ),
-    Gt,
     OpenParen,
+    Id(
+        "r",
+    ),
     CloseParen,
     NewLine,
-    Auto,
     Id(
-        "emptyMap",
+        "r",
     ),
     Eq,
-    Id(
-        "map",
+    Int(
+        20,
     ),
-    Lt,
+    NewLine,
     Id(
-        "string",
+        "print",
+    ),
+    OpenParen,
+    Id(
+        "val",
+    ),
+    CloseParen,
+    NewLine,
+    NewLine,
+    LineComment(
+        "References to list elements",
+    ),
+    NewLine,
+    Auto,
+    Id(
+        "numbers",
+    ),
+    Eq,
+    OpenBracket,
+    Int(
+        1,
     ),
     Comma,
+    Int(
+        2,
+    ),
+    Comma,
+    Int(
+        3,
+    ),
+    Comma,
+    Int(
+        4,
+    ),
+    Comma,
+    Int(
+        5,
+    ),
+    CloseBracket,
+    NewLine,
+    Auto,
+    Id(
+        "first",
+    ),
+    Eq,
+    Ref,
+    Id(
+        "numbers",
+    ),
+    OpenBracket,
+    Int(
+        0,
+    ),
+    CloseBracket,
+    NewLine,
+    Id(
+        "print",
+    ),
+    OpenParen,
+    Id(
+        "first",
+    ),
+    CloseParen,
+    NewLine,
+    NewLine,
+    LineComment(
+        "Function taking a reference",
+    ),
+    NewLine,
+    Func,
+    Id(
+        "update",
+    ),
+    OpenParen,
+    Id(
+        "ref",
+    ),
+    Colon,
+    Ref,
     Id(
         "int",
     ),
-    Gt,
+    CloseParen,
+    OpenBrace,
+    NewLine,
+    Id(
+        "ref",
+    ),
+    Eq,
+    Id(
+        "ref",
+    ),
+    Plus,
+    Int(
+        1,
+    ),
+    NewLine,
+    CloseBrace,
+    NewLine,
+    NewLine,
+    Id(
+        "update",
+    ),
     OpenParen,
+    Ref,
+    Id(
+        "val",
+    ),
+    CloseParen,
+    NewLine,
+    Id(
+        "print",
+    ),
+    OpenParen,
+    Id(
+        "val",
+    ),
     CloseParen,
     NewLine,
 ]

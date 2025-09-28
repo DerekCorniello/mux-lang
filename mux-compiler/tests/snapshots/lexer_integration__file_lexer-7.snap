@@ -4,74 +4,61 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
 ---
 [
     LineComment(
-        "Pointers",
+        "Variable declarations and type inference",
+    ),
+    NewLine,
+    Const,
+    Id(
+        "int",
+    ),
+    Id(
+        "MAX",
+    ),
+    Eq,
+    Int(
+        100,
     ),
     NewLine,
     Id(
         "int",
     ),
     Id(
-        "val",
+        "explicit",
     ),
     Eq,
     Int(
-        10,
+        42,
     ),
     NewLine,
     Auto,
     Id(
-        "p",
+        "inferred",
     ),
     Eq,
-    Ampersand,
-    Id(
-        "val",
+    Float(
+        4.89,
     ),
-    NewLine,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Star,
-    Id(
-        "p",
-    ),
-    CloseParen,
-    NewLine,
-    Star,
-    Id(
-        "p",
-    ),
-    Eq,
-    Int(
-        20,
-    ),
-    NewLine,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Id(
-        "val",
-    ),
-    CloseParen,
-    NewLine,
     NewLine,
     Auto,
     Id(
-        "arr",
+        "name",
     ),
     Eq,
-    Id(
-        "list",
+    Str(
+        "Mux",
     ),
-    Lt,
-    Id(
-        "int",
-    ),
-    Gt,
+    NewLine,
+    NewLine,
+    Auto,
     OpenParen,
-    OpenBracket,
+    Id(
+        "x",
+    ),
+    Comma,
+    Underscore,
+    CloseParen,
+    Eq,
+    OpenParen,
     Int(
         1,
     ),
@@ -79,38 +66,27 @@ expression: "format!(\"{:#?}\", actual_token_types.to_owned())"
     Int(
         2,
     ),
-    Comma,
-    Int(
-        3,
-    ),
-    CloseBracket,
     CloseParen,
+    LineComment(
+        "underscore usage",
+    ),
     NewLine,
     Auto,
     Id(
-        "q",
+        "flag",
     ),
     Eq,
-    Id(
-        "arr",
+    Bool(
+        true,
     ),
     NewLine,
+    Auto,
     Id(
-        "q",
+        "otherflag",
     ),
-    PlusEq,
-    Int(
-        1,
+    Eq,
+    Bool(
+        false,
     ),
-    NewLine,
-    Id(
-        "print",
-    ),
-    OpenParen,
-    Star,
-    Id(
-        "q",
-    ),
-    CloseParen,
     NewLine,
 ]

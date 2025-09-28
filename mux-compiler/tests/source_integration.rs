@@ -1,6 +1,6 @@
-use std::fs;
-use mux_compiler::source::Source;
 use insta::assert_snapshot;
+use mux_compiler::source::Source;
+use std::fs;
 
 #[test]
 fn test_file_output_matches_cat() {

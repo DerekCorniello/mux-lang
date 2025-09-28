@@ -19,7 +19,7 @@ Mux (fully "MuxLang") is a statically-typed, garbage-collected language that com
 - **Rust-style pattern-matching with guards**
 - **Curly-brace syntax** and **no semicolons**
 - **Minimal trait/Class model** (use `is` instead of `implements` like Java)
-- **Built-in `Result<T,E>` and `Optional<T>` for error handling**
+- **Built-in `Result<T,E>` and `Optional[T]` for error handling**
 
 ---
 
@@ -54,11 +54,11 @@ str   // UTF-8 sequence
 ### 3.2 Composite Types
 
 ```
-Optional<T>
-Result<T, E>
-list<T>
-map<K,V>
-list<T>       // fixed-size list of elements (use const list<T> for immutable collections)
+Optional[T]
+Result[T, E]
+list[T]
+map[K,V]
+list[T]       // fixed-size list of elements (use const list[T] for immutable collections)
 ```
 
 ### 3.3 Generics
@@ -75,8 +75,8 @@ func max[T comparable](T a, T b) returns T {
 }
 
 // Generic function with multiple type parameters
-func zip[T, U](list<T> first, list<U> second) returns list<(T, U)> {
-    auto result = list<(T, U)>()
+func zip[T, U](list[T] first, list<U> second) returns list[(T, U)] {
+    auto result = list[(T, U)]()
     T minLen = min(first.length(), second.length())
     for int i = 0; i < minLen; i += 1 {
         result.append((first[i], second[i]))
@@ -115,12 +115,12 @@ interface Numeric {
 
 ```
 // Using built-in constraints
-func sort[T comparable](list<T> items) returns void {
+func sort[T comparable](list[T] items) returns void {
     // sorting implementation
 }
 
 // Using custom constraints
-func sum[T Numeric](list<T> numbers) returns T {
+func sum[T Numeric](list[T] numbers) returns T {
     int result = numbers[0]
     for int i = 1; i < numbers.length(); i += 1 {
         result = result.add(numbers[i])
@@ -135,7 +135,7 @@ func processOrdered[T Ordered & Numeric](T value) returns T {
 }
 
 // Type inference with generics
-Vec<int> numbers = [1, 2, 3, 4, 5]
+Vec[int] numbers = [1, 2, 3, 4, 5]
 int maximum = max(3, 7)        // Generic T inferred as int
 auto pairs = zip(numbers, ["a", "b", "c"])  // T=int, U=str inferred
 ```
@@ -209,8 +209,8 @@ func greet(str name, int times = 1) returns void {
     }
 }
 
-func processData() returns map<str, int> {
-    map<str, int> results = {"processed": 100, "skipped": 5}
+func processData() returns map[str, int] {
+    map[str, int] results = {"processed": 100, "skipped": 5}
     auto total = results["processed"] + results["skipped"]
     results["total"] = total
     return results
@@ -323,10 +323,6 @@ match (tuple) {
 ### 7.3 For Loops
 
 ```
-for int i = 0; i < 5; i += 1 {
-    print(i)
-}
-
 for item in myList {
     auto processed = transform(item)  // type inferred
     print(processed)
@@ -375,7 +371,7 @@ enum Shape {
 
 // Usage with inference
 auto myShape = Circle(5.0)  // type inferred as Shape
-list<Shape> shapes = [Circle(1.0), Rectangle(2.0, 3.0)]
+list[Shape] shapes = [Circle(1.0), Rectangle(2.0, 3.0)]
 
 // Pattern matching with unused enum data
 match (shape) {
@@ -429,13 +425,13 @@ class Circle is Drawable, ShapeLike {
 
 // Generic class example
 class Stack[T] {
-    list<T> items
+    list[T] items
 
     func push(T item) returns void {
         items.append(item)
     }
 
-    func pop() returns Optional<T> {
+    func pop() returns Optional[T] {
         if items.isEmpty() {
             return None
         }
@@ -446,9 +442,9 @@ class Stack[T] {
 
 // Usage with inference
 auto circle = Circle(5.0)  // type inferred as Circle
-list<Drawable> shapes = [circle]
-Stack<int> intStack = Stack<int>()  // explicit generic instantiation
-Stack<str> stringStack = Stack[str]()  // alternative syntax
+list[Drawable] shapes = [circle]
+Stack[int] intStack = Stack[int]()  // explicit generic instantiation
+Stack[str] stringStack = Stack[str]()  // alternative syntax
 ```
 
 - `is TraitA, TraitB` declares implemented traits; compiler enforces required methods
@@ -464,27 +460,27 @@ Stack<str> stringStack = Stack[str]()  // alternative syntax
 ```
 // Explicit typing
 list<int> nums = [1, 2, 3, 4]
-map<str, int> scores = {"Alice": 90, "Bob": 85}
+map[str, int] scores = {"Alice": 90, "Bob": 85}
 
 // With type inference
 auto nums = [1, 2, 3, 4]           // inferred as list<int>
-map<str, int> scores = {"Alice": 90, "Bob": 85}
+map[str, int] scores = {"Alice": 90, "Bob": 85}
 // mixed = [1, 2.5, 3]           // ERROR: conflicting types, explicit type needed
 
 // Nested collections
-list<list<int>> matrix = [[1, 2], [3, 4]]
-map<str, list<int>> lookup = {"users": [1, 2, 3], "admins": [4, 5]}
+list[list[int]] matrix = [[1, 2], [3, 4]]
+map[str, list[int]] lookup = {"users": [1, 2, 3], "admins": [4, 5]}
 
 // Generic collections
-list<Pair<int, str>> pairs = [Pair(1, "one"), Pair(2, "two")]
-list<Container<int>> containers = list<Container<int>>()
+list<Pair[int, str]> pairs = [Pair(1, "one"), Pair(2, "two")]
+list<Container[int]> containers = list<Container[int]>()
 ```
 
 ---
 
 ## 11. Error Handling
 
-### 11.1 `Result<T, E>`
+### 11.1 `Result[T, E]`
 
 ```
 func divide(int a, int b) returns Result<int, str> {
@@ -520,10 +516,10 @@ match result {
 }
 ```
 
-### 11.2 `Optional<T>`
+### 11.2 `Optional[T]`
 
 ```
-func findEven(list<int> xs) returns Optional<int> {
+func findEven(list<int> xs) returns Optional[int] {
     for x in xs {
         if x % 2 == 0 {
             return Some(x)
@@ -533,7 +529,7 @@ func findEven(list<int> xs) returns Optional<int> {
 }
 
 // Usage with inference
-Optional<int> maybeEven = findEven([1, 3, 4, 7])  // inferred as Optional<int>
+Optional[int] maybeEven = findEven([1, 3, 4, 7])  // inferred as Optional[int]
 
 match maybeEven {
     Some(value) {
@@ -570,29 +566,57 @@ Use `match` to unpack results and optionals. Use `_` to ignore unused values in 
 
 ---
 
-## 13. Pointers
+## 13. References
 
-Mux supports C-like pointers with type inference:
+Mux uses references for safe memory access and manipulation:
 
-- `*T` denotes pointer to `T`
-- `&expr` takes address of `expr`
-- `*expr` dereferences pointer
-- Pointer arithmetic allowed on lists
+- `&T` denotes a reference to type `T`
+- `&expr` creates a reference to `expr`
+- References are automatically dereferenced when used
+- No pointer arithmetic is allowed
+- References are non-nullable by default
+- Use `Option<&T>` for nullable references
 
 ```
+// Basic reference usage
 int x = 10
-int* p = &x
-print(*p)         // 10
-*p = 20
-print(x)          // 20
+let r = &x      // r is of type &int
+print(r)        // 10 - automatic dereferencing
+r = 20          // Changes x to 20
+print(x)        // 20
 
-Vec<int> arr = [1, 2, 3, 4, 5]  // inferred as int[5]
-auto q = arr                // inferred as int*
-q += 2
-print(*q)         // 3
+// References to list elements
+let numbers = [1, 2, 3, 4, 5]
+let first = &numbers[0]  // &int
+print(first)            // 1
 
-// Using underscore with pointers when values aren't needed
-auto (_, secondPtr) = getPointerPair()  // first pointer ignored
+// Function taking a reference
+fn increment(ref: &int) {
+    ref = ref + 1  // Changes the value being referenced
+}
+
+increment(&x)
+print(x)  // 21
+
+// Reference safety - this would be a compile-time error:
+// let bad_ref = &x
+// let y = x         // Error: x is borrowed
+// print(bad_ref)    // Can't use x while borrowed
+
+// Proper scope for references
+{
+    let temp = 42
+    let temp_ref = &temp
+    print(temp_ref)  // 42
+} // temp_ref goes out of scope here, temp can be used again
+
+// Using Option for nullable references
+let maybe_ref: Option<&int> = if condition { &x } else { None }
+
+match maybe_ref {
+    Some(val) => print("Got value: ", val),
+    None => print("No value")
+}
 ```
 
 ---
@@ -646,7 +670,7 @@ auto empty = list<int>()       // or explicit constructor
 Result<int, str> pending    // uninitialized variables need explicit type
 
 // Generic instantiation may need explicit types
-Stack<int> stack = Stack<int>()      // explicit generic parameter
+Stack[int] stack = Stack[int]()      // explicit generic parameter
 auto pairs = zip<int, str>(numbers, names)  // when inference is ambiguous
 ```
 
@@ -694,7 +718,7 @@ class Circle is Shape {
 }
 
 // Generic utility function
-func map[T, U](list<T> items, func(T) returns U transform) returns list<U> {
+func map[T, U](list[T] items, func(T) returns U transform) returns list<U> {
     auto result = list<U>()
     for item in items {
         result.append(transform(item))
@@ -712,7 +736,7 @@ func main() returns void {
     }
     
     // Working with Results and inference
-    auto results = list<Result<float, str>>()
+    auto results = list[Result[float, str]]()
     for shape in shapes {
         auto areaResult = Ok(shape.area())  // inferred as Result<float, str>
         results.append(areaResult)
@@ -724,7 +748,7 @@ func main() returns void {
     })
     
     auto descriptions = map(areas, func(str a) {
-        return "Area: " + a  // inferred as list<str>
+        return "Area: " + a  // inferred as list[str]
     })
     
     // Pattern matching with underscore

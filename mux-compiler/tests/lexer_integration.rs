@@ -1,8 +1,8 @@
-use insta::assert_snapshot;
-use ordered_float::OrderedFloat;
-use mux_compiler::lexer::{Lexer, TokenType};
 use TokenType::*;
+use insta::assert_snapshot;
+use mux_compiler::lexer::{Lexer, TokenType};
 use mux_compiler::source::Source;
+use ordered_float::OrderedFloat;
 use std::fs;
 use std::option::Option::Some;
 
@@ -36,7 +36,7 @@ fn test_file_lexer() {
                     Id("print".to_string()), OpenParen, Str("Small: ".to_string()), Plus, Id("v".to_string()), CloseParen, CloseBrace, NewLine,
                 Id("None".to_string()), OpenBrace, Id("print".to_string()), OpenParen, Str("None".to_string()), CloseParen, CloseBrace, NewLine,
                 CloseBrace, NewLine, NewLine,
-                For, Id("int".to_string()), Id("i".to_string()), Eq, Int(0), Semicolon, Id("i".to_string()), Lt, Int(3), Semicolon, Id("i".to_string()), PlusEq, Int(1), OpenBrace, 
+                For, Id("int".to_string()), Id("i".to_string()), In, Id("range".to_string()), OpenParen, Int(0), Comma, Int(3), CloseParen, OpenBrace, 
                     Id("print".to_string()), OpenParen, Id("i".to_string()), CloseParen, CloseBrace, NewLine,
                 While, Id("x".to_string()), Gt, Int(0), OpenBrace, 
                     Id("x".to_string()), MinusEq, Int(1), CloseBrace, NewLine,
@@ -140,8 +140,8 @@ fn test_file_lexer() {
             "imports.mux",
             vec![
                 LineComment("Imports".to_string()), NewLine,
-                Id("import".to_string()), Id("math".to_string()), NewLine,
-                Id("import".to_string()), Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
+                Import, Id("math".to_string()), NewLine,
+                Import, Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
 
                 Auto, Id("pi".to_string()), Eq, Id("math".to_string()), Dot, Id("PI".to_string()), NewLine,
                 Id("print".to_string()), OpenParen, Str("PI = ".to_string()), Plus, Id("pi".to_string()), CloseParen, NewLine,
@@ -178,19 +178,29 @@ fn test_file_lexer() {
         ),
 
         (
-            "pointers.mux",
+            "references.mux",
             vec![
-                LineComment("Pointers".to_string()), NewLine,
+                LineComment("References".to_string()), NewLine,
                 Id("int".to_string()), Id("val".to_string()), Eq, Int(10), NewLine,
-                Auto, Id("p".to_string()), Eq, Ampersand, Id("val".to_string()), NewLine,
-                Id("print".to_string()), OpenParen, Star, Id("p".to_string()), CloseParen, NewLine,
-                Star, Id("p".to_string()), Eq, Int(20), NewLine,
+                Auto, Id("r".to_string()), Eq, Ref, Id("val".to_string()), NewLine,
+                Id("print".to_string()), OpenParen, Id("r".to_string()), CloseParen, NewLine,
+                Id("r".to_string()), Eq, Int(20), NewLine,
                 Id("print".to_string()), OpenParen, Id("val".to_string()), CloseParen, NewLine, NewLine,
 
-                Auto, Id("arr".to_string()), Eq, Id("list".to_string()), Lt, Id("int".to_string()), Gt, OpenParen, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, CloseParen, NewLine,
-                Auto, Id("q".to_string()), Eq, Id("arr".to_string()), NewLine,
-                Id("q".to_string()), PlusEq, Int(1), NewLine,
-                Id("print".to_string()), OpenParen, Star, Id("q".to_string()), CloseParen, NewLine,
+                // References to list elements
+                LineComment("References to list elements".to_string()), NewLine,
+                Auto, Id("numbers".to_string()), Eq, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), Comma, Int(4), Comma, Int(5), CloseBracket, NewLine,
+                Auto, Id("first".to_string()), Eq, Ref, Id("numbers".to_string()), OpenBracket, Int(0), CloseBracket, NewLine,
+                Id("print".to_string()), OpenParen, Id("first".to_string()), CloseParen, NewLine, NewLine,
+
+                // Function taking a reference
+                LineComment("Function taking a reference".to_string()), NewLine,
+                Func, Id("update".to_string()), OpenParen, Id("ref".to_string()), Colon, Ref, Id("int".to_string()), CloseParen, OpenBrace, NewLine,
+                Id("ref".to_string()), Eq, Id("ref".to_string()), Plus, Int(1), NewLine,
+                CloseBrace, NewLine, NewLine,
+
+                Id("update".to_string()), OpenParen, Ref, Id("val".to_string()), CloseParen, NewLine,
+                Id("print".to_string()), OpenParen, Id("val".to_string()), CloseParen, NewLine,
             ],
         ),
 
@@ -210,8 +220,8 @@ fn test_file_lexer() {
         (
             "full_test.mux",
             vec![
-                Id("import".to_string()), Id("math".to_string()), NewLine,
-                Id("import".to_string()), Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
+                Import, Id("math".to_string()), NewLine,
+                Import, Id("utils".to_string()), Dot, Id("logger".to_string()), As, Underscore, NewLine, NewLine,
 
                 Const, Id("int".to_string()), Id("MAX".to_string()), Eq, Int(100), NewLine,
                 Auto, Id("flt".to_string()), Eq, Float(OrderedFloat(7.82)), NewLine,
@@ -288,7 +298,7 @@ fn test_file_lexer() {
                 Auto, Id("squared".to_string()), Eq, Id("map".to_string()), OpenParen, OpenBracket, Int(1), Comma, Int(2), Comma, Int(3), CloseBracket, Comma, Id("square".to_string()), CloseParen, NewLine, NewLine,
 
                 Id("int".to_string()), Id("val".to_string()), Eq, Int(10), NewLine,
-                Auto, Id("p".to_string()), Eq, Ampersand, Id("val".to_string()), NewLine,
+                Auto, Id("p".to_string()), Eq, Ref, Id("val".to_string()), NewLine,
                 Star, Id("p".to_string()), Eq, Int(20), NewLine,
                 CloseBrace, NewLine,
             ],
