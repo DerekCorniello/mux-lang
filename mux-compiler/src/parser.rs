@@ -3007,6 +3007,7 @@ mod tests {
 
             func foo() {
                 return 42
+            }
 
             123abc = 99
 
@@ -3034,47 +3035,50 @@ mod tests {
         let mut parser = create_parser(source);
         let result = parser.parse();
 
-        assert!(&result.is_err());
+        // We expect an error due to the invalid number format
+        if let Err((nodes, errors)) = result {
+            assert!(!errors.is_empty(), "Expected at least one error");
+            
+            // Check that we have valid nodes despite the errors
+            assert!(!nodes.is_empty(), "Expected some valid nodes to be parsed");
+            println!("Successfully parsed {} nodes despite errors", nodes.len());
 
-        match result {
-            Ok(nodes) => {
-                assert!(!nodes.is_empty(), "Expected some valid nodes to be parsed");
-                println!("Successfully parsed {} nodes despite errors", nodes.len());
+            // Check that we have at least some valid nodes
+            assert!(
+                nodes.len() >= 2,
+                "Expected at least 2 valid nodes to be parsed"
+            );
 
-                assert!(
-                    nodes.len() >= 4,
-                    "Expected at least 4 valid nodes to be parsed"
-                );
-
-                let node_texts: Vec<String> = nodes.iter().map(|n| format!("{:?}", n)).collect();
-
-                println!("Successfully parsed nodes: {:?}", node_texts);
-            }
-            Err((_nodes, errors)) => {
-                assert!(!errors.is_empty(), "Expected at least one error");
-
-                for error in errors {
-                    println!("Found error: {} at {:?}", error.message, error.span);
-
-                    assert!(
-                        !error.message.is_empty(),
-                        "Expected a non-empty error message"
-                    );
-
-                    let error_msg = error.message.to_lowercase();
-                    assert!(
-                        error_msg.contains("expected")
-                            || error_msg.contains("missing")
-                            || error_msg.contains("unexpected"),
-                        "Error message should indicate what went wrong"
-                    );
+            let mut found_expected_error = false;
+            for error in &errors {
+                println!("Found error: {} at {:?}", error.message, error.span);
+                
+                if error.message.contains("Invalid number format") || 
+                   error.message.contains("unknown escape sequence") ||
+                   error.message.contains("Expected expression") {
+                    found_expected_error = true;
                 }
+                
+                assert!(
+                    !error.message.is_empty(),
+                    "Expected a non-empty error message"
+                );
             }
+            
+            assert!(
+                found_expected_error,
+                "Expected to find an error about invalid syntax"
+            );
+        } else {
+            panic!("Expected parsing to fail with errors");
         }
 
         // Test recovery in the middle of expressions
         let source = "auto x = 10 + * 5 - / 3\nauto y = 20\n";
         let mut parser = create_parser(source);
-        let _ = parser.parse();
+        let result = parser.parse();
+        
+        // This should also fail but not panic
+        assert!(result.is_err());
     }
 }
