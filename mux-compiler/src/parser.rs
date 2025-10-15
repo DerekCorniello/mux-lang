@@ -470,8 +470,9 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let _end_span =
+        let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after class body")?;
+        let full_span = start_span.combine(&end_span);
 
         Ok(AstNode::Class {
             name,
@@ -479,6 +480,7 @@ impl<'a> Parser<'a> {
             traits,
             fields,
             methods,
+            span: full_span,
         })
     }
 
@@ -559,16 +561,19 @@ impl<'a> Parser<'a> {
         }
 
         // consume closing brace
-        let _ = self.consume_token(TokenType::CloseBrace, "Expected '}' after interface body")?;
+        let end_span = self.consume_token(TokenType::CloseBrace, "Expected '}' after interface body")?;
+        let full_span = start_span.combine(&end_span);
 
         Ok(AstNode::Interface {
             name,
             type_params,
             methods,
+            span: full_span,
         })
     }
 
     fn enum_declaration(&mut self) -> ParserResult<AstNode> {
+        let start_span = self.tokens[self.current].span;
         self.consume_token(TokenType::Enum, "Expected 'enum' keyword")?;
         let name = self.consume_identifier("Expected enum name")?;
         let type_params = if self.matches(&[TokenType::Lt]) {
@@ -654,13 +659,15 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let _end_span =
+        let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after enum variants")?;
+        let full_span = start_span.combine(&end_span);
 
         Ok(AstNode::Enum {
             name,
             type_params,
             variants,
+            span: full_span,
         })
     }
 
@@ -2194,18 +2201,33 @@ pub enum AstNode {
         traits: Vec<TraitRef>,
         fields: Vec<Field>,
         methods: Vec<FunctionNode>,
+        span: Span,
     },
     Interface {
         name: String,
         type_params: Vec<(String, Vec<TraitBound>)>,
         methods: Vec<FunctionNode>,
+        span: Span,
     },
     Enum {
         name: String,
         type_params: Vec<(String, Vec<TraitBound>)>,
         variants: Vec<EnumVariant>,
+        span: Span,
     },
     Statement(StatementNode),
+}
+
+impl Spanned for AstNode {
+    fn span(&self) -> &Span {
+        match self {
+            AstNode::Function(func) => &func.span,
+            AstNode::Class { span, .. } => span,
+            AstNode::Interface { span, .. } => span,
+            AstNode::Enum { span, .. } => span,
+            AstNode::Statement(stmt) => stmt.span(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2219,6 +2241,9 @@ pub struct ConstDeclNode {
 impl_spanned!(ConstDeclNode);
 
 impl AstNode {
+    /// NOTE: we only convert Statement and Function variants to statements.
+    /// Class, Interface, and Enum are top-level declarations in the language
+    /// and cannot appear as statements, they must be handled separately
     pub fn into_statement(self) -> Option<StatementNode> {
         match self {
             AstNode::Statement(stmt) => Some(stmt),
