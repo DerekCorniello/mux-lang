@@ -63,11 +63,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn error(&mut self, message: impl Into<String>, span: Span) -> ParserError {
-        let error = ParserError::new(message, span);
-        self.errors.push(error.clone());
-        error
-    }
+
 
     fn advance(&mut self) -> &Token {
         if !self.is_at_end() {
@@ -131,7 +127,7 @@ impl<'a> Parser<'a> {
     pub fn parse(&mut self) -> Result<Vec<AstNode>, (Vec<AstNode>, Vec<ParserError>)> {
         let mut nodes = Vec::new();
         while !self.is_at_end() {
-            // declaration() handles newlines
+            // declaration() handles newlines.
             if self.is_at_end() {
                 break;
             }
@@ -142,7 +138,7 @@ impl<'a> Parser<'a> {
                 Ok(Some(decl)) => {
                     nodes.push(decl);
 
-                    // check statement termination for top-level, non-control flow statements
+                    // check statement termination for top-level, non-control flow statements.
                     let should_check_termination = matches!(
                         nodes.last().unwrap(),
                         AstNode::Statement(stmt) if !matches!(
@@ -160,7 +156,7 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    // skip newlines after statement
+                    // skip newlines after statement.
                     let _ = self.skip_newlines();
                 }
                 Ok(None) => {
@@ -264,9 +260,9 @@ impl<'a> Parser<'a> {
         self.consume_token(TokenType::Eq, "Expected '=' after variable name")?;
         let value = self.parse_expression()?;
 
-        // require newline before next statement at top level
+        // require newline before next statement at top level.
         if !self.is_in_block() {
-            // check if next token starts a new statement
+            // check if next token starts a new statement.
             if self.current < self.tokens.len() {
                 let next_token = &self.tokens[self.current];
                 if matches!(
@@ -287,7 +283,7 @@ impl<'a> Parser<'a> {
                         | TokenType::OpenBrace
                         | TokenType::CloseBrace
                 ) {
-                    // error if not at newline
+                    // error if not at newline.
                     if !matches!(self.tokens[self.current - 1].token_type, TokenType::NewLine) {
                         return Err(ParserError::new(
                             "expected newline after statement".to_string(),
@@ -297,7 +293,7 @@ impl<'a> Parser<'a> {
                 }
             }
         } else {
-            // skip newlines in blocks
+            // skip newlines in blocks.
             let _ = self.skip_newlines();
         }
 
@@ -355,7 +351,7 @@ impl<'a> Parser<'a> {
         let type_params = if self.matches(&[TokenType::Lt]) {
             let mut params = Vec::new();
 
-            // parse at least one type parameter
+            // parse at least one type parameter.
             loop {
                 let param = self.consume_identifier("Expected type parameter name")?;
                 let mut bounds = Vec::new();
@@ -530,10 +526,10 @@ impl<'a> Parser<'a> {
 
         while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
             if self.matches(&[TokenType::Func]) {
-                // Parse function signature for interface method
+                // parse function signature for interface method.
                 let name = self.consume_identifier("Expected method name")?;
 
-                // Parse type parameters if present
+                // parse type parameters if present.
                 let type_params = if self.matches(&[TokenType::Lt]) {
                     let mut params = Vec::new();
                     if !self.check(TokenType::Gt) {
@@ -551,7 +547,7 @@ impl<'a> Parser<'a> {
                     Vec::new()
                 };
 
-                // Parse parameters
+                // parse parameters.
                 self.consume_token(TokenType::OpenParen, "Expected '(' after method name")?;
                 let mut params = Vec::new();
                 if !self.check(TokenType::CloseParen) {
@@ -569,7 +565,7 @@ impl<'a> Parser<'a> {
                 }
                 self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
 
-                // Parse return type
+                // parse return type.
                 let return_type = if self.matches(&[TokenType::Minus, TokenType::Gt]) {
                     self.parse_type()?
                 } else if self.matches(&[TokenType::Returns]) {
@@ -581,7 +577,7 @@ impl<'a> Parser<'a> {
                     }
                 };
 
-                // Add the method to the interface
+                // add the method to the interface.
                 methods.push(FunctionNode {
                     name,
                     type_params,
@@ -591,7 +587,7 @@ impl<'a> Parser<'a> {
                     span: start_span,
                 });
 
-                // No semicolon needed in Mux
+                // no semicolon needed in mux.
             } else {
                 return Err(ParserError::new(
                     "Expected function declaration in interface",
@@ -722,25 +718,25 @@ impl<'a> Parser<'a> {
 
     fn import_declaration(&mut self) -> ParserResult<AstNode> {
         let start_span = self.consume_token(TokenType::Import, "Expected 'import' keyword")?;
-        // Parse module path - can be dotted like utils.logger
+        // parse module path, can be dotted like utils.logger.
         let mut module_path_parts = Vec::new();
         let first_part = self.consume_identifier("Expected module path after 'import'")?;
         module_path_parts.push(first_part);
 
-        // Handle dotted paths like utils.logger
+        // handle dotted paths like utils.logger.
         while self.matches(&[TokenType::Dot]) {
             module_path_parts.push(self.consume_identifier("Expected module name after '.'")?);
         }
 
-        // Calculate end span for the full module path
+        // calculate end span for the full module path.
         let end_span = if module_path_parts.len() > 1 {
-            // For multi-part paths, use current position span
+            // for multi-part paths, use current position span.
             self.peek().span
         } else {
             start_span
         };
 
-        // Join the parts with dots to create the full module path
+        // join the parts with dots to create the full module path.
         let module_path = module_path_parts.join(".");
 
         let alias = if self.matches(&[TokenType::As]) {
@@ -767,7 +763,7 @@ impl<'a> Parser<'a> {
                     let param = self.consume_identifier("Expected type parameter name")?;
                     let mut bounds = Vec::new();
 
-                    // Look for bounds using 'Is' keyword
+                    // look for bounds using 'is' keyword.
                     if self.matches(&[TokenType::Is]) {
                         loop {
                             let bound_name = self.consume_identifier("Expected trait name in bound")?;
@@ -805,10 +801,10 @@ impl<'a> Parser<'a> {
 
         if !self.check(TokenType::CloseParen) {
             loop {
-                // Parse param as: Type Name
+                // parse param as: type name.
                 let param_type = self.parse_type()?;
                 let param_name = self.consume_identifier("Expected parameter name")?;
-                // Optional default value (parsed, but currently ignored in AST)
+                // optional default value, parsed but currently ignored in ast.
                 if self.matches(&[TokenType::Eq]) {
                     let _default_expr = self.parse_expression()?;
                 }
@@ -828,7 +824,7 @@ impl<'a> Parser<'a> {
             ));
         };
 
-        // skip newlines before function body
+        // skip newlines before function body.
         self.skip_newlines();
         let body = self.block()?;
 
@@ -883,7 +879,7 @@ impl<'a> Parser<'a> {
             self.expression_statement()
         }?;
 
-        // Only do newline-based termination at top level, and skip for control-flow statements
+        // only do newline-based termination at top level, skip for control-flow statements.
         if !self.is_in_block() {
             if !matches!(
                 &result,
@@ -903,8 +899,8 @@ impl<'a> Parser<'a> {
 
     fn looks_like_typed_decl(&self) -> bool {
         let n = self.tokens.len();
-        let mut i = self.current;
-        // Helper to skip over a type without consuming
+        let i = self.current;
+        // helper to skip over a type without consuming.
         fn skip_type(tokens: &[&Token], mut i: usize) -> Option<usize> {
             let n = tokens.len();
             if i >= n { return None; }
@@ -914,7 +910,7 @@ impl<'a> Parser<'a> {
                     skip_type(tokens, i)
                 }
                 TokenType::OpenParen => {
-                    // function type: (types) returns type
+                    // function type: (types) returns type.
                     i += 1;
                     let mut depth = 1usize;
                     while i < n && depth > 0 {
@@ -926,7 +922,7 @@ impl<'a> Parser<'a> {
                         i += 1;
                     }
                     if depth != 0 { return None; }
-                    // expect 'returns' keyword
+                    // expect 'returns' keyword.
                     if i >= n || tokens[i].token_type != TokenType::Returns { return None; }
                     i += 1;
                     skip_type(tokens, i)
@@ -970,19 +966,10 @@ impl<'a> Parser<'a> {
         let condition = self.parse_expression()?;
         self.skip_newlines();
         if !self.check(TokenType::OpenBrace) {
-            // Debug: dump nearby tokens to diagnose why '{' is not next
-            let cur = self.current;
-            let start = cur.saturating_sub(3);
-            let end = (cur + 5).min(self.tokens.len());
-            eprintln!("[debug] if then-branch expected '{{' but saw: {:?}", self.peek().token_type);
-            eprintln!("[debug] nearby tokens: ");
-            for i in start..end {
-                eprintln!("  {}: {:?}", i, self.tokens[i].token_type);
-            }
             return Err(ParserError::new("Expected '{' after if condition", self.peek().span));
         }
 
-        // Parse then branch: require a braced block
+        // parse then branch, require a braced block.
         let then_block = match self.block()? {
             AstNode::Statement(StatementNode { kind: StatementKind::Block(block), .. }) => block,
             _ => return Err(ParserError::new(
@@ -991,12 +978,12 @@ impl<'a> Parser<'a> {
             )),
         };
 
-        // Handle else/else if
-        // Allow newline between then-block '}' and 'else'
+        // handle else/else if.
+        // allow newline between then-block '}' and 'else'.
         self.skip_newlines();
         let (else_block, end_span) = if self.matches(&[TokenType::Else]) {
             self.skip_newlines();
-            // Support `else if` sugar by nesting the parsed if inside the else_block
+            // support 'else if' sugar by nesting the parsed if inside the else_block.
             if self.matches(&[TokenType::If]) {
                 let nested = self.if_statement()?;
                 match nested {
@@ -1011,15 +998,6 @@ impl<'a> Parser<'a> {
                 }
             } else {
                 if !self.check(TokenType::OpenBrace) {
-                    // Debug: dump nearby tokens for else-branch too
-                    let cur = self.current;
-                    let start = cur.saturating_sub(3);
-                    let end = (cur + 5).min(self.tokens.len());
-                    eprintln!("[debug] else-branch expected '{{' but saw: {:?}", self.peek().token_type);
-                    eprintln!("[debug] nearby tokens: ");
-                    for i in start..end {
-                        eprintln!("  {}: {:?}", i, self.tokens[i].token_type);
-                    }
                     return Err(ParserError::new("Expected '{' after else", self.peek().span));
                 }
                let else_block = match self.block()? {
@@ -1060,9 +1038,9 @@ impl<'a> Parser<'a> {
         let start_span = self.tokens[self.current].span;
         let condition = self.parse_expression()?;
 
-        // allow newline(s) before body
+        // allow newline(s) before body.
         self.skip_newlines();
-        // require a braced block body
+        // require a braced block body.
         let body = self.block()?;
 
         let body_statements = match body {
@@ -1093,15 +1071,15 @@ impl<'a> Parser<'a> {
     fn for_statement(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current].span;
 
-        // Parse the variable type
+        // parse the variable type.
         let var_type = self.parse_type()?;
 
         let var = self.consume_identifier("Expected variable name")?;
         self.consume_token(TokenType::In, "Expected 'in' after variable")?;
         let iter = self.parse_expression()?;
-        // allow newline(s) before body
+        // allow newline(s) before body.
         self.skip_newlines();
-        // parse the body, can be a single statement or a block
+        // parse the body, can be a single statement or a block.
         let body = if self.check(TokenType::OpenBrace) {
             self.block()?
         } else {
@@ -1151,11 +1129,11 @@ impl<'a> Parser<'a> {
             };
             self.skip_newlines();
 
-            // check if the next token is an open brace for a block
+            // check if the next token is an open brace for a block.
             let body = if self.check(TokenType::OpenBrace) {
                 self.block()?
             } else if self.matches(&[TokenType::Colon]) {
-                // if there's a colon, expect a block or statement after it
+                // if there's a colon, expect a block or statement after it.
                 self.skip_newlines();
                 if self.check(TokenType::OpenBrace) {
                     self.block()?
@@ -1163,7 +1141,7 @@ impl<'a> Parser<'a> {
                     self.statement()?
                 }
             } else {
-                // if not a block or colon, try to parse a single statement
+                // if not a block or colon, try to parse a single statement.
                 self.statement()?
             };
 
@@ -1326,7 +1304,7 @@ impl<'a> Parser<'a> {
         let mut statements = Vec::new();
         self.skip_newlines();
 
-        // if we immediately hit a closing brace, return an empty block
+        // if we immediately hit a closing brace, return an empty block.
         if self.matches(&[TokenType::CloseBrace]) {
             return Ok(AstNode::Statement(StatementNode {
                 kind: StatementKind::Block(Vec::new()),
@@ -1334,7 +1312,7 @@ impl<'a> Parser<'a> {
             }));
         }
 
-        // parse statements until we hit a closing brace or end of file
+        // parse statements until we hit a closing brace or end of file.
         while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
             self.skip_newlines();
             if self.check(TokenType::CloseBrace) {
@@ -1346,7 +1324,7 @@ impl<'a> Parser<'a> {
                     self.skip_newlines();
                 }
                 Ok(None) => {
-                    // if we didn't make progress, advance to avoid infinite loops
+                    // if we didn't make progress, advance to avoid infinite loops.
                     let current_pos = self.current;
                     if current_pos == self.current {
                         self.advance();
@@ -1364,10 +1342,10 @@ impl<'a> Parser<'a> {
         }
 
         let end_span = if self.check(TokenType::CloseBrace) {
-            // Use the span returned by consume_token so row/col end are correct
+            // use the span returned by consume_token so row/col end are correct.
             self.consume_token(TokenType::CloseBrace, "Expected '}' after block")?
         } else {
-            // if we've reached the end of the file without a closing brace, return an error
+            // if we've reached the end of the file without a closing brace, return an error.
             return Err(ParserError::new(
                 "Expected '}' after block".to_string(),
                 self.peek().span,
@@ -1386,7 +1364,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_in_block(&self) -> bool {
-        // look backwards for an opening brace that doesn't have a matching closing brace
+        // look backwards for an opening brace that doesn't have a matching closing brace.
         let mut brace_count: usize = 0;
         for i in (0..self.current).rev() {
             match self.tokens[i].token_type {
@@ -1405,9 +1383,9 @@ impl<'a> Parser<'a> {
 
     fn expression_statement(&mut self) -> ParserResult<AstNode> {
         let expr = self.parse_expression()?;
-        // Check if there's a newline immediately after the expression BEFORE consuming it
+        // check if there's a newline immediately after the expression before consuming it.
         let has_newline = self.check(TokenType::NewLine);
-        // only check statement termination for top-level statements
+        // only check statement termination for top-level statements.
         if !self.is_in_block() {
             if !has_newline {
                 if self.current < self.tokens.len() {
@@ -1438,7 +1416,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        // Now that we've validated, consume any newlines (in or out of blocks)
+        // now that we've validated, consume any newlines (in or out of blocks).
         let _ = self.skip_newlines();
         let span = *expr.span();
 
@@ -1463,8 +1441,7 @@ impl<'a> Parser<'a> {
             });
         }
 
-        // we are essentially doing a consume here, but without borrowing th
-        // parser again so we dont have to clone it
+        // we are essentially doing a consume here, but without borrowing the parser again so we dont have to clone it.
         let token = &self.tokens[self.current];
         let start_span = token.span;
         self.current += 1;
@@ -1889,7 +1866,7 @@ impl<'a> Parser<'a> {
             }
 
             TokenType::OpenBracket => {
-                // Regular list literal
+                // regular list literal.
                 let start_span = token_span;
                 let mut elements = Vec::new();
 
@@ -1924,8 +1901,8 @@ impl<'a> Parser<'a> {
 
                 if !self.check(TokenType::CloseParen) {
                     loop {
-                        let param_name = self.consume_identifier("Expected parameter name")?;
                         let param_type = self.parse_type()?;
+                        let param_name = self.consume_identifier("Expected parameter name")?;
                         params.push(Param {
                             name: param_name,
                             type_: param_type,
@@ -1974,16 +1951,32 @@ impl<'a> Parser<'a> {
                 self.parse_postfix_operators(expr)
             }
 
-            // Disable if-expression parsing for now; 'if' should only be parsed as a statement
-            // TokenType::If => { unreachable!() }
+            TokenType::If => {
+                let cond = self.parse_expression()?;
+                self.consume_token(TokenType::OpenBrace, "Expected '{' after if condition")?;
+                let then_expr = self.parse_expression()?;
+                self.consume_token(TokenType::CloseBrace, "Expected '}' after then expression")?;
+                self.consume_token(TokenType::Else, "Expected 'else' after then branch")?;
+                self.consume_token(TokenType::OpenBrace, "Expected '{' after else")?;
+                let else_expr = self.parse_expression()?;
+                self.consume_token(TokenType::CloseBrace, "Expected '}' after else expression")?;
+                let span = token_span.combine(&self.previous().span);
+                return Ok(ExpressionNode {
+                    kind: ExpressionKind::If {
+                        cond: Box::new(cond),
+                        then_expr: Box::new(then_expr),
+                        else_expr: Box::new(else_expr),
+                    },
+                    span,
+                });
+            }
 
             TokenType::Id(id) => {
                 let expr = ExpressionNode {
                     kind: ExpressionKind::Identifier(id.clone()),
                     span: token_span,
                 };
-                // Defer handling of '<' to binary operator parsing or parse_postfix_operators,
-                // which can disambiguate generics more safely.
+                // defer handling of '<' to binary operator parsing or parse_postfix_operators, which can disambiguate generics more safely.
                 self.parse_postfix_operators(expr)
             }
 
@@ -2047,10 +2040,10 @@ impl<'a> Parser<'a> {
                     span: expr_span.combine(&end_span),
                 };
             } else if self.check(TokenType::Lt) {
-                // Only treat '<...>' as generic type arguments in expression position when:
-                // - current expr is an Identifier
-                // - there is a matching '>'
-                // - and the token immediately following '>' is either '.' or '('
+                // only treat '<...>' as generic type arguments in expression position when:
+                // - current expr is an identifier.
+                // - there is a matching '>'.
+                // - and the token immediately following '>' is either '.' or '('.
                 let should_consume_generics = if let ExpressionKind::Identifier(_) = &expr.kind {
                     let mut i = self.current + 1; // after '<'
                     let mut depth = 1usize;
@@ -2084,13 +2077,19 @@ impl<'a> Parser<'a> {
                 } else { false };
 
                 if should_consume_generics {
-                    // Consume '<...>' as type arguments and continue; do not alter expr kind.
+                    // consume '<...>' as type arguments and wrap identifier in GenericType.
                     let _ = self.matches(&[TokenType::Lt]);
-                    let _type_args = self.parse_type_arguments()?;
-                    let _ = self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
+                    let type_args = self.parse_type_arguments()?;
+                    let end_span = self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
+                    if let ExpressionKind::Identifier(name) = expr.kind {
+                        expr = ExpressionNode {
+                            kind: ExpressionKind::GenericType(name, type_args),
+                            span: expr.span.combine(&end_span),
+                        };
+                    }
                     continue;
                 } else {
-                    // Not a generic argument list; leave '<' to be parsed as binary less-than.
+                    // not a generic argument list, leave '<' to be parsed as binary less-than.
                     break;
                 }
             } else if self.matches(&[TokenType::Incr]) {
@@ -2415,7 +2414,7 @@ impl_spanned!(ConstDeclNode);
 impl AstNode {
     /// NOTE: we only convert Statement and Function variants to statements.
     /// Class, Interface, and Enum are top-level declarations in the language
-    /// and cannot appear as statements, they must be handled separately
+    /// and cannot appear as statements, they must be handled separately.
     pub fn into_statement(self) -> Option<StatementNode> {
         match self {
             AstNode::Statement(stmt) => Some(stmt),
@@ -2902,7 +2901,7 @@ mod tests {
 
     #[test]
     fn test_span_propagation() {
-        // Using a simpler input since the function parsing is more complex
+        // using a simpler input since the function parsing is more complex.
         let input = r#"
         auto x = 42
         auto y = "hello"

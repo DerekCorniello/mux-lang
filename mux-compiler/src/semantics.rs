@@ -2,16 +2,14 @@ use crate::lexer::Span;
 use crate::parser::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 
-// represents a symbol in the symbol table
 #[derive(Debug, Clone, PartialEq)]
 pub struct Symbol {
     pub kind: SymbolKind,
     pub span: Span,
 }
 
-// different kinds of symbols we track
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolKind {
     Function,
@@ -23,37 +21,27 @@ pub enum SymbolKind {
     Import,
 }
 
-// manages nested scopes and symbol lookups
 #[derive(Debug)]
 pub struct SymbolTable {
-    root: Rc<RefCell<Scope>>,
     scopes: Vec<Rc<RefCell<Scope>>>,
 }
 
-// represents a single scope level
 #[derive(Debug, Default)]
 struct Scope {
     symbols: HashMap<String, Symbol>,
-    parent: Option<Weak<RefCell<Scope>>>,
     children: Vec<Rc<RefCell<Scope>>>,
 }
 
 impl SymbolTable {
-    // create a new symbol table with global scope
     pub fn new() -> Self {
         let root = Rc::new(RefCell::new(Scope::default()));
         SymbolTable {
-            root: Rc::clone(&root),
             scopes: vec![root],
         }
     }
 
-    // add a new nested scope
     pub fn push_scope(&mut self) -> Result<(), SemanticError> {
-        let new_scope = Rc::new(RefCell::new(Scope {
-            parent: Some(Rc::downgrade(self.scopes.last().unwrap())),
-            ..Default::default()
-        }));
+        let new_scope = Rc::new(RefCell::new(Scope::default()));
         self.scopes
             .last()
             .unwrap()
@@ -64,7 +52,6 @@ impl SymbolTable {
         Ok(())
     }
 
-    // exit current scope
     pub fn pop_scope(&mut self) -> Result<(), SemanticError> {
         if self.scopes.len() <= 1 {
             return Err(SemanticError {
@@ -76,19 +63,12 @@ impl SymbolTable {
         Ok(())
     }
 
-    // check if symbol exists in any scope
     pub fn exists(&self, name: &str) -> bool {
         self.lookup(name).is_some()
     }
 
-    // check if symbol exists in current scope only
-    pub fn exists_in_current_scope(&self, name: &str) -> bool {
-        self.scopes
-            .last()
-            .is_some_and(|scope| scope.borrow().symbols.contains_key(name))
-    }
 
-    // add a symbol to the current scope
+
     pub fn add_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {
         if self.scopes.is_empty() {
             return Err(SemanticError {
@@ -111,7 +91,6 @@ impl SymbolTable {
         Ok(())
     }
 
-    // find a symbol in current or parent scopes
     pub fn lookup(&self, name: &str) -> Option<Symbol> {
         for scope in self.scopes.iter().rev() {
             let scope_borrow = scope.borrow();
@@ -123,14 +102,12 @@ impl SymbolTable {
     }
 }
 
-// main semantic analyzer
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
     errors: Vec<SemanticError>,
 }
 
 impl SemanticAnalyzer {
-    // create a new semantic analyzer
     pub fn new() -> Self {
         Self {
             symbol_table: SymbolTable::new(),
@@ -138,19 +115,18 @@ impl SemanticAnalyzer {
         }
     }
 
-    // Get reference to the symbol table for debugging
+    // get reference to the symbol table for debugging.
     pub fn symbol_table(&self) -> &SymbolTable {
         &self.symbol_table
     }
 
-    // entry point for semantic analysis
     pub fn analyze(&mut self, ast: &[AstNode]) -> Vec<SemanticError> {
         self.collect_hoistable_declarations(ast);
         self.analyze_nodes(ast);
         std::mem::take(&mut self.errors)
     }
 
-    // first pass: collect hoistable declarations (functions, classes, etc)
+    // first pass, collect hoistable declarations like functions and classes.
     fn collect_hoistable_declarations(&mut self, ast: &[AstNode]) {
         for node in ast {
             match node {
@@ -203,7 +179,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    // second pass: analyze all nodes with full symbol information
+    // second pass, analyze all nodes with full symbol information.
     fn analyze_nodes(&mut self, nodes: &[AstNode]) {
         for node in nodes {
             if let Err(e) = self.analyze_node(node) {
@@ -212,23 +188,21 @@ impl SemanticAnalyzer {
         }
     }
 
-    // analyze a single node
     fn analyze_node(&mut self, node: &AstNode) -> Result<(), SemanticError> {
         match node {
             AstNode::Function(func) => self.analyze_function(func),
             AstNode::Class { name, fields, methods, .. } => self.analyze_class(name, fields, methods),
-            AstNode::Enum { .. } => Ok(()), // enums don't need further analysis
-            AstNode::Interface { .. } => Ok(()), // interfaces don't need further analysis
+            AstNode::Enum { .. } => Ok(()), // enums don't need further analysis.
+            AstNode::Interface { .. } => Ok(()), // interfaces don't need further analysis.
             AstNode::Statement(stmt) => self.analyze_statement(stmt),
         }
     }
 
-    // analyze a function definition
     fn analyze_function(&mut self, func: &FunctionNode) -> Result<(), SemanticError> {
-        // create new scope for function parameters and body
+        // create new scope for function parameters and body.
         self.symbol_table.push_scope()?;
 
-        // add parameters to function scope
+        // add parameters to function scope.
         for param in &func.params {
             self.symbol_table.add_symbol(
                 &param.name,
@@ -239,20 +213,19 @@ impl SemanticAnalyzer {
             )?;
         }
 
-        // analyze function body with new scope
+        // analyze function body with new scope.
         let result = self.analyze_block(&func.body);
 
-        // clean up function scope
+        // clean up function scope.
         self.symbol_table.pop_scope()?;
         result
     }
 
-    // analyze a class definition
     fn analyze_class(&mut self, _name: &str, fields: &[Field], methods: &[FunctionNode]) -> Result<(), SemanticError> {
-        // create new scope for class members
+        // create new scope for class members.
         self.symbol_table.push_scope()?;
 
-        // add fields to class scope
+        // add fields to class scope.
         for field in fields {
             self.symbol_table.add_symbol(
                 &field.name,
@@ -263,7 +236,7 @@ impl SemanticAnalyzer {
             )?;
         }
 
-        // add methods to class scope and analyze their bodies
+        // add methods to class scope and analyze their bodies.
         for method in methods {
             self.symbol_table.add_symbol(
                 &method.name,
@@ -275,14 +248,13 @@ impl SemanticAnalyzer {
             self.analyze_function(method)?;
         }
 
-        // clean up class scope
+        // clean up class scope.
         self.symbol_table.pop_scope()?;
         Ok(())
     }
 
-    // analyze a block of statements
     fn analyze_block(&mut self, stmts: &[StatementNode]) -> Result<(), SemanticError> {
-        // first collect function declarations in this block
+        // first collect function declarations in this block.
         for stmt in stmts {
             if let StatementKind::Function(func) = &stmt.kind {
                 self.symbol_table.add_symbol(
@@ -295,7 +267,7 @@ impl SemanticAnalyzer {
             }
         }
 
-        // then analyze all statements in order
+        // then analyze all statements in order.
         for stmt in stmts {
             self.analyze_statement(stmt)?;
         }
@@ -303,7 +275,6 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    // analyze a single statement
     fn analyze_statement(&mut self, stmt: &StatementNode) -> Result<(), SemanticError> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
@@ -367,7 +338,13 @@ impl SemanticAnalyzer {
             StatementKind::Match { expr, arms } => {
                 self.analyze_expression(expr)?;
                 for arm in arms {
+                    self.symbol_table.push_scope()?;
+                    self.analyze_pattern(&arm.pattern)?;
+                    if let Some(guard) = &arm.guard {
+                        self.analyze_expression(guard)?;
+                    }
                     self.analyze_block(&arm.body)?;
+                    self.symbol_table.pop_scope()?;
                 }
             }
             StatementKind::Return(expr) => {
@@ -376,21 +353,28 @@ impl SemanticAnalyzer {
                 }
             }
             StatementKind::Import { module_path, alias } => {
-                // In a real implementation, we would resolve the module path,
-                // analyze the imported module, and add its symbols to the current scope
-                // For now, we'll just track the import for later resolution
+                // in a real implementation, we would resolve the module path, analyze the imported module, and add its symbols to the current scope.
+                // for now, we'll just track the import for later resolution.
 
                 let symbol_name = if let Some(alias) = alias {
                     alias
                 } else {
-                    // If no alias, use the last component of the module path as the symbol name
+                    // if no alias, use the last component of the module path as the symbol name.
                     module_path.split('.').last().unwrap_or(module_path)
+                };
+
+                // TODO: implement proper stdlib resolution instead of faking imports.
+                // fake stdlib: if importing from std, treat as predefined symbol.
+                let kind = if module_path.starts_with("std.") {
+                    SymbolKind::Variable // treat as variables/constants for simplicity.
+                } else {
+                    SymbolKind::Import
                 };
 
                 self.symbol_table.add_symbol(
                     symbol_name,
                     Symbol {
-                        kind: SymbolKind::Import,
+                        kind,
                         span: stmt.span,
                     },
                 )?;
@@ -399,8 +383,36 @@ impl SemanticAnalyzer {
         }
         Ok(())
     }
-    // analyze an expression
-    fn analyze_expression(&self, expr: &ExpressionNode) -> Result<(), SemanticError> {
+    // analyze a pattern (for match arms).
+    fn analyze_pattern(&mut self, pattern: &PatternNode) -> Result<(), SemanticError> {
+        match pattern {
+            PatternNode::Identifier(name) => {
+                self.symbol_table.add_symbol(
+                    name,
+                    Symbol {
+                        kind: SymbolKind::Variable,
+                        span: Span::new(0, 0), // dummy span
+                    },
+                )?;
+            }
+            PatternNode::EnumVariant { args, .. } => {
+                for arg in args {
+                    self.analyze_pattern(arg)?;
+                }
+            }
+            PatternNode::Literal(_) => {} // literals don't bind variables
+            PatternNode::Wildcard => {} // no binding
+            PatternNode::Tuple(elements) => {
+                for elem in elements {
+                    self.analyze_pattern(elem)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // analyze an expression.
+    fn analyze_expression(&mut self, expr: &ExpressionNode) -> Result<(), SemanticError> {
         match &expr.kind {
             ExpressionKind::Identifier(name) => {
                 if !self.symbol_table.exists(name) {
@@ -448,13 +460,28 @@ impl SemanticAnalyzer {
                 self.analyze_expression(else_expr)?;
             }
             ExpressionKind::Lambda { params, body } => {
-                // Note: lambdas are not fully implemented in semantic analysis yet
-                // Would need to push scope, add params, analyze body
-                // For now, just analyze the body as a block
-                let mut temp_analyzer = SemanticAnalyzer::new();
-                temp_analyzer.analyze_block(body)?;
+                self.symbol_table.push_scope()?;
+                for param in params {
+                    self.symbol_table.add_symbol(
+                        &param.name,
+                        Symbol {
+                            kind: SymbolKind::Variable,
+                            span: param.type_.span,
+                        },
+                    )?;
+                }
+                self.analyze_block(body)?;
+                self.symbol_table.pop_scope()?;
             }
-            _ => {} // handle other expression types like GenericType
+            ExpressionKind::GenericType(name, _type_args) => {
+                // check if the generic type name exists.
+                if !self.symbol_table.exists(&name) {
+                    return Err(SemanticError {
+                        message: format!("undefined type '{}'", name),
+                        span: expr.span,
+                    });
+                }
+            }
         }
         Ok(())
     }

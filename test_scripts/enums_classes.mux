@@ -1,3 +1,4 @@
+import std.print
 // Enums and Classes
 enum Shape { Circle(float r), Rectangle(float w, float h) }
 

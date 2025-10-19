@@ -2,6 +2,12 @@ import math
 import utils.logger as _
 // TODO: not sure this is what i want but for now with semantic analysis, this is what we will do
 import std.Some
+import std.print
+ import std.None
+import std.pi
+ import std.Err
+ import std.list
+import std.Ok
 
 const int MAX = 100
 auto flt = 7.82

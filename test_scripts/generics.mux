@@ -1,3 +1,5 @@
+import std.Some
+ import std.None
 // Generics
 func max<T is comparable>(T a, T b) returns T { 
     if a > b { 

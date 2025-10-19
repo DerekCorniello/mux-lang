@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Test forward referencing: mutual recursion\nimport std.print\n\nfn even(int n) returns bool {\n    if n == 0 {\n        return true\n    } else {\n        return odd(n - 1)\n    }\n}\n\nfn odd(int n) returns bool {\n    if n == 0 {\n        return false\n    } else {\n        return even(n - 1)\n    }\n}\n\nfn main() returns void {\n    print(even(4))\n    print(odd(5))\n}\n"
+"import std.print\n import std.Some\nimport std.Err\nimport std.Ok\n// Optionals & Results\nfunc divide(int a, int b) returns Result<int, string> {\n    if b == 0 { return Err(\"Division by zero\") }\n    return Ok(a / b)\n}\n\nauto res = divide(10, 2)\nmatch res {\n    Ok(v) { print(\"Result: \" + v) }\n    Err(e) { print(\"Error: \" + e) }\n}\n\nfunc findEven(list<int> nums) returns Optional<int> {\n    for int n in nums { if n % 2 == 0 { return Some(n) } }\n}\n"

@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Enums and Classes\nenum Shape { Circle(float r), Rectangle(float w, float h) }\n\ninterface Drawable { func draw() returns void }\n\nclass Circle is Drawable {\n    float radius\n    func draw() returns void { print(\"Circle radius=\" + radius) }\n}\n"
+"// Imports\nimport math\nimport utils.logger as _\nimport std.print\n\nauto pi = math.PI\nprint(\"PI = \" + pi)\n"
