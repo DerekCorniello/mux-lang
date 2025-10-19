@@ -1,6 +1,7 @@
 // Collections
 auto nums = [1, 2, 3, 4]
-auto scores = map<string, int>{"Alice": 90, "Bob": 85}
+auto scores = {"Alice": 90, "Bob": 85}
 auto matrix = [[1, 2], [3, 4]]
-auto emptyList = list<int>()
-auto emptyMap = map<string, int>()
+
+map<string, float> avgs = {"Alice": 90, "Bob": 85}
+list<list<int>> grid = [[1, 2], [3, 4]]

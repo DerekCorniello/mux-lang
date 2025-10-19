@@ -1,6 +1,7 @@
 // Imports
 import math
 import utils.logger as _
+import std.print
 
 auto pi = math.PI
 print("PI = " + pi)

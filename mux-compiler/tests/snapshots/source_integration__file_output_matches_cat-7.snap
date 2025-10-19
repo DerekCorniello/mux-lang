@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Imports\nimport math\nimport utils.logger as _\n\nauto pi = math.PI\nprint(\"PI = \" + pi)\n"
+"// Functions and lambdas\nfunc add(int a, int b) returns int {\n    return a + b\n}\n\nfunc greet(string name, int times = 1) returns void {\n    for int i in range(0, times) { print(\"Hello \" + name) }\n}\n\n// Lambda examples\nauto square = func (int n) returns int { return n * n }\nauto doubled = func (float x) returns float { return x * 2 }\n"

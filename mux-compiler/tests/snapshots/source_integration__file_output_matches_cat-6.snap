@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Generics\nfunc max[T comparable](T a, T b) returns T { if a > b { return a } return b }\n\nclass Stack[T] {\n    list<T> items\n    func push(T item) returns void { items.append(item) }\n    func pop() returns Optional<T> {\n        if items.isEmpty() { return None }\n        return Some(items.removeLast())\n    }\n}\n\nauto s = Stack<int>()\ns.push(42)\n"
+"// Generics\nfunc max<T is comparable>(T a, T b) returns T { \n    if a > b { \n        return a\n    }\n    return b \n}\n\nclass Stack<T> {\n    list<T> items\n    func push(T item) returns void { items.append(item) }\n    func pop() returns Optional<T> {\n        if items.isEmpty() { return None }\n        return Some(items.removeLast())\n    }\n}\n\nauto s = Stack<int>.new()\ns.push(42)\n"

@@ -9,4 +9,52 @@ match Some(15) {
 }
 
 for int i in range(0, 3) { print(i) }
+
+for int j in range(0, 10) {
+    if j % 2 == 0 {
+        print("even")
+    } else {
+        print("odd")
+    }
+}
+
 while x > 0 { x -= 1 }
+
+if x < 0 {
+    print("Negative")
+}
+
+if x == 0 {
+    print("Zero")
+} else {
+    print("Non-zero")
+}
+
+if x > 10 {
+    print("gt10")
+} else if x > 5 {
+    print("gt5")
+} else {
+    print("other")
+}
+
+for int j in range(0, 3) {
+    if j == 1 {
+        print("one")
+    } else if j == 0 {
+        print("zero")
+    }
+}
+
+while x < 3 {
+    x = x + 1
+}
+
+if x > 1
+{
+    print("nl brace then")
+}
+else
+{
+    print("nl brace else")
+}

@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Enums and Classes\nenum Shape { Circle(float r), Rectangle(float w, float h) }\n\ninterface Drawable { func draw() returns void }\n\nclass Circle is Drawable {\n    float radius\n    func draw() returns void { print(\"Circle radius=\" + radius) }\n}\n"
+"// Collections\nauto nums = [1, 2, 3, 4]\nauto scores = {\"Alice\": 90, \"Bob\": 85}\nauto matrix = [[1, 2], [3, 4]]\n\nmap<string, float> avgs = {\"Alice\": 90, \"Bob\": 85}\nlist<list<int>> grid = [[1, 2], [3, 4]]\n"

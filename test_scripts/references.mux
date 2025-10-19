@@ -1,3 +1,5 @@
+import std.print
+
 // References
 int val = 10
 auto r = &val
@@ -11,7 +13,7 @@ auto first = &numbers[0]
 print(first)
 
 // Function taking a reference
-func update(ref: &int) {
+func update(&int ref) returns void {
     ref = ref + 1
 }
 
