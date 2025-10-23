@@ -3,5 +3,6 @@ auto nums = [1, 2, 3, 4]
 auto scores = {"Alice": 90, "Bob": 85}
 auto matrix = [[1, 2], [3, 4]]
 
-map<string, float> avgs = {"Alice": 90, "Bob": 85}
+map<string, int> avgs = {"Alice": 90, "Bob": 85}
 list<list<int>> grid = [[1, 2], [3, 4]]
+set<int> myset = {1, 2, 4}

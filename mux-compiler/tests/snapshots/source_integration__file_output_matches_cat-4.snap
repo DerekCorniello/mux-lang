@@ -2,4 +2,4 @@
 source: tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"import std.print\n\n// References\nint val = 10\nauto r = &val\nprint(r)\nr = 20\nprint(val)\n\n// References to list elements\nauto numbers = [1, 2, 3, 4, 5]\nauto first = &numbers[0]\nprint(first)\n\n// Function taking a reference\nfunc update(&int ref) returns void {\n    ref = ref + 1\n}\n\nupdate(&val)\nprint(val)\n"
+"// Test forward referencing: mutual recursion\nimport std.print\n\nfn even(int n) returns bool {\n    if n == 0 {\n        return true\n    } else {\n        return odd(n - 1)\n    }\n}\n\nfn odd(int n) returns bool {\n    if n == 0 {\n        return false\n    } else {\n        return even(n - 1)\n    }\n}\n\nfn main() returns void {\n    print(even(4))\n    print(odd(5))\n}\n"

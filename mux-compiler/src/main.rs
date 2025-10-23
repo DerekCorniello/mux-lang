@@ -10,20 +10,9 @@ use lexer::Lexer;
 use parser::Parser;
 use semantics::{SemanticAnalyzer, SymbolTable};
 
-fn print_symbol_table(_symbol_table: &SymbolTable, scope_name: &str) {
+fn print_symbol_table(symbol_table: &SymbolTable, scope_name: &str) {
     println!("\n=== {} Symbol Table ===", scope_name);
-
-    // For now, we can't directly access the symbol table contents
-    // since the scopes vector is private. In a real implementation,
-    // we'd want to add a public method to SymbolTable for introspection.
-    println!("Symbol table contains symbols for:");
-    println!("  • Functions (hoisted to global scope)");
-    println!("  • Classes, Interfaces, Enums (hoisted to global scope)");
-    println!("  • Variables (scoped to their declaration blocks)");
-    println!("  • Imports (tracked for module resolution)");
-
-    println!("\nSemantic analysis completed successfully!");
-    println!("(To see detailed symbol contents, SymbolTable would need public accessor methods)");
+    symbol_table.print();
 }
 
 fn main() {

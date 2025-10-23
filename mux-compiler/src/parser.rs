@@ -524,7 +524,11 @@ impl<'a> Parser<'a> {
 
         let mut methods = Vec::new();
 
-        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
+        while !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(TokenType::CloseBrace) {
+                break;
+            }
             if self.matches(&[TokenType::Func]) {
                 // parse function signature for interface method.
                 let name = self.consume_identifier("Expected method name")?;
@@ -1514,10 +1518,27 @@ impl<'a> Parser<'a> {
                     return Ok(TypeNode {
                         kind: TypeKind::Map(Box::new(key_type), Box::new(value_type)),
                         span: start_span,
-                    });
-                }
+                     });
+                 }
 
-                if name == "tuple" && next_is_gt {
+                 if name == "set" && next_is_gt {
+                     self.consume_token(
+                         TokenType::Lt,
+                         "Expected '<' for set element type",
+                     )?;
+                     let element_type = self.parse_type()?;
+                     self.consume_token(
+                         TokenType::Gt,
+                         "Expected '>' after set element type",
+                     )?;
+
+                     return Ok(TypeNode {
+                         kind: TypeKind::Set(Box::new(element_type)),
+                         span: start_span,
+                     });
+                 }
+
+                 if name == "tuple" && next_is_gt {
                     self.consume_token(
                         TokenType::Lt,
                         "Expected '<' for tuple element types",
@@ -1743,64 +1764,73 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_map_literal(&mut self, start_span: Span) -> ParserResult<ExpressionNode> {
-        let mut entries = Vec::new();
+    fn parse_collection_literal(&mut self, start_span: Span) -> ParserResult<ExpressionNode> {
+        let mut set_elements = Vec::new();
+        let mut map_entries = Vec::new();
+        let mut is_map = false;
 
         if !self.check(TokenType::CloseBrace) {
-            loop {
-                let key = self.parse_expression()?;
+            // Parse first expression to determine if map or set
+            let first_expr = self.parse_expression()?;
 
-                self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
-
+            if self.matches(&[TokenType::Colon]) {
+                // It's a map: key: value
+                is_map = true;
                 let value = self.parse_expression()?;
+                map_entries.push((first_expr, value));
+            } else {
+                // It's a set: just elements
+                set_elements.push(first_expr);
+            }
 
-                entries.push((key, value));
-
-                // Skip any newlines after the comma
+            // Parse remaining entries
+            while !self.check(TokenType::CloseBrace) {
                 self.skip_newlines();
-
-                // Check if the next token is a closing brace (in case of trailing comma)
                 if self.check(TokenType::CloseBrace) {
                     break;
                 }
 
-                // Require a comma between entries
-                if !self.matches(&[TokenType::Comma]) {
-                    // If there's no comma, check if we're at the end of the map
-                    if !self.check(TokenType::CloseBrace) {
-                        return Err(ParserError::new(
-                            "Expected ',' between map entries".to_string(),
-                            self.peek().span,
-                        ));
-                    }
-                    break;
+                if is_map {
+                    self.consume_token(TokenType::Comma, "Expected ',' between map entries")?;
+                    let key = self.parse_expression()?;
+                    self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
+                    let value = self.parse_expression()?;
+                    map_entries.push((key, value));
+                } else {
+                    self.consume_token(TokenType::Comma, "Expected ',' between set elements")?;
+                    let elem = self.parse_expression()?;
+                    set_elements.push(elem);
                 }
 
-                // Skip any newlines after the comma
                 self.skip_newlines();
-
-                // If we see a closing brace after a comma, it's a trailing comma which is allowed
                 if self.check(TokenType::CloseBrace) {
                     break;
                 }
             }
         }
 
-        let end_span = self.consume_token(TokenType::CloseBrace, "Expected '}' after map entries")?;
+        let end_span = self.consume_token(TokenType::CloseBrace, "Expected '}' after collection")?;
 
-        let expr = ExpressionNode {
-            kind: ExpressionKind::MapLiteral {
-                key_type: Box::new(TypeNode {
-                    kind: TypeKind::Auto,
-                    span: start_span,
-                }),
-                value_type: Box::new(TypeNode {
-                    kind: TypeKind::Auto,
-                    span: start_span,
-                }),
-                entries,
-            },
-            span: start_span.combine(&end_span),
+        let expr = if is_map {
+            ExpressionNode {
+                kind: ExpressionKind::MapLiteral {
+                    key_type: Box::new(TypeNode {
+                        kind: TypeKind::Auto,
+                        span: start_span,
+                    }),
+                    value_type: Box::new(TypeNode {
+                        kind: TypeKind::Auto,
+                        span: start_span,
+                    }),
+                    entries: map_entries,
+                },
+                span: start_span.combine(&end_span),
+            }
+        } else {
+            ExpressionNode {
+                kind: ExpressionKind::SetLiteral(set_elements),
+                span: start_span.combine(&end_span),
+            }
         };
 
         self.parse_postfix_operators(expr)
@@ -1891,7 +1921,7 @@ impl<'a> Parser<'a> {
             }
 
             TokenType::OpenBrace => {
-                self.parse_map_literal(token_span)
+                self.parse_collection_literal(token_span)
             },
 
             TokenType::Func => {
@@ -2506,6 +2536,7 @@ pub enum ExpressionKind {
         value_type: Box<TypeNode>,
         entries: Vec<(ExpressionNode, ExpressionNode)>,
     },
+    SetLiteral(Vec<ExpressionNode>),
     If {
         cond: Box<ExpressionNode>,
         then_expr: Box<ExpressionNode>,
@@ -2538,6 +2569,7 @@ pub enum TypeKind {
     Reference(Box<TypeNode>),
     List(Box<TypeNode>),
     Map(Box<TypeNode>, Box<TypeNode>),
+    Set(Box<TypeNode>),
     Tuple(Vec<TypeNode>),
     Auto,
 }
@@ -2569,7 +2601,7 @@ impl PrimitiveType {
                 "float" => Ok(PrimitiveType::Float),
                 "bool" => Ok(PrimitiveType::Bool),
                 "char" => Ok(PrimitiveType::Char),
-                "str" => Ok(PrimitiveType::Str),
+                "str" | "string" => Ok(PrimitiveType::Str),
                 "void" => Ok(PrimitiveType::Void),
                 "auto" => Ok(PrimitiveType::Auto),
                 _ => Err(ParserError::new(
