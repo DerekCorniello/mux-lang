@@ -1,0 +1,21 @@
+// Test forward referencing: mutual recursion
+fn even(int n) returns bool {
+    if n == 0 {
+        return true
+    } else {
+        return odd(n - 1)
+    }
+}
+
+fn odd(int n) returns bool {
+    if n == 0 {
+        return false
+    } else {
+        return even(n - 1)
+    }
+}
+
+fn main() returns void {
+    print(even(4).to_string())
+    print(odd(5).to_string())
+}

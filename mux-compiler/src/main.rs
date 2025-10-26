@@ -1,12 +1,19 @@
-mod source;
 mod lexer;
 mod parser;
+mod semantics;
+mod source;
 
-use std::env;
-use std::process;
-use source::Source;
 use lexer::Lexer;
 use parser::Parser;
+use semantics::{SemanticAnalyzer, SymbolTable};
+use source::Source;
+use std::env;
+use std::process;
+
+fn print_symbol_table(symbol_table: &SymbolTable, scope_name: &str) {
+    println!("\n=== {} Symbol Table ===", scope_name);
+    symbol_table.print();
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -25,21 +32,46 @@ fn main() {
     let mut lex = Lexer::new(&mut src);
     match lex.lex_all() {
         Ok(tokens) => {
+            println!("Lexing successful. Tokens:");
+            for token in &tokens {
+                println!("  {:?}", token);
+            }
+
             let mut this_parser = Parser::new(&tokens);
             match this_parser.parse() {
                 Ok(nodes) => {
-                    println!("Successfully parsed AST:");
-                    for node in nodes {
+                    println!("\nParsing successful. AST:");
+                    for node in &nodes {
                         println!("  {:?}", node);
                     }
+
+                    // Run semantic analysis
+                    println!("\n=== Running Semantic Analysis ===");
+                    let mut analyzer = SemanticAnalyzer::new();
+                    let errors = analyzer.analyze(&nodes);
+
+                    if errors.is_empty() {
+                        println!("✅ Semantic analysis completed successfully!");
+                        println!("✅ No semantic errors found.");
+                    } else {
+                        println!("❌ Found {} semantic errors:", errors.len());
+                        for error in errors {
+                            println!("  {}", error);
+                        }
+                    }
+                    print_symbol_table(analyzer.symbol_table(), "Global");
                 }
                 Err((nodes, errors)) => {
                     eprintln!("\nEncountered {} parsing errors:", errors.len());
                     for err in errors {
                         eprintln!("  {}", err);
                     }
+                    println!("\nTokens (lexing successful):");
+                    for token in &tokens {
+                        println!("  {:?}", token);
+                    }
                     if !nodes.is_empty() {
-                        println!("\nPartial AST (may be incomplete due to errors):");
+                        println!("\nPartial AST (parsing failed):");
                         for node in nodes {
                             println!("  {:?}", node);
                         }

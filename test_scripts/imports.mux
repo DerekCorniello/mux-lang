@@ -1,6 +1,3 @@
-// Imports
-import math
-import utils.logger as _
-
-auto pi = math.PI
-print("PI = " + pi)
+// Imports test
+auto pi = 3.14159
+print("PI = " + pi.to_string())

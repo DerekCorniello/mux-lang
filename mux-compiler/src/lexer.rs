@@ -14,7 +14,6 @@ impl LexerError {
             span,
         }
     }
-
 }
 
 impl std::fmt::Display for LexerError {
@@ -96,7 +95,7 @@ pub enum TokenType {
     CloseBrace,   // }
     OpenBracket,  // [
     CloseBracket, // ]
-    Dot,   // .
+    Dot,          // .
     Comma,
     Colon,
     Eq,
@@ -228,7 +227,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             // ready to process the next token
-            _ => {},
+            _ => {}
         }
 
         let start_span = Span::new(self.source.line, self.source.col);
@@ -253,7 +252,7 @@ impl<'a> Lexer<'a> {
                 } else {
                     Ok(Token::new(TokenType::Percent, start_span))
                 }
-            },
+            }
             '_' => Ok(Token::new(TokenType::Underscore, start_span)),
             '.' => match self.source.peek() {
                 Some(c) if c.is_ascii_digit() => self.read_number(c, start_span),
@@ -349,10 +348,7 @@ impl<'a> Lexer<'a> {
                     start_span.complete(self.source.line, self.source.col);
                     Ok(Token::new(TokenType::Or, start_span))
                 } else {
-                    Err(LexerError::new(
-                        "Expected '|' after '|'",
-                        start_span
-                    ))
+                    Err(LexerError::new("Expected '|' after '|'", start_span))
                 }
             }
             '&' => {
@@ -404,7 +400,12 @@ impl<'a> Lexer<'a> {
                                 }
                             }
                             Some(ch) => comment.push(ch),
-                            None => return Err(LexerError::new("Unterminated block comment", start_span)),
+                            None => {
+                                return Err(LexerError::new(
+                                    "Unterminated block comment",
+                                    start_span,
+                                ));
+                            }
                         }
                     }
                     start_span.complete(self.source.line, self.source.col);
@@ -431,7 +432,7 @@ impl<'a> Lexer<'a> {
                     // Regular double-quoted string
                     self.read_string(start_span)
                 }
-            },
+            }
             'a'..='z' | 'A'..='Z' | '_' => {
                 let mut ident = first_char.to_string();
                 while let Some(ch) = self.source.peek() {
@@ -474,7 +475,7 @@ impl<'a> Lexer<'a> {
             }
             _ => Err(LexerError::new(
                 format!("unexpected character: '{}'", first_char),
-                start_span
+                start_span,
             )),
         }
     }
@@ -490,7 +491,7 @@ impl<'a> Lexer<'a> {
         let mut s = String::new();
         let mut escaped = false;
         let is_triple = self.is_triple_quote();
-        
+
         // Skip the next two quotes if this is a triple-quoted string
         if is_triple {
             self.source.next_char(); // consume second quote
@@ -533,7 +534,7 @@ impl<'a> Lexer<'a> {
                     _ => {
                         return Err(LexerError::new(
                             format!("unknown escape sequence: \\{}", c),
-                            Span::new(self.source.line, self.source.col - 1)
+                            Span::new(self.source.line, self.source.col - 1),
                         ));
                     }
                 }
@@ -542,7 +543,7 @@ impl<'a> Lexer<'a> {
                 s.push(c);
             }
         }
-        
+
         // If we get here, the string wasn't properly terminated
         start_span.complete(self.source.line, self.source.col);
         Err(LexerError::new("Unterminated string", start_span))
@@ -564,7 +565,7 @@ impl<'a> Lexer<'a> {
                 if chars.len() != 1 {
                     return Err(LexerError::new(
                         "Char literal must be exactly one character",
-                        Span::new(start_span.row_start, start_col + 1)
+                        Span::new(start_span.row_start, start_col + 1),
                     ));
                 }
                 start_span.complete(self.source.line, self.source.col);
@@ -583,7 +584,7 @@ impl<'a> Lexer<'a> {
                     _ => {
                         return Err(LexerError::new(
                             format!("unknown escape sequence: \\{}", c),
-                            Span::new(self.source.line, self.source.col - 1)
+                            Span::new(self.source.line, self.source.col - 1),
                         ));
                     }
                 }
@@ -595,12 +596,15 @@ impl<'a> Lexer<'a> {
             if chars.len() > 1 && !escaped {
                 return Err(LexerError::new(
                     "Char literal must be exactly one character",
-                    Span::new(start_span.row_start, start_col + 1)
+                    Span::new(start_span.row_start, start_col + 1),
                 ));
             }
         }
 
-        Err(LexerError::new("Unterminated character literal", start_span))
+        Err(LexerError::new(
+            "Unterminated character literal",
+            start_span,
+        ))
     }
 
     fn read_number(&mut self, first_char: char, mut start_span: Span) -> Result<Token, LexerError> {
@@ -629,7 +633,7 @@ impl<'a> Lexer<'a> {
             if !has_digit {
                 return Err(LexerError::new(
                     "Expected digit after decimal point",
-                    Span::new(self.source.line, self.source.col)
+                    Span::new(self.source.line, self.source.col),
                 ));
             }
         } else {
@@ -691,7 +695,7 @@ impl<'a> Lexer<'a> {
             if !has_exponent_digit {
                 return Err(LexerError::new(
                     "Missing exponent in scientific notation",
-                    Span::new(self.source.line, self.source.col)
+                    Span::new(self.source.line, self.source.col),
                 ));
             }
         }
@@ -709,20 +713,16 @@ impl<'a> Lexer<'a> {
                 .parse::<f64>()
                 .map(OrderedFloat)
                 .map(|f| Token::new(TokenType::Float(f), start_span))
-                .map_err(|_| LexerError::new(
-                    format!("Invalid float literal: {}", num),
-                    start_span
-                ))
+                .map_err(|_| LexerError::new(format!("Invalid float literal: {}", num), start_span))
         } else {
             // Parse as integer
             let clean_num: String = num.chars().filter(|c| *c != '_').collect();
             clean_num
                 .parse::<i64>()
                 .map(|i| Token::new(TokenType::Int(i), start_span))
-                .map_err(|_| LexerError::new(
-                    format!("Invalid integer literal: {}", num),
-                    start_span
-                ))
+                .map_err(|_| {
+                    LexerError::new(format!("Invalid integer literal: {}", num), start_span)
+                })
         }
     }
 }
@@ -731,10 +731,18 @@ impl<'a> Lexer<'a> {
 mod tests {
     use super::*;
     use crate::source::Source;
-    
-    fn assert_lexer_error(result: Result<Vec<Token>, LexerError>, expected_msg: &str, expected_line: usize, expected_col: usize) {
+
+    fn assert_lexer_error(
+        result: Result<Vec<Token>, LexerError>,
+        expected_msg: &str,
+        expected_line: usize,
+        expected_col: usize,
+    ) {
         match result {
-            Ok(tokens) => panic!("Expected error '{}' but got tokens: {:?}", expected_msg, tokens),
+            Ok(tokens) => panic!(
+                "Expected error '{}' but got tokens: {:?}",
+                expected_msg, tokens
+            ),
             Err(e) => {
                 assert!(
                     e.message.contains(expected_msg),
@@ -805,7 +813,7 @@ mod tests {
     #[test]
     fn test_char_errors() {
         // Test string literals instead of character literals since Mux might not support single-quoted chars
-        
+
         // Empty string literal
         let input = "auto x = \"\"";
         let mut source = Source::from_test_str(input);
@@ -836,10 +844,13 @@ auto y = 42"#;
         let input = r#"auto x = "invalid \z escape""#;
         let mut source = Source::from_test_str(input);
         let result = Lexer::new(&mut source).lex_all();
-        
+
         match result {
             Ok(tokens) => {
-                panic!("Expected error for invalid escape sequence but got tokens: {:?}", tokens);
+                panic!(
+                    "Expected error for invalid escape sequence but got tokens: {:?}",
+                    tokens
+                );
             }
             Err(e) => {
                 assert!(
@@ -865,13 +876,19 @@ auto y = 42"#;
         let input = "auto x = 1.23e";
         let mut source = Source::from_test_str(input);
         let result = Lexer::new(&mut source).lex_all();
-        assert!(result.is_err(), "Expected error for invalid scientific notation");
+        assert!(
+            result.is_err(),
+            "Expected error for invalid scientific notation"
+        );
 
         // The lexer should fail on "1e+" as it's invalid scientific notation
         let input = "auto x = 1e+";
         let mut source = Source::from_test_str(input);
         let result = Lexer::new(&mut source).lex_all();
-        assert!(result.is_err(), "Expected error for invalid scientific notation");
+        assert!(
+            result.is_err(),
+            "Expected error for invalid scientific notation"
+        );
     }
 
     #[test]
@@ -881,16 +898,20 @@ auto y = 42"#;
             auto y = 1.2.3
             auto z = 123invalid
         "#;
-        
+
         let mut source = Source::from_test_str(input);
         let result = Lexer::new(&mut source).lex_all();
-        
+
         // The lexer will stop at the first error, so we should only get one error
         match result {
             Ok(tokens) => panic!("Expected error but got tokens: {:?}", tokens),
             Err(e) => {
                 // The first error should be about the unterminated string
-                assert!(e.message.contains("Unterminated string"), "Unexpected error: {}", e.message);
+                assert!(
+                    e.message.contains("Unterminated string"),
+                    "Unexpected error: {}",
+                    e.message
+                );
                 assert_eq!(e.span.row_start, 2);
                 assert_eq!(e.span.col_start, 22);
             }
@@ -905,7 +926,7 @@ auto y = 42"#;
             auto y = 1.2.3
             auto z = 123invalid
         "#;
-        
+
         // First error (unterminated string)
         let mut source = Source::from_test_str(input);
         let result = Lexer::new(&mut source).lex_all();
@@ -921,7 +942,7 @@ auto y = 42"#;
                 assert_eq!(e.span.col_start, 22);
             }
         }
-        
+
         // Test with a valid variable declaration
         let fixed_input = r#"
             auto x = 42
@@ -935,14 +956,18 @@ auto y = 42"#;
                 assert!(!tokens.is_empty());
                 // Check that we have the expected number of tokens
                 // auto, x, =, 42, newline, auto, y, =, 1.2
-                assert!(tokens.len() >= 8, "Expected at least 8 tokens, got {}", tokens.len());
+                assert!(
+                    tokens.len() >= 8,
+                    "Expected at least 8 tokens, got {}",
+                    tokens.len()
+                );
             }
             Err(e) => {
                 panic!("Expected successful tokenization but got error: {}", e);
             }
         }
     }
-    
+
     #[test]
     fn test_number_parsing() {
         // Test that "1.2.3" is tokenized as Float(1.2) and Int(33) (ASCII for '3')
@@ -1391,7 +1416,7 @@ world"
         assert_eq!(tokens[4].span.row_start, 3);
         assert_eq!(tokens[4].span.col_start, 1);
     }
-    
+
     #[test]
     fn test_span_calculation() {
         // Test spans for various token types
@@ -1400,20 +1425,22 @@ world"
         auto y = "hello"
         fn add(a: int, b: int) -> int { a + b }
         "#;
-        
+
         let mut source = Source::from_test_str(input);
         let mut lexer = Lexer::new(&mut source);
         let tokens = lexer.lex_all().unwrap();
-        
+
         // Find the 'auto' token
-        let auto_token = tokens.iter()
+        let auto_token = tokens
+            .iter()
             .find(|t| t.token_type == TokenType::Auto)
             .expect("'auto' token not found");
         assert_eq!(auto_token.span.row_start, 2);
         assert_eq!(auto_token.span.col_start, 9);
-        
+
         // Find the string literal
-        let string_token = tokens.iter()
+        let string_token = tokens
+            .iter()
             .find(|t| matches!(t.token_type, TokenType::Str(_)))
             .expect("String token not found");
         if let TokenType::Str(s) = &string_token.token_type {
@@ -1425,12 +1452,13 @@ world"
         } else {
             panic!("Expected Str token");
         }
-        
+
         // Find the function definition
-        let fn_token = tokens.iter()
+        let fn_token = tokens
+            .iter()
             .position(|t| t.token_type == TokenType::Func)
             .expect("'fn' token not found");
-            
+
         // The function should span multiple tokens until the closing brace
         let mut i = fn_token;
         while i < tokens.len() && tokens[i].token_type != TokenType::CloseBrace {
@@ -1440,7 +1468,7 @@ world"
         assert_eq!(tokens[fn_token].span.row_start, 4);
         assert_eq!(tokens[i].span.row_start, 4);
     }
-    
+
     #[test]
     fn test_multiline_span() {
         // Using raw string literal with triple quotes to avoid escape sequence issues
@@ -1450,16 +1478,17 @@ world"
         multi-line 
         string"""
         "###;
-        
+
         let mut source = Source::from_test_str(input);
         let mut lexer = Lexer::new(&mut source);
         let tokens = lexer.lex_all().unwrap();
-        
+
         // Find the string token
-        let string_token = tokens.iter()
+        let string_token = tokens
+            .iter()
             .find(|t| matches!(t.token_type, TokenType::Str(_)))
             .expect("String token not found");
-            
+
         // The string should span multiple lines
         // The first line of the input is empty, so the string starts on line 2
         // The column should be the start of the triple quotes (after the indentation)

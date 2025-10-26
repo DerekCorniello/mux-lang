@@ -4,9 +4,9 @@ func add(int a, int b) returns int {
 }
 
 func greet(string name, int times = 1) returns void {
-    for i in range(0, times) { print("Hello " + name) }
+    for int i in range(0, times) { print("Hello " + name) }
 }
 
 // Lambda examples
-auto square = func(int n) { return n * n }
-auto doubled = func(auto x) { return x * 2 }
+auto square = func (int n) returns int { return n * n }
+auto doubled = func (float x) returns float { return x * 2 }

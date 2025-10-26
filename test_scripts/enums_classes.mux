@@ -5,5 +5,5 @@ interface Drawable { func draw() returns void }
 
 class Circle is Drawable {
     float radius
-    func draw() returns void { print("Circle radius=" + radius) }
+    func draw() returns void { print("Circle radius=" + radius.to_string()) }
 }

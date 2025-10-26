@@ -1,5 +1,6 @@
 ---
-source: tests/source_integration.rs
+source: mux-compiler/tests/source_integration.rs
+assertion_line: 28
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Control flow\nauto x = 5\nif x > 0 { print(\"Positive\") } else { print(\"Non-positive\") }\n\nmatch Some(15) {\n    Some(v) if v > 10 { print(\"Large: \" + v) }\n    Some(v) { print(\"Small: \" + v) }\n    None { print(\"None\") }\n}\n\nfor int i in range(0, 3) { print(i) }\nwhile x > 0 { x -= 1 }\n"
+"// Enums and Classes\nenum Shape { Circle(float r), Rectangle(float w, float h) }\n\ninterface Drawable { func draw() returns void }\n\nclass Circle is Drawable {\n    float radius\n    func draw() returns void { print(\"Circle radius=\" + radius.to_string()) }\n}\n"
