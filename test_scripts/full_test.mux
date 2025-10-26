@@ -1,13 +1,4 @@
-import math
 import utils.logger as _
-// TODO: not sure this is what i want but for now with semantic analysis, this is what we will do
-import std.Some
-import std.print
- import std.None
-import std.pi
- import std.Err
- import std.list
-import std.Ok
 
 const int MAX = 100
 auto flt = 7.82
@@ -20,7 +11,6 @@ interface Drawable { func draw() returns void }
 class Circle is Drawable, ShapeLike {
     float radius
     func draw() returns void { print("Circle radius=" + radius) }
-    func area() returns float { return pi * radius * radius }
     func resize(float newRadius, string _) returns void { radius = newRadius }
 }
 
@@ -43,8 +33,8 @@ func findEven(list<int> nums) returns Optional<int> {
 }
 
 func map<T, U>(list<T> items, func(T) returns U transform) returns list<U> {
-    auto out = list<U>.new()
-    for U item in items { out.append(transform(item)) }
+    list<U> out = []
+    for T item in items { out.append(transform(item)) }
     return out
 }
 
@@ -68,7 +58,7 @@ func main() returns void {
     for Circle c in cirs { c.draw() }
 
     auto maximum = max(7, 12)
-    auto stack = Stack<int>()
+    auto stack = Stack<int>.new([])
     stack.push(99)
     auto popped = stack.pop()
 

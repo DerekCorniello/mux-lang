@@ -1,7 +1,3 @@
-import std.print
- import std.Some
-import std.Err
-import std.Ok
 // Optionals & Results
 func divide(int a, int b) returns Result<int, string> {
     if b == 0 { return Err("Division by zero") }

@@ -66,9 +66,12 @@ fn test_parse_all_mux_files_in_dir() {
     test_files.sort();
 
     for path in test_files {
-        let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("unknown");
+        let file_name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
         println!("\n=== Testing file: {} ===", file_name);
-        
+
         match std::panic::catch_unwind(|| {
             println!("Parsing file: {}", path.display());
             let ast_string = parse_file_to_ast(&path);

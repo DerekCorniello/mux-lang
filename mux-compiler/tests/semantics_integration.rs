@@ -20,17 +20,15 @@ fn test_semantic_analysis() {
     if operator_test_path.exists() {
         println!("=== Testing file: {} ===", operator_test_path.display());
 
-        let content = fs::read_to_string(&operator_test_path).expect("Failed to read test file");
+        let content = fs::read_to_string(operator_test_path).expect("Failed to read test file");
         let mut source = Source::from_test_str(&content);
 
         // Lex
         let mut lexer = Lexer::new(&mut source);
-        let tokens: Vec<_> = std::iter::from_fn(|| {
-            match lexer.next_token() {
-                Ok(token) if token.token_type == mux_compiler::lexer::TokenType::Eof => None,
-                Ok(token) => Some(Ok(token)),
-                Err(e) => Some(Err(e)),
-            }
+        let tokens: Vec<_> = std::iter::from_fn(|| match lexer.next_token() {
+            Ok(token) if token.token_type == mux_compiler::lexer::TokenType::Eof => None,
+            Ok(token) => Some(Ok(token)),
+            Err(e) => Some(Err(e)),
         })
         .collect::<Result<_, _>>()
         .expect("Lexer error");
@@ -48,7 +46,10 @@ fn test_semantic_analysis() {
         } else {
             println!("✗ Semantic errors in {}:", operator_test_path.display());
             for error in &errors {
-                println!("  {} at {}:{}", error.message, error.span.row_start, error.span.col_start);
+                println!(
+                    "  {} at {}:{}",
+                    error.message, error.span.row_start, error.span.col_start
+                );
             }
             // For now, don't panic - just report
             // panic!("Semantic errors found");
@@ -69,12 +70,10 @@ fn test_semantic_analysis() {
 
             // Lex
             let mut lexer = Lexer::new(&mut source);
-            let tokens: Vec<_> = std::iter::from_fn(|| {
-                match lexer.next_token() {
-                    Ok(token) if token.token_type == mux_compiler::lexer::TokenType::Eof => None,
-                    Ok(token) => Some(Ok(token)),
-                    Err(e) => Some(Err(e)),
-                }
+            let tokens: Vec<_> = std::iter::from_fn(|| match lexer.next_token() {
+                Ok(token) if token.token_type == mux_compiler::lexer::TokenType::Eof => None,
+                Ok(token) => Some(Ok(token)),
+                Err(e) => Some(Err(e)),
             })
             .collect::<Result<_, _>>()
             .expect("Lexer error");
@@ -92,7 +91,10 @@ fn test_semantic_analysis() {
             } else {
                 println!("✗ Semantic errors in {}:", path.display());
                 for error in &errors {
-                    println!("  {} at {}:{}", error.message, error.span.row_start, error.span.col_start);
+                    println!(
+                        "  {} at {}:{}",
+                        error.message, error.span.row_start, error.span.col_start
+                    );
                 }
                 // For now, don't panic - just report
                 // panic!("Semantic errors found");
@@ -102,6 +104,9 @@ fn test_semantic_analysis() {
         }
     }
 
-    assert!(files_processed > 0, "No .mux files found in test directories");
+    assert!(
+        files_processed > 0,
+        "No .mux files found in test directories"
+    );
     println!("Processed {} files", files_processed);
 }

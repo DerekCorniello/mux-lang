@@ -1,0 +1,12 @@
+[package]
+name = "mux-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "mux_runtime"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+gc = "0.4"
+ordered-float = "4.0"

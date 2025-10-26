@@ -1,18 +1,14 @@
-import std.print
- import std.Some
- import std.None
- import std.range
 // Control flow
 auto x = 5
 if x > 0 { print("Positive") } else { print("Non-positive") }
 
 match Some(15) {
-    Some(v) if v > 10 { print("Large: " + v) }
-    Some(v) { print("Small: " + v) }
+    Some(v) if v > 10 { print("Large: " + v.to_string()) }
+    Some(v) { print("Small: " + v.to_string()) }
     None { print("None") }
 }
 
-for int i in range(0, 3) { print(i) }
+for int i in range(0, 3) { print(i.to_string()) }
 
 for int j in range(0, 10) {
     if j % 2 == 0 {
