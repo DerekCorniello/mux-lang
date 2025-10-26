@@ -1,5 +1,5 @@
 use insta::assert_debug_snapshot;
-use mux_compiler::lexer::{Lexer, TokenType};
+use mux_compiler::lexer::Lexer;
 use mux_compiler::source::Source;
 use std::fs;
 use std::path::PathBuf;

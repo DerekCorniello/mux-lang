@@ -1,6 +1,4 @@
 // Test forward referencing: mutual recursion
-import std.print
-
 fn even(int n) returns bool {
     if n == 0 {
         return true
@@ -18,6 +16,6 @@ fn odd(int n) returns bool {
 }
 
 fn main() returns void {
-    print(even(4))
-    print(odd(5))
+    print(even(4).to_string())
+    print(odd(5).to_string())
 }

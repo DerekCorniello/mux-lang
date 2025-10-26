@@ -62,7 +62,7 @@ impl Source {
         }
         self.input[self.pos..].chars().next()
     }
-    
+
     // gets the nth character ahead without consuming
     pub fn peek_nth(&self, n: usize) -> Option<char> {
         if self.pos >= self.input.len() {
@@ -70,7 +70,7 @@ impl Source {
         }
         self.input[self.pos..].chars().nth(n)
     }
-    
+
     // consumes characters until the specified stop character is found. the stop
     // character is not consumed and not included in the returned string. leading
     // and trailing whitespace is trimmed from the result.
@@ -85,13 +85,13 @@ impl Source {
         }
         buf.trim().to_string()
     }
-    
+
     // consumes characters until the end of a multiline comment ("*/") is found. the
     // comment closer is consumed but not included in the returned string. the opening
     // "/*" should already be consumed before calling this.
     pub fn consume_multiline_comment(&mut self) -> String {
         let mut buf = String::new();
-        
+
         while let Some(c) = self.next_char() {
             if c == '*' && self.peek() == Some('/') {
                 self.next_char(); // consume the '/'
@@ -99,7 +99,7 @@ impl Source {
             }
             buf.push(c);
         }
-        
+
         buf.trim().to_string()
     }
 }
@@ -231,26 +231,26 @@ mod tests {
         println!("Third char: {:?}, col: {}", ch, src.col);
         assert_eq!(ch, Some('に'));
         assert_eq!(src.col, 7); // 5 + 2 = 7
-        
+
         // Fourth character 'ち' is also a full-width character
         let ch = src.next_char();
         println!("Fourth char: {:?}, col: {}", ch, src.col);
         assert_eq!(ch, Some('ち'));
         assert_eq!(src.col, 9); // 7 + 2 = 9
-        
+
         // Fifth character 'は' is also a full-width character
         let ch = src.next_char();
         println!("Fifth char: {:?}, col: {}", ch, src.col);
         assert_eq!(ch, Some('は'));
         assert_eq!(src.col, 11); // 9 + 2 = 11
-        
+
         // Test with emoji (typically 4 bytes, but displayed as one column)
         let mut src = Source::from_test_str("hello 🌟");
         // Skip "hello " (6 characters including space)
         for _ in 0..6 {
             src.next_char();
         }
-        
+
         // The star emoji is a double-width character
         // We've consumed "hello " (6 characters, columns 1-6)
         assert_eq!(src.col, 7); // After 6 characters, we're at column 7

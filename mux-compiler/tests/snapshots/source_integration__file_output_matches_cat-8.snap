@@ -1,5 +1,5 @@
 ---
-source: tests/source_integration.rs
+source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"import std.Some\n import std.None\n// Generics\nfunc max<T is comparable>(T a, T b) returns T { \n    if a > b { \n        return a\n    }\n    return b \n}\n\nclass Stack<T> {\n    list<T> items\n    func push(T item) returns void { items.append(item) }\n    func pop() returns Optional<T> {\n        if items.isEmpty() { return None }\n        return Some(items.removeLast())\n    }\n}\n\nauto s = Stack<int>.new()\ns.push(42)\n"
+"// Variable declarations and type inference\nconst int MAX = 100\nint explicit = 42\nauto inferred = 4.89\nauto name = \"Mux\"\n\nauto flag = true\nauto otherflag = false\n"
