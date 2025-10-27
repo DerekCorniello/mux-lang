@@ -936,6 +936,46 @@ impl SemanticAnalyzer {
         result
     }
 
+    fn check_method_compatibility(
+        &self,
+        interface_sig: &MethodSig,
+        class_sig: &MethodSig,
+        _class_type_params: &[(String, Vec<String>)],
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let mut unifier = Unifier::new();
+        // Unify return types
+        unifier
+            .unify(&interface_sig.return_type, &class_sig.return_type, span)
+            .map_err(|e| SemanticError {
+                message: format!("Return type mismatch in interface implementation: {}", e.message),
+                span,
+            })?;
+        // Unify params
+        if interface_sig.params.len() != class_sig.params.len() {
+            return Err(SemanticError {
+                message: format!(
+                    "Parameter count mismatch: expected {}, got {}",
+                    interface_sig.params.len(),
+                    class_sig.params.len()
+                ),
+                span,
+            });
+        }
+        for (i, (int_param, class_param)) in interface_sig
+            .params
+            .iter()
+            .zip(&class_sig.params)
+            .enumerate()
+        {
+            unifier.unify(int_param, class_param, span).map_err(|e| SemanticError {
+                message: format!("Parameter {} type mismatch in interface implementation: {}", i, e.message),
+                span,
+            })?;
+        }
+        Ok(())
+    }
+
     fn get_instantiated_constructor_type(
         &mut self,
         name: &str,
@@ -1315,8 +1355,34 @@ impl SemanticAnalyzer {
                             if let Some(interface_methods) =
                                 interface_symbol.interfaces.get(&trait_ref.name)
                             {
-                                implemented_interfaces
-                                    .insert(trait_ref.name.clone(), interface_methods.clone());
+                                // Substitute type_args into interface methods
+                                let resolved_args = trait_ref
+                                    .type_args
+                                    .iter()
+                                    .map(|arg| self.resolve_type(arg))
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                let interface_type_params = &interface_symbol.type_params;
+                                let mut substituted_methods = std::collections::HashMap::new();
+                                for (method_name, method_sig) in interface_methods {
+                                    let sub_params = method_sig
+                                        .params
+                                        .iter()
+                                        .map(|p| self.substitute_type_params(p, interface_type_params, &resolved_args))
+                                        .collect();
+                                    let sub_return = self.substitute_type_params(
+                                        &method_sig.return_type,
+                                        interface_type_params,
+                                        &resolved_args,
+                                    );
+                                    substituted_methods.insert(
+                                        method_name.clone(),
+                                        MethodSig {
+                                            params: sub_params,
+                                            return_type: sub_return,
+                                        },
+                                    );
+                                }
+                                implemented_interfaces.insert(trait_ref.name.clone(), substituted_methods);
                             }
                         }
                     }
@@ -1377,6 +1443,30 @@ impl SemanticAnalyzer {
                         ),
                     };
                     methods_map.insert("new".to_string(), new_sig);
+
+                    // Validate interface implementations
+                    for (interface_name, interface_methods) in &implemented_interfaces {
+                        for (method_name, interface_sig) in interface_methods {
+                            if let Some(class_sig) = methods_map.get(method_name) {
+                                if let Err(e) = self.check_method_compatibility(
+                                    interface_sig,
+                                    class_sig,
+                                    &type_param_bounds,
+                                    *node.span(),
+                                ) {
+                                    self.errors.push(e);
+                                }
+                            } else {
+                                self.errors.push(SemanticError {
+                                    message: format!(
+                                        "Class '{}' does not implement method '{}' required by interface '{}'",
+                                        name, method_name, interface_name
+                                    ),
+                                    span: *node.span(),
+                                });
+                            }
+                        }
+                    }
 
                     if let Err(e) = self.symbol_table.add_symbol(
                         name,
