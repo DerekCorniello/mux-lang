@@ -18,19 +18,7 @@ impl Set {
         self.0.contains(val)
     }
 
-    pub fn union(&self, other: &Set) -> Set {
-        Set(self.0.union(&other.0).cloned().collect())
-    }
 
-    pub fn intersection(&self, other: &Set) -> Set {
-        Set(self.0.intersection(&other.0).cloned().collect())
-    }
-
-
-
-    pub fn to_list(&self) -> crate::list::List {
-        crate::list::List(self.0.iter().cloned().collect())
-    }
 }
 
 impl fmt::Display for Set {
@@ -38,4 +26,39 @@ impl fmt::Display for Set {
         let strs: Vec<String> = self.0.iter().map(|v| v.to_string()).collect();
         write!(f, "{{{}}}", strs.join(", "))
     }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_add(set: *mut Set, val: *mut Value) {
+    let value = unsafe { *Box::from_raw(val) };
+    unsafe { (*set).add(value) }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_remove(set: *mut Set, val: *const Value) -> bool {
+    unsafe { (*set).remove(&*val) }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_contains(set: *const Set, val: *const Value) -> bool {
+    unsafe { (*set).contains(&*val) }
+}
+
+/// # Safety
+/// `set` must be a valid, non-null pointer to a `Set` created by this runtime.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_set_size(set: *const Set) -> i64 {
+    unsafe { (*set).0.len() as i64 }
+}
+
+/// # Safety
+/// `set` must be a valid, non-null pointer to a `Set` created by this runtime.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_set_is_empty(set: *const Set) -> bool {
+    unsafe { (*set).0.is_empty() }
 }

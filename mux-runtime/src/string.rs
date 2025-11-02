@@ -22,23 +22,7 @@ impl MuxString {
         self.0.len() as i64
     }
 
-    pub fn substring(&self, start: i64, len: i64) -> Result<MuxString, String> {
-        let start_usize = start as usize;
-        let len_usize = len as usize;
-        if start_usize + len_usize > self.0.len() {
-            Err("Index out of bounds".to_string())
-        } else {
-            Ok(MuxString(self.0[start_usize..start_usize + len_usize].to_string()))
-        }
-    }
 
-    pub fn split(&self, sep: &str) -> Vec<MuxString> {
-        self.0.split(sep).map(|s| MuxString(s.to_string())).collect()
-    }
-
-    pub fn replace(&self, from: &str, to: &str) -> MuxString {
-        MuxString(self.0.replace(from, to))
-    }
 }
 
 impl fmt::Display for MuxString {

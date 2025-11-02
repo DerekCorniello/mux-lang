@@ -2,7 +2,7 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Int(pub i64);
 
 impl Int {
@@ -39,25 +39,11 @@ impl Int {
         }
     }
 
-    pub fn eq(&self, other: &Int) -> bool {
-        self.0 == other.0
-    }
-
     pub fn lt(&self, other: &Int) -> bool {
         self.0 < other.0
     }
 
-    pub fn gt(&self, other: &Int) -> bool {
-        self.0 > other.0
-    }
 
-    pub fn le(&self, other: &Int) -> bool {
-        self.0 <= other.0
-    }
-
-    pub fn ge(&self, other: &Int) -> bool {
-        self.0 >= other.0
-    }
 }
 
 impl fmt::Display for Int {
@@ -110,10 +96,10 @@ pub extern "C" fn mux_int_rem(a: i64, b: i64) -> i64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_int_eq(a: i64, b: i64) -> bool {
-    Int(a).eq(&Int(b))
+    Int(a) == Int(b)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_int_lt(a: i64, b: i64) -> bool {
-    Int(a).lt(&Int(b))
+    Int(a) < Int(b)
 }
