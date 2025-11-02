@@ -2,6 +2,9 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
+use crate::result::MuxResult;
+use crate::Value;
+
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Int(pub i64);
 
@@ -79,10 +82,10 @@ pub extern "C" fn mux_int_mul(a: i64, b: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_int_div(a: i64, b: i64) -> i64 {
+pub extern "C" fn mux_int_div(a: i64, b: i64) -> *mut MuxResult {
     match Int(a).div(&Int(b)) {
-        Ok(i) => i.0,
-        Err(_) => 0, // or panic, but for FFI, return 0
+        Ok(i) => Box::into_raw(Box::new(MuxResult::ok(Value::Int(i.0)))),
+        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
     }
 }
 

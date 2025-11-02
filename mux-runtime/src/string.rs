@@ -2,6 +2,11 @@ use std::ffi::{CStr, CString};
 use std::fmt;
 use std::os::raw::c_char;
 
+use ordered_float;
+
+use crate::result::MuxResult;
+use crate::Value;
+
 #[derive(Clone, Debug)]
 pub struct MuxString(pub String);
 
@@ -33,18 +38,24 @@ impl fmt::Display for MuxString {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_string_to_int(s: *const c_char) -> i64 {
+pub extern "C" fn mux_string_to_int(s: *const c_char) -> *mut MuxResult {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
-    MuxString(rust_str.to_string()).to_int().unwrap_or_default()
+    match MuxString(rust_str.to_string()).to_int() {
+        Ok(i) => Box::into_raw(Box::new(MuxResult::ok(Value::Int(i)))),
+        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_string_to_float(s: *const c_char) -> f64 {
+pub extern "C" fn mux_string_to_float(s: *const c_char) -> *mut MuxResult {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
-    MuxString(rust_str.to_string()).to_float().unwrap_or(0.0)
+    match MuxString(rust_str.to_string()).to_float() {
+        Ok(f) => Box::into_raw(Box::new(MuxResult::ok(Value::Float(ordered_float::OrderedFloat(f))))),
+        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

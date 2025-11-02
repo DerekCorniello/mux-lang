@@ -3,6 +3,9 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::raw::c_char;
 
+#[derive(Debug)]
+pub struct MuxFile(pub std::fs::File);
+
 pub fn print(s: &str) {
     print!("{}", s);
 }
@@ -55,5 +58,45 @@ pub extern "C" fn mux_read_line() -> *mut c_char {
     match read_line() {
         Ok(s) => CString::new(s).unwrap().into_raw(),
         Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_open_file(path: *const c_char) -> *mut MuxFile {
+    let c_str = unsafe { CStr::from_ptr(path) };
+    let path_str = c_str.to_string_lossy();
+    match std::fs::File::open(&*path_str) {
+        Ok(f) => Box::into_raw(Box::new(MuxFile(f))),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_read_file(file: *mut MuxFile) -> *mut c_char {
+    let mut contents = String::new();
+    match unsafe { (*file).0.read_to_string(&mut contents) } {
+        Ok(_) => match CString::new(contents) {
+            Ok(c) => c.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_write_file(file: *mut MuxFile, content: *const c_char) -> bool {
+    let c_str = unsafe { CStr::from_ptr(content) };
+    let content_str = c_str.to_string_lossy();
+    unsafe { (*file).0.write_all(content_str.as_bytes()).is_ok() }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_close_file(file: *mut MuxFile) {
+    if !file.is_null() {
+        unsafe { drop(Box::from_raw(file)); }
     }
 }
