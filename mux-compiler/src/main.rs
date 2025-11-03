@@ -2,6 +2,7 @@ mod lexer;
 mod parser;
 mod semantics;
 mod source;
+mod codegen;
 
 use lexer::Lexer;
 use parser::Parser;
@@ -53,6 +54,8 @@ fn main() {
                     if errors.is_empty() {
                         println!("✅ Semantic analysis completed successfully!");
                         println!("✅ No semantic errors found.");
+
+                        // TODO: Implement AST traversal and code generation here
                     } else {
                         println!("❌ Found {} semantic errors:", errors.len());
                         for error in errors {

@@ -2,7 +2,10 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-#[derive(Clone, Debug)]
+use crate::result::MuxResult;
+use crate::Value;
+
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Float(pub ordered_float::OrderedFloat<f64>);
 
 impl Float {
@@ -47,25 +50,11 @@ impl Float {
         Float(ordered_float::OrderedFloat(self.0.ceil()))
     }
 
-    pub fn eq(&self, other: &Float) -> bool {
-        self.0 == other.0
-    }
-
     pub fn lt(&self, other: &Float) -> bool {
         self.0 < other.0
     }
 
-    pub fn gt(&self, other: &Float) -> bool {
-        self.0 > other.0
-    }
 
-    pub fn le(&self, other: &Float) -> bool {
-        self.0 <= other.0
-    }
-
-    pub fn ge(&self, other: &Float) -> bool {
-        self.0 >= other.0
-    }
 }
 
 impl fmt::Display for Float {
@@ -88,4 +77,32 @@ pub extern "C" fn mux_float_to_int(f: f64) -> i64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_add(a: f64, b: f64) -> f64 {
     Float(ordered_float::OrderedFloat(a)).add(&Float(ordered_float::OrderedFloat(b))).0.into_inner()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_float_sub(a: f64, b: f64) -> f64 {
+    Float(ordered_float::OrderedFloat(a)).sub(&Float(ordered_float::OrderedFloat(b))).0.into_inner()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_float_mul(a: f64, b: f64) -> f64 {
+    Float(ordered_float::OrderedFloat(a)).mul(&Float(ordered_float::OrderedFloat(b))).0.into_inner()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_float_div(a: f64, b: f64) -> *mut MuxResult {
+    match Float(ordered_float::OrderedFloat(a)).div(&Float(ordered_float::OrderedFloat(b))) {
+        Ok(f) => Box::into_raw(Box::new(MuxResult::ok(Value::Float(f.0)))),
+        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_float_eq(a: f64, b: f64) -> bool {
+    Float(ordered_float::OrderedFloat(a)) == Float(ordered_float::OrderedFloat(b))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_float_lt(a: f64, b: f64) -> bool {
+    Float(ordered_float::OrderedFloat(a)) < Float(ordered_float::OrderedFloat(b))
 }

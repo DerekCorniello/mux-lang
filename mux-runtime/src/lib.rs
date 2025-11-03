@@ -1,5 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
+use ::std::collections::{BTreeMap, BTreeSet};
+use ::std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Value {
@@ -55,4 +55,5 @@ pub mod math;
 pub mod optional;
 pub mod result;
 pub mod set;
+pub mod std;
 pub mod string;

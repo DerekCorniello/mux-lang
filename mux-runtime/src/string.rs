@@ -2,6 +2,11 @@ use std::ffi::{CStr, CString};
 use std::fmt;
 use std::os::raw::c_char;
 
+use ordered_float;
+
+use crate::result::MuxResult;
+use crate::Value;
+
 #[derive(Clone, Debug)]
 pub struct MuxString(pub String);
 
@@ -22,23 +27,7 @@ impl MuxString {
         self.0.len() as i64
     }
 
-    pub fn substring(&self, start: i64, len: i64) -> Result<MuxString, String> {
-        let start_usize = start as usize;
-        let len_usize = len as usize;
-        if start_usize + len_usize > self.0.len() {
-            Err("Index out of bounds".to_string())
-        } else {
-            Ok(MuxString(self.0[start_usize..start_usize + len_usize].to_string()))
-        }
-    }
 
-    pub fn split(&self, sep: &str) -> Vec<MuxString> {
-        self.0.split(sep).map(|s| MuxString(s.to_string())).collect()
-    }
-
-    pub fn replace(&self, from: &str, to: &str) -> MuxString {
-        MuxString(self.0.replace(from, to))
-    }
 }
 
 impl fmt::Display for MuxString {
@@ -49,18 +38,24 @@ impl fmt::Display for MuxString {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_string_to_int(s: *const c_char) -> i64 {
+pub extern "C" fn mux_string_to_int(s: *const c_char) -> *mut MuxResult {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
-    MuxString(rust_str.to_string()).to_int().unwrap_or_default()
+    match MuxString(rust_str.to_string()).to_int() {
+        Ok(i) => Box::into_raw(Box::new(MuxResult::ok(Value::Int(i)))),
+        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_string_to_float(s: *const c_char) -> f64 {
+pub extern "C" fn mux_string_to_float(s: *const c_char) -> *mut MuxResult {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
-    MuxString(rust_str.to_string()).to_float().unwrap_or(0.0)
+    match MuxString(rust_str.to_string()).to_float() {
+        Ok(f) => Box::into_raw(Box::new(MuxResult::ok(Value::Float(ordered_float::OrderedFloat(f))))),
+        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
