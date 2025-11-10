@@ -26,8 +26,10 @@ pub extern "C" fn mux_bool_to_string(b: bool) -> *mut c_char {
     CString::new(s).unwrap().into_raw()
 }
 
+/// # Safety
+/// v must be a valid pointer to a Value::Bool.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_bool_from_value(v: *mut Value) -> bool {
+pub unsafe extern "C" fn mux_bool_from_value(v: *mut Value) -> bool {
     if let Value::Bool(b) = unsafe { &*v } {
         *b
     } else {

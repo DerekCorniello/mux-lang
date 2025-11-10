@@ -69,8 +69,10 @@ pub extern "C" fn mux_float_to_string(f: f64) -> *mut c_char {
     CString::new(s).unwrap().into_raw()
 }
 
+/// # Safety
+/// v must be a valid pointer to a Value::Float.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_float_from_value(v: *mut Value) -> f64 {
+pub unsafe extern "C" fn mux_float_from_value(v: *mut Value) -> f64 {
     if let Value::Float(f) = unsafe { &*v } {
         f.into_inner()
     } else {

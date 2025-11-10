@@ -36,8 +36,10 @@ impl fmt::Display for MuxString {
     }
 }
 
+/// # Safety
+/// v must be a valid pointer to a Value::String.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
+pub unsafe extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
     if let Value::String(s) = unsafe { &*v } {
         CString::new(s.clone()).unwrap().into_raw()
     } else {
