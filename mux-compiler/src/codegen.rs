@@ -1168,6 +1168,7 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn type_to_type_node(&self, type_: &Type) -> TypeNode {
         match type_ {
             Type::Primitive(p) => TypeNode { kind: TypeKind::Primitive(p.clone()), span: Span::new(0, 0) },

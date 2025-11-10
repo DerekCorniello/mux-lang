@@ -25,8 +25,11 @@ pub extern "C" fn mux_result_ok_int(val: i64) -> *mut MuxResult {
     Box::into_raw(Box::new(MuxResult::ok(Value::Int(val))))
 }
 
+/// # Safety
+/// The `msg` pointer must point to a valid, null-terminated C string.
+/// The caller must ensure the pointer remains valid for the duration of this function call.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_result_err_str(msg: *const std::os::raw::c_char) -> *mut MuxResult {
+pub unsafe extern "C" fn mux_result_err_str(msg: *const std::os::raw::c_char) -> *mut MuxResult {
     let c_str = unsafe { CStr::from_ptr(msg) };
     let msg_str = c_str.to_string_lossy().into_owned();
     Box::into_raw(Box::new(MuxResult::err(msg_str)))
