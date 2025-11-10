@@ -1,4 +1,5 @@
 use crate::Value;
+use std::ffi::CStr;
 use std::fmt;
 
 #[derive(Clone, Debug)]
@@ -17,6 +18,18 @@ impl MuxResult {
     }
 
 
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_int(val: i64) -> *mut MuxResult {
+    Box::into_raw(Box::new(MuxResult::ok(Value::Int(val))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_err_str(msg: *const std::os::raw::c_char) -> *mut MuxResult {
+    let c_str = unsafe { CStr::from_ptr(msg) };
+    let msg_str = c_str.to_string_lossy().into_owned();
+    Box::into_raw(Box::new(MuxResult::err(msg_str)))
 }
 
 impl fmt::Display for MuxResult {

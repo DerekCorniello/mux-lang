@@ -1736,6 +1736,9 @@ impl<'a> Parser<'a> {
         let mut map_entries = Vec::new();
         let mut is_map = false;
 
+        // Skip newlines after opening brace
+        self.skip_newlines();
+
         if !self.check(TokenType::CloseBrace) {
             // parse first expression to determine if map or set
             let first_expr = self.parse_expression()?;
@@ -1759,12 +1762,16 @@ impl<'a> Parser<'a> {
 
                 if is_map {
                     self.consume_token(TokenType::Comma, "Expected ',' between map entries")?;
+                    // Skip newlines after comma
+                    self.skip_newlines();
                     let key = self.parse_expression()?;
                     self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
                     let value = self.parse_expression()?;
                     map_entries.push((key, value));
                 } else {
                     self.consume_token(TokenType::Comma, "Expected ',' between set elements")?;
+                    // Skip newlines after comma
+                    self.skip_newlines();
                     let elem = self.parse_expression()?;
                     set_elements.push(elem);
                 }
@@ -1868,13 +1875,22 @@ impl<'a> Parser<'a> {
                 let start_span = token_span;
                 let mut elements = Vec::new();
 
+                // Skip newlines after opening bracket
+                self.skip_newlines();
+
                 if !self.check(TokenType::CloseBracket) {
                     loop {
                         elements.push(self.parse_expression()?);
 
+                        // Skip newlines after comma
+                        self.skip_newlines();
+
                         if !self.matches(&[TokenType::Comma]) {
                             break;
                         }
+
+                        // Skip newlines after comma
+                        self.skip_newlines();
                     }
                 }
 

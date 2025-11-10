@@ -188,6 +188,7 @@ impl Unifier {
 #[derive(Debug)]
 pub struct SymbolTable {
     scopes: Vec<Rc<RefCell<Scope>>>,
+    all_symbols: std::collections::HashMap<String, Symbol>,
 }
 
 #[derive(Debug, Default)]
@@ -331,7 +332,7 @@ impl Default for SymbolTable {
 impl SymbolTable {
     pub fn new() -> Self {
         let root = Rc::new(RefCell::new(Scope::default()));
-        SymbolTable { scopes: vec![root] }
+        SymbolTable { scopes: vec![root], all_symbols: std::collections::HashMap::new() }
     }
 
     pub fn print(&self) {
@@ -403,16 +404,14 @@ impl SymbolTable {
             });
         }
 
-        current_borrow.symbols.insert(name.to_string(), symbol);
+        current_borrow.symbols.insert(name.to_string(), symbol.clone());
+        self.all_symbols.insert(name.to_string(), symbol);
         Ok(())
     }
 
     pub fn lookup(&self, name: &str) -> Option<Symbol> {
-        for scope in self.scopes.iter().rev() {
-            let scope_borrow = scope.borrow();
-            if let Some(symbol) = scope_borrow.symbols.get(name) {
-                return Some(symbol.clone());
-            }
+        if let Some(symbol) = self.all_symbols.get(name) {
+            return Some(symbol.clone());
         }
         None
     }
@@ -442,8 +441,9 @@ impl Default for SemanticAnalyzer {
 
 impl SemanticAnalyzer {
     pub fn new() -> Self {
+        let symbol_table = SymbolTable::new();
         Self {
-            symbol_table: SymbolTable::new(),
+            symbol_table,
             current_bounds: std::collections::HashMap::new(),
             errors: Vec::new(),
         }
@@ -773,10 +773,10 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::ListAccess { expr, index: _ } => {
-                // assume list access returns element type
+                // list access returns Optional<element_type> for safety
                 let list_type = self.get_expression_type(expr)?;
                 match list_type {
-                    Type::List(elem_type) => Ok(*elem_type),
+                    Type::List(elem_type) => Ok(Type::Optional(elem_type)),
                     _ => Err(SemanticError {
                         message: "Cannot index non-list type".into(),
                         span: expr.span,
@@ -1176,6 +1176,10 @@ impl SemanticAnalyzer {
                 "is_empty" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                }),
+                "length" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
                 }),
                 _ => None,
             },

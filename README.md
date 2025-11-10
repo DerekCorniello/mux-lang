@@ -460,6 +460,17 @@ map<str, int> scores = {"Alice": 90, "Bob": 85}
 list<list<int>> matrix = [[1, 2], [3, 4]]
 map<str, list<int>> lookup = {"users": [1, 2, 3], "admins": [4, 5]}
 
+// Complex nested structures
+auto users = [
+    {"name": "Alice", "scores": [95, 87, 92]},
+    {"name": "Bob", "scores": [78, 85, 90]}
+]  // inferred as list<map<str, str | list<int>>>
+
+auto data = {
+    "numbers": [1, 2, 3, 4, 5],
+    "metadata": {"version": "1.0", "count": 5}
+}  // inferred as map<str, list<int> | map<str, str | int>>
+
 // Generic collections
 list<Pair<int, str>> pairs = [Pair(1, "one"), Pair(2, "two")]
 list<Container<int>> containers = list<Container<int>>()

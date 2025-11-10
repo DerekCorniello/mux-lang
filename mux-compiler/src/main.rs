@@ -9,7 +9,7 @@ use parser::Parser;
 use semantics::{SemanticAnalyzer, SymbolTable};
 use source::Source;
 use std::env;
-use std::process;
+use std::process::{self, Command};
 
 fn print_symbol_table(symbol_table: &SymbolTable, scope_name: &str) {
     println!("\n=== {} Symbol Table ===", scope_name);
@@ -50,12 +50,60 @@ fn main() {
                     println!("\n=== Running Semantic Analysis ===");
                     let mut analyzer = SemanticAnalyzer::new();
                     let errors = analyzer.analyze(&nodes);
+                    println!("Errors len: {}", errors.len());
 
                     if errors.is_empty() {
                         println!("✅ Semantic analysis completed successfully!");
                         println!("✅ No semantic errors found.");
+                        println!("About to start codegen");
 
-                        // TODO: Implement AST traversal and code generation here
+                        // Code generation
+                        println!("\n=== Running Code Generation ===");
+                        // inkwell::targets::Target::initialize_native(&inkwell::targets::InitializationConfig::default()).unwrap();
+                        let context = inkwell::context::Context::create();
+                        println!("Context created");
+                        let mut codegen = codegen::CodeGenerator::new(&context, analyzer.symbol_table());
+                        println!("Codegen created");
+                        println!("Creating codegen");
+                        if let Err(e) = codegen.generate(&nodes) {
+                            println!("Codegen error: {}", e);
+                            process::exit(1);
+                        }
+                         println!("Codegen done");
+                         codegen.print_ir();
+                         println!("IR printed");
+
+                         // Emit LLVM IR to file
+                         let ir_file = format!("{}.ll", file_path.trim_end_matches(".mux"));
+                         if let Err(e) = codegen.emit_ir_to_file(&ir_file) {
+                             eprintln!("Failed to emit IR: {}", e);
+                             process::exit(1);
+                         }
+                         println!("LLVM IR emitted to {}", ir_file);
+
+                         // Try to compile and link directly with clang
+                         let exe_file = file_path.trim_end_matches(".mux");
+                         let clang_output = Command::new("clang")
+                             .args([
+                                 &ir_file,
+                                 "-L", "../target/release",
+                                 "-lmux_runtime",
+                                 "-o", exe_file
+                             ])
+                             .output();
+
+                         match clang_output {
+                             Ok(output) if output.status.success() => {
+                                 println!("Executable generated: {}", exe_file);
+                             }
+                             Ok(output) => {
+                                 eprintln!("clang failed: {}", String::from_utf8_lossy(&output.stderr));
+                                 eprintln!("Note: LLVM compilation tools may not be installed. IR file generated at: {}", ir_file);
+                             }
+                             Err(e) => {
+                                 eprintln!("Failed to run clang: {}. IR file generated at: {}", e, ir_file);
+                             }
+                         }
                     } else {
                         println!("❌ Found {} semantic errors:", errors.len());
                         for error in errors {

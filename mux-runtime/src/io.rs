@@ -8,6 +8,7 @@ pub struct MuxFile(pub std::fs::File);
 
 pub fn print(s: &str) {
     print!("{}", s);
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
 }
 
 pub fn println(s: &str) {
@@ -43,6 +44,7 @@ pub fn close_file(_file: File) {
 pub extern "C" fn mux_print(s: *const c_char) {
     let s = unsafe { CStr::from_ptr(s).to_string_lossy() };
     print!("{}", s);
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

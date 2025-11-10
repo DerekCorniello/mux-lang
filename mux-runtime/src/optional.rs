@@ -27,3 +27,13 @@ impl fmt::Display for Optional {
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_some_int(val: i64) -> *mut Optional {
+    Box::into_raw(Box::new(Optional::some(Value::Int(val))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_none() -> *mut Optional {
+    Box::into_raw(Box::new(Optional::none()))
+}

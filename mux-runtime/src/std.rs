@@ -19,6 +19,30 @@ pub extern "C" fn mux_some(val: *mut Value) -> *mut Optional {
     Box::into_raw(Box::new(Optional::some(value)))
 }
 
+// Value creation functions for codegen
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_int_value(i: i64) -> *mut Value {
+    Box::into_raw(Box::new(Value::Int(i)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_float_value(f: f64) -> *mut Value {
+    Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(f))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_bool_value(b: bool) -> *mut Value {
+    Box::into_raw(Box::new(Value::Bool(b)))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_string_value(s: *const c_char) -> *mut Value {
+    let c_str = unsafe { CStr::from_ptr(s) };
+    let string = c_str.to_string_lossy().into_owned();
+    Box::into_raw(Box::new(Value::String(string)))
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_none() -> *mut Optional {
     Box::into_raw(Box::new(Optional::none()))
@@ -31,6 +55,7 @@ pub extern "C" fn mux_ok(val: *mut Value) -> *mut MuxResult {
     Box::into_raw(Box::new(MuxResult::ok(value)))
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_err(msg: *const c_char) -> *mut MuxResult {
