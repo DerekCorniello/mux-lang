@@ -63,6 +63,23 @@ pub extern "C" fn mux_read_line() -> *mut c_char {
     }
 }
 
+/// # Safety
+/// This function is safe as it only flushes stdout.
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_flush_stdout() {
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+
+/// # Safety
+/// Returns a valid i64 from stdin, or 0 on error.
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_read_int() -> i64 {
+    match read_line() {
+        Ok(s) => s.trim().parse().unwrap_or(0),
+        Err(_) => 0,
+    }
+}
+
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_open_file(path: *const c_char) -> *mut MuxFile {

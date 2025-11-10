@@ -81,16 +81,21 @@ fn main() {
                          }
                          println!("LLVM IR emitted to {}", ir_file);
 
-                         // Try to compile and link directly with clang
-                         let exe_file = file_path.trim_end_matches(".mux");
-                         let clang_output = Command::new("clang")
-                             .args([
-                                 &ir_file,
-                                 "-L", "../target/release",
-                                 "-lmux_runtime",
-                                 "-o", exe_file
-                             ])
-                             .output();
+                          // Try to compile and link directly with clang
+                          let exe_file = file_path.trim_end_matches(".mux");
+                          let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+                          let project_root = std::path::Path::new(&manifest_dir).parent().unwrap();
+                          let lib_path = project_root.join("target/release");
+                          let lib_path_str = lib_path.to_str().unwrap();
+                          let clang_output = Command::new("clang")
+                              .args([
+                                  &ir_file,
+                                  "-L", lib_path_str,
+                                  "-Wl,-rpath,", lib_path_str,
+                                  "-lmux_runtime",
+                                  "-o", exe_file
+                              ])
+                              .output();
 
                          match clang_output {
                              Ok(output) if output.status.success() => {

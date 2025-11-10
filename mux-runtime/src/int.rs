@@ -62,6 +62,15 @@ pub extern "C" fn mux_int_to_string(i: i64) -> *mut c_char {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_int_from_value(v: *mut crate::Value) -> i64 {
+    if let crate::Value::Int(i) = unsafe { &*v } {
+        *i
+    } else {
+        panic!("Expected Int value");
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_int_to_float(i: i64) -> f64 {
     Int(i).to_float()
 }

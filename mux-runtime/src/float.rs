@@ -70,6 +70,15 @@ pub extern "C" fn mux_float_to_string(f: f64) -> *mut c_char {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_float_from_value(v: *mut Value) -> f64 {
+    if let Value::Float(f) = unsafe { &*v } {
+        f.into_inner()
+    } else {
+        panic!("Expected Float value");
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_float_to_int(f: f64) -> i64 {
     Float(ordered_float::OrderedFloat(f)).to_int()
 }

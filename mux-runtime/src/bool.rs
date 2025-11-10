@@ -2,6 +2,8 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
+use crate::Value;
+
 #[derive(Clone, Debug)]
 pub struct Bool(pub bool);
 
@@ -22,6 +24,15 @@ impl fmt::Display for Bool {
 pub extern "C" fn mux_bool_to_string(b: bool) -> *mut c_char {
     let s = format!("{}", Bool(b));
     CString::new(s).unwrap().into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_bool_from_value(v: *mut Value) -> bool {
+    if let Value::Bool(b) = unsafe { &*v } {
+        *b
+    } else {
+        panic!("Expected Bool value");
+    }
 }
 
 #[unsafe(no_mangle)]

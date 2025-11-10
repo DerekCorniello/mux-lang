@@ -36,6 +36,15 @@ impl fmt::Display for MuxString {
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
+    if let Value::String(s) = unsafe { &*v } {
+        CString::new(s.clone()).unwrap().into_raw()
+    } else {
+        panic!("Expected String value");
+    }
+}
+
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_to_int(s: *const c_char) -> *mut MuxResult {

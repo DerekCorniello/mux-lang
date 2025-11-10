@@ -34,6 +34,8 @@ impl<'a> CodeGenerator<'a> {
         // Declare runtime functions
         let void_type = context.void_type();
         let i64_type = context.i64_type();
+        let f64_type = context.f64_type();
+        let bool_type = context.bool_type();
         let i8_ptr = context.ptr_type(AddressSpace::default());
         let list_ptr = i8_ptr; // placeholder for *mut List
 
@@ -174,6 +176,26 @@ impl<'a> CodeGenerator<'a> {
         let params = &[i64_type.into()];
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_int_to_string", fn_type, None);
+
+        // mux_int_from_value: (*mut Value) -> i64
+        let params = &[i8_ptr.into()];
+        let fn_type = i64_type.fn_type(params, false);
+        module.add_function("mux_int_from_value", fn_type, None);
+
+        // mux_float_from_value: (*mut Value) -> f64
+        let params = &[i8_ptr.into()];
+        let fn_type = f64_type.fn_type(params, false);
+        module.add_function("mux_float_from_value", fn_type, None);
+
+        // mux_bool_from_value: (*mut Value) -> i1
+        let params = &[i8_ptr.into()];
+        let fn_type = bool_type.fn_type(params, false);
+        module.add_function("mux_bool_from_value", fn_type, None);
+
+        // mux_string_from_value: (*mut Value) -> *const c_char
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_string_from_value", fn_type, None);
 
         // Result constructors
         // mux_result_ok_int: (i64) -> *mut MuxResult
@@ -498,9 +520,32 @@ impl<'a> CodeGenerator<'a> {
             ExpressionKind::Identifier(name) => {
                 if let Some((ptr, _, type_node)) = self.variables.get(name) {
                     let ptr_to_boxed = self.builder.build_load(self.context.ptr_type(AddressSpace::default()), *ptr, name).map_err(|e| e.to_string())?.into_pointer_value();
-                    let value_type = self.llvm_type_from_mux_type(type_node)?;
-                    let loaded = self.builder.build_load(value_type, ptr_to_boxed, name).map_err(|e| e.to_string())?;
-                    Ok(loaded)
+                    match &type_node.kind {
+                        TypeKind::Primitive(PrimitiveType::Int) => {
+                            let func = self.module.get_function("mux_int_from_value").ok_or("mux_int_from_value not found")?;
+                            let call = self.builder.build_call(func, &[ptr_to_boxed.into()], "int_from_value").map_err(|e| e.to_string())?;
+                            Ok(call.try_as_basic_value().left().unwrap())
+                        }
+                        TypeKind::Primitive(PrimitiveType::Float) => {
+                            let func = self.module.get_function("mux_float_from_value").ok_or("mux_float_from_value not found")?;
+                            let call = self.builder.build_call(func, &[ptr_to_boxed.into()], "float_from_value").map_err(|e| e.to_string())?;
+                            Ok(call.try_as_basic_value().left().unwrap())
+                        }
+                        TypeKind::Primitive(PrimitiveType::Bool) => {
+                            let func = self.module.get_function("mux_bool_from_value").ok_or("mux_bool_from_value not found")?;
+                            let call = self.builder.build_call(func, &[ptr_to_boxed.into()], "bool_from_value").map_err(|e| e.to_string())?;
+                            Ok(call.try_as_basic_value().left().unwrap())
+                        }
+                        TypeKind::Primitive(PrimitiveType::Str) => {
+                            let func = self.module.get_function("mux_string_from_value").ok_or("mux_string_from_value not found")?;
+                            let call = self.builder.build_call(func, &[ptr_to_boxed.into()], "string_from_value").map_err(|e| e.to_string())?;
+                            Ok(call.try_as_basic_value().left().unwrap())
+                        }
+                        _ => {
+                            // boxed types
+                            Ok(ptr_to_boxed.into())
+                        }
+                    }
                 } else {
                     Err(format!("Undefined variable: {}", name))
                 }
