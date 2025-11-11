@@ -768,8 +768,16 @@ impl<'a> CodeGenerator<'a> {
                                 } else {
                                     Err(format!("Undefined variable {}", name))
                                 }
+                            } else if let ExpressionKind::Unary { op: UnaryOp::Deref, expr: deref_expr, postfix: _ } = &left.kind {
+                                let ref_val = self.generate_expression(deref_expr)?;
+                                let ptr = ref_val.into_pointer_value();
+                                let boxed = self.box_value(right_val);
+                                self.builder
+                                    .build_store(ptr, boxed)
+                                    .map_err(|e| e.to_string())?;
+                                Ok(right_val)
                             } else {
-                                Err("Assignment to non-identifier not implemented".to_string())
+                                Err("Assignment to non-identifier/deref not implemented".to_string())
                             }
                         }
                         BinaryOp::AddAssign => {
@@ -807,8 +815,16 @@ impl<'a> CodeGenerator<'a> {
                                 } else {
                                     Err(format!("Undefined variable {}", name))
                                 }
+                            } else if let ExpressionKind::Unary { op: UnaryOp::Deref, expr: deref_expr, postfix: _ } = &left.kind {
+                                let ref_val = self.generate_expression(deref_expr)?;
+                                let ptr = ref_val.into_pointer_value();
+                                let boxed = self.box_value(result);
+                                self.builder
+                                    .build_store(ptr, boxed)
+                                    .map_err(|e| e.to_string())?;
+                                Ok(result)
                             } else {
-                                Err("Assignment to non-identifier not implemented".to_string())
+                                Err("Assignment to non-identifier/deref not implemented".to_string())
                             }
                         }
                         BinaryOp::SubtractAssign => {
@@ -846,8 +862,16 @@ impl<'a> CodeGenerator<'a> {
                                 } else {
                                     Err(format!("Undefined variable {}", name))
                                 }
+                            } else if let ExpressionKind::Unary { op: UnaryOp::Deref, expr: deref_expr, postfix: _ } = &left.kind {
+                                let ref_val = self.generate_expression(deref_expr)?;
+                                let ptr = ref_val.into_pointer_value();
+                                let boxed = self.box_value(result);
+                                self.builder
+                                    .build_store(ptr, boxed)
+                                    .map_err(|e| e.to_string())?;
+                                Ok(result)
                             } else {
-                                Err("Assignment to non-identifier not implemented".to_string())
+                                Err("Assignment to non-identifier/deref not implemented".to_string())
                             }
                         }
                         _ => Err("Assignment op not implemented".to_string()),
@@ -1381,6 +1405,32 @@ impl<'a> CodeGenerator<'a> {
                     }
                 }
                 Err("Field access not supported".to_string())
+            }
+            ExpressionKind::Unary { op, expr, postfix: _ } => {
+                match op {
+                    UnaryOp::Ref => {
+                        if let ExpressionKind::Identifier(name) = &expr.kind {
+                            if let Some((ptr, _, _)) = self.variables.get(name) {
+                                Ok((*ptr).into())
+                            } else {
+                                Err(format!("Undefined variable {}", name))
+                            }
+                        } else {
+                            // Complex expression: evaluate, allocate temp ptr, store the result ptr
+                            let expr_val = self.generate_expression(expr)?; // ptr to mux_value
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let temp = self.builder.build_alloca(ptr_type, "ref_temp")
+                                .map_err(|e| e.to_string())?;
+                            self.builder.build_store(temp, expr_val.into_pointer_value())
+                                .map_err(|e| e.to_string())?;
+                            Ok(temp.into())
+                        }
+                    }
+                    UnaryOp::Deref => {
+                        self.generate_expression(expr)
+                    }
+                    _ => Err("Unary op not implemented".to_string()),
+                }
             }
             _ => Err("Expression type not implemented".to_string()),
         }
