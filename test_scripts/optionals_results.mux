@@ -6,8 +6,8 @@ func divide(int a, int b) returns Result<int, string> {
 
 auto res = divide(10, 2)
 match res {
-    Ok(v) { print("Result: " + v) }
-    Err(e) { print("Error: " + e) }
+    Ok(v) { println("Result: " + v) }
+    Err(e) { println("Error: " + e) }
 }
 
 func findEven(list<int> nums) returns Optional<int> {

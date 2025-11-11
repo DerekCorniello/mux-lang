@@ -55,6 +55,11 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = void_type.fn_type(params, false);
         module.add_function("mux_print", fn_type, None);
 
+        // mux_println_val: (*mut Value) -> ()
+        let params = &[i8_ptr.into()];
+        let fn_type = void_type.fn_type(params, false);
+        module.add_function("mux_println_val", fn_type, None);
+
         // mux_string_concat: (*const c_char, *const c_char) -> *mut c_char
         let params = &[i8_ptr.into(), i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
@@ -573,8 +578,6 @@ impl<'a> CodeGenerator<'a> {
     }
 
     pub fn generate(&mut self, nodes: &[AstNode]) -> Result<(), String> {
-        println!("Starting codegen with {} nodes", nodes.len());
-
         // Zero pass: generate LLVM types for user-defined types
         self.generate_user_defined_types(nodes)?;
 
@@ -1092,6 +1095,21 @@ impl<'a> CodeGenerator<'a> {
                                 .ok_or("mux_print not found")?;
                             self.builder
                                 .build_call(func_print, &[arg_val.into()], "print_call")
+                                .map_err(|e| e.to_string())?;
+                            // Return void, but since BasicValueEnum, return a dummy
+                            Ok(self.context.i32_type().const_int(0, false).into())
+                        }
+                        "println" => {
+                            if args.len() != 1 {
+                                return Err("println takes 1 argument".to_string());
+                            }
+                            let arg_val = self.generate_expression(&args[0])?;
+                            let func_println = self
+                                .module
+                                .get_function("mux_println_val")
+                                .ok_or("mux_println_val not found")?;
+                            self.builder
+                                .build_call(func_println, &[arg_val.into()], "println_call")
                                 .map_err(|e| e.to_string())?;
                             // Return void, but since BasicValueEnum, return a dummy
                             Ok(self.context.i32_type().const_int(0, false).into())

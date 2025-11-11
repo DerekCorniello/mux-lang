@@ -1,48 +1,48 @@
 // Control flow
 auto x = 5
-if x > 0 { print("Positive") } else { print("Non-positive") }
+if x > 0 { println("Positive") } else { println("Non-positive") }
 
 match Some(15) {
-    Some(v) if v > 10 { print("Large: " + v.to_string()) }
-    Some(v) { print("Small: " + v.to_string()) }
-    None { print("None") }
+    Some(v) if v > 10 { println("Large: " + v.to_string()) }
+    Some(v) { println("Small: " + v.to_string()) }
+    None { println("None") }
 }
 
-for int i in range(0, 3) { print(i.to_string()) }
+for int i in range(0, 3) { println(i.to_string()) }
 
 for int j in range(0, 10) {
     if j % 2 == 0 {
-        print("even")
+        println("even")
     } else {
-        print("odd")
+        println("odd")
     }
 }
 
 while x > 0 { x -= 1 }
 
 if x < 0 {
-    print("Negative")
+    println("Negative")
 }
 
 if x == 0 {
-    print("Zero")
+    println("Zero")
 } else {
-    print("Non-zero")
+    println("Non-zero")
 }
 
 if x > 10 {
-    print("gt10")
+    println("gt10")
 } else if x > 5 {
-    print("gt5")
+    println("gt5")
 } else {
-    print("other")
+    println("other")
 }
 
 for int j in range(0, 3) {
     if j == 1 {
-        print("one")
+        println("one")
     } else if j == 0 {
-        print("zero")
+        println("zero")
     }
 }
 
@@ -52,11 +52,11 @@ while x < 3 {
 
 if x > 1
 {
-    print("nl brace then")
+    println("nl brace then")
 }
 else
 {
-    print("nl brace else")
+    println("nl brace else")
 }
 
-print("Final x: " + x.to_string())
+println("Final x: " + x.to_string())
