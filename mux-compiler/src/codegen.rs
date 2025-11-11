@@ -99,6 +99,27 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_map_to_string", fn_type, None);
 
+        // Object management functions
+        // mux_register_object_type: (*const c_char, usize) -> u32
+        let params = &[i8_ptr.into(), context.i64_type().into()];
+        let fn_type = context.i32_type().fn_type(params, false);
+        module.add_function("mux_register_object_type", fn_type, None);
+
+        // mux_alloc_object: (u32) -> *mut Value
+        let params = &[context.i32_type().into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_alloc_object", fn_type, None);
+
+        // mux_free_object: (*mut Value) -> ()
+        let params = &[i8_ptr.into()];
+        let fn_type = context.void_type().fn_type(params, false);
+        module.add_function("mux_free_object", fn_type, None);
+
+        // mux_get_object_ptr: (*const Value) -> *mut c_void
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_get_object_ptr", fn_type, None);
+
         // mux_set_to_string: (*mut Set) -> *const c_char
         let params = &[i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
@@ -156,6 +177,11 @@ impl<'a> CodeGenerator<'a> {
         let params = &[list_ptr.into(), i64_type.into()];
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_list_get", fn_type, None);
+
+        // mux_list_get_value: (*const List, i64) -> *mut Value
+        let params = &[list_ptr.into(), i64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_list_get_value", fn_type, None);
 
         // mux_list_length: (*const List) -> i64
         let params = &[list_ptr.into()];
@@ -428,7 +454,7 @@ impl<'a> CodeGenerator<'a> {
     fn generate_class_vtables(&mut self, class_name: &str, interfaces: &std::collections::HashMap<String, std::collections::HashMap<String, MethodSig>>) -> Result<(), String> {
         println!("Generating vtables for class: {}", class_name);
         for (interface_name, interface_methods) in interfaces {
-            println!("  Interface: {}", interface_name);
+        println!("  Interface: {}", interface_name);
             let mut vtable_values = Vec::new();
             for (method_name, _interface_sig) in interface_methods {
                 // Find the class method
@@ -555,9 +581,8 @@ impl<'a> CodeGenerator<'a> {
             param_types.push(llvm_type.into());
         }
 
-        // return type: pointer to class struct
-        let class_type = self.type_map.get(name).ok_or("Class type not found")?;
-        let ptr_type = class_type.ptr_type(AddressSpace::default());
+        // return type: *mut Value (boxed object)
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
         let fn_type = ptr_type.fn_type(&param_types, false);
         let function = self.module.add_function(&full_name, fn_type, None);
 
@@ -565,12 +590,30 @@ impl<'a> CodeGenerator<'a> {
         let entry = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(entry);
 
-        // Allocate the struct
-        let struct_alloca = self.builder.build_alloca(*class_type, "class_struct").map_err(|e| e.to_string())?;
+        // Register the object type if not already registered
+        let type_name_global = self.builder.build_global_string_ptr(name, "type_name").map_err(|e| e.to_string())?;
+        let type_size = self.type_map.get(name).ok_or("Class type not found")?.size_of().ok_or("Cannot get type size")?;
+        let register_func = self.module.get_function("mux_register_object_type").ok_or("mux_register_object_type not found")?;
+        let type_id = self.builder.build_call(register_func, &[type_name_global.as_pointer_value().into(), type_size.into()], "type_id").map_err(|e| e.to_string())?;
+        let type_id_val = type_id.try_as_basic_value().left().unwrap().into_int_value();
+
+        // Allocate the object
+        let alloc_func = self.module.get_function("mux_alloc_object").ok_or("mux_alloc_object not found")?;
+        let obj_ptr = self.builder.build_call(alloc_func, &[type_id_val.into()], "obj_ptr").map_err(|e| e.to_string())?;
+        let obj_value_ptr = obj_ptr.try_as_basic_value().left().unwrap().into_pointer_value();
+
+        // Get the object data pointer
+        let get_ptr_func = self.module.get_function("mux_get_object_ptr").ok_or("mux_get_object_ptr not found")?;
+        let data_ptr = self.builder.build_call(get_ptr_func, &[obj_value_ptr.into()], "data_ptr").map_err(|e| e.to_string())?;
+        let struct_ptr = data_ptr.try_as_basic_value().left().unwrap().into_pointer_value();
+
+        // Cast to class struct pointer
+        let class_type = self.type_map.get(name).ok_or("Class type not found")?;
+        let struct_ptr_typed = self.builder.build_pointer_cast(struct_ptr, class_type.ptr_type(AddressSpace::default()), "struct_ptr").map_err(|e| e.to_string())?;
 
         // Set fields
         for (i, field) in fields.iter().enumerate() {
-            let field_ptr = self.builder.build_struct_gep(*class_type, struct_alloca, i as u32, &field.name).map_err(|e| e.to_string())?;
+            let field_ptr = self.builder.build_struct_gep(*class_type, struct_ptr_typed, i as u32, &field.name).map_err(|e| e.to_string())?;
             let arg = function.get_nth_param(i as u32).unwrap();
             self.builder.build_store(field_ptr, arg).map_err(|e| e.to_string())?;
         }
@@ -581,12 +624,12 @@ impl<'a> CodeGenerator<'a> {
             let vtable_ptr = self.vtable_map.get(&vtable_key).ok_or(format!("Vtable not found for {}", vtable_key))?;
             let vtable_field_name = format!("vtable_{}", interface_name);
             let field_index = self.field_map.get(name).unwrap().get(&vtable_field_name).unwrap();
-            let field_ptr = self.builder.build_struct_gep(*class_type, struct_alloca, *field_index as u32, &vtable_field_name).map_err(|e| e.to_string())?;
+            let field_ptr = self.builder.build_struct_gep(*class_type, struct_ptr_typed, *field_index as u32, &vtable_field_name).map_err(|e| e.to_string())?;
             self.builder.build_store(field_ptr, *vtable_ptr).map_err(|e| e.to_string())?;
         }
 
-        // Return the struct pointer
-        self.builder.build_return(Some(&struct_alloca)).map_err(|e| e.to_string())?;
+        // Return the Value pointer
+        self.builder.build_return(Some(&obj_value_ptr)).map_err(|e| e.to_string())?;
 
         // Store in constructors
         self.constructors.insert(format!("{}.new", name), function);
@@ -971,6 +1014,11 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?
                         .into_pointer_value();
                     match type_node {
+                        Type::Named(type_name, _) if self.analyzer.symbol_table().lookup(type_name).map(|s| s.kind == crate::semantics::SymbolKind::Enum).unwrap_or(false) => {
+                            let struct_type = self.type_map.get(type_name).unwrap();
+                            let load = self.builder.build_load(*struct_type, *ptr, name).map_err(|e| e.to_string())?;
+                            Ok(load.into())
+                        }
                         Type::Primitive(PrimitiveType::Int) => {
                             let func = self
                                 .module
@@ -1166,9 +1214,10 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             ExpressionKind::Call { func, args } => {
-                if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
-                    if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                        if obj_name == "self" {
+            if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
+                eprintln!("DEBUG: Method call on field {}", field);
+                if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                    if obj_name == "self" {
                             // Method call on self
                             return self.generate_method_call_on_self(field, args);
                         } else {
@@ -1349,17 +1398,26 @@ impl<'a> CodeGenerator<'a> {
                                         return Ok(call2.try_as_basic_value().left().unwrap());
                                     }
                                      Type::Named(ref interface_name, _) => {
-                                         // Interface method dispatch
-                                         let symbol = self.analyzer.all_symbols().get(interface_name).unwrap().clone();
-                                         if symbol.kind == crate::semantics::SymbolKind::Interface {
+                                          // Interface method dispatch
+                                          let symbol = self.analyzer.all_symbols().get(interface_name).unwrap().clone();
+                                          if symbol.kind == crate::semantics::SymbolKind::Interface {
                                              let interface_methods = symbol.interfaces.get(interface_name).unwrap();
                                              if let Some(method_index) = interface_methods.keys().position(|m| m == field) {
-                                                 let obj_ptr = self.generate_expression(expr)?.into_pointer_value();
+                                                 let obj_value_ptr = self.generate_expression(expr)?.into_pointer_value();
+
+                                                 // Get the object data pointer
+                                                 let get_ptr_func = self.module.get_function("mux_get_object_ptr").ok_or("mux_get_object_ptr not found")?;
+                                                 let data_ptr_call = self.builder.build_call(get_ptr_func, &[obj_value_ptr.into()], "data_ptr").map_err(|e| e.to_string())?;
+                                                 let obj_ptr = data_ptr_call.try_as_basic_value().left().unwrap().into_pointer_value();
+
+                                                 // Cast to interface struct pointer
+                                                 let interface_type = self.type_map.get(interface_name).unwrap();
+                                                 let interface_ptr = self.builder.build_pointer_cast(obj_ptr, interface_type.ptr_type(AddressSpace::default()), "interface_ptr").map_err(|e| e.to_string())?;
 
                                                  // Load vtable pointer from object (first field)
                                                  let vtable_ptr = self.builder.build_struct_gep(
-                                                     self.type_map.get(interface_name).unwrap().into_struct_type(),
-                                                     obj_ptr,
+                                                     interface_type.into_struct_type(),
+                                                     interface_ptr,
                                                      0,
                                                      "vtable_ptr"
                                                  ).map_err(|e| e.to_string())?;
@@ -1383,7 +1441,7 @@ impl<'a> CodeGenerator<'a> {
                                                  ).map_err(|e| e.to_string())?;
 
                                                  // Call the method with self as first argument
-                                                 let mut call_args = vec![obj_ptr.into()];
+                                                 let mut call_args = vec![interface_ptr.into()];
                                                  for arg in args {
                                                      call_args.push(self.generate_expression(arg)?.into());
                                                  }
@@ -1416,9 +1474,9 @@ impl<'a> CodeGenerator<'a> {
                                              } else {
                                                  return Err(format!("Method {} not found in interface {}", field, interface_name));
                                              }
-                                         } else {
-                                             return Err(format!("{} is not an interface", interface_name));
-                                         }
+                                          } else {
+                                              return Err(format!("{} is not an interface", interface_name));
+                                          }
                                      }
                                      _ => {
                                          return Err(format!(
@@ -1430,8 +1488,15 @@ impl<'a> CodeGenerator<'a> {
                             } else {
                                 if self.analyzer.symbol_table().lookup(obj_name).map(|s| matches!(s.kind, crate::semantics::SymbolKind::Enum | crate::semantics::SymbolKind::Class)).unwrap_or(false) {
                                     let key = format!("{}.{}", obj_name, field);
-                                    if let Some(func) = self.constructors.get(&key) {
-                                        return Ok(func.as_global_value().as_pointer_value().into());
+                                    eprintln!("DEBUG: Constructor call for {}", key);
+                                    if let Some(func) = self.constructors.get(&key).cloned() {
+                                        // Generate call to constructor
+                                        let mut call_args = vec![];
+                                        for arg in args {
+                                            call_args.push(self.generate_expression(arg)?.into());
+                                        }
+                                        let call = self.builder.build_call(func, &call_args, "constructor_call").map_err(|e| e.to_string())?;
+                                        return Ok(call.try_as_basic_value().left().unwrap());
                                     } else {
                                         return Err(format!("Unknown constructor {}.{}", obj_name, field));
                                     }
@@ -1824,7 +1889,11 @@ impl<'a> CodeGenerator<'a> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
                 let value = self.generate_expression(expr)?;
-                let boxed = self.box_value(value);
+                let boxed = if value.is_struct_value() {
+                    value
+                } else {
+                    self.box_value(value).into()
+                };
                 let ptr_type = self.context.ptr_type(AddressSpace::default());
                 let alloca = self
                     .builder
@@ -2186,9 +2255,9 @@ impl<'a> CodeGenerator<'a> {
                     let get_call = self
                         .builder
                         .build_call(
-                            self.module.get_function("mux_list_get").unwrap(),
+                            self.module.get_function("mux_list_get_value").unwrap(),
                             &[list_val.into(), index_load2.into()],
-                            "list_get",
+                            "list_get_value",
                         )
                         .map_err(|e| e.to_string())?;
                     let value_ptr = get_call

@@ -70,6 +70,18 @@ pub extern "C" fn mux_list_get(list: *const List, index: i64) -> *mut crate::opt
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_list_get_value(list: *const List, index: i64) -> *mut Value {
+    let len = unsafe { (*list).length() };
+    if index < 0 || index >= len {
+        std::ptr::null_mut()
+    } else {
+        let val = unsafe { (*list).0[index as usize].clone() };
+        Box::into_raw(Box::new(val))
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_list_set(list: *mut List, index: i64, val: *mut Value) {
     let value = unsafe { *Box::from_raw(val) };
     let len = unsafe { (*list).length() };

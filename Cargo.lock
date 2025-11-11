@@ -128,6 +128,7 @@ name = "mux-runtime"
 version = "0.1.0"
 dependencies = [
  "gc",
+ "lazy_static",
  "ordered-float",
 ]
 

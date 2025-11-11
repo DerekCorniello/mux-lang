@@ -10,3 +10,4 @@ crate-type = ["staticlib", "cdylib"]
 [dependencies]
 gc = "0.4"
 ordered-float = "4.0"
+lazy_static = "1.4"

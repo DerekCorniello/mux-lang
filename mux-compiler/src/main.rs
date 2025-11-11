@@ -51,8 +51,8 @@ fn main() {
 
                     // Try to compile and link directly with clang
                     let exe_file = file_path.trim_end_matches(".mux");
-                    let current_dir = std::env::current_dir().unwrap();
-                    let lib_path = current_dir.join("target").join("debug");
+                    let exe_path = std::env::current_exe().unwrap();
+                    let lib_path = exe_path.parent().unwrap().parent().unwrap().parent().unwrap().join("target").join("debug");
                     let lib_path_str = lib_path.to_str().unwrap();
                     let clang_output = Command::new("clang")
                         .args([

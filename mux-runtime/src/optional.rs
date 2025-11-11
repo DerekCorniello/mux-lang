@@ -48,7 +48,7 @@ pub extern "C" fn mux_optional_data(opt: *mut Optional) -> *mut Value {
     }
     unsafe {
         match &*opt {
-            Optional::Some(v) => v.as_ref() as *const Value as *mut Value,
+            Optional::Some(v) => Box::into_raw(Box::new(*v.clone())),
             Optional::None => std::ptr::null_mut(),
         }
     }
