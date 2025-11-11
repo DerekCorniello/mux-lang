@@ -3,12 +3,12 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, PointerValue};
-use inkwell::AddressSpace;
+use inkwell::{AddressSpace, Either};
 use std::collections::HashMap;
 
 use crate::lexer::Span;
 use crate::parser::*;
-use crate::semantics::{SemanticAnalyzer, Type, Type as ResolvedType};
+use crate::semantics::{MethodSig, SemanticAnalyzer, Type, Type as ResolvedType};
 
 pub struct CodeGenerator<'a> {
     context: &'a Context,
@@ -18,13 +18,17 @@ pub struct CodeGenerator<'a> {
     type_map: HashMap<String, BasicTypeEnum<'a>>,
     #[allow(dead_code)]
     vtable_map: HashMap<String, PointerValue<'a>>,
+    vtable_type_map: HashMap<String, inkwell::types::StructType<'a>>,
     enum_variants: HashMap<String, Vec<String>>,
     field_map: HashMap<String, HashMap<String, usize>>,
+    field_types_map: HashMap<String, Vec<BasicTypeEnum<'a>>>,
+    constructors: HashMap<String, FunctionValue<'a>>,
     lambda_counter: usize,
     string_counter: usize,
     label_counter: usize,
     variables: HashMap<String, (PointerValue<'a>, BasicTypeEnum<'a>, ResolvedType)>,
     functions: HashMap<String, FunctionValue<'a>>,
+    current_function_name: Option<String>,
 }
 
 impl<'a> CodeGenerator<'a> {
@@ -338,6 +342,24 @@ impl<'a> CodeGenerator<'a> {
             vec!["Ok".to_string(), "Err".to_string()],
         );
 
+        // Generate types for user-defined enums
+        for (name, symbol) in analyzer.all_symbols() {
+            if symbol.kind == crate::semantics::SymbolKind::Enum {
+                // Assume all data are f64, max 2 fields for simplicity
+                let i32_type = context.i32_type();
+                let f64_type = context.f64_type();
+                let struct_type = context.struct_type(&[i32_type.into(), f64_type.into(), f64_type.into()], false);
+                type_map.insert(name.clone(), struct_type.into());
+
+                // Collect variants
+                let mut variants = vec![];
+                for (method_name, _) in &symbol.methods {
+                    variants.push(method_name.clone());
+                }
+                enum_variants.insert(name.clone(), variants);
+            }
+        }
+
         Self {
             context,
             module,
@@ -345,13 +367,17 @@ impl<'a> CodeGenerator<'a> {
             analyzer,
             type_map,
             vtable_map: HashMap::new(),
+            vtable_type_map: HashMap::new(),
             enum_variants,
             field_map: HashMap::new(),
+            field_types_map: HashMap::new(),
+            constructors: HashMap::new(),
             lambda_counter: 0,
             string_counter: 0,
             label_counter: 0,
             variables: HashMap::new(),
             functions: HashMap::new(),
+            current_function_name: None,
         }
     }
 
@@ -360,7 +386,8 @@ impl<'a> CodeGenerator<'a> {
         for node in nodes {
             match node {
                 AstNode::Class { name, fields, .. } => {
-                    self.generate_class_type(name, fields)?;
+                    let symbol = self.analyzer.all_symbols().get(name).unwrap();
+                    self.generate_class_type(name, fields, &symbol.interfaces)?;
                 }
                 AstNode::Interface { name, .. } => {
                     self.generate_interface_type(name)?;
@@ -374,7 +401,7 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
-    fn generate_class_type(&mut self, name: &str, fields: &[Field]) -> Result<(), String> {
+    fn generate_class_type(&mut self, name: &str, fields: &[Field], interfaces: &std::collections::HashMap<String, std::collections::HashMap<String, MethodSig>>) -> Result<(), String> {
         let mut field_types = Vec::new();
         let mut field_indices = HashMap::new();
         for (i, field) in fields.iter().enumerate() {
@@ -383,23 +410,79 @@ impl<'a> CodeGenerator<'a> {
             field_indices.insert(field.name.clone(), i);
         }
 
+        // Add vtable fields for implemented interfaces
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        for interface_name in interfaces.keys() {
+            field_types.push(ptr_type.into());
+            field_indices.insert(format!("vtable_{}", interface_name), field_types.len() - 1);
+        }
+
         let struct_type = self.context.struct_type(&field_types, false);
         self.type_map.insert(name.to_string(), struct_type.into());
         self.field_map.insert(name.to_string(), field_indices);
+        self.field_types_map.insert(name.to_string(), field_types);
+
         Ok(())
     }
 
-    fn generate_interface_type(&mut self, _name: &str) -> Result<(), String> {
-        // For now, interfaces are just pointers - vtable support later
-        let _ptr_type = self.context.ptr_type(AddressSpace::default());
-        // self.type_map.insert(name.to_string(), ptr_type.into());
+    fn generate_class_vtables(&mut self, class_name: &str, interfaces: &std::collections::HashMap<String, std::collections::HashMap<String, MethodSig>>) -> Result<(), String> {
+        println!("Generating vtables for class: {}", class_name);
+        for (interface_name, interface_methods) in interfaces {
+            println!("  Interface: {}", interface_name);
+            let mut vtable_values = Vec::new();
+            for (method_name, _interface_sig) in interface_methods {
+                // Find the class method
+                let class_method_name = format!("{}.{}", class_name, method_name);
+                println!("    Method: {} -> looking for {}", method_name, class_method_name);
+                let func = self.functions.get(&class_method_name).ok_or_else(|| {
+                    println!("    ERROR: Method {} not found in functions map", class_method_name);
+                    println!("    Available functions: {:?}", self.functions.keys().collect::<Vec<_>>());
+                    format!("Class {} does not implement method {} for interface {}", class_name, method_name, interface_name)
+                })?;
+                vtable_values.push(BasicValueEnum::PointerValue(func.as_global_value().as_pointer_value()));
+            }
+            // Get vtable struct type
+            let vtable_type = self.vtable_type_map.get(interface_name).unwrap();
+            let vtable_const = vtable_type.const_named_struct(&vtable_values);
+            // Create global
+            let vtable_name = format!("{}_{}_vtable", class_name, interface_name);
+            let global = self.module.add_global(vtable_type.as_basic_type_enum(), None, &vtable_name);
+            global.set_initializer(&vtable_const);
+            self.vtable_map.insert(format!("{}_{}", class_name, interface_name), global.as_pointer_value());
+        }
+        Ok(())
+    }
+
+    fn generate_interface_type(&mut self, name: &str) -> Result<(), String> {
+        // Generate LLVM struct for interface: { *mut vtable }
+        // For simplicity, vtable is struct of void* function pointers
+        let symbol = self.analyzer.all_symbols().get(name).unwrap();
+        let interface_methods = symbol.interfaces.get(name).unwrap();
+
+        // Create vtable as struct of function pointers (all (void*) -> void* for now)
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let void_type = self.context.void_type();
+        let fn_type = void_type.fn_type(&[ptr_type.into()], false);
+        let fn_ptr_type = ptr_type; // since fn_type.ptr_type deprecated, use ptr_type
+
+        let mut vtable_types = vec![fn_ptr_type.into(); interface_methods.len()];
+
+        // Vtable type: struct of function pointers
+        let vtable_struct_type = self.context.struct_type(&vtable_types, false);
+        self.vtable_type_map.insert(name.to_string(), vtable_struct_type);
+        let vtable_ptr_type = self.context.ptr_type(AddressSpace::default());
+
+        // Interface struct: { vtable_ptr }
+        let interface_struct_type = self.context.struct_type(&[vtable_ptr_type.into()], false);
+        self.type_map.insert(name.to_string(), interface_struct_type.into());
+
         Ok(())
     }
 
     fn generate_enum_type(&mut self, name: &str, variants: &[EnumVariant]) -> Result<(), String> {
-        // Simple tagged union: {i32 discriminant, i8* data}
+        // Tagged union: {i32 discriminant, f64 data0, f64 data1} for now
         let i32_type = self.context.i32_type();
-        let i8_ptr = self.context.ptr_type(AddressSpace::default());
+        let f64_type = self.context.f64_type();
 
         let mut variant_names = Vec::new();
         for variant in variants {
@@ -409,8 +492,104 @@ impl<'a> CodeGenerator<'a> {
 
         let struct_type = self
             .context
-            .struct_type(&[i32_type.into(), i8_ptr.into()], false);
+            .struct_type(&[i32_type.into(), f64_type.into(), f64_type.into()], false);
         self.type_map.insert(name.to_string(), struct_type.into());
+        Ok(())
+    }
+
+    fn generate_enum_constructors(&mut self, name: &str, variants: &[EnumVariant]) -> Result<(), String> {
+        for variant in variants {
+            let variant_name = &variant.name;
+            let full_name = format!("{}_{}", name, variant_name);
+
+            // params: variant.data
+            let data_types = if let Some(ref d) = variant.data { d } else { &vec![] };
+            let mut param_types = vec![];
+            for type_node in data_types {
+                let llvm_type = self.llvm_type_from_mux_type(type_node)?;
+                param_types.push(llvm_type.into());
+            }
+
+            // return type: pointer to enum struct
+            let enum_type = self.type_map.get(name).ok_or("Enum type not found")?;
+            let ptr_type = enum_type.ptr_type(AddressSpace::default());
+            let fn_type = ptr_type.fn_type(&param_types, false);
+            let function = self.module.add_function(&full_name, fn_type, None);
+
+            // Generate the body
+            let entry = self.context.append_basic_block(function, "entry");
+            self.builder.position_at_end(entry);
+
+            // Allocate the struct
+            let struct_alloca = self.builder.build_alloca(*enum_type, "enum_struct").map_err(|e| e.to_string())?;
+
+            // Set tag
+            let tag_index = self.get_variant_index(name, variant_name)?;
+            let tag_val = self.context.i32_type().const_int(tag_index as u64, false);
+            let tag_ptr = self.builder.build_struct_gep(*enum_type, struct_alloca, 0u32, "tag_ptr").map_err(|e| e.to_string())?;
+            self.builder.build_store(tag_ptr, tag_val).map_err(|e| e.to_string())?;
+
+            // Set data fields
+            for (i, _) in data_types.iter().enumerate() {
+                let data_ptr = self.builder.build_struct_gep(*enum_type, struct_alloca, (i + 1) as u32, &format!("data{}_ptr", i)).map_err(|e| e.to_string())?;
+                let arg = function.get_nth_param(i as u32).unwrap();
+                self.builder.build_store(data_ptr, arg).map_err(|e| e.to_string())?;
+            }
+
+            // Return the struct pointer
+            self.builder.build_return(Some(&struct_alloca)).map_err(|e| e.to_string())?;
+
+            // Store in constructors
+            self.constructors.insert(format!("{}.{}", name, variant_name), function);
+        }
+        Ok(())
+    }
+
+    fn generate_class_constructors(&mut self, name: &str, fields: &[Field], interfaces: &std::collections::HashMap<String, std::collections::HashMap<String, MethodSig>>) -> Result<(), String> {
+        let full_name = format!("{}_new", name);
+
+        // params: field types
+        let mut param_types = vec![];
+        for field in fields {
+            let llvm_type = self.llvm_type_from_mux_type(&field.type_)?;
+            param_types.push(llvm_type.into());
+        }
+
+        // return type: pointer to class struct
+        let class_type = self.type_map.get(name).ok_or("Class type not found")?;
+        let ptr_type = class_type.ptr_type(AddressSpace::default());
+        let fn_type = ptr_type.fn_type(&param_types, false);
+        let function = self.module.add_function(&full_name, fn_type, None);
+
+        // Generate the body
+        let entry = self.context.append_basic_block(function, "entry");
+        self.builder.position_at_end(entry);
+
+        // Allocate the struct
+        let struct_alloca = self.builder.build_alloca(*class_type, "class_struct").map_err(|e| e.to_string())?;
+
+        // Set fields
+        for (i, field) in fields.iter().enumerate() {
+            let field_ptr = self.builder.build_struct_gep(*class_type, struct_alloca, i as u32, &field.name).map_err(|e| e.to_string())?;
+            let arg = function.get_nth_param(i as u32).unwrap();
+            self.builder.build_store(field_ptr, arg).map_err(|e| e.to_string())?;
+        }
+
+        // Set vtable fields
+        for interface_name in interfaces.keys() {
+            let vtable_key = format!("{}_{}", name, interface_name);
+            let vtable_ptr = self.vtable_map.get(&vtable_key).ok_or(format!("Vtable not found for {}", vtable_key))?;
+            let vtable_field_name = format!("vtable_{}", interface_name);
+            let field_index = self.field_map.get(name).unwrap().get(&vtable_field_name).unwrap();
+            let field_ptr = self.builder.build_struct_gep(*class_type, struct_alloca, *field_index as u32, &vtable_field_name).map_err(|e| e.to_string())?;
+            self.builder.build_store(field_ptr, *vtable_ptr).map_err(|e| e.to_string())?;
+        }
+
+        // Return the struct pointer
+        self.builder.build_return(Some(&struct_alloca)).map_err(|e| e.to_string())?;
+
+        // Store in constructors
+        self.constructors.insert(format!("{}.new", name), function);
         Ok(())
     }
 
@@ -588,6 +767,41 @@ impl<'a> CodeGenerator<'a> {
             }
         }
 
+        // Declare class methods with prefixed names
+        for node in nodes {
+            if let AstNode::Class { name, methods, .. } = node {
+                for method in methods {
+                    let prefixed_name = format!("{}.{}", name, method.name);
+                    println!("Declaring class method: {}", prefixed_name);
+                    let mut method_copy = method.clone();
+                    method_copy.name = prefixed_name;
+                    self.declare_function(&method_copy)?;
+                }
+            }
+        }
+
+        // Generate vtables after all functions are declared
+        for node in nodes {
+            if let AstNode::Class { name, .. } = node {
+                let symbol = self.analyzer.all_symbols().get(name).unwrap();
+                self.generate_class_vtables(name, &symbol.interfaces)?;
+            }
+        }
+
+        // Generate constructor functions after vtables
+        for node in nodes {
+            match node {
+                AstNode::Enum { name, variants, .. } => {
+                    self.generate_enum_constructors(name, variants)?;
+                }
+                AstNode::Class { name, fields, .. } => {
+                    let symbol = self.analyzer.all_symbols().get(name).unwrap();
+                    self.generate_class_constructors(name, fields, &symbol.interfaces)?;
+                }
+                _ => {}
+            }
+        }
+
         // Second pass: generate code
         let mut top_level_statements = vec![];
         for node in nodes {
@@ -599,10 +813,23 @@ impl<'a> CodeGenerator<'a> {
                     top_level_statements.push(stmt.clone());
                 }
                 _ => {} // Skip classes, interfaces, enums for now
+             }
+         }
+
+        // Generate class methods with prefixed names
+        for node in nodes {
+            if let AstNode::Class { name, methods, .. } = node {
+                for method in methods {
+                    let prefixed_name = format!("{}.{}", name, method.name);
+                    println!("Generating class method: {}", prefixed_name);
+                    let mut method_copy = method.clone();
+                    method_copy.name = prefixed_name;
+                    self.generate_function(&method_copy)?;
+                }
             }
         }
 
-        // Generate main function for top-level statements
+         // Generate main function for top-level statements
         if !top_level_statements.is_empty() {
             let main_type = self.context.void_type().fn_type(&[], false);
             let main_func = self.module.add_function("main", main_type, None);
@@ -619,11 +846,19 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn declare_function(&mut self, func: &FunctionNode) -> Result<(), String> {
-        let param_types: Vec<BasicMetadataTypeEnum> = func
+        let mut param_types: Vec<BasicMetadataTypeEnum> = func
             .params
             .iter()
             .map(|p| self.llvm_type_from_mux_type(&p.type_).map(|t| t.into()))
             .collect::<Result<_, _>>()?;
+
+        // For class methods, add implicit 'self' parameter
+        let is_class_method = func.name.contains('.');
+        if is_class_method {
+            let class_name = func.name.split('.').next().unwrap();
+            let class_type = self.type_map.get(class_name).ok_or_else(|| format!("Class type {} not found", class_name))?;
+            param_types.insert(0, (*class_type).into());
+        }
 
         let fn_type = if matches!(
             func.return_type.kind,
@@ -642,6 +877,8 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn generate_function(&mut self, func: &FunctionNode) -> Result<(), String> {
+        self.current_function_name = Some(func.name.clone());
+
         let function = *self
             .functions
             .get(&func.name)
@@ -654,8 +891,30 @@ impl<'a> CodeGenerator<'a> {
         self.variables.clear();
 
         // Set up parameter variables
+        let is_class_method = func.name.contains('.');
+        let mut param_index = 0;
+        if is_class_method {
+            let class_name = func.name.split('.').next().unwrap();
+            let class_type = self.type_map.get(class_name).unwrap();
+            let arg = function.get_nth_param(param_index).unwrap();
+            param_index += 1;
+            // Set self as variable
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let alloca = self
+                .builder
+                .build_alloca(ptr_type, "self")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(alloca, arg)
+                .map_err(|e| e.to_string())?;
+            self.variables.insert(
+                "self".to_string(),
+                (alloca, ptr_type.into(), ResolvedType::Named(class_name.to_string(), vec![])),
+            );
+        }
+
         for (i, param) in func.params.iter().enumerate() {
-            let arg = function.get_nth_param(i as u32).unwrap();
+            let arg = function.get_nth_param((i as u32) + (param_index as u32)).unwrap();
             let boxed = self.box_value(arg);
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let alloca = self
@@ -752,7 +1011,28 @@ impl<'a> CodeGenerator<'a> {
                         }
                     }
                 } else {
-                    Err(format!("Undefined variable: {}", name))
+                    if self.analyzer.symbol_table().lookup(name).map(|s| s.kind == crate::semantics::SymbolKind::Enum).unwrap_or(false) {
+                        Err(format!("Enums cannot be used as values: {}", name))
+                 } else {
+                     // Check if class method field access
+                     if let Some(ref func_name) = self.current_function_name {
+                         if func_name.contains('.') {
+                             let class_name = func_name.split('.').next().unwrap();
+                             if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                                 if let Some(field_index) = self.field_map.get(class_name).and_then(|fields| fields.get(name)) {
+                                     // Generate GEP for field
+                                     let struct_type = self.type_map.get(class_name).unwrap().into_struct_type();
+                                     let field_ptr = self.builder.build_struct_gep(struct_type, *self_ptr, *field_index as u32, name).map_err(|e| e.to_string())?;
+                                     // Load the field value
+                                     let field_type = self.field_types_map.get(class_name).unwrap()[*field_index];
+                                     let loaded = self.builder.build_load(field_type, field_ptr, name).map_err(|e| e.to_string())?;
+                                     return Ok(loaded);
+                                 }
+                             }
+                         }
+                     }
+                     Err(format!("Undefined variable: {}", name))
+                 }
                 }
             }
             ExpressionKind::Binary { left, op, right } => {
@@ -892,10 +1172,11 @@ impl<'a> CodeGenerator<'a> {
                             // Method call on self
                             return self.generate_method_call_on_self(field, args);
                         } else {
-                            // Method call on variable
-                            if let Some((_, _, type_)) = self.variables.get(obj_name) {
-                                match type_ {
-                                    Type::Primitive(PrimitiveType::Int) if field == "to_string" => {
+                             // Method call on variable
+                             let var_type = self.variables.get(obj_name).map(|(_, _, t)| t.clone());
+                             if let Some(type_) = var_type {
+                                 match type_ {
+                                     Type::Primitive(PrimitiveType::Int) if field == "to_string" => {
                                         let ptr = self.generate_expression(expr)?;
                                         let func = self
                                             .module
@@ -1067,15 +1348,96 @@ impl<'a> CodeGenerator<'a> {
                                             .map_err(|e| e.to_string())?;
                                         return Ok(call2.try_as_basic_value().left().unwrap());
                                     }
-                                    _ => {
-                                        return Err(format!(
-                                            "Method {} not implemented for type",
-                                            field
-                                        ))
-                                    }
+                                     Type::Named(ref interface_name, _) => {
+                                         // Interface method dispatch
+                                         let symbol = self.analyzer.all_symbols().get(interface_name).unwrap().clone();
+                                         if symbol.kind == crate::semantics::SymbolKind::Interface {
+                                             let interface_methods = symbol.interfaces.get(interface_name).unwrap();
+                                             if let Some(method_index) = interface_methods.keys().position(|m| m == field) {
+                                                 let obj_ptr = self.generate_expression(expr)?.into_pointer_value();
+
+                                                 // Load vtable pointer from object (first field)
+                                                 let vtable_ptr = self.builder.build_struct_gep(
+                                                     self.type_map.get(interface_name).unwrap().into_struct_type(),
+                                                     obj_ptr,
+                                                     0,
+                                                     "vtable_ptr"
+                                                 ).map_err(|e| e.to_string())?;
+                                                 let vtable = self.builder.build_load(
+                                                     self.context.ptr_type(AddressSpace::default()),
+                                                     vtable_ptr,
+                                                     "vtable"
+                                                 ).map_err(|e| e.to_string())?;
+
+                                                 // Index into vtable to get method pointer
+                                                 let method_ptr = self.builder.build_struct_gep(
+                                                     *self.vtable_type_map.get(interface_name).unwrap(),
+                                                     vtable.into_pointer_value(),
+                                                     method_index as u32,
+                                                     "method_ptr"
+                                                 ).map_err(|e| e.to_string())?;
+                                                 let func_ptr = self.builder.build_load(
+                                                     self.context.ptr_type(AddressSpace::default()),
+                                                     method_ptr,
+                                                     "func_ptr"
+                                                 ).map_err(|e| e.to_string())?;
+
+                                                 // Call the method with self as first argument
+                                                 let mut call_args = vec![obj_ptr.into()];
+                                                 for arg in args {
+                                                     call_args.push(self.generate_expression(arg)?.into());
+                                                 }
+
+                                                 // Get the method signature to create function type
+                                                 let method_sig = interface_methods.get(field).unwrap();
+                                                 let mut param_types: Vec<BasicMetadataTypeEnum> = vec![self.context.ptr_type(AddressSpace::default()).into()]; // self
+                                                 for param in &method_sig.params {
+                                                     let param_type_node = self.type_to_type_node(param);
+                                                     param_types.push(self.llvm_type_from_mux_type(&param_type_node).unwrap().into());
+                                                 }
+                                                 let return_type_node = self.type_to_type_node(&method_sig.return_type);
+                                                 let fn_type = if matches!(return_type_node.kind, TypeKind::Primitive(PrimitiveType::Void)) {
+                                                     self.context.void_type().fn_type(&param_types, false)
+                                                 } else {
+                                                     let return_type = self.llvm_type_from_mux_type(&return_type_node).unwrap();
+                                                     return_type.fn_type(&param_types, false)
+                                                 };
+
+                                                 let call = self.builder.build_indirect_call(
+                                                     fn_type,
+                                                     func_ptr.into_pointer_value(),
+                                                     &call_args,
+                                                     "method_call"
+                                                 ).map_err(|e| e.to_string())?;
+                                                 return match call.try_as_basic_value() {
+                                                     Either::Left(basic_val) => Ok(basic_val),
+                                                     Either::Right(_) => Ok(self.context.i64_type().const_zero().into()), // dummy value for void
+                                                 };
+                                             } else {
+                                                 return Err(format!("Method {} not found in interface {}", field, interface_name));
+                                             }
+                                         } else {
+                                             return Err(format!("{} is not an interface", interface_name));
+                                         }
+                                     }
+                                     _ => {
+                                         return Err(format!(
+                                             "Method {} not implemented for type",
+                                             field
+                                         ))
+                                     }
                                 }
                             } else {
-                                return Err(format!("Undefined variable {}", obj_name));
+                                if self.analyzer.symbol_table().lookup(obj_name).map(|s| matches!(s.kind, crate::semantics::SymbolKind::Enum | crate::semantics::SymbolKind::Class)).unwrap_or(false) {
+                                    let key = format!("{}.{}", obj_name, field);
+                                    if let Some(func) = self.constructors.get(&key) {
+                                        return Ok(func.as_global_value().as_pointer_value().into());
+                                    } else {
+                                        return Err(format!("Unknown constructor {}.{}", obj_name, field));
+                                    }
+                                } else {
+                                    return Err(format!("Undefined variable {}", obj_name));
+                                }
                             }
                         }
                     } else {
@@ -1857,71 +2219,61 @@ impl<'a> CodeGenerator<'a> {
                         .build_unconditional_branch(header_bb)
                         .map_err(|e| e.to_string())?;
 
-                    // Exit
-                    self.builder.position_at_end(exit_bb);
-                    // For functions returning Optional, return None if loop completes without return
-                    let none_call = self
-                        .builder
-                        .build_call(
-                            self.module.get_function("mux_optional_none").unwrap(),
-                            &[],
-                            "none",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_return(Some(&none_call.try_as_basic_value().left().unwrap()))
-                        .map_err(|e| e.to_string())?;
+                     // Exit
+                     self.builder.position_at_end(exit_bb);
                 } else {
                     return Err("For loop iter must be range(...) or list identifier".to_string());
                 }
             }
             StatementKind::Match { expr, arms } => {
                 let function = function.ok_or("Match not in function")?;
+                let enum_name = if let ExpressionKind::Identifier(name) = &expr.kind {
+                    if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+                        if let Some(Type::Named(n, _)) = &symbol.type_ {
+                            n.clone()
+                        } else {
+                            return Err("Match expression must be an enum type".to_string());
+                        }
+                    } else {
+                        return Err(format!("Symbol {} not found", name));
+                    }
+                } else {
+                    return Err("Match expression must be an identifier".to_string());
+                };
                 let expr_val = self.generate_expression(expr)?;
                 let expr_ptr = expr_val.into_pointer_value();
 
-                // Determine enum type from patterns
-                let enum_name = {
-                    let mut en = "Result"; // default
-                    for arm in arms {
-                        if let PatternNode::EnumVariant { name, .. } = &arm.pattern {
-                            en = if name == "Some" || name == "None" {
-                                "Optional"
-                            } else {
-                                "Result"
-                            };
-                            break;
-                        }
-                    }
-                    en
-                };
-
                 // Get discriminant
-                let discriminant_func = if enum_name == "Optional" {
-                    "mux_optional_discriminant"
-                } else if enum_name == "Result" {
-                    "mux_result_discriminant"
+                let discriminant = if enum_name == "Optional" || enum_name == "Result" {
+                    let discriminant_func = if enum_name == "Optional" {
+                        "mux_optional_discriminant"
+                    } else {
+                        "mux_result_discriminant"
+                    };
+                    let func = self
+                        .module
+                        .get_function(discriminant_func)
+                        .ok_or(format!("{} not found", discriminant_func))?;
+                    let discriminant_call = self
+                        .builder
+                        .build_call(func, &[expr_ptr.into()], "discriminant_call")
+                        .map_err(|e| e.to_string())?;
+                    discriminant_call
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap()
+                        .into_int_value()
                 } else {
-                    return Err(format!("Unknown enum {}", enum_name));
+                    // For custom enums, load the discriminant field
+                    let enum_type = self.type_map.get(&enum_name).unwrap().into_struct_type();
+                    let discriminant_ptr = self.builder.build_struct_gep(enum_type, expr_ptr, 0, "discriminant_ptr").map_err(|e| e.to_string())?;
+                    self.builder.build_load(self.context.i32_type(), discriminant_ptr, "discriminant").map_err(|e| e.to_string())?.into_int_value()
                 };
-                let func = self
-                    .module
-                    .get_function(discriminant_func)
-                    .ok_or(format!("{} not found", discriminant_func))?;
-                let discriminant_call = self
-                    .builder
-                    .build_call(func, &[expr_ptr.into()], "discriminant_call")
-                    .map_err(|e| e.to_string())?;
-                let discriminant = discriminant_call
-                    .try_as_basic_value()
-                    .left()
-                    .unwrap()
-                    .into_int_value();
 
-                let mut current_bb = self.builder.get_insert_block().unwrap();
-                let end_bb = self.context.append_basic_block(*function, "match_end");
+                 let mut current_bb = self.builder.get_insert_block().unwrap();
+                 let end_bb = self.context.append_basic_block(*function, "match_end");
 
-                for (i, arm) in arms.iter().enumerate() {
+                 for (i, arm) in arms.iter().enumerate() {
                     let arm_bb = self
                         .context
                         .append_basic_block(*function, &format!("match_arm_{}", i));
@@ -1934,29 +2286,22 @@ impl<'a> CodeGenerator<'a> {
 
                     self.builder.position_at_end(current_bb);
 
-                    let pattern_matches = match &arm.pattern {
-                        PatternNode::EnumVariant { name, args: _ } => {
-                            let enum_name = if name == "Some" || name == "None" {
-                                "Optional"
-                            } else if name == "Ok" || name == "Err" {
-                                "Result"
-                            } else {
-                                return Err(format!("Unknown variant {}", name));
-                            };
-                            let variant_index = self.get_variant_index(enum_name, name)?;
-                            let index_val = self
-                                .context
-                                .i32_type()
-                                .const_int(variant_index as u64, false);
-                            self.builder
-                                .build_int_compare(
-                                    inkwell::IntPredicate::EQ,
-                                    discriminant,
-                                    index_val,
-                                    "match_cmp",
-                                )
-                                .map_err(|e| e.to_string())?
-                        }
+                     let pattern_matches = match &arm.pattern {
+                         PatternNode::EnumVariant { name, args: _ } => {
+                             let variant_index = self.get_variant_index(&enum_name, name)?;
+                             let index_val = self
+                                 .context
+                                 .i32_type()
+                                 .const_int(variant_index as u64, false);
+                             self.builder
+                                 .build_int_compare(
+                                     inkwell::IntPredicate::EQ,
+                                     discriminant,
+                                     index_val,
+                                     "match_cmp",
+                                 )
+                                 .map_err(|e| e.to_string())?
+                         }
                         PatternNode::Wildcard => self.context.bool_type().const_int(1, false),
                         _ => return Err("Pattern not implemented".to_string()),
                     };
@@ -1971,8 +2316,8 @@ impl<'a> CodeGenerator<'a> {
                     self.builder.position_at_end(arm_bb);
 
                     // Bind variables
-                    if let PatternNode::EnumVariant { name, args } = &arm.pattern {
-                        if (name == "Some" || name == "Ok" || name == "Err") && !args.is_empty() {
+                    if let &PatternNode::EnumVariant { name: ref name, ref args } = &arm.pattern {
+                        if (*name == "Some" || *name == "Ok" || *name == "Err") && !args.is_empty() {
                             if let PatternNode::Identifier(var) = &args[0] {
                                 let data_func = if enum_name == "Optional" {
                                     "mux_optional_data"
@@ -2011,6 +2356,21 @@ impl<'a> CodeGenerator<'a> {
                                     var.clone(),
                                     (alloca, BasicTypeEnum::PointerType(ptr_type), var_type),
                                 );
+                            }
+                        } else {
+                            // Custom enum binding
+                            for (i, arg) in args.iter().enumerate() {
+                                if let &PatternNode::Identifier(ref arg_name) = arg {
+                                    let data_index = i + 1;
+                                    let enum_type = self.type_map.get(&enum_name).unwrap().into_struct_type();
+                                    let data_ptr = self.builder.build_struct_gep(enum_type, expr_ptr, data_index as u32, &format!("data{}_ptr", i)).map_err(|e| e.to_string())?;
+                                    let data_val = self.builder.build_load(self.context.f64_type(), data_ptr, &format!("data{}", i)).map_err(|e| e.to_string())?;
+                                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                    let var_alloca = self.builder.build_alloca(ptr_type, arg_name).map_err(|e| e.to_string())?;
+                                    let boxed = self.box_value(data_val);
+                                    self.builder.build_store(var_alloca, boxed).map_err(|e| e.to_string())?;
+                                    self.variables.insert(arg_name.clone(), (var_alloca, ptr_type.into(), ResolvedType::Primitive(PrimitiveType::Float)));
+                                }
                             }
                         }
                     }

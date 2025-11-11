@@ -1209,37 +1209,27 @@ impl<'a> Parser<'a> {
             TokenType::Id(name) => {
                 let name_clone = name.clone();
                 self.current += 1; // consume the identifier
-                match name_clone.as_str() {
-                    "Some" | "None" | "Ok" | "Err" => {
-                        // Parse enum variant pattern
-                        if self.matches(&[TokenType::OpenParen]) {
-                            // Has arguments
-                            let mut args = Vec::new();
-                            if !self.check(TokenType::CloseParen) {
-                                loop {
-                                    args.push(self.parse_pattern()?);
-                                    if !self.matches(&[TokenType::Comma]) {
-                                        break;
-                                    }
-                                }
+                if self.matches(&[TokenType::OpenParen]) {
+                    // Parse as enum variant pattern
+                    let mut args = Vec::new();
+                    if !self.check(TokenType::CloseParen) {
+                        loop {
+                            args.push(self.parse_pattern()?);
+                            if !self.matches(&[TokenType::Comma]) {
+                                break;
                             }
-                            self.consume_token(
-                                TokenType::CloseParen,
-                                "Expected ')' after enum variant arguments",
-                            )?;
-                            Ok(PatternNode::EnumVariant {
-                                name: name_clone,
-                                args,
-                            })
-                        } else {
-                            // No arguments
-                            Ok(PatternNode::EnumVariant {
-                                name: name_clone,
-                                args: Vec::new(),
-                            })
                         }
                     }
-                    _ => Ok(PatternNode::Identifier(name_clone)),
+                    self.consume_token(
+                        TokenType::CloseParen,
+                        "Expected ')' after enum variant arguments",
+                    )?;
+                    Ok(PatternNode::EnumVariant {
+                        name: name_clone,
+                        args,
+                    })
+                } else {
+                    Ok(PatternNode::Identifier(name_clone))
                 }
             }
             TokenType::Underscore => {

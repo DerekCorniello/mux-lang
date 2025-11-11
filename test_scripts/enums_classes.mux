@@ -1,13 +1,29 @@
-// Enums and Classes
-enum Shape { Circle(float r), Rectangle(float w, float h) }
+// Enums and Classes - Extended Shapes Example
+enum Shape { Circ(float r), Rect(float w, float h) }  // Tagged union for shape data
 
-interface Drawable { func draw() returns void }
+interface DrawableShape { func draw() returns void }  // Interface for drawable behavior
 
-class Circle is Drawable {
-    float radius
-    func draw() returns void { println("Circle radius=5.0") }
+class GenericShape is DrawableShape {
+    Shape shape  // Class contains enum for data
+    func draw() returns void {
+        match shape {
+            Circ(r) { println("Drawing circle with radius: " + r.to_string()) }
+            Rect(w, h) { println("Drawing rectangle with width: " + w.to_string() + " height: " + h.to_string()) }
+        }
+    }
 }
 
-auto c = Circle.new(5.0)
-c.draw()
-println("Created circle with radius: 5.0")
+// Usage: Create shapes via enum, wrap in class for behavior
+auto circleShape = Shape.Circ(5.0)
+auto rectShape = Shape.Rect(10.0, 20.0)
+
+auto circle = GenericShape.new(circleShape)
+auto rect = GenericShape.new(rectShape)
+
+auto shapes = [circle, rect]
+
+for DrawableShape s in shapes {
+    s.draw()  // Polymorphic call via interface
+}
+
+println("Extended test: enum for data, interface/class for behavior")

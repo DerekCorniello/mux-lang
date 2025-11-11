@@ -425,6 +425,10 @@ impl SymbolTable {
         }
         None
     }
+
+    pub fn all_symbols(&self) -> Vec<&Symbol> {
+        self.all_symbols.values().collect()
+    }
 }
 
 pub struct SemanticAnalyzer {
@@ -452,6 +456,10 @@ impl SemanticAnalyzer {
     // get reference to the symbol table for debugging.
     pub fn symbol_table(&self) -> &SymbolTable {
         &self.symbol_table
+    }
+
+    pub fn all_symbols(&self) -> &std::collections::HashMap<String, Symbol> {
+        &self.symbol_table.all_symbols
     }
 
     // check if a name is a built-in function and return its signature
@@ -1477,7 +1485,7 @@ impl SemanticAnalyzer {
                         Symbol {
                             kind: SymbolKind::Class,
                             span: *node.span(),
-                            type_: constructor_type,
+                            type_: Some(Type::Named(name.clone(), vec![])),
                             interfaces: implemented_interfaces,
                             methods: methods_map,
                             type_params: type_param_bounds,
@@ -1486,15 +1494,22 @@ impl SemanticAnalyzer {
                         self.errors.push(e);
                     }
                 }
-                AstNode::Enum { name, .. } => {
+                AstNode::Enum { name, variants, .. } => {
+                    let mut methods = std::collections::HashMap::new();
+                    for variant in variants {
+                        let params = variant.data.clone().unwrap_or_default().into_iter().map(|t| self.resolve_type(&t).unwrap_or(Type::Void)).collect();
+                        let return_type = Type::Named(name.clone(), vec![]);
+                        methods.insert(variant.name.clone(), MethodSig { params, return_type });
+                        println!("Added method {} to {}", variant.name, name);
+                    }
                     if let Err(e) = self.symbol_table.add_symbol(
                         name,
                         Symbol {
                             kind: SymbolKind::Enum,
                             span: *node.span(),
-                            type_: None,
+                            type_: Some(Type::Named(name.clone(), vec![])),
                             interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
+                            methods,
                             type_params: Vec::new(),
                         },
                     ) {
@@ -1933,27 +1948,44 @@ impl SemanticAnalyzer {
                             });
                         }
                     }
-                    Type::Named(type_name, type_args)
-                        if type_name == "Optional" && type_args.len() == 1 =>
-                    {
-                        let inner = &type_args[0];
-                        if name == "Some" && args.len() == 1 {
-                            self.set_pattern_types(&args[0], inner, span)?;
-                        } else if name == "None" && args.is_empty() {
-                            // ok
+                    Type::Named(enum_name, _) => {
+                        // For user enums, check if the variant exists and set arg types
+                        if let Some(symbol) = self.symbol_table.lookup(enum_name) {
+                            if let Some(sig) = symbol.methods.get(name) {
+                                if args.len() != sig.params.len() {
+                                    return Err(SemanticError {
+                                        message: format!(
+                                            "Pattern {} has {} args, expected {}",
+                                            name, args.len(), sig.params.len()
+                                        ),
+                                        span,
+                                    });
+                                }
+                                for (arg, param_type) in args.iter().zip(&sig.params) {
+                                    self.set_pattern_types(arg, param_type, span)?;
+                                }
+                            } else {
+                                return Err(SemanticError {
+                                    message: format!(
+                                        "Unknown variant {} for enum {}",
+                                        name, enum_name
+                                    ),
+                                    span,
+                                });
+                            }
                         } else {
                             return Err(SemanticError {
-                                message: format!(
-                                    "Pattern {} does not match type {:?}",
-                                    name, expected_type
-                                ),
+                                message: format!("Unknown enum {}", enum_name),
                                 span,
                             });
                         }
                     }
                     _ => {
                         return Err(SemanticError {
-                            message: format!("Tuple pattern on non-tuple type {:?}", expected_type),
+                            message: format!(
+                                "Enum variant patterns are not supported for type {:?}",
+                                expected_type
+                            ),
                             span,
                         });
                     }
