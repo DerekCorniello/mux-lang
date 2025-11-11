@@ -129,6 +129,43 @@ pub extern "C" fn mux_value_to_string(val: *mut Value) -> *mut c_char {
     c_str.into_raw()
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_list_length(val: *const Value) -> i64 {
+    let val = unsafe { &*val };
+    if let Value::List(vec) = val {
+        vec.len() as i64
+    } else {
+        0
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_list_get_value(val: *const Value, index: i64) -> *mut Value {
+    let val = unsafe { &*val };
+    if let Value::List(vec) = val {
+        if index >= 0 && (index as usize) < vec.len() {
+            let cloned = vec[index as usize].clone();
+            Box::into_raw(Box::new(cloned))
+        } else {
+            std::ptr::null_mut()
+        }
+    } else {
+        std::ptr::null_mut()
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn mux_value_to_list(val: *mut Value) -> *mut crate::list::List {
+    let val = unsafe { *Box::from_raw(val) };
+    if let Value::List(vec) = val {
+        Box::into_raw(Box::new(crate::list::List(vec)))
+    } else {
+        panic!("Expected List value");
+    }
+}
+
 /// # Safety
 /// `s` must be a valid pointer returned by a mux-runtime string function.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

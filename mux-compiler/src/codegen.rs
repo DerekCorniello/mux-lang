@@ -178,15 +178,22 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_list_get", fn_type, None);
 
-        // mux_list_get_value: (*const List, i64) -> *mut Value
-        let params = &[list_ptr.into(), i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_get_value", fn_type, None);
+
 
         // mux_list_length: (*const List) -> i64
         let params = &[list_ptr.into()];
         let fn_type = i64_type.fn_type(params, false);
         module.add_function("mux_list_length", fn_type, None);
+
+        // mux_value_list_length: (*const Value) -> i64
+        let params = &[i8_ptr.into()];
+        let fn_type = i64_type.fn_type(params, false);
+        module.add_function("mux_value_list_length", fn_type, None);
+
+        // mux_value_list_get_value: (*const Value, i64) -> *mut Value
+        let params = &[i8_ptr.into(), i64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_value_list_get_value", fn_type, None);
 
         // mux_list_pop_back: (*mut List) -> *mut Optional
         let params = &[list_ptr.into()];
@@ -430,17 +437,19 @@ impl<'a> CodeGenerator<'a> {
     fn generate_class_type(&mut self, name: &str, fields: &[Field], interfaces: &std::collections::HashMap<String, std::collections::HashMap<String, MethodSig>>) -> Result<(), String> {
         let mut field_types = Vec::new();
         let mut field_indices = HashMap::new();
-        for (i, field) in fields.iter().enumerate() {
-            let field_type = self.llvm_type_from_mux_type(&field.type_)?;
-            field_types.push(field_type);
-            field_indices.insert(field.name.clone(), i);
-        }
 
-        // Add vtable fields for implemented interfaces
+        // Add vtable fields for implemented interfaces FIRST
         let ptr_type = self.context.ptr_type(AddressSpace::default());
         for interface_name in interfaces.keys() {
             field_types.push(ptr_type.into());
             field_indices.insert(format!("vtable_{}", interface_name), field_types.len() - 1);
+        }
+
+        // Add class fields after
+        for field in fields {
+            let field_type = self.llvm_type_from_mux_type(&field.type_)?;
+            field_types.push(field_type);
+            field_indices.insert(field.name.clone(), field_types.len() - 1);
         }
 
         let struct_type = self.context.struct_type(&field_types, false);
@@ -591,7 +600,11 @@ impl<'a> CodeGenerator<'a> {
         self.builder.position_at_end(entry);
 
         // Register the object type if not already registered
-        let type_name_global = self.builder.build_global_string_ptr(name, "type_name").map_err(|e| e.to_string())?;
+        let type_name = format!("type_name_{}", name);
+        let type_name_global = self.builder.build_global_string_ptr(name, &type_name).map_err(|e| e.to_string())?;
+        if let Some(global) = self.module.get_global(&type_name) {
+            global.set_linkage(inkwell::module::Linkage::External);
+        }
         let type_size = self.type_map.get(name).ok_or("Class type not found")?.size_of().ok_or("Cannot get type size")?;
         let register_func = self.module.get_function("mux_register_object_type").ok_or("mux_register_object_type not found")?;
         let type_id = self.builder.build_call(register_func, &[type_name_global.as_pointer_value().into(), type_size.into()], "type_id").map_err(|e| e.to_string())?;
@@ -613,7 +626,8 @@ impl<'a> CodeGenerator<'a> {
 
         // Set fields
         for (i, field) in fields.iter().enumerate() {
-            let field_ptr = self.builder.build_struct_gep(*class_type, struct_ptr_typed, i as u32, &field.name).map_err(|e| e.to_string())?;
+            let field_index = self.field_map.get(name).unwrap().get(&field.name).unwrap();
+            let field_ptr = self.builder.build_struct_gep(*class_type, struct_ptr_typed, *field_index as u32, &field.name).map_err(|e| e.to_string())?;
             let arg = function.get_nth_param(i as u32).unwrap();
             self.builder.build_store(field_ptr, arg).map_err(|e| e.to_string())?;
         }
@@ -900,7 +914,7 @@ impl<'a> CodeGenerator<'a> {
         if is_class_method {
             let class_name = func.name.split('.').next().unwrap();
             let class_type = self.type_map.get(class_name).ok_or_else(|| format!("Class type {} not found", class_name))?;
-            param_types.insert(0, (*class_type).into());
+            param_types.insert(0, class_type.ptr_type(AddressSpace::default()).into());
         }
 
         let fn_type = if matches!(
@@ -1410,17 +1424,17 @@ impl<'a> CodeGenerator<'a> {
                                                  let data_ptr_call = self.builder.build_call(get_ptr_func, &[obj_value_ptr.into()], "data_ptr").map_err(|e| e.to_string())?;
                                                  let obj_ptr = data_ptr_call.try_as_basic_value().left().unwrap().into_pointer_value();
 
-                                                 // Cast to interface struct pointer
-                                                 let interface_type = self.type_map.get(interface_name).unwrap();
-                                                 let interface_ptr = self.builder.build_pointer_cast(obj_ptr, interface_type.ptr_type(AddressSpace::default()), "interface_ptr").map_err(|e| e.to_string())?;
+                                                  // Use obj_ptr directly as interface_ptr (class struct starts with vtable)
+                                                  let interface_ptr = obj_ptr;
 
-                                                 // Load vtable pointer from object (first field)
-                                                 let vtable_ptr = self.builder.build_struct_gep(
-                                                     interface_type.into_struct_type(),
-                                                     interface_ptr,
-                                                     0,
-                                                     "vtable_ptr"
-                                                 ).map_err(|e| e.to_string())?;
+                                                  // Load vtable pointer from object (first field of class struct)
+                                                  let vtable_struct_type = self.context.struct_type(&[self.context.ptr_type(AddressSpace::default()).into()], false);
+                                                  let vtable_ptr = self.builder.build_struct_gep(
+                                                      vtable_struct_type,
+                                                      interface_ptr,
+                                                      0,
+                                                      "vtable_ptr"
+                                                  ).map_err(|e| e.to_string())?;
                                                  let vtable = self.builder.build_load(
                                                      self.context.ptr_type(AddressSpace::default()),
                                                      vtable_ptr,
@@ -1440,8 +1454,8 @@ impl<'a> CodeGenerator<'a> {
                                                      "func_ptr"
                                                  ).map_err(|e| e.to_string())?;
 
-                                                 // Call the method with self as first argument
-                                                 let mut call_args = vec![interface_ptr.into()];
+                                                  // Call the method with self as first argument
+                                                  let mut call_args = vec![obj_ptr.into()];
                                                  for arg in args {
                                                      call_args.push(self.generate_expression(arg)?.into());
                                                  }
@@ -2173,7 +2187,7 @@ impl<'a> CodeGenerator<'a> {
                     let len_call = self
                         .builder
                         .build_call(
-                            self.module.get_function("mux_list_length").unwrap(),
+                            self.module.get_function("mux_value_list_length").unwrap(),
                             &[list_val.into()],
                             "list_len",
                         )
@@ -2255,7 +2269,7 @@ impl<'a> CodeGenerator<'a> {
                     let get_call = self
                         .builder
                         .build_call(
-                            self.module.get_function("mux_list_get_value").unwrap(),
+                            self.module.get_function("mux_value_list_get_value").unwrap(),
                             &[list_val.into(), index_load2.into()],
                             "list_get_value",
                         )
@@ -2511,7 +2525,7 @@ impl<'a> CodeGenerator<'a> {
                 let global =
                     self.module
                         .add_global(array_type, Some(AddressSpace::default()), &name);
-                global.set_linkage(inkwell::module::Linkage::Private);
+                global.set_linkage(inkwell::module::Linkage::External);
                 global.set_initializer(&const_array);
                 let ptr = unsafe {
                     self.builder.build_in_bounds_gep(

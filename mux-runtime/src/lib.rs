@@ -198,3 +198,9 @@ pub mod result;
 pub mod set;
 pub mod std;
 pub mod string;
+
+// Re-export extern "C" functions for C linkage
+pub use std::{
+    mux_value_list_length,
+    mux_value_list_get_value,
+};
