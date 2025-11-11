@@ -8,26 +8,27 @@ use std::collections::HashMap;
 
 use crate::parser::*;
 use crate::lexer::Span;
-use crate::semantics::{SymbolTable, Type};
+use crate::semantics::{Type, Type as ResolvedType, SemanticAnalyzer};
 
 pub struct CodeGenerator<'a> {
     context: &'a Context,
     module: Module<'a>,
     builder: Builder<'a>,
-    #[allow(dead_code)]
-    symbol_table: &'a SymbolTable,
+    analyzer: &'a SemanticAnalyzer,
     type_map: HashMap<String, BasicTypeEnum<'a>>,
     #[allow(dead_code)]
     vtable_map: HashMap<String, PointerValue<'a>>,
     enum_variants: HashMap<String, Vec<String>>,
     field_map: HashMap<String, HashMap<String, usize>>,
     lambda_counter: usize,
-    variables: HashMap<String, (PointerValue<'a>, BasicTypeEnum<'a>, TypeNode)>,
+    string_counter: usize,
+    label_counter: usize,
+    variables: HashMap<String, (PointerValue<'a>, BasicTypeEnum<'a>, ResolvedType)>,
     functions: HashMap<String, FunctionValue<'a>>,
 }
 
 impl<'a> CodeGenerator<'a> {
-    pub fn new(context: &'a Context, symbol_table: &'a SymbolTable) -> Self {
+    pub fn new(context: &'a Context, analyzer: &'a SemanticAnalyzer) -> Self {
         let module = context.create_module("mux_module");
         let builder = context.create_builder();
 
@@ -39,7 +40,17 @@ impl<'a> CodeGenerator<'a> {
         let i8_ptr = context.ptr_type(AddressSpace::default());
         let list_ptr = i8_ptr; // placeholder for *mut List
 
-        // mux_print: (*const c_char) -> ()
+        // mux_value_from_string: (*const c_char) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_value_from_string", fn_type, None);
+
+        // mux_new_string_from_cstr: (*const c_char) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_new_string_from_cstr", fn_type, None);
+
+        // mux_print: (*mut Value) -> ()
         let params = &[i8_ptr.into()];
         let fn_type = void_type.fn_type(params, false);
         module.add_function("mux_print", fn_type, None);
@@ -48,6 +59,61 @@ impl<'a> CodeGenerator<'a> {
         let params = &[i8_ptr.into(), i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_string_concat", fn_type, None);
+
+        // mux_int_to_string: (i64) -> *const c_char
+        let params = &[i64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_int_to_string", fn_type, None);
+
+        // mux_float_to_string: (f64) -> *const c_char
+        let params = &[f64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_float_to_string", fn_type, None);
+
+        // mux_bool_to_string: (bool) -> *const c_char
+        let params = &[bool_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_bool_to_string", fn_type, None);
+
+        // mux_string_to_string: (*const c_char) -> *const c_char
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_string_to_string", fn_type, None);
+
+        // mux_list_to_string: (*mut List) -> *const c_char
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_list_to_string", fn_type, None);
+
+        // mux_map_to_string: (*mut Map) -> *const c_char
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_map_to_string", fn_type, None);
+
+        // mux_set_to_string: (*mut Set) -> *const c_char
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_set_to_string", fn_type, None);
+
+        // mux_value_to_string: (*mut Value) -> *const c_char
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_value_to_string", fn_type, None);
+
+        // mux_list_value: (*mut List) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_list_value", fn_type, None);
+
+        // mux_map_value: (*mut Map) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_map_value", fn_type, None);
+
+        // mux_set_value: (*mut Set) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_set_value", fn_type, None);
 
         // mux_range: (i64, i64) -> *mut List
         let params = &[i64_type.into(), i64_type.into()];
@@ -66,6 +132,10 @@ impl<'a> CodeGenerator<'a> {
         // mux_new_set: () -> *mut Set
         let fn_type = list_ptr.fn_type(&[], false);
         module.add_function("mux_new_set", fn_type, None);
+
+        // mux_value_add: (*mut Value, *mut Value) -> *mut Value
+        let fn_type = i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false);
+        module.add_function("mux_value_add", fn_type, None);
 
         // List operations
         // mux_list_push_back: (*mut List, *mut Value) -> ()
@@ -217,6 +287,34 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(&[], false);
         module.add_function("mux_optional_none", fn_type, None);
 
+        // mux_result_ok_int: (i64) -> *mut MuxResult
+        let params = &[i64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_result_ok_int", fn_type, None);
+
+        // mux_result_err_str: (*const c_char) -> *mut MuxResult
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_result_err_str", fn_type, None);
+
+        // mux_optional_discriminant: (*mut Optional) -> i32
+        let params = &[i8_ptr.into()];
+        let fn_type = context.i32_type().fn_type(params, false);
+        module.add_function("mux_optional_discriminant", fn_type, None);
+
+        // mux_optional_data: (*mut Optional) -> *mut Value
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_optional_data", fn_type, None);
+
+        // mux_result_discriminant: (*mut MuxResult) -> i32
+        let params = &[i8_ptr.into()];
+        let fn_type = context.i32_type().fn_type(params, false);
+        module.add_function("mux_result_discriminant", fn_type, None);
+
+        // mux_result_data: (*mut MuxResult) -> *mut Value
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_result_data", fn_type, None);
+
         let mut type_map = HashMap::new();
         let mut enum_variants = HashMap::new();
 
@@ -233,12 +331,14 @@ impl<'a> CodeGenerator<'a> {
             context,
             module,
             builder,
-            symbol_table,
+            analyzer,
             type_map,
             vtable_map: HashMap::new(),
             enum_variants,
             field_map: HashMap::new(),
             lambda_counter: 0,
+            string_counter: 0,
+            label_counter: 0,
             variables: HashMap::new(),
             functions: HashMap::new(),
         }
@@ -349,6 +449,9 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn generate_lambda_expression(&mut self, params: &[Param], body: &[StatementNode]) -> Result<BasicValueEnum<'a>, String> {
+        // Save current insert block
+        let old_bb = self.builder.get_insert_block();
+
         // Generate unique function name
         let func_name = format!("lambda_{}", self.lambda_counter);
         self.lambda_counter += 1;
@@ -360,9 +463,21 @@ impl<'a> CodeGenerator<'a> {
             param_types.push(param_type.into());
         }
 
-        // For now, assume void return type (can be improved with analysis)
-        let return_type = self.context.void_type();
-        let fn_type = return_type.fn_type(&param_types, false);
+        // Determine return type from body
+        let return_type_opt: Option<BasicTypeEnum<'a>> = if let Some(StatementNode { kind: StatementKind::Return(Some(_)), .. }) = body.last() {
+            Some(match &params[0].type_.kind {
+                TypeKind::Primitive(PrimitiveType::Int) => self.context.i64_type().into(),
+                TypeKind::Primitive(PrimitiveType::Float) => self.context.f64_type().into(),
+                _ => unreachable!(),
+            })
+        } else {
+            None
+        };
+        let fn_type = if let Some(rt) = return_type_opt {
+            rt.fn_type(&param_types, false)
+        } else {
+            self.context.void_type().fn_type(&param_types, false)
+        };
 
         // Create the function
         let function = self.module.add_function(&func_name, fn_type, None);
@@ -388,13 +503,11 @@ impl<'a> CodeGenerator<'a> {
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let alloca = self.builder.build_alloca(ptr_type, &param.name)
                 .map_err(|e| e.to_string())?;
-             self.builder.build_store(alloca, boxed)
-                 .map_err(|e| e.to_string())?;
-             let symbol = self.symbol_table.lookup(&param.name).ok_or("Symbol not found")?;
-             let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-             let type_node = self.type_to_type_node(resolved_type);
-             self.variables.insert(param.name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), type_node));
-         }
+              self.builder.build_store(alloca, boxed)
+                  .map_err(|e| e.to_string())?;
+              let resolved_type = self.analyzer.resolve_type(&param.type_).map_err(|e| e.to_string())?;
+              self.variables.insert(param.name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), resolved_type));
+          }
 
          // Generate body
         for stmt in body {
@@ -409,6 +522,11 @@ impl<'a> CodeGenerator<'a> {
 
         // Restore variables
         self.variables = old_variables;
+
+        // Restore builder to previous block
+        if let Some(bb) = old_bb {
+            self.builder.position_at_end(bb);
+        }
 
         // Return function pointer
         Ok(function.as_global_value().as_pointer_value().into())
@@ -479,7 +597,7 @@ impl<'a> CodeGenerator<'a> {
 
     fn generate_function(&mut self, func: &FunctionNode) -> Result<(), String> {
         let function = *self.functions.get(&func.name).ok_or("Function not declared")?;
-        
+
         let entry = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(entry);
 
@@ -493,23 +611,26 @@ impl<'a> CodeGenerator<'a> {
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let alloca = self.builder.build_alloca(ptr_type, &param.name)
                 .map_err(|e| e.to_string())?;
-             self.builder.build_store(alloca, boxed)
-                 .map_err(|e| e.to_string())?;
-             let symbol = self.symbol_table.lookup(&param.name).ok_or("Symbol not found")?;
-             let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-             let type_node = self.type_to_type_node(resolved_type);
-             self.variables.insert(param.name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), type_node));
-         }
+              self.builder.build_store(alloca, boxed)
+                  .map_err(|e| e.to_string())?;
+              let symbol = self.analyzer.symbol_table().lookup(&param.name).ok_or("Symbol not found")?;
+              let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+              self.variables.insert(param.name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), resolved_type.clone()));
+          }
 
          // Generate function body
         for stmt in &func.body {
             self.generate_statement(stmt, Some(&function))?;
         }
 
-        // If void return, add return void
-        if matches!(func.return_type.kind, TypeKind::Primitive(PrimitiveType::Void)) {
-            let _ = self.builder.build_return(None);
-        }
+         // If void return, add return void if not already terminated
+         if matches!(func.return_type.kind, TypeKind::Primitive(PrimitiveType::Void)) {
+             if let Some(block) = self.builder.get_insert_block() {
+                 if block.get_terminator().is_none() {
+                     let _ = self.builder.build_return(None);
+                 }
+             }
+         }
 
         Ok(())
     }
@@ -520,27 +641,25 @@ impl<'a> CodeGenerator<'a> {
             ExpressionKind::Identifier(name) => {
                 if let Some((ptr, _, type_node)) = self.variables.get(name) {
                     let ptr_to_boxed = self.builder.build_load(self.context.ptr_type(AddressSpace::default()), *ptr, name).map_err(|e| e.to_string())?.into_pointer_value();
-                    match &type_node.kind {
-                        TypeKind::Primitive(PrimitiveType::Int) => {
+                    match type_node {
+                        Type::Primitive(PrimitiveType::Int) => {
                             let func = self.module.get_function("mux_int_from_value").ok_or("mux_int_from_value not found")?;
                             let call = self.builder.build_call(func, &[ptr_to_boxed.into()], "int_from_value").map_err(|e| e.to_string())?;
                             Ok(call.try_as_basic_value().left().unwrap())
                         }
-                        TypeKind::Primitive(PrimitiveType::Float) => {
+                        Type::Primitive(PrimitiveType::Float) => {
                             let func = self.module.get_function("mux_float_from_value").ok_or("mux_float_from_value not found")?;
                             let call = self.builder.build_call(func, &[ptr_to_boxed.into()], "float_from_value").map_err(|e| e.to_string())?;
                             Ok(call.try_as_basic_value().left().unwrap())
                         }
-                        TypeKind::Primitive(PrimitiveType::Bool) => {
+                        Type::Primitive(PrimitiveType::Bool) => {
                             let func = self.module.get_function("mux_bool_from_value").ok_or("mux_bool_from_value not found")?;
                             let call = self.builder.build_call(func, &[ptr_to_boxed.into()], "bool_from_value").map_err(|e| e.to_string())?;
                             Ok(call.try_as_basic_value().left().unwrap())
                         }
-                        TypeKind::Primitive(PrimitiveType::Str) => {
-                            let func = self.module.get_function("mux_string_from_value").ok_or("mux_string_from_value not found")?;
-                            let call = self.builder.build_call(func, &[ptr_to_boxed.into()], "string_from_value").map_err(|e| e.to_string())?;
-                            Ok(call.try_as_basic_value().left().unwrap())
-                        }
+                          Type::Primitive(PrimitiveType::Str) => {
+                              Ok(ptr_to_boxed.into())
+                          }
                         _ => {
                             // boxed types
                             Ok(ptr_to_boxed.into())
@@ -550,32 +669,166 @@ impl<'a> CodeGenerator<'a> {
                     Err(format!("Undefined variable: {}", name))
                 }
             }
-            ExpressionKind::Binary { left, op, right } => {
-                let left_val = self.generate_expression(left)?;
-                let right_val = self.generate_expression(right)?;
-                Ok(self.generate_binary_op(left_val, op, right_val)?)
-            }
-            ExpressionKind::Call { func, args } => {
-                if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
-                    if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                        if obj_name == "self" {
-                            // Method call on self
-                            return self.generate_method_call_on_self(field, args);
-                        }
-                    }
-                }
+             ExpressionKind::Binary { left, op, right } => {
+                 if op.is_assignment() {
+                     match op {
+                         BinaryOp::Assign => {
+                             let right_val = self.generate_expression(right)?;
+                             if let ExpressionKind::Identifier(name) = &left.kind {
+                                 if let Some((ptr, _, _)) = self.variables.get(name) {
+                                     let ptr_copy = *ptr;
+                                     let boxed = self.box_value(right_val);
+                                     self.builder.build_store(ptr_copy, boxed).map_err(|e| e.to_string())?;
+                                     Ok(right_val)
+                                 } else {
+                                     Err(format!("Undefined variable {}", name))
+                                 }
+                             } else {
+                                 Err("Assignment to non-identifier not implemented".to_string())
+                             }
+                         }
+                         BinaryOp::AddAssign => {
+                             let left_val = self.generate_expression(left)?;
+                             let right_val = self.generate_expression(right)?;
+                             let result = if left_val.is_int_value() {
+                                 self.builder.build_int_add(left_val.into_int_value(), right_val.into_int_value(), "add_assign").map_err(|e| e.to_string())?.into()
+                             } else if left_val.is_float_value() {
+                                 self.builder.build_float_add(left_val.into_float_value(), right_val.into_float_value(), "fadd_assign").map_err(|e| e.to_string())?.into()
+                             } else {
+                                 return Err("Unsupported add assign operands".to_string());
+                             };
+                             if let ExpressionKind::Identifier(name) = &left.kind {
+                                 if let Some((ptr, _, _)) = self.variables.get(name) {
+                                     let ptr_copy = *ptr;
+                                     let boxed = self.box_value(result);
+                                     self.builder.build_store(ptr_copy, boxed).map_err(|e| e.to_string())?;
+                                     Ok(result)
+                                 } else {
+                                     Err(format!("Undefined variable {}", name))
+                                 }
+                             } else {
+                                 Err("Assignment to non-identifier not implemented".to_string())
+                             }
+                         }
+                         BinaryOp::SubtractAssign => {
+                             let left_val = self.generate_expression(left)?;
+                             let right_val = self.generate_expression(right)?;
+                             let result = if left_val.is_int_value() {
+                                 self.builder.build_int_sub(left_val.into_int_value(), right_val.into_int_value(), "sub_assign").map_err(|e| e.to_string())?.into()
+                             } else if left_val.is_float_value() {
+                                 self.builder.build_float_sub(left_val.into_float_value(), right_val.into_float_value(), "fsub_assign").map_err(|e| e.to_string())?.into()
+                             } else {
+                                 return Err("Unsupported sub assign operands".to_string());
+                             };
+                             if let ExpressionKind::Identifier(name) = &left.kind {
+                                 if let Some((ptr, _, _)) = self.variables.get(name) {
+                                     let ptr_copy = *ptr;
+                                     let boxed = self.box_value(result);
+                                     self.builder.build_store(ptr_copy, boxed).map_err(|e| e.to_string())?;
+                                     Ok(result)
+                                 } else {
+                                     Err(format!("Undefined variable {}", name))
+                                 }
+                             } else {
+                                 Err("Assignment to non-identifier not implemented".to_string())
+                             }
+                         }
+                         _ => Err("Assignment op not implemented".to_string()),
+                     }
+                 } else {
+                     let left_val = self.generate_expression(left)?;
+                     let right_val = self.generate_expression(right)?;
+                     Ok(self.generate_binary_op(left_val, op, right_val)?)
+                 }
+             }
+             ExpressionKind::Call { func, args } => {
+                 if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
+                     if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                         if obj_name == "self" {
+                             // Method call on self
+                             return self.generate_method_call_on_self(field, args);
+                         } else {
+                             // Method call on variable
+                              if let Some((_, _, type_)) = self.variables.get(obj_name) {
+                                  match type_ {
+                                      Type::Primitive(PrimitiveType::Int) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_int_to_string").ok_or("mux_int_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "int_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                     }
+                                      Type::Primitive(PrimitiveType::Float) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_float_to_string").ok_or("mux_float_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "float_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                     }
+                                      Type::Primitive(PrimitiveType::Bool) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_bool_to_string").ok_or("mux_bool_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "bool_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                     }
+                                       Type::Primitive(PrimitiveType::Str) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_string_to_string").ok_or("mux_string_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "str_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                     }
+                                       Type::List(_) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_value_to_string").ok_or("mux_value_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "val_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                       }
+                                       Type::Map(_, _) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_value_to_string").ok_or("mux_value_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "val_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                       }
+                                       Type::Set(_) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_value_to_string").ok_or("mux_value_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "val_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                       }
+                                      _ => return Err(format!("Method {} not implemented for type", field)),
+                                 }
+                             } else {
+                                 return Err(format!("Undefined variable {}", obj_name));
+                             }
+                         }
+                     } else {
+                         return Err("Complex method calls not implemented".to_string());
+                     }
+                 }
                 if let ExpressionKind::Identifier(name) = &func.kind {
                     match name.as_str() {
-                        "print" => {
-                            if args.len() != 1 {
-                                return Err("print takes 1 argument".to_string());
-                            }
-                            let arg_val = self.generate_expression(&args[0])?;
-                            let func = self.module.get_function("mux_print").ok_or("mux_print not found")?;
-                            self.builder.build_call(func, &[arg_val.into()], "print_call").map_err(|e| e.to_string())?;
-                            // Return void, but since BasicValueEnum, return a dummy
-                            Ok(self.context.i32_type().const_int(0, false).into())
-                        }
+                         "print" => {
+                             if args.len() != 1 {
+                                 return Err("print takes 1 argument".to_string());
+                             }
+                             let arg_val = self.generate_expression(&args[0])?;
+                              let func_print = self.module.get_function("mux_print").ok_or("mux_print not found")?;
+                             self.builder.build_call(func_print, &[arg_val.into()], "print_call").map_err(|e| e.to_string())?;
+                             // Return void, but since BasicValueEnum, return a dummy
+                             Ok(self.context.i32_type().const_int(0, false).into())
+                         }
                         "Err" => {
                             if args.len() != 1 {
                                 return Err("Err takes 1 argument".to_string());
@@ -603,25 +856,43 @@ impl<'a> CodeGenerator<'a> {
                             let call = self.builder.build_call(func, &[arg_val.into()], "some_call").map_err(|e| e.to_string())?;
                             Ok(call.try_as_basic_value().left().unwrap())
                         }
-                        "None" => {
-                            if !args.is_empty() {
-                                return Err("None takes no arguments".to_string());
-                            }
-                            let func = self.module.get_function("mux_optional_none").ok_or("mux_optional_none not found")?;
-                            let call = self.builder.build_call(func, &[], "none_call").map_err(|e| e.to_string())?;
-                            Ok(call.try_as_basic_value().left().unwrap())
-                        }
-                        _ => {
-                            // User function
-                            let func_val = if let Some(fv) = self.functions.get(name) { *fv } else { return Err(format!("Unknown function {}", name)); };
-                            let mut arg_vals = vec![];
-                            for arg in args {
-                                arg_vals.push(self.generate_expression(arg)?);
-                            }
-                            let arg_vals: Vec<BasicMetadataValueEnum> = arg_vals.into_iter().map(|v| v.into()).collect();
-                            let call = self.builder.build_call(func_val, &arg_vals, "call").map_err(|e| e.to_string())?;
-                            Ok(call.try_as_basic_value().left().unwrap())
-                        }
+                         "None" => {
+                             if !args.is_empty() {
+                                 return Err("None takes no arguments".to_string());
+                             }
+                             let func = self.module.get_function("mux_optional_none").ok_or("mux_optional_none not found")?;
+                             let call = self.builder.build_call(func, &[], "none_call").map_err(|e| e.to_string())?;
+                             Ok(call.try_as_basic_value().left().unwrap())
+                         }
+                         "range" => {
+                             if args.len() != 2 {
+                                 return Err("range takes 2 arguments".to_string());
+                             }
+                             let start = self.generate_expression(&args[0])?;
+                             let end = self.generate_expression(&args[1])?;
+                             let call = self.builder.build_call(
+                                 self.module.get_function("mux_range").unwrap(),
+                                 &[start.into(), end.into()],
+                                 "range_call"
+                             ).map_err(|e| e.to_string())?;
+                             Ok(call.try_as_basic_value().left().unwrap())
+                         }
+                         _ => {
+                             // User function
+                             let func_val = if let Some(fv) = self.functions.get(name) { *fv } else { return Err(format!("Unknown function {}", name)); };
+                             let mut arg_vals = vec![];
+                             for arg in args {
+                                 arg_vals.push(self.generate_expression(arg)?);
+                             }
+                             let arg_vals: Vec<BasicMetadataValueEnum> = arg_vals.into_iter().map(|v| v.into()).collect();
+                             let call = self.builder.build_call(func_val, &arg_vals, "call").map_err(|e| e.to_string())?;
+                             if func_val.get_type().get_return_type().is_some() {
+                                 Ok(call.try_as_basic_value().left().unwrap())
+                             } else {
+                                 // Void return, return dummy
+                                 Ok(self.context.i32_type().const_int(0, false).into())
+                             }
+                         }
                     }
                 } else {
                     Err("Complex function calls not implemented".to_string())
@@ -638,13 +909,36 @@ impl<'a> CodeGenerator<'a> {
                 Ok(call.try_as_basic_value().left().unwrap())
             }
             ExpressionKind::ListLiteral(elements) => {
-                let list_ptr = self.generate_runtime_call("mux_new_list", &[]).into_pointer_value();
+                let list_ptr = self.generate_runtime_call("mux_new_list", &[]).unwrap().into_pointer_value();
                 for element in elements {
                     let elem_val = self.generate_expression(element)?;
                     let elem_ptr = self.box_value(elem_val);
                     self.generate_runtime_call("mux_list_push_back", &[list_ptr.into(), elem_ptr.into()]);
                 }
-                Ok(list_ptr.into())
+                let value_ptr = self.generate_runtime_call("mux_list_value", &[list_ptr.into()]).unwrap().into_pointer_value();
+                Ok(value_ptr.into())
+            }
+            ExpressionKind::MapLiteral { entries, .. } => {
+                let map_ptr = self.generate_runtime_call("mux_new_map", &[]).unwrap().into_pointer_value();
+                for (key, value) in entries {
+                    let key_val = self.generate_expression(key)?;
+                    let key_ptr = self.box_value(key_val);
+                    let value_val = self.generate_expression(value)?;
+                    let value_ptr = self.box_value(value_val);
+                    self.generate_runtime_call("mux_map_put", &[map_ptr.into(), key_ptr.into(), value_ptr.into()]);
+                }
+                let value_ptr = self.generate_runtime_call("mux_map_value", &[map_ptr.into()]).unwrap().into_pointer_value();
+                Ok(value_ptr.into())
+            }
+            ExpressionKind::SetLiteral(elements) => {
+                let set_ptr = self.generate_runtime_call("mux_new_set", &[]).unwrap().into_pointer_value();
+                for element in elements {
+                    let elem_val = self.generate_expression(element)?;
+                    let elem_ptr = self.box_value(elem_val);
+                    self.generate_runtime_call("mux_set_add", &[set_ptr.into(), elem_ptr.into()]);
+                }
+                let value_ptr = self.generate_runtime_call("mux_set_value", &[set_ptr.into()]).unwrap().into_pointer_value();
+                Ok(value_ptr.into())
             }
             ExpressionKind::If { cond, then_expr, else_expr } => {
                 Ok(self.generate_if_expression(cond, then_expr, else_expr)?)
@@ -656,7 +950,7 @@ impl<'a> CodeGenerator<'a> {
                 let struct_ptr = self.generate_expression(expr)?.into_pointer_value();
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
-                        if let TypeKind::Named(class_name, _) = &type_node.kind {
+                        if let Type::Named(class_name, _) = type_node {
                             if let Some(field_indices) = self.field_map.get(class_name.as_str()) {
                                 if let Some(&index) = field_indices.get(field) {
                                     let struct_type = self.type_map.get(class_name.as_str()).ok_or("Class type not found")?;
@@ -668,9 +962,45 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             }
                         }
-                    }
-                }
-                Err("Field access not supported".to_string())
+                    } else if let Some((_, _, type_node)) = self.variables.get(obj_name) {
+                          match type_node {
+                                       Type::Primitive(PrimitiveType::Int) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_value_to_string").ok_or("mux_value_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "val_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                       }
+                                       Type::Primitive(PrimitiveType::Float) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_value_to_string").ok_or("mux_value_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "val_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                       }
+                                       Type::Primitive(PrimitiveType::Bool) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_value_to_string").ok_or("mux_value_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "val_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                       }
+                                       Type::Primitive(PrimitiveType::Str) if field == "to_string" => {
+                                         let ptr = self.generate_expression(expr)?;
+                                         let func = self.module.get_function("mux_value_to_string").ok_or("mux_value_to_string not found")?;
+                                         let call = self.builder.build_call(func, &[ptr.into()], "val_to_str").map_err(|e| e.to_string())?;
+                                         let func_new = self.module.get_function("mux_new_string_from_cstr").ok_or("mux_new_string_from_cstr not found")?;
+                                         let call2 = self.builder.build_call(func_new, &[call.try_as_basic_value().left().unwrap().into()], "new_str").map_err(|e| e.to_string())?;
+                                         return Ok(call2.try_as_basic_value().left().unwrap());
+                                       }
+                              _ => {}
+                          }
+                      }
+                  }
+                 Err("Field access not supported".to_string())
             }
             _ => Err("Expression type not implemented".to_string()),
         }
@@ -678,38 +1008,35 @@ impl<'a> CodeGenerator<'a> {
 
     fn generate_statement(&mut self, stmt: &StatementNode, function: Option<&FunctionValue<'a>>) -> Result<(), String> {
         match &stmt.kind {
-             StatementKind::AutoDecl(name, _, expr) => {
-                 let value = self.generate_expression(expr)?;
-                 let boxed = self.box_value(value);
-                 let ptr_type = self.context.ptr_type(AddressSpace::default());
-                 let alloca = self.builder.build_alloca(ptr_type, name).map_err(|e| e.to_string())?;
-                 self.builder.build_store(alloca, boxed).map_err(|e| e.to_string())?;
-                 let symbol = self.symbol_table.lookup(name).ok_or("Symbol not found")?;
-                 let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-                 let type_node = self.type_to_type_node(resolved_type);
-                 self.variables.insert(name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), type_node));
+              StatementKind::AutoDecl(name, _, expr) => {
+                  let value = self.generate_expression(expr)?;
+                  let boxed = self.box_value(value);
+                  let ptr_type = self.context.ptr_type(AddressSpace::default());
+                  let alloca = self.builder.build_alloca(ptr_type, name).map_err(|e| e.to_string())?;
+                  self.builder.build_store(alloca, boxed).map_err(|e| e.to_string())?;
+                   let symbol = self.analyzer.symbol_table().lookup(name).ok_or("Symbol not found")?;
+                  let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+                  self.variables.insert(name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), resolved_type.clone()));
              }
-             StatementKind::TypedDecl(name, _type_node, expr) => {
-                 let value = self.generate_expression(expr)?;
-                 let boxed = self.box_value(value);
-                 let ptr_type = self.context.ptr_type(AddressSpace::default());
-                 let alloca = self.builder.build_alloca(ptr_type, name).map_err(|e| e.to_string())?;
-                 self.builder.build_store(alloca, boxed).map_err(|e| e.to_string())?;
-                 let symbol = self.symbol_table.lookup(name).ok_or("Symbol not found")?;
-                 let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-                 let type_node = self.type_to_type_node(resolved_type);
-                 self.variables.insert(name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), type_node));
+              StatementKind::TypedDecl(name, _type_node, expr) => {
+                  let value = self.generate_expression(expr)?;
+                  let boxed = self.box_value(value);
+                  let ptr_type = self.context.ptr_type(AddressSpace::default());
+                  let alloca = self.builder.build_alloca(ptr_type, name).map_err(|e| e.to_string())?;
+                  self.builder.build_store(alloca, boxed).map_err(|e| e.to_string())?;
+                   let symbol = self.analyzer.symbol_table().lookup(name).ok_or("Symbol not found")?;
+                  let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+                  self.variables.insert(name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), resolved_type.clone()));
              }
-             StatementKind::ConstDecl(name, _type_node, expr) => {
-                 let value = self.generate_expression(expr)?;
-                 let boxed = self.box_value(value);
-                 let ptr_type = self.context.ptr_type(AddressSpace::default());
-                 let alloca = self.builder.build_alloca(ptr_type, name).map_err(|e| e.to_string())?;
-                 self.builder.build_store(alloca, boxed).map_err(|e| e.to_string())?;
-                 let symbol = self.symbol_table.lookup(name).ok_or("Symbol not found")?;
-                 let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-                 let type_node = self.type_to_type_node(resolved_type);
-                 self.variables.insert(name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), type_node));
+              StatementKind::ConstDecl(name, _type_node, expr) => {
+                  let value = self.generate_expression(expr)?;
+                  let boxed = self.box_value(value);
+                  let ptr_type = self.context.ptr_type(AddressSpace::default());
+                  let alloca = self.builder.build_alloca(ptr_type, name).map_err(|e| e.to_string())?;
+                  self.builder.build_store(alloca, boxed).map_err(|e| e.to_string())?;
+                   let symbol = self.analyzer.symbol_table().lookup(name).ok_or("Symbol not found")?;
+                  let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+                  self.variables.insert(name.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), resolved_type.clone()));
              }
             StatementKind::Return(Some(expr)) => {
                 let value = self.generate_expression(expr)?;
@@ -780,6 +1107,7 @@ impl<'a> CodeGenerator<'a> {
                 if let ExpressionKind::Call { func, args } = &iter.kind {
                     if let ExpressionKind::Identifier(name) = &func.kind {
                         if name == "range" && args.len() == 2 {
+                            let resolved_var_type = Type::Primitive(PrimitiveType::Int);
                             let start_val = self.generate_expression(&args[0])?;
                             let end_val = self.generate_expression(&args[1])?;
 
@@ -788,17 +1116,19 @@ impl<'a> CodeGenerator<'a> {
                             let index_alloca = self.builder.build_alloca(index_type, "index").map_err(|e| e.to_string())?;
                             self.builder.build_store(index_alloca, start_val).map_err(|e| e.to_string())?;
 
-                            // Create loop var
-                            let ptr_type = self.context.ptr_type(AddressSpace::default());
-                            let var_alloca = self.builder.build_alloca(ptr_type, var).map_err(|e| e.to_string())?;
-                            self.variables.insert(var.clone(), (var_alloca, BasicTypeEnum::PointerType(ptr_type), var_type.clone()));
+                             // Create loop var
+                             let ptr_type = self.context.ptr_type(AddressSpace::default());
+                             let var_alloca = self.builder.build_alloca(ptr_type, var).map_err(|e| e.to_string())?;
+                             self.variables.insert(var.clone(), (var_alloca, BasicTypeEnum::PointerType(ptr_type), resolved_var_type.clone()));
 
                             // Loop header
-                            let header_bb = self.context.append_basic_block(*function, "for_header");
-                            let body_bb = self.context.append_basic_block(*function, "for_body");
-                            let exit_bb = self.context.append_basic_block(*function, "for_exit");
+                            let label_id = self.label_counter;
+                            self.label_counter += 1;
+                            let header_bb = self.context.append_basic_block(*function, &format!("for_header_{}", label_id));
+                            let body_bb = self.context.append_basic_block(*function, &format!("for_body_{}", label_id));
+                            let exit_bb = self.context.append_basic_block(*function, &format!("for_exit_{}", label_id));
 
-                            self.builder.build_unconditional_branch(header_bb).map_err(|e| e.to_string())?;
+                             self.builder.build_unconditional_branch(header_bb).map_err(|e| e.to_string())?;
 
                             // Header: check index < end
                             self.builder.position_at_end(header_bb);
@@ -814,19 +1144,21 @@ impl<'a> CodeGenerator<'a> {
                             for stmt in body {
                                 self.generate_statement(stmt, Some(function))?;
                             }
-                     // Increment index
-                     let one = self.context.i64_type().const_int(1, false);
-                     let new_index = self.builder.build_int_add(index_load2.into_int_value(), one, "inc").map_err(|e| e.to_string())?;
-                     self.builder.build_store(index_alloca, new_index).map_err(|e| e.to_string())?;
-                     self.builder.build_unconditional_branch(header_bb).map_err(|e| e.to_string())?;
-                        } else {
-                            return Err("For loop iter must be range(start, end)".to_string());
-                        }
+                              // Increment index
+                       let one = self.context.i64_type().const_int(1, false);
+                       let new_index = self.builder.build_int_add(index_load2.into_int_value(), one, "inc").map_err(|e| e.to_string())?;
+                       self.builder.build_store(index_alloca, new_index).map_err(|e| e.to_string())?;
+                        self.builder.build_unconditional_branch(header_bb).map_err(|e| e.to_string())?;
+                        self.builder.position_at_end(exit_bb);
+                          } else {
+                              return Err("For loop iter must be range(start, end)".to_string());
+                          }
                     } else {
                         return Err("For loop iter must be range call".to_string());
                     }
                 } else if let ExpressionKind::Identifier(_list_name) = &iter.kind {
                     // Iterate over list
+                    let resolved_var_type = self.analyzer.resolve_type(var_type).map_err(|e| e.message)?;
                     let list_val = self.generate_expression(iter)?;
 
                     // Get length
@@ -843,15 +1175,17 @@ impl<'a> CodeGenerator<'a> {
                     let zero = self.context.i64_type().const_int(0, false);
                     self.builder.build_store(index_alloca, zero).map_err(|e| e.to_string())?;
 
-                    // Create loop var
-                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let var_alloca = self.builder.build_alloca(ptr_type, var).map_err(|e| e.to_string())?;
-                    self.variables.insert(var.clone(), (var_alloca, BasicTypeEnum::PointerType(ptr_type), var_type.clone()));
+                     // Create loop var
+                     let ptr_type = self.context.ptr_type(AddressSpace::default());
+                     let var_alloca = self.builder.build_alloca(ptr_type, var).map_err(|e| e.to_string())?;
+                     self.variables.insert(var.clone(), (var_alloca, BasicTypeEnum::PointerType(ptr_type), resolved_var_type.clone()));
 
                     // Loop header
-                    let header_bb = self.context.append_basic_block(*function, "for_header");
-                    let body_bb = self.context.append_basic_block(*function, "for_body");
-                    let exit_bb = self.context.append_basic_block(*function, "for_exit");
+                    let label_id = self.label_counter;
+                    self.label_counter += 1;
+                    let header_bb = self.context.append_basic_block(*function, &format!("for_header_{}", label_id));
+                    let body_bb = self.context.append_basic_block(*function, &format!("for_body_{}", label_id));
+                    let exit_bb = self.context.append_basic_block(*function, &format!("for_exit_{}", label_id));
 
                     self.builder.build_unconditional_branch(header_bb).map_err(|e| e.to_string())?;
 
@@ -861,15 +1195,6 @@ impl<'a> CodeGenerator<'a> {
                      let cmp = self.builder.build_int_compare(inkwell::IntPredicate::SLT, index_load.into_int_value(), len_val, "cmp").map_err(|e| e.to_string())?;
                      self.builder.build_conditional_branch(cmp, body_bb, exit_bb).map_err(|e| e.to_string())?;
 
-                     // Exit: return None if loop completes without return
-                     self.builder.position_at_end(exit_bb);
-                     let none_call = self.builder.build_call(
-                         self.module.get_function("mux_optional_none").unwrap(),
-                         &[],
-                         "none_call"
-                     ).map_err(|e| e.to_string())?;
-                     self.builder.build_return(Some(&none_call.try_as_basic_value().left().unwrap())).map_err(|e| e.to_string())?;
-
                      // Body: get element at index
                     self.builder.position_at_end(body_bb);
                     let index_load2 = self.builder.build_load(index_type, index_alloca, "index_load2").map_err(|e| e.to_string())?;
@@ -878,18 +1203,9 @@ impl<'a> CodeGenerator<'a> {
                         &[list_val.into(), index_load2.into()],
                         "list_get"
                     ).map_err(|e| e.to_string())?;
-                    let opt_val = get_call.try_as_basic_value().left().unwrap();
-
-                    // Assume it's Some, load the value from Optional
-                    let opt_ptr = opt_val.into_pointer_value();
-                    let opt_type = *self.type_map.get("Optional").unwrap();
-                    let opt_ptr_typed = self.builder.build_bit_cast(opt_ptr, self.context.ptr_type(AddressSpace::default()), "opt_cast").map_err(|e| e.to_string())?.into_pointer_value();
-                    let data_ptr = self.builder.build_struct_gep(opt_type, opt_ptr_typed, 1, "opt_data").map_err(|e| e.to_string())?;
-                    let data_load = self.builder.build_load(self.context.ptr_type(AddressSpace::default()), data_ptr, "opt_data_load").map_err(|e| e.to_string())?;
-                    let value_type = self.llvm_type_from_mux_type(var_type)?;
-                    let value_ptr = self.builder.build_load(value_type, data_load.into_pointer_value(), "unbox").map_err(|e| e.to_string())?;
-                    let boxed = self.box_value(value_ptr);
-                    self.builder.build_store(var_alloca, boxed).map_err(|e| e.to_string())?;
+                    let value_ptr = get_call.try_as_basic_value().left().unwrap().into_pointer_value();
+                    // Store the Value pointer directly
+                    self.builder.build_store(var_alloca, value_ptr).map_err(|e| e.to_string())?;
 
                     // Execute body
                     for stmt in body {
@@ -902,8 +1218,15 @@ impl<'a> CodeGenerator<'a> {
                     self.builder.build_store(index_alloca, new_index).map_err(|e| e.to_string())?;
                     self.builder.build_unconditional_branch(header_bb).map_err(|e| e.to_string())?;
 
-                    // Exit
-                    self.builder.position_at_end(exit_bb);
+                     // Exit
+                     self.builder.position_at_end(exit_bb);
+                     // For functions returning Optional, return None if loop completes without return
+                     let none_call = self.builder.build_call(
+                         self.module.get_function("mux_optional_none").unwrap(),
+                         &[],
+                         "none"
+                     ).map_err(|e| e.to_string())?;
+                     self.builder.build_return(Some(&none_call.try_as_basic_value().left().unwrap())).map_err(|e| e.to_string())?;
                 } else {
                     return Err("For loop iter must be range(...) or list identifier".to_string());
                 }
@@ -925,13 +1248,17 @@ impl<'a> CodeGenerator<'a> {
                      en
                  };
 
-                // Get struct type
-                let struct_type = *self.type_map.get(enum_name).ok_or(format!("{} type not found", enum_name))?;
-
-                // Load discriminant
-                let i32_type = self.context.i32_type();
-                let discriminant_ptr = self.builder.build_struct_gep(struct_type, expr_ptr, 0, "discriminant_ptr").map_err(|e| e.to_string())?;
-                let discriminant = self.builder.build_load(i32_type, discriminant_ptr, "discriminant").map_err(|e| e.to_string())?;
+                 // Get discriminant
+                 let discriminant_func = if enum_name == "Optional" {
+                     "mux_optional_discriminant"
+                 } else if enum_name == "Result" {
+                     "mux_result_discriminant"
+                 } else {
+                     return Err(format!("Unknown enum {}", enum_name));
+                 };
+                 let func = self.module.get_function(discriminant_func).ok_or(format!("{} not found", discriminant_func))?;
+                 let discriminant_call = self.builder.build_call(func, &[expr_ptr.into()], "discriminant_call").map_err(|e| e.to_string())?;
+                 let discriminant = discriminant_call.try_as_basic_value().left().unwrap().into_int_value();
 
                  let mut current_bb = self.builder.get_insert_block().unwrap();
                  let end_bb = self.context.append_basic_block(*function, "match_end");
@@ -952,8 +1279,8 @@ impl<'a> CodeGenerator<'a> {
                              else if name == "Ok" || name == "Err" { "Result" }
                              else { return Err(format!("Unknown variant {}", name)); };
                              let variant_index = self.get_variant_index(enum_name, name)?;
-                             let index_val = self.context.i32_type().const_int(variant_index as u64, false);
-                             self.builder.build_int_compare(inkwell::IntPredicate::EQ, discriminant.into_int_value(), index_val, "match_cmp").map_err(|e| e.to_string())?
+                              let index_val = self.context.i32_type().const_int(variant_index as u64, false);
+                              self.builder.build_int_compare(inkwell::IntPredicate::EQ, discriminant, index_val, "match_cmp").map_err(|e| e.to_string())?
                          }
                          PatternNode::Wildcard => {
                              self.context.bool_type().const_int(1, false)
@@ -968,29 +1295,28 @@ impl<'a> CodeGenerator<'a> {
                      // Arm body
                      self.builder.position_at_end(arm_bb);
 
-                     // Bind variables
-                     if let PatternNode::EnumVariant { name, args } = &arm.pattern {
-                        if (name == "Some" || name == "Ok") && !args.is_empty() {
-                            if let PatternNode::Identifier(var) = &args[0] {
-                                let data_ptr_gep = self.builder.build_struct_gep(struct_type, expr_ptr, 1, "data_ptr_gep").map_err(|e| e.to_string())?;
-                                let data_ptr = self.builder.build_load(self.context.ptr_type(AddressSpace::default()), data_ptr_gep, "data_ptr").map_err(|e| e.to_string())?;
-                                let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                let alloca = self.builder.build_alloca(ptr_type, var).map_err(|e| e.to_string())?;
-                                self.builder.build_store(alloca, data_ptr).map_err(|e| e.to_string())?;
-                                 self.variables.insert(var.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), TypeNode { kind: TypeKind::Primitive(PrimitiveType::Int), span: Span::new(0, 0) }));
-                            }
-                        }
-                        if name == "Err" && !args.is_empty() {
-                            if let PatternNode::Identifier(var) = &args[0] {
-                                let data_ptr_gep = self.builder.build_struct_gep(struct_type, expr_ptr, 1, "data_ptr_gep").map_err(|e| e.to_string())?;
-                                let data_ptr = self.builder.build_load(self.context.ptr_type(AddressSpace::default()), data_ptr_gep, "data_ptr").map_err(|e| e.to_string())?;
-                                let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                let alloca = self.builder.build_alloca(ptr_type, var).map_err(|e| e.to_string())?;
-                                self.builder.build_store(alloca, data_ptr).map_err(|e| e.to_string())?;
-                                 self.variables.insert(var.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), TypeNode { kind: TypeKind::Primitive(PrimitiveType::Str), span: Span::new(0, 0) }));
-                            }
-                        }
-                     }
+                       // Bind variables
+                       if let PatternNode::EnumVariant { name, args } = &arm.pattern {
+                          if (name == "Some" || name == "Ok" || name == "Err") && !args.is_empty() {
+                              if let PatternNode::Identifier(var) = &args[0] {
+                                   let data_func = if enum_name == "Optional" {
+                                       "mux_optional_data"
+                                   } else if enum_name == "Result" {
+                                       "mux_result_data"
+                                   } else {
+                                       return Err(format!("Unknown enum {}", enum_name));
+                                   };
+                                   let func = self.module.get_function(data_func).ok_or(format!("{} not found", data_func))?;
+                                   let data_call = self.builder.build_call(func, &[expr_ptr.into()], "data_call").map_err(|e| e.to_string())?;
+                                   let data_ptr = data_call.try_as_basic_value().left().unwrap().into_pointer_value();
+                                   let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                   let alloca = self.builder.build_alloca(ptr_type, var).map_err(|e| e.to_string())?;
+                                   self.builder.build_store(alloca, data_ptr).map_err(|e| e.to_string())?;
+                                   let var_type = if name == "Err" { Type::Primitive(PrimitiveType::Str) } else { Type::Primitive(PrimitiveType::Int) };
+                                    self.variables.insert(var.clone(), (alloca, BasicTypeEnum::PointerType(ptr_type), var_type));
+                              }
+                          }
+                      }
 
                      // Check guard
                      if let Some(guard) = &arm.guard {
@@ -1018,14 +1344,37 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
-    fn generate_literal(&self, lit: &LiteralNode) -> Result<BasicValueEnum<'a>, String> {
+    fn generate_literal(&mut self, lit: &LiteralNode) -> Result<BasicValueEnum<'a>, String> {
         match lit {
-            LiteralNode::Integer(i) => Ok(self.context.i64_type().const_int(*i as u64, true).into()),
-            LiteralNode::Float(f) => Ok(self.context.f64_type().const_float(f.into_inner()).into()),
-            LiteralNode::Boolean(b) => Ok(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false).into()),
+            LiteralNode::Integer(i) => {
+                let val = self.context.i64_type().const_int(*i as u64, true);
+                Ok(val.into())
+            }
+            LiteralNode::Float(f) => {
+                let val = self.context.f64_type().const_float(f.into_inner());
+                Ok(val.into())
+            }
+            LiteralNode::Boolean(b) => {
+                let val = self.context.bool_type().const_int(if *b { 1 } else { 0 }, false);
+                Ok(val.into())
+            }
             LiteralNode::String(s) => {
-                let string_val = self.builder.build_global_string_ptr(s, "str").map_err(|e| e.to_string())?;
-                Ok(string_val.as_pointer_value().into())
+                let name = format!("str_{}", self.string_counter);
+                self.string_counter += 1;
+                let bytes = s.as_bytes();
+                let mut values = vec![];
+                for &b in bytes {
+                    values.push(self.context.i8_type().const_int(b as u64, false));
+                }
+                values.push(self.context.i8_type().const_int(0, false));
+                let array_type = self.context.i8_type().array_type(values.len() as u32);
+                let const_array = self.context.i8_type().const_array(&values);
+                let global = self.module.add_global(array_type, Some(AddressSpace::default()), &name);
+                global.set_linkage(inkwell::module::Linkage::Private);
+                global.set_initializer(&const_array);
+                let ptr = unsafe { self.builder.build_in_bounds_gep(array_type, global.as_pointer_value(), &[self.context.i32_type().const_int(0, false), self.context.i32_type().const_int(0, false)], &name) }.map_err(|e| e.to_string())?;
+                let call = self.generate_runtime_call("mux_new_string_from_cstr", &[ptr.into()]).unwrap();
+                Ok(call.into())
             }
             _ => Err("Literal type not implemented".to_string()),
         }
@@ -1033,38 +1382,36 @@ impl<'a> CodeGenerator<'a> {
 
 
 
-    fn generate_binary_op(&self, left: BasicValueEnum<'a>, op: &BinaryOp, right: BasicValueEnum<'a>) -> Result<BasicValueEnum<'a>, String> {
+    fn generate_binary_op(&mut self, left: BasicValueEnum<'a>, op: &BinaryOp, right: BasicValueEnum<'a>) -> Result<BasicValueEnum<'a>, String> {
+        // Type coercion for arithmetic
+        let (left_val, right_val) = if left.is_float_value() && right.is_int_value() {
+            (left, self.builder.build_signed_int_to_float(right.into_int_value(), self.context.f64_type(), "int_to_float").map_err(|e| e.to_string())?.into())
+        } else if left.is_int_value() && right.is_float_value() {
+            (self.builder.build_signed_int_to_float(left.into_int_value(), self.context.f64_type(), "int_to_float").map_err(|e| e.to_string())?.into(), right)
+        } else {
+            (left, right)
+        };
+
         match op {
-             BinaryOp::Add => {
-                 if left.is_int_value() && right.is_int_value() {
-                     self.builder.build_int_add(left.into_int_value(), right.into_int_value(), "add").map_err(|e| e.to_string()).map(|v| v.into())
-                 } else if left.is_float_value() && right.is_float_value() {
-                     self.builder.build_float_add(left.into_float_value(), right.into_float_value(), "fadd").map_err(|e| e.to_string()).map(|v| v.into())
-                 } else if left.is_pointer_value() && right.is_pointer_value() {
-                     // Assume string concat
-                     let call = self.builder.build_call(
-                         self.module.get_function("mux_string_concat").unwrap(),
-                         &[left.into(), right.into()],
-                         "concat"
-                     ).map_err(|e| e.to_string())?;
-                     Ok(call.try_as_basic_value().left().unwrap())
-                 } else if left.is_pointer_value() && right.is_int_value() {
-                     // string + int: convert int to string, then concat
-                     let int_str = self.builder.build_call(
-                         self.module.get_function("mux_int_to_string").unwrap(),
-                         &[right.into()],
-                         "int_to_str"
-                     ).map_err(|e| e.to_string())?;
-                     let call = self.builder.build_call(
-                         self.module.get_function("mux_string_concat").unwrap(),
-                         &[left.into(), int_str.try_as_basic_value().left().unwrap().into()],
-                         "concat"
-                     ).map_err(|e| e.to_string())?;
-                     Ok(call.try_as_basic_value().left().unwrap())
-                 } else {
-                     Err("Unsupported add operands".to_string())
-                 }
-            }
+                BinaryOp::Add => {
+                    if left_val.is_int_value() && right_val.is_int_value() {
+                        self.builder.build_int_add(left_val.into_int_value(), right_val.into_int_value(), "add").map_err(|e| e.to_string()).map(|v| v.into())
+                    } else if left_val.is_float_value() && right_val.is_float_value() {
+                        self.builder.build_float_add(left_val.into_float_value(), right_val.into_float_value(), "fadd").map_err(|e| e.to_string()).map(|v| v.into())
+                     } else if left_val.is_pointer_value() || right_val.is_pointer_value() {
+                         // Value add - ensure both are pointers
+                         let left_ptr = if left_val.is_pointer_value() { left_val.into_pointer_value() } else { self.box_value(left_val) };
+                         let right_ptr = if right_val.is_pointer_value() { right_val.into_pointer_value() } else { self.box_value(right_val) };
+                         let call = self.builder.build_call(
+                             self.module.get_function("mux_value_add").unwrap(),
+                             &[left_ptr.into(), right_ptr.into()],
+                             "add"
+                         ).map_err(|e| e.to_string())?;
+                         Ok(call.try_as_basic_value().left().unwrap())
+                     } else {
+                         Err("Unsupported add operands".to_string())
+                     }
+               }
             BinaryOp::Subtract => {
                 if left.is_int_value() {
                     self.builder.build_int_sub(left.into_int_value(), right.into_int_value(), "sub").map_err(|e| e.to_string()).map(|v| v.into())
@@ -1074,15 +1421,15 @@ impl<'a> CodeGenerator<'a> {
                     Err("Unsupported sub operands".to_string())
                 }
             }
-            BinaryOp::Multiply => {
-                if left.is_int_value() {
-                    self.builder.build_int_mul(left.into_int_value(), right.into_int_value(), "mul").map_err(|e| e.to_string()).map(|v| v.into())
-                } else if left.is_float_value() {
-                    self.builder.build_float_mul(left.into_float_value(), right.into_float_value(), "fmul").map_err(|e| e.to_string()).map(|v| v.into())
-                } else {
-                    Err("Unsupported mul operands".to_string())
-                }
-            }
+             BinaryOp::Multiply => {
+                 if left_val.is_int_value() {
+                     self.builder.build_int_mul(left_val.into_int_value(), right_val.into_int_value(), "mul").map_err(|e| e.to_string()).map(|v| v.into())
+                 } else if left_val.is_float_value() {
+                     self.builder.build_float_mul(left_val.into_float_value(), right_val.into_float_value(), "fmul").map_err(|e| e.to_string()).map(|v| v.into())
+                 } else {
+                     Err("Unsupported mul operands".to_string())
+                 }
+             }
             BinaryOp::Divide => {
                 if left.is_int_value() {
                     self.builder.build_int_signed_div(left.into_int_value(), right.into_int_value(), "div").map_err(|e| e.to_string()).map(|v| v.into())
@@ -1156,13 +1503,13 @@ impl<'a> CodeGenerator<'a> {
                 Ok(or.into())
             }
             BinaryOp::Modulo => {
-                if left.is_int_value() {
-                    self.builder.build_int_signed_rem(left.into_int_value(), right.into_int_value(), "mod").map_err(|e| e.to_string()).map(|v| v.into())
-                } else {
-                    Err("Unsupported mod operands".to_string())
-                }
-            }
-            _ => Err("Binary op not implemented".to_string()),
+                 if left.is_int_value() {
+                     self.builder.build_int_signed_rem(left.into_int_value(), right.into_int_value(), "mod").map_err(|e| e.to_string()).map(|v| v.into())
+                 } else {
+                     Err("Unsupported mod operands".to_string())
+                 }
+             }
+             _ => Err("Binary op not implemented".to_string()),
         }
     }
 
@@ -1233,25 +1580,25 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
-    fn generate_runtime_call(&mut self, name: &str, args: &[BasicMetadataValueEnum<'a>]) -> BasicValueEnum<'a> {
+    fn generate_runtime_call(&mut self, name: &str, args: &[BasicMetadataValueEnum<'a>]) -> Option<BasicValueEnum<'a>> {
         let func = self.module.get_function(name).unwrap();
         let call = self.builder.build_call(func, args, "call").unwrap();
-        call.try_as_basic_value().left().unwrap()
+        call.try_as_basic_value().left()
     }
 
     fn box_value(&mut self, val: BasicValueEnum<'a>) -> PointerValue<'a> {
         if val.is_int_value() {
-            let call = self.generate_runtime_call("mux_int_value", &[val.into()]);
+            let call = self.generate_runtime_call("mux_int_value", &[val.into()]).unwrap();
             call.into_pointer_value()
         } else if val.is_float_value() {
-            let call = self.generate_runtime_call("mux_float_value", &[val.into()]);
+            let call = self.generate_runtime_call("mux_float_value", &[val.into()]).unwrap();
             call.into_pointer_value()
         } else if val.is_pointer_value() {
             // Assume string or already boxed
             val.into_pointer_value()
         } else {
             // For bool
-            let call = self.generate_runtime_call("mux_bool_value", &[val.into()]);
+            let call = self.generate_runtime_call("mux_bool_value", &[val.into()]).unwrap();
             call.into_pointer_value()
         }
     }

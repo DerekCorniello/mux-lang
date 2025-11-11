@@ -545,7 +545,7 @@ impl SemanticAnalyzer {
 
     // resolve a parsed typenode to a resolved type
     #[allow(clippy::only_used_in_recursion)]
-    fn resolve_type(&self, type_node: &TypeNode) -> Result<Type, SemanticError> {
+    pub fn resolve_type(&self, type_node: &TypeNode) -> Result<Type, SemanticError> {
         match &type_node.kind {
             TypeKind::Primitive(prim) => match prim {
                 crate::parser::PrimitiveType::Int => {

@@ -79,6 +79,56 @@ pub extern "C" fn mux_new_set() -> *mut Set {
     Box::into_raw(Box::new(Set(std::collections::BTreeSet::new())))
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_add(a: *mut Value, b: *mut Value) -> *mut Value {
+    let a = unsafe { *Box::from_raw(a) };
+    let b = unsafe { *Box::from_raw(b) };
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+        (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
+        (Value::String(a), Value::String(b)) => Value::String(a + &b),
+        (Value::String(a), Value::Int(b)) => Value::String(a + &b.to_string()),
+        (Value::Int(a), Value::String(b)) => Value::String(a.to_string() + &b),
+        (Value::String(a), Value::Float(b)) => Value::String(a + &b.to_string()),
+        (Value::Float(a), Value::String(b)) => Value::String(a.to_string() + &b),
+        (Value::String(a), Value::Bool(b)) => Value::String(a + &b.to_string()),
+        (Value::Bool(a), Value::String(b)) => Value::String(a.to_string() + &b),
+        _ => Value::Int(0), // error
+    };
+    Box::into_raw(Box::new(result))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_value(list: *mut List) -> *mut Value {
+    let list = unsafe { *Box::from_raw(list) };
+    Box::into_raw(Box::new(Value::List(list.0)))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_value(map: *mut Map) -> *mut Value {
+    let map = unsafe { *Box::from_raw(map) };
+    Box::into_raw(Box::new(Value::Map(map.0)))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_value(set: *mut Set) -> *mut Value {
+    let set = unsafe { *Box::from_raw(set) };
+    Box::into_raw(Box::new(Value::Set(set.0)))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_to_string(val: *mut Value) -> *mut c_char {
+    let val = unsafe { &*val };
+    let s = val.to_string();
+    let c_str = std::ffi::CString::new(s).unwrap();
+    c_str.into_raw()
+}
+
 /// # Safety
 /// `s` must be a valid pointer returned by a mux-runtime string function.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

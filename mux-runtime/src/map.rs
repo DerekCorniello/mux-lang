@@ -1,6 +1,8 @@
 use crate::Value;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::ffi::CString;
+use std::os::raw::c_char;
 
 #[derive(Clone, Debug)]
 pub struct Map(pub BTreeMap<Value, Value>);
@@ -35,9 +37,9 @@ impl fmt::Display for Map {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_map_put(map: *mut Map, key: *mut Value, val: *mut Value) {
-    let k = unsafe { *Box::from_raw(key) };
-    let v = unsafe { *Box::from_raw(val) };
-    unsafe { (*map).insert(k, v) }
+    let key = unsafe { *Box::from_raw(key) };
+    let val = unsafe { *Box::from_raw(val) };
+    unsafe { (*map).insert(key, val) };
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -74,4 +76,13 @@ pub unsafe extern "C" fn mux_map_size(map: *const Map) -> i64 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_map_is_empty(map: *const Map) -> bool {
     unsafe { (*map).0.is_empty() }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_to_string(map: *const Map) -> *mut c_char {
+    let map = unsafe { &*map };
+    let s = map.to_string();
+    let c_str = CString::new(s).unwrap();
+    c_str.into_raw()
 }

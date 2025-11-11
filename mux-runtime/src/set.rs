@@ -1,6 +1,7 @@
 use crate::Value;
 use std::collections::BTreeSet;
 use std::fmt;
+use std::ffi::{CString, CStr};
 
 #[derive(Clone, Debug)]
 pub struct Set(pub BTreeSet<Value>);
@@ -61,4 +62,16 @@ pub unsafe extern "C" fn mux_set_size(set: *const Set) -> i64 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_set_is_empty(set: *const Set) -> bool {
     unsafe { (*set).0.is_empty() }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_to_string(set: *const Set) -> *mut std::ffi::c_char {
+    let set = unsafe { &*set };
+    let s = set.to_string();
+    eprintln!("Set to_string: {}", s);
+    let c_str = CString::new(s.clone()).unwrap();
+    let ptr = c_str.into_raw();
+    eprintln!("C string: {:?}", unsafe { CStr::from_ptr(ptr) });
+    ptr
 }

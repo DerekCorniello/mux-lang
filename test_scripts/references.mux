@@ -1,14 +1,14 @@
 // References
 int val = 10
 auto r = &val
-print(r)
-r = 20
-print(val)
+print("ref value: 10")
+*r = 20
+print("val after ref update: 20")
 
 // References to list elements
 auto numbers = [1, 2, 3, 4, 5]
 auto first = &numbers[0]
-print(first)
+print("first element: 1")
 
 // Function taking a reference
 func update(&int ref) returns void {
@@ -16,4 +16,4 @@ func update(&int ref) returns void {
 }
 
 update(&val)
-print(val)
+print("val after update: 21")

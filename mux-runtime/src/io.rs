@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::raw::c_char;
 
+use crate::Value;
+
 #[derive(Debug)]
 pub struct MuxFile(pub std::fs::File);
 
@@ -41,9 +43,30 @@ pub fn close_file(_file: File) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_print(s: *const c_char) {
+pub extern "C" fn mux_value_from_string(s: *const c_char) -> *mut crate::Value {
+    let c_str = unsafe { CStr::from_ptr(s) };
+    let rust_str = c_str.to_string_lossy().to_string();
+    let value = crate::Value::String(rust_str);
+    Box::into_raw(Box::new(value))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_print_cstr(s: *const c_char) {
     let s = unsafe { CStr::from_ptr(s).to_string_lossy() };
     print!("{}", s);
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_print(val: *mut Value) {
+    let val = unsafe { &*val };
+    if let Value::String(s) = val {
+        print!("{}", s);
+    } else {
+        print!("{:?}", val);
+    }
     std::io::Write::flush(&mut std::io::stdout()).unwrap();
 }
 

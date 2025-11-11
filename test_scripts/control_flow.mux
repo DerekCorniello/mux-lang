@@ -58,3 +58,5 @@ else
 {
     print("nl brace else")
 }
+
+print("Final x: " + x.to_string())

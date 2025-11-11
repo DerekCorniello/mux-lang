@@ -1,5 +1,6 @@
 use crate::Value;
 use std::fmt;
+use std::ffi::CString;
 
 #[derive(Clone, Debug)]
 pub struct List(pub Vec<Value>);
@@ -85,4 +86,13 @@ pub extern "C" fn mux_list_insert(list: *mut List, index: i64, val: *mut Value) 
     let len = unsafe { (*list).length() as usize };
     let idx = if index < 0 { 0 } else if index as usize > len { len } else { index as usize };
     unsafe { (*list).0.insert(idx, value); }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_to_string(list: *const List) -> *mut std::ffi::c_char {
+    let list = unsafe { &*list };
+    let s = list.to_string();
+    let c_str = CString::new(s).unwrap();
+    c_str.into_raw()
 }

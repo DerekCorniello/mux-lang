@@ -3,6 +3,13 @@ auto nums = [1, 2, 3, 4]
 auto scores = {"Alice": 90, "Bob": 85}
 auto matrix = [[1, 2], [3, 4]]
 
-map<string, int> avgs = {"Alice": 90, "Bob": 85}
-list<list<int>> grid = [[1, 2], [3, 4]]
-set<int> myset = {1, 2, 4}
+auto avgs = {"Alice": 90, "Bob": 85}
+auto grid = [[1, 2], [3, 4]]
+auto myset = {1, 2, 4}
+
+println("nums: " + nums.to_string())
+println("scores: " + scores.to_string())
+println("matrix: " + matrix.to_string())
+println("avgs: " + avgs.to_string())
+println("grid: " + grid.to_string())
+println("myset: " + myset.to_string())

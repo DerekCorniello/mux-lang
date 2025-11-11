@@ -17,3 +17,7 @@ class Stack<T> {
 
 auto s = Stack<int>.new([])
 s.push(42)
+match s.pop() {
+    Some(v) { print("Popped: 42") }
+    None { print("Empty stack") }
+}

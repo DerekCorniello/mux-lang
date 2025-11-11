@@ -52,69 +52,59 @@ fn main() {
                     let errors = analyzer.analyze(&nodes);
                     println!("Errors len: {}", errors.len());
 
-                    if errors.is_empty() {
-                        println!("✅ Semantic analysis completed successfully!");
-                        println!("✅ No semantic errors found.");
-                        println!("About to start codegen");
+                     println!("About to start codegen");
 
-                        // Code generation
-                        println!("\n=== Running Code Generation ===");
-                        // inkwell::targets::Target::initialize_native(&inkwell::targets::InitializationConfig::default()).unwrap();
-                        let context = inkwell::context::Context::create();
-                        println!("Context created");
-                        let mut codegen = codegen::CodeGenerator::new(&context, analyzer.symbol_table());
-                        println!("Codegen created");
-                        println!("Creating codegen");
-                        if let Err(e) = codegen.generate(&nodes) {
-                            println!("Codegen error: {}", e);
-                            process::exit(1);
-                        }
-                         println!("Codegen done");
-                         codegen.print_ir();
-                         println!("IR printed");
+                     // Code generation
+                     println!("\n=== Running Code Generation ===");
+                     // inkwell::targets::Target::initialize_native(&inkwell::targets::InitializationConfig::default()).unwrap();
+                     let context = inkwell::context::Context::create();
+                     println!("Context created");
+                      let mut codegen = codegen::CodeGenerator::new(&context, &analyzer);
+                     println!("Codegen created");
+                     println!("Creating codegen");
+                     if let Err(e) = codegen.generate(&nodes) {
+                         println!("Codegen error: {}", e);
+                         process::exit(1);
+                     }
+                      println!("Codegen done");
+                      codegen.print_ir();
+                      println!("IR printed");
 
-                         // Emit LLVM IR to file
-                         let ir_file = format!("{}.ll", file_path.trim_end_matches(".mux"));
-                         if let Err(e) = codegen.emit_ir_to_file(&ir_file) {
-                             eprintln!("Failed to emit IR: {}", e);
-                             process::exit(1);
-                         }
-                         println!("LLVM IR emitted to {}", ir_file);
+                      // Emit LLVM IR to file
+                      let ir_file = format!("{}.ll", file_path.trim_end_matches(".mux"));
+                      if let Err(e) = codegen.emit_ir_to_file(&ir_file) {
+                          eprintln!("Failed to emit IR: {}", e);
+                          process::exit(1);
+                      }
+                      println!("LLVM IR emitted to {}", ir_file);
 
-                          // Try to compile and link directly with clang
-                          let exe_file = file_path.trim_end_matches(".mux");
-                          let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-                          let project_root = std::path::Path::new(&manifest_dir).parent().unwrap();
-                          let lib_path = project_root.join("target/release");
-                          let lib_path_str = lib_path.to_str().unwrap();
-                          let clang_output = Command::new("clang")
-                              .args([
-                                  &ir_file,
-                                  "-L", lib_path_str,
-                                  "-Wl,-rpath,", lib_path_str,
-                                  "-lmux_runtime",
-                                  "-o", exe_file
-                              ])
-                              .output();
+                        // Try to compile and link directly with clang
+                        let exe_file = file_path.trim_end_matches(".mux");
+                         let current_dir = std::env::current_dir().unwrap();
+                         let lib_path = current_dir.join("target").join("debug");
+                        let lib_path_str = lib_path.to_str().unwrap();
+                       let clang_output = Command::new("clang")
+                           .args([
+                               &ir_file,
+                               "-L", lib_path_str,
+                               "-Wl,-rpath,", lib_path_str,
+                               "-lmux_runtime",
+                               "-o", exe_file
+                           ])
+                           .output();
 
-                         match clang_output {
-                             Ok(output) if output.status.success() => {
-                                 println!("Executable generated: {}", exe_file);
-                             }
-                             Ok(output) => {
-                                 eprintln!("clang failed: {}", String::from_utf8_lossy(&output.stderr));
-                                 eprintln!("Note: LLVM compilation tools may not be installed. IR file generated at: {}", ir_file);
-                             }
-                             Err(e) => {
-                                 eprintln!("Failed to run clang: {}. IR file generated at: {}", e, ir_file);
-                             }
-                         }
-                    } else {
-                        println!("❌ Found {} semantic errors:", errors.len());
-                        for error in errors {
-                            println!("  {}", error);
-                        }
-                    }
+                      match clang_output {
+                          Ok(output) if output.status.success() => {
+                              println!("Executable generated: {}", exe_file);
+                          }
+                          Ok(output) => {
+                              eprintln!("clang failed: {}", String::from_utf8_lossy(&output.stderr));
+                              eprintln!("Note: LLVM compilation tools may not be installed. IR file generated at: {}", ir_file);
+                          }
+                          Err(e) => {
+                              eprintln!("Failed to run clang: {}. IR file generated at: {}", e, ir_file);
+                          }
+                      }
                     print_symbol_table(analyzer.symbol_table(), "Global");
                 }
                 Err((nodes, errors)) => {

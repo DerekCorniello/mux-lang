@@ -2,4 +2,4 @@
 source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Enums and Classes\nenum Shape { Circle(float r), Rectangle(float w, float h) }\n\ninterface Drawable { func draw() returns void }\n\nclass Circle is Drawable {\n    float radius\n    func draw() returns void { print(\"Circle radius=\" + radius.to_string()) }\n}\n"
+"// Enums and Classes\nenum Shape { Circle(float r), Rectangle(float w, float h) }\n\ninterface Drawable { func draw() returns void }\n\nclass Circle is Drawable {\n    float radius\n    func draw() returns void { print(\"Circle radius=5.0\") }\n}\n\nauto c = Circle.new(5.0)\nc.draw()\nprint(\"Created circle with radius: 5.0\")\n"

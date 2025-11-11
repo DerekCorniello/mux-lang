@@ -43,3 +43,29 @@ impl fmt::Display for MuxResult {
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_discriminant(res: *mut MuxResult) -> i32 {
+    if res.is_null() {
+        return -1;
+    }
+    unsafe {
+        match &*res {
+            MuxResult::Ok(_) => 0,
+            MuxResult::Err(_) => 1,
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_data(res: *mut MuxResult) -> *mut Value {
+    if res.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*res {
+            MuxResult::Ok(v) => v.as_ref() as *const Value as *mut Value,
+            MuxResult::Err(e) => Box::into_raw(Box::new(Value::String(e.clone()))),
+        }
+    }
+}

@@ -197,26 +197,30 @@ impl<'a> Parser<'a> {
             self.function_declaration().map(Some)
         } else if let TokenType::Id(_) = &self.peek().token_type {
             let start = self.current;
-            let _ = self.consume();
-
-            if let TokenType::Id(_) = &self.peek().token_type {
-                let next = self.current + 1;
-                if next < self.tokens.len() && self.tokens[next].token_type == TokenType::Eq {
-                    self.current = start;
-                    match self.typed_declaration() {
-                        Ok(node) => Ok(Some(node)),
-                        Err(e)
-                            if matches!(
-                                e.message.as_str(),
-                                "must be terminated with a newline"
-                                    | "expected newline after statement"
-                            ) =>
-                        {
-                            self.errors.push(e);
-                            self.synchronize();
-                            Ok(None)
+            // Try to parse a type
+            if let Ok(_) = self.parse_type() {
+                if let TokenType::Id(_) = &self.peek().token_type {
+                    let next = self.current + 1;
+                    if next < self.tokens.len() && self.tokens[next].token_type == TokenType::Eq {
+                        self.current = start;
+                        match self.typed_declaration() {
+                            Ok(node) => Ok(Some(node)),
+                            Err(e)
+                                if matches!(
+                                    e.message.as_str(),
+                                    "must be terminated with a newline"
+                                        | "expected newline after statement"
+                                ) =>
+                            {
+                                self.errors.push(e);
+                                self.synchronize();
+                                Ok(None)
+                            }
+                            Err(e) => Err(e),
                         }
-                        Err(e) => Err(e),
+                    } else {
+                        self.current = start;
+                        self.statement().map(Some)
                     }
                 } else {
                     self.current = start;
@@ -1451,12 +1455,7 @@ impl<'a> Parser<'a> {
                 }
 
                 let type_args = if self.matches(&[TokenType::OpenBracket]) {
-                    let args = self.parse_type_arguments()?;
-                    self.consume_token(
-                        TokenType::CloseBracket,
-                        "Expected ']' after type arguments",
-                    )?;
-                    args
+                    self.parse_type_arguments()?
                 } else {
                     Vec::new()
                 };
@@ -1754,31 +1753,16 @@ impl<'a> Parser<'a> {
             }
 
             // parse remaining entries
-            while !self.check(TokenType::CloseBrace) {
+            while self.matches(&[TokenType::Comma]) {
                 self.skip_newlines();
-                if self.check(TokenType::CloseBrace) {
-                    break;
-                }
-
                 if is_map {
-                    self.consume_token(TokenType::Comma, "Expected ',' between map entries")?;
-                    // Skip newlines after comma
-                    self.skip_newlines();
                     let key = self.parse_expression()?;
                     self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
                     let value = self.parse_expression()?;
                     map_entries.push((key, value));
                 } else {
-                    self.consume_token(TokenType::Comma, "Expected ',' between set elements")?;
-                    // Skip newlines after comma
-                    self.skip_newlines();
                     let elem = self.parse_expression()?;
                     set_elements.push(elem);
-                }
-
-                self.skip_newlines();
-                if self.check(TokenType::CloseBrace) {
-                    break;
                 }
             }
         }

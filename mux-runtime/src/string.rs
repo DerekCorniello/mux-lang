@@ -75,6 +75,7 @@ pub extern "C" fn mux_string_concat(a: *const c_char, b: *const c_char) -> *mut 
     let a_str = unsafe { CStr::from_ptr(a).to_string_lossy() };
     let b_str = unsafe { CStr::from_ptr(b).to_string_lossy() };
     let result = MuxString(a_str.to_string()).concat(&MuxString(b_str.to_string()));
+    eprintln!("Concat: '{}' + '{}' = '{}'", a_str, b_str, result.0);
     CString::new(result.0).unwrap().into_raw()
 }
 
@@ -84,4 +85,20 @@ pub extern "C" fn mux_string_length(s: *const c_char) -> i64 {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     MuxString(rust_str.to_string()).length()
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_string_to_string(s: *const c_char) -> *mut c_char {
+    let c_str = unsafe { CStr::from_ptr(s) };
+    let rust_str = c_str.to_string_lossy();
+    std::ffi::CString::new(rust_str.as_ref()).unwrap().into_raw()
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_new_string_from_cstr(s: *const c_char) -> *mut Value {
+    let c_str = unsafe { CStr::from_ptr(s) };
+    let rust_str = c_str.to_string_lossy().to_string();
+    Box::into_raw(Box::new(Value::String(rust_str)))
 }
