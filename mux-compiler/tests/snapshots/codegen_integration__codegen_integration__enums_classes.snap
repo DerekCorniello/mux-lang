@@ -1,0 +1,5 @@
+---
+source: mux-compiler/tests/codegen_integration.rs
+expression: ll_content
+---
+

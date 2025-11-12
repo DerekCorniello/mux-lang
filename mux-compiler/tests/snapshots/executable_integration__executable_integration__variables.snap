@@ -1,0 +1,10 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+MAX: 100
+explicit: 42
+inferred: 4.89
+name: Mux
+flag: true
+otherflag: false

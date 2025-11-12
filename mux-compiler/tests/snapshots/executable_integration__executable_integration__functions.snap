@@ -1,0 +1,14 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+STDOUT:
+add(3,4): 7
+Hello World
+Hello World
+square(5): 25
+doubled(3.5): 7.0
+
+STDERR:
+Concat: 'Hello ' + 'World' = 'Hello World'
+Concat: 'Hello ' + 'World' = 'Hello World'

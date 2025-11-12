@@ -1,0 +1,500 @@
+---
+source: mux-compiler/tests/codegen_integration.rs
+expression: ll_content
+---
+; ModuleID = 'mux_module'
+source_filename = "mux_module"
+
+@str_0 = global [9 x i8] c"Positive\00"
+@str_1 = global [13 x i8] c"Non-positive\00"
+@str_2 = global [8 x i8] c"Large: \00"
+@str_3 = global [8 x i8] c"Small: \00"
+@str_4 = global [5 x i8] c"None\00"
+@str_5 = global [5 x i8] c"even\00"
+@str_6 = global [4 x i8] c"odd\00"
+@str_7 = global [9 x i8] c"Negative\00"
+@str_8 = global [5 x i8] c"Zero\00"
+@str_9 = global [9 x i8] c"Non-zero\00"
+@str_10 = global [5 x i8] c"gt10\00"
+@str_11 = global [4 x i8] c"gt5\00"
+@str_12 = global [6 x i8] c"other\00"
+@str_13 = global [4 x i8] c"one\00"
+@str_14 = global [5 x i8] c"zero\00"
+@str_15 = global [14 x i8] c"nl brace then\00"
+@str_16 = global [14 x i8] c"nl brace else\00"
+@str_17 = global [10 x i8] c"Final x: \00"
+
+declare ptr @mux_value_from_string(ptr)
+
+declare ptr @mux_new_string_from_cstr(ptr)
+
+declare void @mux_print(ptr)
+
+declare void @mux_println_val(ptr)
+
+declare void @exit(i32)
+
+declare ptr @mux_string_concat(ptr, ptr)
+
+declare ptr @mux_value_get_string(ptr)
+
+declare ptr @mux_value_from_string.1(ptr)
+
+declare ptr @mux_int_to_string(i64)
+
+declare ptr @mux_int_to_float(i64)
+
+declare ptr @mux_float_to_int(double)
+
+declare ptr @mux_float_to_string(double)
+
+declare ptr @mux_bool_to_string(i1)
+
+declare ptr @mux_bool_to_int(ptr)
+
+declare ptr @mux_bool_to_float(ptr)
+
+declare ptr @mux_string_to_string(ptr)
+
+declare ptr @mux_list_to_string(ptr)
+
+declare ptr @mux_map_to_string(ptr)
+
+declare i32 @mux_register_object_type(ptr, i64)
+
+declare ptr @mux_alloc_object(i32)
+
+declare void @mux_free_object(ptr)
+
+declare ptr @mux_get_object_ptr(ptr)
+
+declare ptr @mux_set_to_string(ptr)
+
+declare ptr @mux_optional_to_string(ptr)
+
+declare ptr @mux_value_from_optional(ptr)
+
+declare ptr @mux_value_get_list(ptr)
+
+declare ptr @mux_value_to_string(ptr)
+
+declare ptr @mux_list_value(ptr)
+
+declare ptr @mux_map_value(ptr)
+
+declare ptr @mux_set_value(ptr)
+
+declare ptr @mux_range(i64, i64)
+
+declare ptr @mux_new_list()
+
+declare ptr @mux_new_map()
+
+declare ptr @mux_new_set()
+
+declare ptr @mux_value_add(ptr, ptr)
+
+declare i64 @mux_value_get_int(ptr)
+
+declare double @mux_value_get_float(ptr)
+
+declare i1 @mux_value_get_bool(ptr)
+
+declare i32 @mux_value_get_type_tag(ptr)
+
+declare void @mux_free_value(ptr)
+
+declare void @mux_list_push_back(ptr, ptr)
+
+declare ptr @mux_list_get(ptr, i64)
+
+declare ptr @mux_list_get_value(ptr, i64)
+
+declare i64 @mux_list_length(ptr)
+
+declare i64 @mux_value_list_length(ptr)
+
+declare ptr @mux_value_list_get_value(ptr, i64)
+
+declare ptr @mux_list_pop_back(ptr)
+
+declare i1 @mux_list_is_empty(ptr)
+
+declare void @mux_map_put(ptr, ptr, ptr)
+
+declare ptr @mux_map_get(ptr, ptr)
+
+declare i1 @mux_map_contains(ptr, ptr)
+
+declare ptr @mux_map_remove(ptr, ptr)
+
+declare void @mux_set_add(ptr, ptr)
+
+declare i1 @mux_set_contains(ptr, ptr)
+
+declare i1 @mux_set_remove(ptr, ptr)
+
+declare i64 @mux_set_size(ptr)
+
+declare i1 @mux_set_is_empty(ptr)
+
+declare i64 @mux_map_size(ptr)
+
+declare i1 @mux_map_is_empty(ptr)
+
+declare ptr @mux_int_value(i64)
+
+declare ptr @mux_float_value(double)
+
+declare ptr @mux_bool_value(i1)
+
+declare ptr @mux_string_value(ptr)
+
+declare ptr @mux_int_to_string.2(i64)
+
+declare i64 @mux_int_from_value(ptr)
+
+declare double @mux_float_from_value(ptr)
+
+declare i1 @mux_bool_from_value(ptr)
+
+declare ptr @mux_string_from_value(ptr)
+
+declare ptr @mux_result_ok_int(i64)
+
+declare ptr @mux_result_err_str(ptr)
+
+declare ptr @mux_optional_some_int(i64)
+
+declare ptr @mux_optional_none()
+
+declare ptr @mux_result_ok_int.3(i64)
+
+declare ptr @mux_result_err_str.4(ptr)
+
+declare i32 @mux_optional_discriminant(ptr)
+
+declare ptr @mux_optional_data(ptr)
+
+declare i32 @mux_result_discriminant(ptr)
+
+declare ptr @mux_result_data(ptr)
+
+define void @main() {
+entry:
+  %call = call ptr @mux_int_value(i64 5)
+  %x = alloca ptr, align 8
+  store ptr %call, ptr %x, align 8
+  %x1 = load ptr, ptr %x, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %x1)
+  %gt = icmp sgt i64 %get_int, 0
+  br i1 %gt, label %if_then_0, label %if_else_0
+
+if_then_0:                                        ; preds = %entry
+  %call2 = call ptr @mux_new_string_from_cstr(ptr @str_0)
+  call void @mux_println_val(ptr %call2)
+  br label %if_merge_0
+
+if_else_0:                                        ; preds = %entry
+  %call3 = call ptr @mux_new_string_from_cstr(ptr @str_1)
+  call void @mux_println_val(ptr %call3)
+  br label %if_merge_0
+
+if_merge_0:                                       ; preds = %if_else_0, %if_then_0
+  %some_call = call ptr @mux_optional_some_int(i64 15)
+  %discriminant_call = call i32 @mux_optional_discriminant(ptr %some_call)
+  %match_cmp = icmp eq i32 %discriminant_call, 0
+  br i1 %match_cmp, label %match_arm_1_0, label %match_next_1_0
+
+match_end_1:                                      ; preds = %match_arm_1_2, %match_next_1_1, %match_arm_1_1, %match_guard_pass_0
+  %index = alloca i64, align 8
+  store i64 0, ptr %index, align 4
+  %i = alloca ptr, align 8
+  br label %for_header_2
+
+match_arm_1_0:                                    ; preds = %if_merge_0
+  %data_call = call ptr @mux_optional_data(ptr %some_call)
+  %v = alloca ptr, align 8
+  store ptr %data_call, ptr %v, align 8
+  %v4 = load ptr, ptr %v, align 8
+  %get_int5 = call i64 @mux_value_get_int(ptr %v4)
+  %gt6 = icmp sgt i64 %get_int5, 10
+  br i1 %gt6, label %match_guard_pass_0, label %match_next_1_0
+
+match_next_1_0:                                   ; preds = %match_arm_1_0, %if_merge_0
+  %match_cmp13 = icmp eq i32 %discriminant_call, 0
+  br i1 %match_cmp13, label %match_arm_1_1, label %match_next_1_1
+
+match_guard_pass_0:                               ; preds = %match_arm_1_0
+  %call7 = call ptr @mux_new_string_from_cstr(ptr @str_2)
+  %v8 = load ptr, ptr %v, align 8
+  %get_int9 = call i64 @mux_value_get_int(ptr %v8)
+  %value_to_str = call ptr @mux_value_to_string(i64 %get_int9)
+  %new_str = call ptr @mux_new_string_from_cstr(ptr %value_to_str)
+  %get_type = call i32 @mux_value_get_type_tag(ptr %call7)
+  %is_string = icmp eq i32 %get_type, 3
+  %get_type10 = call i32 @mux_value_get_type_tag(ptr %new_str)
+  %is_string11 = icmp eq i32 %get_type10, 3
+  %get_string = call ptr @mux_value_get_string(ptr %call7)
+  %get_string12 = call ptr @mux_value_get_string(ptr %new_str)
+  %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string12)
+  %from_string = call ptr @mux_value_from_string(ptr %string_concat)
+  call void @mux_println_val(ptr %from_string)
+  br label %match_end_1
+
+match_arm_1_1:                                    ; preds = %match_next_1_0
+  %data_call14 = call ptr @mux_optional_data(ptr %some_call)
+  %v15 = alloca ptr, align 8
+  store ptr %data_call14, ptr %v15, align 8
+  %call16 = call ptr @mux_new_string_from_cstr(ptr @str_3)
+  %v17 = load ptr, ptr %v15, align 8
+  %get_int18 = call i64 @mux_value_get_int(ptr %v17)
+  %value_to_str19 = call ptr @mux_value_to_string(i64 %get_int18)
+  %new_str20 = call ptr @mux_new_string_from_cstr(ptr %value_to_str19)
+  %get_type21 = call i32 @mux_value_get_type_tag(ptr %call16)
+  %is_string22 = icmp eq i32 %get_type21, 3
+  %get_type23 = call i32 @mux_value_get_type_tag(ptr %new_str20)
+  %is_string24 = icmp eq i32 %get_type23, 3
+  %get_string25 = call ptr @mux_value_get_string(ptr %call16)
+  %get_string26 = call ptr @mux_value_get_string(ptr %new_str20)
+  %string_concat27 = call ptr @mux_string_concat(ptr %get_string25, ptr %get_string26)
+  %from_string28 = call ptr @mux_value_from_string(ptr %string_concat27)
+  call void @mux_println_val(ptr %from_string28)
+  br label %match_end_1
+
+match_next_1_1:                                   ; preds = %match_next_1_0
+  br i1 true, label %match_arm_1_2, label %match_end_1
+
+match_arm_1_2:                                    ; preds = %match_next_1_1
+  %call29 = call ptr @mux_new_string_from_cstr(ptr @str_4)
+  call void @mux_println_val(ptr %call29)
+  br label %match_end_1
+
+for_header_2:                                     ; preds = %for_body_2, %match_end_1
+  %index_load = load i64, ptr %index, align 4
+  %cmp = icmp slt i64 %index_load, 3
+  br i1 %cmp, label %for_body_2, label %for_exit_2
+
+for_body_2:                                       ; preds = %for_header_2
+  %index_load2 = load i64, ptr %index, align 4
+  %call30 = call ptr @mux_int_value(i64 %index_load2)
+  store ptr %call30, ptr %i, align 8
+  %i31 = load ptr, ptr %i, align 8
+  %get_int32 = call i64 @mux_value_get_int(ptr %i31)
+  %value_to_str33 = call ptr @mux_value_to_string(i64 %get_int32)
+  %new_str34 = call ptr @mux_new_string_from_cstr(ptr %value_to_str33)
+  call void @mux_println_val(ptr %new_str34)
+  %inc = add i64 %index_load2, 1
+  store i64 %inc, ptr %index, align 4
+  br label %for_header_2
+
+for_exit_2:                                       ; preds = %for_header_2
+  %index35 = alloca i64, align 8
+  store i64 0, ptr %index35, align 4
+  %j = alloca ptr, align 8
+  br label %for_header_3
+
+for_header_3:                                     ; preds = %if_merge_4, %for_exit_2
+  %index_load36 = load i64, ptr %index35, align 4
+  %cmp37 = icmp slt i64 %index_load36, 10
+  br i1 %cmp37, label %for_body_3, label %for_exit_3
+
+for_body_3:                                       ; preds = %for_header_3
+  %index_load238 = load i64, ptr %index35, align 4
+  %call39 = call ptr @mux_int_value(i64 %index_load238)
+  store ptr %call39, ptr %j, align 8
+  %j40 = load ptr, ptr %j, align 8
+  %get_int41 = call i64 @mux_value_get_int(ptr %j40)
+  %mod = srem i64 %get_int41, 2
+  %eq = icmp eq i64 %mod, 0
+  br i1 %eq, label %if_then_4, label %if_else_4
+
+for_exit_3:                                       ; preds = %for_header_3
+  br label %while_header
+
+if_then_4:                                        ; preds = %for_body_3
+  %call42 = call ptr @mux_new_string_from_cstr(ptr @str_5)
+  call void @mux_println_val(ptr %call42)
+  br label %if_merge_4
+
+if_else_4:                                        ; preds = %for_body_3
+  %call43 = call ptr @mux_new_string_from_cstr(ptr @str_6)
+  call void @mux_println_val(ptr %call43)
+  br label %if_merge_4
+
+if_merge_4:                                       ; preds = %if_else_4, %if_then_4
+  %inc44 = add i64 %index_load238, 1
+  store i64 %inc44, ptr %index35, align 4
+  br label %for_header_3
+
+while_header:                                     ; preds = %while_body, %for_exit_3
+  %x45 = load ptr, ptr %x, align 8
+  %get_int46 = call i64 @mux_value_get_int(ptr %x45)
+  %gt47 = icmp sgt i64 %get_int46, 0
+  br i1 %gt47, label %while_body, label %while_exit
+
+while_body:                                       ; preds = %while_header
+  %x48 = load ptr, ptr %x, align 8
+  %get_int49 = call i64 @mux_value_get_int(ptr %x48)
+  %sub_assign = sub i64 %get_int49, 1
+  %call50 = call ptr @mux_int_value(i64 %sub_assign)
+  store ptr %call50, ptr %x, align 8
+  br label %while_header
+
+while_exit:                                       ; preds = %while_header
+  %x51 = load ptr, ptr %x, align 8
+  %get_int52 = call i64 @mux_value_get_int(ptr %x51)
+  %lt = icmp slt i64 %get_int52, 0
+  br i1 %lt, label %if_then_5, label %if_else_5
+
+if_then_5:                                        ; preds = %while_exit
+  %call53 = call ptr @mux_new_string_from_cstr(ptr @str_7)
+  call void @mux_println_val(ptr %call53)
+  br label %if_merge_5
+
+if_else_5:                                        ; preds = %while_exit
+  br label %if_merge_5
+
+if_merge_5:                                       ; preds = %if_else_5, %if_then_5
+  %x54 = load ptr, ptr %x, align 8
+  %get_int55 = call i64 @mux_value_get_int(ptr %x54)
+  %eq56 = icmp eq i64 %get_int55, 0
+  br i1 %eq56, label %if_then_6, label %if_else_6
+
+if_then_6:                                        ; preds = %if_merge_5
+  %call57 = call ptr @mux_new_string_from_cstr(ptr @str_8)
+  call void @mux_println_val(ptr %call57)
+  br label %if_merge_6
+
+if_else_6:                                        ; preds = %if_merge_5
+  %call58 = call ptr @mux_new_string_from_cstr(ptr @str_9)
+  call void @mux_println_val(ptr %call58)
+  br label %if_merge_6
+
+if_merge_6:                                       ; preds = %if_else_6, %if_then_6
+  %x59 = load ptr, ptr %x, align 8
+  %get_int60 = call i64 @mux_value_get_int(ptr %x59)
+  %gt61 = icmp sgt i64 %get_int60, 10
+  br i1 %gt61, label %if_then_7, label %if_else_7
+
+if_then_7:                                        ; preds = %if_merge_6
+  %call62 = call ptr @mux_new_string_from_cstr(ptr @str_10)
+  call void @mux_println_val(ptr %call62)
+  br label %if_merge_7
+
+if_else_7:                                        ; preds = %if_merge_6
+  %x63 = load ptr, ptr %x, align 8
+  %get_int64 = call i64 @mux_value_get_int(ptr %x63)
+  %gt65 = icmp sgt i64 %get_int64, 5
+  br i1 %gt65, label %if_then_8, label %if_else_8
+
+if_merge_7:                                       ; preds = %if_merge_8, %if_then_7
+  %index68 = alloca i64, align 8
+  store i64 0, ptr %index68, align 4
+  %j69 = alloca ptr, align 8
+  br label %for_header_9
+
+if_then_8:                                        ; preds = %if_else_7
+  %call66 = call ptr @mux_new_string_from_cstr(ptr @str_11)
+  call void @mux_println_val(ptr %call66)
+  br label %if_merge_8
+
+if_else_8:                                        ; preds = %if_else_7
+  %call67 = call ptr @mux_new_string_from_cstr(ptr @str_12)
+  call void @mux_println_val(ptr %call67)
+  br label %if_merge_8
+
+if_merge_8:                                       ; preds = %if_else_8, %if_then_8
+  br label %if_merge_7
+
+for_header_9:                                     ; preds = %if_merge_10, %if_merge_7
+  %index_load70 = load i64, ptr %index68, align 4
+  %cmp71 = icmp slt i64 %index_load70, 3
+  br i1 %cmp71, label %for_body_9, label %for_exit_9
+
+for_body_9:                                       ; preds = %for_header_9
+  %index_load272 = load i64, ptr %index68, align 4
+  %call73 = call ptr @mux_int_value(i64 %index_load272)
+  store ptr %call73, ptr %j69, align 8
+  %j74 = load ptr, ptr %j69, align 8
+  %get_int75 = call i64 @mux_value_get_int(ptr %j74)
+  %eq76 = icmp eq i64 %get_int75, 1
+  br i1 %eq76, label %if_then_10, label %if_else_10
+
+for_exit_9:                                       ; preds = %for_header_9
+  br label %while_header83
+
+if_then_10:                                       ; preds = %for_body_9
+  %call77 = call ptr @mux_new_string_from_cstr(ptr @str_13)
+  call void @mux_println_val(ptr %call77)
+  br label %if_merge_10
+
+if_else_10:                                       ; preds = %for_body_9
+  %j78 = load ptr, ptr %j69, align 8
+  %get_int79 = call i64 @mux_value_get_int(ptr %j78)
+  %eq80 = icmp eq i64 %get_int79, 0
+  br i1 %eq80, label %if_then_11, label %if_else_11
+
+if_merge_10:                                      ; preds = %if_merge_11, %if_then_10
+  %inc82 = add i64 %index_load272, 1
+  store i64 %inc82, ptr %index68, align 4
+  br label %for_header_9
+
+if_then_11:                                       ; preds = %if_else_10
+  %call81 = call ptr @mux_new_string_from_cstr(ptr @str_14)
+  call void @mux_println_val(ptr %call81)
+  br label %if_merge_11
+
+if_else_11:                                       ; preds = %if_else_10
+  br label %if_merge_11
+
+if_merge_11:                                      ; preds = %if_else_11, %if_then_11
+  br label %if_merge_10
+
+while_header83:                                   ; preds = %while_body84, %for_exit_9
+  %x86 = load ptr, ptr %x, align 8
+  %get_int87 = call i64 @mux_value_get_int(ptr %x86)
+  %lt88 = icmp slt i64 %get_int87, 3
+  br i1 %lt88, label %while_body84, label %while_exit85
+
+while_body84:                                     ; preds = %while_header83
+  %x89 = load ptr, ptr %x, align 8
+  %get_int90 = call i64 @mux_value_get_int(ptr %x89)
+  %add = add i64 %get_int90, 1
+  %call91 = call ptr @mux_int_value(i64 %add)
+  store ptr %call91, ptr %x, align 8
+  br label %while_header83
+
+while_exit85:                                     ; preds = %while_header83
+  %x92 = load ptr, ptr %x, align 8
+  %get_int93 = call i64 @mux_value_get_int(ptr %x92)
+  %gt94 = icmp sgt i64 %get_int93, 1
+  br i1 %gt94, label %if_then_12, label %if_else_12
+
+if_then_12:                                       ; preds = %while_exit85
+  %call95 = call ptr @mux_new_string_from_cstr(ptr @str_15)
+  call void @mux_println_val(ptr %call95)
+  br label %if_merge_12
+
+if_else_12:                                       ; preds = %while_exit85
+  %call96 = call ptr @mux_new_string_from_cstr(ptr @str_16)
+  call void @mux_println_val(ptr %call96)
+  br label %if_merge_12
+
+if_merge_12:                                      ; preds = %if_else_12, %if_then_12
+  %call97 = call ptr @mux_new_string_from_cstr(ptr @str_17)
+  %x98 = load ptr, ptr %x, align 8
+  %get_int99 = call i64 @mux_value_get_int(ptr %x98)
+  %value_to_str100 = call ptr @mux_value_to_string(i64 %get_int99)
+  %new_str101 = call ptr @mux_new_string_from_cstr(ptr %value_to_str100)
+  %get_type102 = call i32 @mux_value_get_type_tag(ptr %call97)
+  %is_string103 = icmp eq i32 %get_type102, 3
+  %get_type104 = call i32 @mux_value_get_type_tag(ptr %new_str101)
+  %is_string105 = icmp eq i32 %get_type104, 3
+  %get_string106 = call ptr @mux_value_get_string(ptr %call97)
+  %get_string107 = call ptr @mux_value_get_string(ptr %new_str101)
+  %string_concat108 = call ptr @mux_string_concat(ptr %get_string106, ptr %get_string107)
+  %from_string109 = call ptr @mux_value_from_string(ptr %string_concat108)
+  call void @mux_println_val(ptr %from_string109)
+  ret void
+}

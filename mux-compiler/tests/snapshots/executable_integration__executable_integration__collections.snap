@@ -1,0 +1,25 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+STDOUT:
+nums: [1, 2, 3, 4]
+scores: {Alice: 90, Bob: 85}
+matrix: [[1, 2], [3, 4]]
+avgs: {Alice: 90, Bob: 85}
+grid: [[1, 2], [3, 4]]
+myset: {1, 2, 4}
+abt to safe
+Safe access: Some(1)
+abt to direct
+Direct access: 1
+
+STDERR:
+Concat: 'nums: ' + '[1, 2, 3, 4]' = 'nums: [1, 2, 3, 4]'
+Concat: 'scores: ' + '{Alice: 90, Bob: 85}' = 'scores: {Alice: 90, Bob: 85}'
+Concat: 'matrix: ' + '[[1, 2], [3, 4]]' = 'matrix: [[1, 2], [3, 4]]'
+Concat: 'avgs: ' + '{Alice: 90, Bob: 85}' = 'avgs: {Alice: 90, Bob: 85}'
+Concat: 'grid: ' + '[[1, 2], [3, 4]]' = 'grid: [[1, 2], [3, 4]]'
+Concat: 'myset: ' + '{1, 2, 4}' = 'myset: {1, 2, 4}'
+Concat: 'Safe access: ' + 'Some(1)' = 'Safe access: Some(1)'
+Concat: 'Direct access: ' + '1' = 'Direct access: 1'

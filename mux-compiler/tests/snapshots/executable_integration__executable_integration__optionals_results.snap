@@ -1,0 +1,9 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+STDOUT:
+Result: 
+
+STDERR:
+Concat: 'Result: ' + '' = 'Result: '
