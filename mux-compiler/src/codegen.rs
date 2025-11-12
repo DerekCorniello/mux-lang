@@ -2382,7 +2382,31 @@ impl<'a> CodeGenerator<'a> {
                             return Err("Match expression must be identifier or self.field".to_string());
                         }
                     }
-                    _ => return Err("Match expression must be identifier or field access".to_string()),
+                    ExpressionKind::Call { func, .. } => {
+                        // Handle constructor calls like Some(15), None, etc.
+                        if let ExpressionKind::Identifier(constructor_name) = &func.kind {
+                            // Map common constructor names to their enum types
+                            match constructor_name.as_str() {
+                                "Some" | "None" => "Optional".to_string(),
+                                "Ok" | "Err" => "Result".to_string(),
+                                _ => {
+                                    // For other constructors, try to look up as enum type
+                                    if let Some(symbol) = self.analyzer.symbol_table().lookup(constructor_name) {
+                                        if let Some(Type::Named(type_name, _)) = &symbol.type_ {
+                                            type_name.clone()
+                                        } else {
+                                            return Err("Constructor must be enum type".to_string());
+                                        }
+                                    } else {
+                                        return Err(format!("Constructor {} not found", constructor_name));
+                                    }
+                                }
+                            }
+                        } else {
+                            return Err("Match expression constructor calls must be simple identifiers".to_string());
+                        }
+                    }
+                    _ => return Err("Match expression must be identifier, field access, or constructor call".to_string()),
                 };
                 let expr_ptr_opt = if enum_name == "Optional" || enum_name == "Result" {
                     Some(expr_val.into_pointer_value())
@@ -2436,24 +2460,26 @@ impl<'a> CodeGenerator<'a> {
 
                     self.builder.position_at_end(current_bb);
 
-                        let pattern_matches = match &arm.pattern {
-                            PatternNode::EnumVariant { name, args: _ } => {
-                                let variant_index = self.get_variant_index(&enum_name, name)?;
-                                let index_val = self
-                                    .context
-                                    .i32_type()
-                                    .const_int(variant_index as u64, false);
-                               self.builder
-                                   .build_int_compare(
-                                       inkwell::IntPredicate::EQ,
-                                       discriminant,
-                                       index_val,
-                                       "match_cmp",
-                                   )
-                                   .map_err(|e| e.to_string())?
-                           }
+                    let pattern_matches = match &arm.pattern {
+                        PatternNode::EnumVariant { name, args: _ } => {
+                            let variant_index = self.get_variant_index(&enum_name, name)?;
+                            let index_val = self
+                                .context
+                                .i32_type()
+                                .const_int(variant_index as u64, false);
+                            self.builder
+                                .build_int_compare(
+                                    inkwell::IntPredicate::EQ,
+                                    discriminant,
+                                    index_val,
+                                    "match_cmp",
+                                )
+                                .map_err(|e| e.to_string())?
+                        }
+                        PatternNode::Identifier(_) => self.context.bool_type().const_int(1, false),
+                        PatternNode::Literal(_) => self.context.bool_type().const_int(1, false),
+                        PatternNode::Tuple(_) => self.context.bool_type().const_int(1, false),
                         PatternNode::Wildcard => self.context.bool_type().const_int(1, false),
-                        _ => return Err("Pattern not implemented".to_string()),
                     };
 
                     let cond = pattern_matches;
