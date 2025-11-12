@@ -1,9 +1,0 @@
-class Simple {
-    int value
-    func get() returns int {
-        value
-    }
-}
-
-auto obj = Simple.new(42)
-println(obj.get())
