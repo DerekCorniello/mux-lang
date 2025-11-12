@@ -63,3 +63,33 @@ pub extern "C" fn mux_optional_some_int(val: i64) -> *mut Optional {
 pub extern "C" fn mux_optional_none() -> *mut Optional {
     Box::into_raw(Box::new(Optional::none()))
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_to_string(opt: *const Optional) -> *mut std::ffi::c_char {
+    use std::ffi::CString;
+    if opt.is_null() {
+        return CString::new("null".to_string()).unwrap().into_raw();
+    }
+    unsafe {
+        let s = (*opt).to_string();
+        CString::new(s).unwrap().into_raw()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Value {
+    if opt.is_null() {
+        return Box::into_raw(Box::new(crate::Value::Optional(None)));
+    }
+    unsafe {
+        let optional = Box::from_raw(opt);
+        match *optional {
+            Optional::Some(value) => {
+                Box::into_raw(Box::new(crate::Value::Optional(Some(value))))
+            }
+            Optional::None => {
+                Box::into_raw(Box::new(crate::Value::Optional(None)))
+            }
+        }
+    }
+}

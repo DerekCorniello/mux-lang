@@ -43,7 +43,18 @@ pub unsafe extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
     if let Value::String(s) = unsafe { &*v } {
         CString::new(s.clone()).unwrap().into_raw()
     } else {
-        panic!("Expected String value");
+        CString::new("".to_string()).unwrap().into_raw() // Return empty string instead of panicking
+    }
+}
+
+/// # Safety
+/// v must be a valid pointer to a Value.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_value_get_string(v: *mut Value) -> *mut c_char {
+    if let Value::String(s) = unsafe { &*v } {
+        CString::new(s.clone()).unwrap().into_raw()
+    } else {
+        CString::new("".to_string()).unwrap().into_raw() // Return empty string instead of panicking
     }
 }
 

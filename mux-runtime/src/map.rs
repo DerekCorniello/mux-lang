@@ -36,10 +36,10 @@ impl fmt::Display for Map {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_map_put(map: *mut Map, key: *mut Value, val: *mut Value) {
-    let key = unsafe { *Box::from_raw(key) };
-    let val = unsafe { *Box::from_raw(val) };
-    unsafe { (*map).insert(key, val) };
+pub extern "C" fn mux_map_value(map: *mut Map) -> *mut Value {
+    let map = unsafe { Box::from_raw(map) };
+    let value = Value::Map(map.0);
+    Box::into_raw(Box::new(value))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -51,8 +51,11 @@ pub extern "C" fn mux_map_get(map: *const Map, key: *const Value) -> *mut crate:
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_map_contains(map: *const Map, key: *const Value) -> bool {
-    unsafe { (*map).contains(&*key) }
+pub extern "C" fn mux_map_put(map: *mut Map, key: *mut Value, val: *mut Value) {
+    let map = unsafe { &mut *map };
+    let key = unsafe { Box::from_raw(key) };
+    let val = unsafe { Box::from_raw(val) };
+    map.insert(*key, *val);
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

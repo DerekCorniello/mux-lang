@@ -157,34 +157,51 @@ impl Ord for Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::Bool(b) => write!(f, "{}", if *b { "true" } else { "false" }),
+            Value::Bool(b) => write!(f, "{}", b),
             Value::Int(i) => write!(f, "{}", i),
-            // Floats use Debug formatting ({:?}) instead of Display ({}) to preserve decimal places
-            // This ensures 1.0 displays as "1.0" rather than "1", which is important for
-            // method chaining like int.to_float().to_string() where users expect to see the float nature
-            Value::Float(fl) => write!(f, "{:?}", fl),
+            Value::Float(fl) => write!(f, "{}", fl),
             Value::String(s) => write!(f, "{}", s),
-            Value::List(l) => {
-                let strs: Vec<String> = l.iter().map(|v| format!("{}", v)).collect();
-                write!(f, "[{}]", strs.join(", "))
-            },
-            Value::Map(m) => {
-                let pairs: Vec<String> = m.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
-                write!(f, "{{{}}}", pairs.join(", "))
-            },
-            Value::Set(s) => {
-                let strs: Vec<String> = s.iter().map(|v| format!("{}", v)).collect();
-                write!(f, "{{{}}}", strs.join(", "))
-            },
-            Value::Optional(o) => match o {
-                Some(v) => write!(f, "Some({})", v),
+            Value::List(list) => {
+                write!(f, "[")?;
+                for (i, item) in list.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "]")
+            }
+            Value::Map(map) => {
+                write!(f, "{{")?;
+                for (i, (key, val)) in map.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", key, val)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Set(set) => {
+                write!(f, "{{")?;
+                for (i, item) in set.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Optional(opt) => match opt {
+                Some(val) => write!(f, "Some({})", val),
                 None => write!(f, "None"),
             },
-            Value::Result(r) => match r {
-                Ok(v) => write!(f, "Ok({})", v),
-                Err(e) => write!(f, "Err({})", e),
+            Value::Result(res) => match res {
+                Ok(val) => write!(f, "Ok({})", val),
+                Err(val) => write!(f, "Err({})", val),
             },
-            Value::Object(obj) => write!(f, "Object(type_id={}, ptr={:?})", obj.type_id, obj.ptr),
+            Value::Object(obj) => {
+                write!(f, "<Object at {:p} type_id={}>", obj.ptr, obj.type_id)
+            }
         }
     }
 }
@@ -210,6 +227,6 @@ pub use std::{
 };
 
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_alloc(size: usize) -> *mut c_void {
-    unsafe { malloc(size as libc::size_t) as *mut c_void }
+pub extern "C" fn mux_float_value(f: f64) -> *mut Value {
+    Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(f))))
 }

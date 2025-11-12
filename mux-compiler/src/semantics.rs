@@ -1203,17 +1203,17 @@ impl SemanticAnalyzer {
                     params: vec![],
                     return_type: Type::Optional(elem_type.clone()),
                 }),
+                "get" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Int)],
+                    return_type: Type::Optional(elem_type.clone()),
+                }),
                 "is_empty" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Bool),
                 }),
-                "length" => Some(MethodSig {
+                "to_string" => Some(MethodSig {
                     params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                }),
-                "get" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Int)],
-                    return_type: Type::Optional(elem_type.clone()),
+                    return_type: Type::Primitive(PrimitiveType::Str),
                 }),
                 _ => None,
             },

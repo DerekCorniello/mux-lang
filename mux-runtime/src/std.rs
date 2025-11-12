@@ -25,11 +25,7 @@ pub extern "C" fn mux_int_value(i: i64) -> *mut Value {
     Box::into_raw(Box::new(Value::Int(i)))
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_float_value(f: f64) -> *mut Value {
-    println!("mux_float_value called with f: {}", f);
-    Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(f))))
-}
+
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_bool_value(b: bool) -> *mut Value {
@@ -83,17 +79,18 @@ pub extern "C" fn mux_new_set() -> *mut Set {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_add(a: *mut Value, b: *mut Value) -> *mut Value {
-    let a = unsafe { *Box::from_raw(a) };
-    let b = unsafe { *Box::from_raw(b) };
+    // NON-DESTRUCTIVE: Borrow values instead of taking ownership
+    let a = unsafe { &*a };
+    let b = unsafe { &*b };
     let result = match (a, b) {
         (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
         (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
-        (Value::String(a), Value::String(b)) => Value::String(a + &b),
-        (Value::String(a), Value::Int(b)) => Value::String(a + &b.to_string()),
+        (Value::String(a), Value::String(b)) => Value::String(a.clone() + &b),
+        (Value::String(a), Value::Int(b)) => Value::String(a.clone() + &b.to_string()),
         (Value::Int(a), Value::String(b)) => Value::String(a.to_string() + &b),
-        (Value::String(a), Value::Float(b)) => Value::String(a + &b.to_string()),
+        (Value::String(a), Value::Float(b)) => Value::String(a.clone() + &b.to_string()),
         (Value::Float(a), Value::String(b)) => Value::String(a.to_string() + &b),
-        (Value::String(a), Value::Bool(b)) => Value::String(a + &b.to_string()),
+        (Value::String(a), Value::Bool(b)) => Value::String(a.clone() + &b.to_string()),
         (Value::Bool(a), Value::String(b)) => Value::String(a.to_string() + &b),
         _ => Value::Int(0), // error
     };
@@ -107,26 +104,30 @@ pub extern "C" fn mux_list_value(list: *mut List) -> *mut Value {
     Box::into_raw(Box::new(Value::List(list.0)))
 }
 
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_map_value(map: *mut Map) -> *mut Value {
-    let map = unsafe { *Box::from_raw(map) };
-    Box::into_raw(Box::new(Value::Map(map.0)))
-}
+
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_set_value(set: *mut Set) -> *mut Value {
-    let set = unsafe { *Box::from_raw(set) };
-    Box::into_raw(Box::new(Value::Set(set.0)))
+pub extern "C" fn mux_value_get_list(val: *mut Value) -> *mut List {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*val {
+            Value::List(list_data) => {
+                Box::into_raw(Box::new(List(list_data.clone())))
+            }
+            _ => std::ptr::null_mut(),
+        }
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_to_string(val: *mut Value) -> *mut c_char {
-    let val = unsafe { &*val };
-    let s = val.to_string();
-    let c_str = std::ffi::CString::new(s).unwrap();
+    let value = unsafe { Box::from_raw(val) };
+    let s = value.to_string();
+    let c_str = CString::new(s).unwrap();
     c_str.into_raw()
 }
 
@@ -226,3 +227,59 @@ pub extern "C" fn mux_free_result(res: *mut MuxResult) {
         unsafe { drop(Box::from_raw(res)) };
     }
 }
+
+// Safe value extraction functions - don't take ownership
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_get_int(val: *const Value) -> i64 {
+    unsafe {
+        match &*val {
+            Value::Int(i) => *i,
+            _ => 0, // Return default value instead of panicking
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_get_float(val: *const Value) -> f64 {
+    unsafe {
+        match &*val {
+            Value::Float(f) => f.into_inner(),
+            _ => 0.0, // Return default value instead of panicking
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_get_bool(val: *const Value) -> bool {
+    unsafe {
+        match &*val {
+            Value::Bool(b) => *b,
+            _ => false, // Return default value instead of panicking
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_get_type_tag(val: *const Value) -> i32 {
+    unsafe {
+        match &*val {
+            Value::Bool(_) => 0,
+            Value::Int(_) => 1,
+            Value::Float(_) => 2,
+            Value::String(_) => 3,
+            Value::List(_) => 4,
+            Value::Map(_) => 5,
+            Value::Set(_) => 6,
+            Value::Optional(_) => 7,
+            Value::Result(_) => 8,
+            Value::Object(_) => 9,
+        }
+    }
+}
+
+// Proper Value cleanup function
+

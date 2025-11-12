@@ -3,7 +3,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
-    BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, PointerValue,
+    BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue,
 };
 use inkwell::{AddressSpace, Either};
 use std::collections::HashMap;
@@ -77,6 +77,14 @@ impl<'a> CodeGenerator<'a> {
         let params = &[i8_ptr.into(), i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_string_concat", fn_type, None);
+
+        // mux_value_get_string: (*const Value) -> *const c_char
+        let fn_type = i8_ptr.fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_get_string", fn_type, None);
+
+        // mux_value_from_string: (*const c_char) -> *mut Value
+        let fn_type = i8_ptr.fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_from_string", fn_type, None);
 
         // mux_int_to_string: (i64) -> *const c_char
         let params = &[i64_type.into()];
@@ -154,6 +162,19 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_set_to_string", fn_type, None);
 
+        // mux_optional_to_string: (*const Optional) -> *const c_char
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_optional_to_string", fn_type, None);
+
+        // mux_value_from_optional: (*mut Optional) -> *mut Value
+        let fn_type = i8_ptr.fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_from_optional", fn_type, None);
+
+        // mux_value_get_list: (*mut Value) -> *mut List
+        let fn_type = list_ptr.fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_get_list", fn_type, None);
+
         // mux_value_to_string: (*mut Value) -> *const c_char
         let params = &[i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
@@ -195,6 +216,27 @@ impl<'a> CodeGenerator<'a> {
         // mux_value_add: (*mut Value, *mut Value) -> *mut Value
         let fn_type = i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false);
         module.add_function("mux_value_add", fn_type, None);
+
+        // Safe value extraction functions
+        // mux_value_get_int: (*const Value) -> i64
+        let fn_type = i64_type.fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_get_int", fn_type, None);
+
+        // mux_value_get_float: (*const Value) -> f64
+        let fn_type = context.f64_type().fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_get_float", fn_type, None);
+
+        // mux_value_get_bool: (*const Value) -> bool
+        let fn_type = context.bool_type().fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_get_bool", fn_type, None);
+
+        // mux_value_get_type_tag: (*const Value) -> i32
+        let fn_type = context.i32_type().fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_get_type_tag", fn_type, None);
+
+        // mux_free_value: (*mut Value) -> ()
+        let fn_type = void_type.fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_free_value", fn_type, None);
 
         // List operations
         // mux_list_push_back: (*mut List, *mut Value) -> ()
@@ -1286,9 +1328,18 @@ impl<'a> CodeGenerator<'a> {
                                 Ok(ptr_to_boxed.into())
                             }
                         }
-                        Type::Primitive(PrimitiveType::Int) => Ok(ptr_to_boxed.into()),
-                        Type::Primitive(PrimitiveType::Float) => Ok(ptr_to_boxed.into()),
-                        Type::Primitive(PrimitiveType::Bool) => Ok(ptr_to_boxed.into()),
+                        Type::Primitive(PrimitiveType::Int) => {
+                            let raw_int = self.get_raw_int_value(ptr_to_boxed.into())?;
+                            Ok(raw_int.into())
+                        }
+                        Type::Primitive(PrimitiveType::Float) => {
+                            let raw_float = self.get_raw_float_value(ptr_to_boxed.into())?;
+                            Ok(raw_float.into())
+                        }
+                        Type::Primitive(PrimitiveType::Bool) => {
+                            let raw_bool = self.get_raw_bool_value(ptr_to_boxed.into())?;
+                            Ok(raw_bool.into())
+                        }
                         Type::Primitive(PrimitiveType::Str) => Ok(ptr_to_boxed.into()),
                         _ => {
                             // boxed types
@@ -1645,8 +1696,8 @@ impl<'a> CodeGenerator<'a> {
                             let arg_val = self.generate_expression(&args[0])?;
                             let func = self
                                 .module
-                                .get_function("mux_optional_some")
-                                .ok_or("mux_optional_some not found")?;
+                                .get_function("mux_optional_some_int")
+                                .ok_or("mux_optional_some_int not found")?;
                             let call = self
                                 .builder
                                 .build_call(func, &[arg_val.into()], "some_call")
@@ -1682,7 +1733,11 @@ impl<'a> CodeGenerator<'a> {
                                     .builder
                                     .build_call(func, &call_args, "user_func_call")
                                     .map_err(|e| e.to_string())?;
-                                Ok(call.try_as_basic_value().left().unwrap())
+                                // Handle void functions - return a dummy value
+                                match call.try_as_basic_value().left() {
+                                    Some(val) => Ok(val),
+                                    None => Ok(self.context.i32_type().const_int(0, false).into()),
+                                }
                             } else {
                                 Err(format!("Undefined function: {}", name))
                             }
@@ -1695,13 +1750,23 @@ impl<'a> CodeGenerator<'a> {
             ExpressionKind::ListAccess { expr, index } => {
                 let list_val = self.generate_expression(expr)?;
                 let index_val = self.generate_expression(index)?;
-
+                
+                // Extract raw List pointer from Value
+                let raw_list = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_list").unwrap(),
+                        &[list_val.into()],
+                        "extract_list",
+                    )
+                    .map_err(|e| e.to_string())?;
+                
                 // Call mux_list_get_value (returns direct value or null)
                 let raw_result = self
                     .builder
                     .build_call(
                         self.module.get_function("mux_list_get_value").unwrap(),
-                        &[list_val.into(), index_val.into()],
+                        &[raw_list.try_as_basic_value().left().unwrap().into(), index_val.into()],
                         "list_raw",
                     )
                     .map_err(|e| e.to_string())?;
@@ -1779,8 +1844,11 @@ impl<'a> CodeGenerator<'a> {
                         &[list_ptr.into(), elem_ptr.into()],
                     );
                 }
-                // Return the list pointer directly, not converted to Value
-                Ok(list_ptr.into())
+                // Convert list pointer to Value for type consistency
+                let list_value = self
+                    .generate_runtime_call("mux_list_value", &[list_ptr.into()])
+                    .unwrap();
+                Ok(list_value)
             }
             ExpressionKind::MapLiteral { entries, .. } => {
                 let map_ptr = self
@@ -1797,11 +1865,10 @@ impl<'a> CodeGenerator<'a> {
                         &[map_ptr.into(), key_ptr.into(), value_ptr.into()],
                     );
                 }
-                let value_ptr = self
+                let map_value = self
                     .generate_runtime_call("mux_map_value", &[map_ptr.into()])
-                    .unwrap()
-                    .into_pointer_value();
-                Ok(value_ptr.into())
+                    .unwrap();
+                Ok(map_value)
             }
             ExpressionKind::SetLiteral(elements) => {
                 let set_ptr = self
@@ -1813,11 +1880,10 @@ impl<'a> CodeGenerator<'a> {
                     let elem_ptr = self.box_value(elem_val);
                     self.generate_runtime_call("mux_set_add", &[set_ptr.into(), elem_ptr.into()]);
                 }
-                let value_ptr = self
+                let set_value = self
                     .generate_runtime_call("mux_set_value", &[set_ptr.into()])
-                    .unwrap()
-                    .into_pointer_value();
-                Ok(value_ptr.into())
+                    .unwrap();
+                Ok(set_value)
             }
             ExpressionKind::If {
                 cond,
@@ -2936,8 +3002,10 @@ impl<'a> CodeGenerator<'a> {
                 self.generate_list_method_call(obj_value, elem_type, method_name, args)
             }
             Type::Map(key_type, value_type) => {
-                // TODO: Future implementation
-                Err(format!("Map methods not yet implemented: {}", method_name))
+                self.generate_map_method_call(obj_value, key_type, value_type, method_name, args)
+            }
+            Type::Set(elem_type) => {
+                self.generate_set_method_call(obj_value, elem_type, method_name, args)
             }
             Type::Named(name, _) => {
                 // TODO: Future implementation
@@ -2947,11 +3015,7 @@ impl<'a> CodeGenerator<'a> {
                 ))
             }
             Type::Optional(inner_type) => {
-                // TODO: Future implementation
-                Err(format!(
-                    "Optional methods not yet implemented: {}",
-                    method_name
-                ))
+                self.generate_optional_method_call(obj_value, inner_type, method_name, args)
             }
             _ => Err(format!(
                 "Method {} not implemented for type {:?}",
@@ -3214,7 +3278,16 @@ impl<'a> CodeGenerator<'a> {
                         "list_get",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                // Box the Optional as a Value
+                let boxed_call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_from_optional").unwrap(),
+                        &[call.try_as_basic_value().left().unwrap().into()],
+                        "optional_as_value",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(boxed_call.try_as_basic_value().left().unwrap())
             }
             "push_back" => {
                 if args.len() != 1 {
@@ -3271,6 +3344,254 @@ impl<'a> CodeGenerator<'a> {
                 Ok(call.try_as_basic_value().left().unwrap())
             }
             _ => Err(format!("Method {} not implemented for lists", method_name)),
+        }
+    }
+
+    fn generate_map_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        _key_type: &Type,
+        _value_type: &Type,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "to_string" => {
+                if !args.is_empty() {
+                    return Err("to_string() method takes no arguments".to_string());
+                }
+                let func = self
+                    .module
+                    .get_function("mux_value_to_string")
+                    .ok_or("mux_value_to_string not found")?;
+                let call = self
+                    .builder
+                    .build_call(func, &[obj_value.into()], "val_to_str")
+                    .map_err(|e| e.to_string())?;
+                let func_new = self
+                    .module
+                    .get_function("mux_new_string_from_cstr")
+                    .ok_or("mux_new_string_from_cstr not found")?;
+                let call2 = self
+                    .builder
+                    .build_call(
+                        func_new,
+                        &[call.try_as_basic_value().left().unwrap().into()],
+                        "new_str",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call2.try_as_basic_value().left().unwrap())
+            }
+            "put" => {
+                if args.len() != 2 {
+                    return Err("put() method takes exactly 2 arguments".to_string());
+                }
+                let key_val = self.generate_expression(&args[0])?;
+                let value_val = self.generate_expression(&args[1])?;
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_map_put").unwrap(),
+                        &[obj_value.into(), key_val.into(), value_val.into()],
+                        "map_put",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "get" => {
+                if args.len() != 1 {
+                    return Err("get() method takes exactly 1 argument".to_string());
+                }
+                let key_val = self.generate_expression(&args[0])?;
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_map_get").unwrap(),
+                        &[obj_value.into(), key_val.into()],
+                        "map_get",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "contains" => {
+                if args.len() != 1 {
+                    return Err("contains() method takes exactly 1 argument".to_string());
+                }
+                let key_val = self.generate_expression(&args[0])?;
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_map_contains").unwrap(),
+                        &[obj_value.into(), key_val.into()],
+                        "map_contains",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "size" => {
+                if !args.is_empty() {
+                    return Err("size() method takes no arguments".to_string());
+                }
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_map_size").unwrap(),
+                        &[obj_value.into()],
+                        "map_size",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "is_empty" => {
+                if !args.is_empty() {
+                    return Err("is_empty() method takes no arguments".to_string());
+                }
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_map_is_empty").unwrap(),
+                        &[obj_value.into()],
+                        "map_is_empty",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            _ => Err(format!("Method {} not implemented for maps", method_name)),
+        }
+    }
+
+    fn generate_set_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        _elem_type: &Type,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "to_string" => {
+                if !args.is_empty() {
+                    return Err("to_string() method takes no arguments".to_string());
+                }
+                let func = self
+                    .module
+                    .get_function("mux_value_to_string")
+                    .ok_or("mux_value_to_string not found")?;
+                let call = self
+                    .builder
+                    .build_call(func, &[obj_value.into()], "val_to_str")
+                    .map_err(|e| e.to_string())?;
+                let func_new = self
+                    .module
+                    .get_function("mux_new_string_from_cstr")
+                    .ok_or("mux_new_string_from_cstr not found")?;
+                let call2 = self
+                    .builder
+                    .build_call(
+                        func_new,
+                        &[call.try_as_basic_value().left().unwrap().into()],
+                        "new_str",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call2.try_as_basic_value().left().unwrap())
+            }
+            "add" => {
+                if args.len() != 1 {
+                    return Err("add() method takes exactly 1 argument".to_string());
+                }
+                let elem_val = self.generate_expression(&args[0])?;
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_set_add").unwrap(),
+                        &[obj_value.into(), elem_val.into()],
+                        "set_add",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "contains" => {
+                if args.len() != 1 {
+                    return Err("contains() method takes exactly 1 argument".to_string());
+                }
+                let elem_val = self.generate_expression(&args[0])?;
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_set_contains").unwrap(),
+                        &[obj_value.into(), elem_val.into()],
+                        "set_contains",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "size" => {
+                if !args.is_empty() {
+                    return Err("size() method takes no arguments".to_string());
+                }
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_set_size").unwrap(),
+                        &[obj_value.into()],
+                        "set_size",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "is_empty" => {
+                if !args.is_empty() {
+                    return Err("is_empty() method takes no arguments".to_string());
+                }
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_set_is_empty").unwrap(),
+                        &[obj_value.into()],
+                        "set_is_empty",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            _ => Err(format!("Method {} not implemented for sets", method_name)),
+        }
+    }
+
+    fn generate_optional_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        _inner_type: &Type,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "to_string" => {
+                if !args.is_empty() {
+                    return Err("to_string() method takes no arguments".to_string());
+                }
+                // Use the standard mux_value_to_string function which handles Optional case
+                let func = self
+                    .module
+                    .get_function("mux_value_to_string")
+                    .ok_or("mux_value_to_string not found")?;
+                let call = self
+                    .builder
+                    .build_call(func, &[obj_value.into()], "val_to_str")
+                    .map_err(|e| e.to_string())?;
+                let func_new = self
+                    .module
+                    .get_function("mux_new_string_from_cstr")
+                    .ok_or("mux_new_string_from_cstr not found")?;
+                let call2 = self
+                    .builder
+                    .build_call(
+                        func_new,
+                        &[call.try_as_basic_value().left().unwrap().into()],
+                        "new_str",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call2.try_as_basic_value().left().unwrap())
+            }
+            _ => Err(format!("Method {} not implemented for Optionals", method_name)),
         }
     }
 
@@ -3368,111 +3689,186 @@ impl<'a> CodeGenerator<'a> {
 
         match op {
             BinaryOp::Add => {
-                if left_val.is_int_value() && right_val.is_int_value() {
+                // Check for string concatenation first
+                if let (Ok(left_is_string), Ok(right_is_string)) = (self.is_string_value(left), self.is_string_value(right)) {
+                    if left_is_string || right_is_string {
+                        // Use string concatenation
+                        let left_ptr = if left.is_pointer_value() { left.into_pointer_value() } else {
+                            // Convert non-pointer to string pointer
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() { right.into_pointer_value() } else {
+                            // Convert non-pointer to string pointer
+                            self.box_value(right)
+                        };
+                        
+                        // Extract C strings from Value pointers
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
+                        
+                        // Call string concatenation function
+                        let concat_fn = self.module.get_function("mux_string_concat")
+                            .ok_or("mux_string_concat not found")?;
+                        let result = self.builder.build_call(concat_fn, &[left_cstr.into(), right_cstr.into()], "string_concat")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+                        
+                        // Convert result back to Value pointer
+                        return self.box_string_value(result.into_pointer_value());
+                    }
+                }
+                
+                // Try arithmetic operations
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
-                        .build_int_add(left_val.into_int_value(), right_val.into_int_value(), "add")
+                        .build_int_add(left_int, right_int, "add")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left_val.is_float_value() && right_val.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
-                        .build_float_add(
-                            left_val.into_float_value(),
-                            right_val.into_float_value(),
-                            "fadd",
-                        )
+                        .build_float_add(left_float, right_float, "fadd")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left_val.is_pointer_value() || right_val.is_pointer_value() {
-                    // Value add - ensure both are pointers
-                    let left_ptr = if left_val.is_pointer_value() {
-                        left_val.into_pointer_value()
-                    } else {
-                        self.box_value(left_val)
-                    };
-                    let right_ptr = if right_val.is_pointer_value() {
-                        right_val.into_pointer_value()
-                    } else {
-                        self.box_value(right_val)
-                    };
-                    let call = self
-                        .builder
-                        .build_call(
-                            self.module.get_function("mux_value_add").unwrap(),
-                            &[left_ptr.into(), right_ptr.into()],
-                            "add",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    Ok(call.try_as_basic_value().left().unwrap())
                 } else {
-                    Err("Unsupported add operands".to_string())
+                    // Try mixed type: float + int or int + float
+                    if let (Ok(left_float), Ok(right_int)) = (self.get_raw_float_value(left), self.get_raw_int_value(right)) {
+                        let right_float = self.builder.build_signed_int_to_float(right_int, self.context.f64_type(), "int_to_float")
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_float_add(left_float, right_float, "fadd_mixed")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    } else if let (Ok(left_int), Ok(right_float)) = (self.get_raw_int_value(left), self.get_raw_float_value(right)) {
+                        let left_float = self.builder.build_signed_int_to_float(left_int, self.context.f64_type(), "int_to_float")
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_float_add(left_float, right_float, "fadd_mixed")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    } else {
+                        Err("Unsupported add operands".to_string())
+                    }
                 }
             }
             BinaryOp::Subtract => {
-                if left.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
-                        .build_int_sub(left.into_int_value(), right.into_int_value(), "sub")
+                        .build_int_sub(left_int, right_int, "sub")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
-                        .build_float_sub(left.into_float_value(), right.into_float_value(), "fsub")
+                        .build_float_sub(left_float, right_float, "fsub")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
                 } else {
-                    Err("Unsupported sub operands".to_string())
+                    // Try mixed type: float - int or int - float
+                    if let (Ok(left_float), Ok(right_int)) = (self.get_raw_float_value(left), self.get_raw_int_value(right)) {
+                        let right_float = self.builder.build_signed_int_to_float(right_int, self.context.f64_type(), "int_to_float")
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_float_sub(left_float, right_float, "fsub_mixed")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    } else if let (Ok(left_int), Ok(right_float)) = (self.get_raw_int_value(left), self.get_raw_float_value(right)) {
+                        let left_float = self.builder.build_signed_int_to_float(left_int, self.context.f64_type(), "int_to_float")
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_float_sub(left_float, right_float, "fsub_mixed")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    } else {
+                        Err("Unsupported sub operands".to_string())
+                    }
                 }
             }
             BinaryOp::Multiply => {
-                if left_val.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
-                        .build_int_mul(left_val.into_int_value(), right_val.into_int_value(), "mul")
+                        .build_int_mul(left_int, right_int, "mul")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left_val.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
-                        .build_float_mul(
-                            left_val.into_float_value(),
-                            right_val.into_float_value(),
-                            "fmul",
-                        )
+                        .build_float_mul(left_float, right_float, "fmul")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
                 } else {
-                    Err("Unsupported mul operands".to_string())
+                    // Try mixed type: float * int or int * float
+                    if let (Ok(left_float), Ok(right_int)) = (self.get_raw_float_value(left), self.get_raw_int_value(right)) {
+                        let right_float = self.builder.build_signed_int_to_float(right_int, self.context.f64_type(), "int_to_float")
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_float_mul(left_float, right_float, "fmul_mixed")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    } else if let (Ok(left_int), Ok(right_float)) = (self.get_raw_int_value(left), self.get_raw_float_value(right)) {
+                        let left_float = self.builder.build_signed_int_to_float(left_int, self.context.f64_type(), "int_to_float")
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_float_mul(left_float, right_float, "fmul_mixed")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    } else {
+                        Err("Unsupported mul operands".to_string())
+                    }
                 }
             }
             BinaryOp::Divide => {
-                if left.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
-                        .build_int_signed_div(left.into_int_value(), right.into_int_value(), "div")
+                        .build_int_signed_div(left_int, right_int, "div")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
-                        .build_float_div(left.into_float_value(), right.into_float_value(), "fdiv")
+                        .build_float_div(left_float, right_float, "fdiv")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
                 } else {
-                    Err("Unsupported div operands".to_string())
+                    // Try mixed type: float / int or int / float
+                    if let (Ok(left_float), Ok(right_int)) = (self.get_raw_float_value(left), self.get_raw_int_value(right)) {
+                        let right_float = self.builder.build_signed_int_to_float(right_int, self.context.f64_type(), "int_to_float")
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_float_div(left_float, right_float, "fdiv_mixed")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    } else if let (Ok(left_int), Ok(right_float)) = (self.get_raw_int_value(left), self.get_raw_float_value(right)) {
+                        let left_float = self.builder.build_signed_int_to_float(left_int, self.context.f64_type(), "int_to_float")
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_float_div(left_float, right_float, "fdiv_mixed")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    } else {
+                        Err("Unsupported div operands".to_string())
+                    }
                 }
             }
             BinaryOp::Equal => {
-                if left.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
                         .build_int_compare(
                             inkwell::IntPredicate::EQ,
-                            left.into_int_value(),
-                            right.into_int_value(),
+                            left_int,
+                            right_int,
                             "eq",
                         )
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
                         .build_float_compare(
                             inkwell::FloatPredicate::OEQ,
-                            left.into_float_value(),
-                            right.into_float_value(),
+                            left_float,
+                            right_float,
                             "feq",
                         )
                         .map_err(|e| e.to_string())
@@ -3482,22 +3878,23 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             BinaryOp::Less => {
-                if left.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
                         .build_int_compare(
                             inkwell::IntPredicate::SLT,
-                            left.into_int_value(),
-                            right.into_int_value(),
+                            left_int,
+                            right_int,
                             "lt",
                         )
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
                         .build_float_compare(
                             inkwell::FloatPredicate::OLT,
-                            left.into_float_value(),
-                            right.into_float_value(),
+                            left_float,
+                            right_float,
                             "flt",
                         )
                         .map_err(|e| e.to_string())
@@ -3507,22 +3904,23 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             BinaryOp::Greater => {
-                if left.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
                         .build_int_compare(
                             inkwell::IntPredicate::SGT,
-                            left.into_int_value(),
-                            right.into_int_value(),
+                            left_int,
+                            right_int,
                             "gt",
                         )
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
                         .build_float_compare(
                             inkwell::FloatPredicate::OGT,
-                            left.into_float_value(),
-                            right.into_float_value(),
+                            left_float,
+                            right_float,
                             "fgt",
                         )
                         .map_err(|e| e.to_string())
@@ -3532,22 +3930,23 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             BinaryOp::LessEqual => {
-                if left.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
                         .build_int_compare(
                             inkwell::IntPredicate::SLE,
-                            left.into_int_value(),
-                            right.into_int_value(),
+                            left_int,
+                            right_int,
                             "le",
                         )
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
                         .build_float_compare(
                             inkwell::FloatPredicate::OLE,
-                            left.into_float_value(),
-                            right.into_float_value(),
+                            left_float,
+                            right_float,
                             "fle",
                         )
                         .map_err(|e| e.to_string())
@@ -3557,22 +3956,23 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             BinaryOp::GreaterEqual => {
-                if left.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
                         .build_int_compare(
                             inkwell::IntPredicate::SGE,
-                            left.into_int_value(),
-                            right.into_int_value(),
+                            left_int,
+                            right_int,
                             "ge",
                         )
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
                         .build_float_compare(
                             inkwell::FloatPredicate::OGE,
-                            left.into_float_value(),
-                            right.into_float_value(),
+                            left_float,
+                            right_float,
                             "fge",
                         )
                         .map_err(|e| e.to_string())
@@ -3582,22 +3982,23 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             BinaryOp::NotEqual => {
-                if left.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
                         .build_int_compare(
                             inkwell::IntPredicate::NE,
-                            left.into_int_value(),
-                            right.into_int_value(),
+                            left_int,
+                            right_int,
                             "ne",
                         )
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if left.is_float_value() {
+                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
                     self.builder
                         .build_float_compare(
                             inkwell::FloatPredicate::ONE,
-                            left.into_float_value(),
-                            right.into_float_value(),
+                            left_float,
+                            right_float,
                             "fne",
                         )
                         .map_err(|e| e.to_string())
@@ -3622,9 +4023,10 @@ impl<'a> CodeGenerator<'a> {
                 Ok(or.into())
             }
             BinaryOp::Modulo => {
-                if left.is_int_value() {
+                // Try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) = (self.get_raw_int_value(left), self.get_raw_int_value(right)) {
                     self.builder
-                        .build_int_signed_rem(left.into_int_value(), right.into_int_value(), "mod")
+                        .build_int_signed_rem(left_int, right_int, "mod")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
                 } else {
@@ -3796,7 +4198,6 @@ impl<'a> CodeGenerator<'a> {
         name: &str,
         args: &[BasicMetadataValueEnum<'a>],
     ) -> Option<BasicValueEnum<'a>> {
-        eprintln!("DEBUG: generate_runtime_call called with function: {}", name);
         let func = match self.module.get_function(name) {
             Some(f) => f,
             None => {
@@ -3819,7 +4220,8 @@ impl<'a> CodeGenerator<'a> {
                 .unwrap();
             call.into_pointer_value()
         } else if val.is_pointer_value() {
-            // Assume string or already boxed
+            // Assume string or already boxed Value (from Map/Set/List literals)
+            // Map/Set/List literals already return *mut Value pointers, so just return as-is
             val.into_pointer_value()
         } else {
             // For bool
@@ -3828,6 +4230,131 @@ impl<'a> CodeGenerator<'a> {
                 .unwrap();
             call.into_pointer_value()
         }
+    }
+
+    fn get_raw_int_value(&mut self, val: BasicValueEnum<'a>) -> Result<IntValue<'a>, String> {
+        if val.is_int_value() {
+            Ok(val.into_int_value())
+        } else if val.is_pointer_value() {
+            // Use safe runtime function to extract int
+            let ptr = val.into_pointer_value();
+            let get_int_fn = self.module.get_function("mux_value_get_int")
+                .ok_or("mux_value_get_int not found")?;
+            let result = self.builder.build_call(get_int_fn, &[ptr.into()], "get_int")
+                .map_err(|e| e.to_string())?
+                .try_as_basic_value()
+                .left()
+                .ok_or("Call returned no value")?;
+            Ok(result.into_int_value())
+        } else {
+            Err("Expected int value or pointer".to_string())
+        }
+    }
+
+    fn get_raw_float_value(&mut self, val: BasicValueEnum<'a>) -> Result<FloatValue<'a>, String> {
+        if val.is_float_value() {
+            Ok(val.into_float_value())
+        } else if val.is_pointer_value() {
+            // Use safe runtime function to extract float
+            let ptr = val.into_pointer_value();
+            let get_float_fn = self.module.get_function("mux_value_get_float")
+                .ok_or("mux_value_get_float not found")?;
+            let result = self.builder.build_call(get_float_fn, &[ptr.into()], "get_float")
+                .map_err(|e| e.to_string())?
+                .try_as_basic_value()
+                .left()
+                .ok_or("Call returned no value")?;
+            Ok(result.into_float_value())
+        } else {
+            Err("Expected float value or pointer".to_string())
+        }
+    }
+
+    fn get_raw_bool_value(&mut self, val: BasicValueEnum<'a>) -> Result<inkwell::values::IntValue<'a>, String> {
+        if val.is_int_value() {
+            Ok(val.into_int_value())
+        } else if val.is_pointer_value() {
+            // Use safe runtime function to extract bool
+            let ptr = val.into_pointer_value();
+            let get_bool_fn = self.module.get_function("mux_value_get_bool")
+                .ok_or("mux_value_get_bool not found")?;
+            let result = self.builder.build_call(get_bool_fn, &[ptr.into()], "get_bool")
+                .map_err(|e| e.to_string())?
+                .try_as_basic_value()
+                .left()
+                .ok_or("Call returned no value")?;
+            // Convert bool to i64 for LLVM compatibility
+            let extended = self.builder.build_int_z_extend(
+                result.into_int_value(), 
+                self.context.i64_type(), 
+                "bool_to_i64"
+            ).map_err(|e| e.to_string())?;
+            Ok(extended)
+        } else {
+            Err("Expected bool value or pointer".to_string())
+        }
+    }
+
+    fn is_string_value(&mut self, val: BasicValueEnum<'a>) -> Result<bool, String> {
+        if val.is_pointer_value() {
+            let ptr = val.into_pointer_value();
+            let get_type_fn = self.module.get_function("mux_value_get_type_tag")
+                .ok_or("mux_value_get_type_tag not found")?;
+            let type_tag = self.builder.build_call(get_type_fn, &[ptr.into()], "get_type")
+                .map_err(|e| e.to_string())?
+                .try_as_basic_value()
+                .left()
+                .ok_or("Call returned no value")?
+                .into_int_value();
+            
+            // Check if type tag is 3 (String)
+            let is_string = self.builder.build_int_compare(
+                inkwell::IntPredicate::EQ,
+                type_tag,
+                self.context.i32_type().const_int(3, false), // String type tag = 3
+                "is_string"
+            ).map_err(|e| e.to_string())?;
+            
+            Ok(is_string.get_zero_extended_constant() != Some(0))
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn cleanup_value(&mut self, val: BasicValueEnum<'a>) -> Result<(), String> {
+        if val.is_pointer_value() {
+            let ptr = val.into_pointer_value();
+            let free_fn = self.module.get_function("mux_free_value")
+                .ok_or("mux_free_value not found")?;
+            self.builder.build_call(free_fn, &[ptr.into()], "free_value")
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn extract_c_string_from_value(&mut self, value_ptr: PointerValue<'a>) -> Result<PointerValue<'a>, String> {
+        // Call mux_value_get_string to extract C string from Value
+        let get_string_fn = self.module.get_function("mux_value_get_string")
+            .ok_or("mux_value_get_string not found")?;
+        let cstr_ptr = self.builder.build_call(get_string_fn, &[value_ptr.into()], "get_string")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("Call returned no value")?
+            .into_pointer_value();
+        Ok(cstr_ptr)
+    }
+
+    fn box_string_value(&mut self, cstr_ptr: PointerValue<'a>) -> Result<BasicValueEnum<'a>, String> {
+        // Call mux_value_from_string to create a Value from C string
+        let from_string_fn = self.module.get_function("mux_value_from_string")
+            .ok_or("mux_value_from_string not found")?;
+        let value_ptr = self.builder.build_call(from_string_fn, &[cstr_ptr.into()], "from_string")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("Call returned no value")?;
+        Ok(value_ptr)
     }
 
     fn generate_method_call_on_self(
