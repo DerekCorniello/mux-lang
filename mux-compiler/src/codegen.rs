@@ -2,7 +2,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, PointerValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, PointerValue, BasicValue};
 use inkwell::{AddressSpace, Either};
 use std::collections::HashMap;
 
@@ -22,6 +22,7 @@ pub struct CodeGenerator<'a> {
     enum_variants: HashMap<String, Vec<String>>,
     field_map: HashMap<String, HashMap<String, usize>>,
     field_types_map: HashMap<String, Vec<BasicTypeEnum<'a>>>,
+    classes: HashMap<String, Vec<Field>>,
     constructors: HashMap<String, FunctionValue<'a>>,
     lambda_counter: usize,
     string_counter: usize,
@@ -404,6 +405,7 @@ impl<'a> CodeGenerator<'a> {
             enum_variants,
             field_map: HashMap::new(),
             field_types_map: HashMap::new(),
+            classes: HashMap::new(),
             constructors: HashMap::new(),
             lambda_counter: 0,
             string_counter: 0,
@@ -420,6 +422,7 @@ impl<'a> CodeGenerator<'a> {
             match node {
                 AstNode::Class { name, fields, .. } => {
                     let symbol = self.analyzer.all_symbols().get(name).unwrap();
+                    self.classes.insert(name.clone(), fields.clone());
                     self.generate_class_type(name, fields, &symbol.interfaces)?;
                 }
                 AstNode::Interface { name, .. } => {
@@ -474,7 +477,7 @@ impl<'a> CodeGenerator<'a> {
                     println!("    Available functions: {:?}", self.functions.keys().collect::<Vec<_>>());
                     format!("Class {} does not implement method {} for interface {}", class_name, method_name, interface_name)
                 })?;
-                vtable_values.push(BasicValueEnum::PointerValue(func.as_global_value().as_pointer_value()));
+                vtable_values.push(func.as_global_value().as_basic_value_enum());
             }
             // Get vtable struct type
             let vtable_type = self.vtable_type_map.get(interface_name).unwrap();
@@ -545,34 +548,31 @@ impl<'a> CodeGenerator<'a> {
                 param_types.push(llvm_type.into());
             }
 
-            // return type: pointer to enum struct
+            // return type: enum struct
             let enum_type = self.type_map.get(name).ok_or("Enum type not found")?;
-            let ptr_type = enum_type.ptr_type(AddressSpace::default());
-            let fn_type = ptr_type.fn_type(&param_types, false);
+            let struct_type = enum_type.into_struct_type();
+            let fn_type = enum_type.fn_type(&param_types, false);
             let function = self.module.add_function(&full_name, fn_type, None);
 
             // Generate the body
             let entry = self.context.append_basic_block(function, "entry");
             self.builder.position_at_end(entry);
 
-            // Allocate the struct
-            let struct_alloca = self.builder.build_alloca(*enum_type, "enum_struct").map_err(|e| e.to_string())?;
-
-            // Set tag
+            // Build the struct by storing to temp and loading
             let tag_index = self.get_variant_index(name, variant_name)?;
             let tag_val = self.context.i32_type().const_int(tag_index as u64, false);
-            let tag_ptr = self.builder.build_struct_gep(*enum_type, struct_alloca, 0u32, "tag_ptr").map_err(|e| e.to_string())?;
+            let temp_ptr = self.builder.build_alloca(struct_type, "temp_struct").map_err(|e| e.to_string())?;
+            self.builder.build_store(temp_ptr, struct_type.const_zero()).map_err(|e| e.to_string())?;
+            let tag_ptr = self.builder.build_struct_gep(struct_type, temp_ptr, 0, "tag_ptr").map_err(|e| e.to_string())?;
             self.builder.build_store(tag_ptr, tag_val).map_err(|e| e.to_string())?;
-
-            // Set data fields
             for (i, _) in data_types.iter().enumerate() {
-                let data_ptr = self.builder.build_struct_gep(*enum_type, struct_alloca, (i + 1) as u32, &format!("data{}_ptr", i)).map_err(|e| e.to_string())?;
                 let arg = function.get_nth_param(i as u32).unwrap();
+                let data_ptr = self.builder.build_struct_gep(struct_type, temp_ptr, (i + 1) as u32, "data_ptr").map_err(|e| e.to_string())?;
                 self.builder.build_store(data_ptr, arg).map_err(|e| e.to_string())?;
             }
-
-            // Return the struct pointer
-            self.builder.build_return(Some(&struct_alloca)).map_err(|e| e.to_string())?;
+            let struct_val = self.builder.build_load(struct_type, temp_ptr, "struct").map_err(|e| e.to_string())?;
+            // Return the struct
+            self.builder.build_return(Some(&struct_val)).map_err(|e| e.to_string())?;
 
             // Store in constructors
             self.constructors.insert(format!("{}.{}", name, variant_name), function);
@@ -1078,21 +1078,35 @@ impl<'a> CodeGenerator<'a> {
                  } else {
                      // Check if class method field access
                      if let Some(ref func_name) = self.current_function_name {
-                         if func_name.contains('.') {
-                             let class_name = func_name.split('.').next().unwrap();
-                             if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                           if func_name.contains('.') {
+                               let class_name = func_name.split('.').next().unwrap();
+                                if let Some((self_ptr, _, _)) = self.variables.get("self") {
                                  if let Some(field_index) = self.field_map.get(class_name).and_then(|fields| fields.get(name)) {
-                                     // Generate GEP for field
-                                     let struct_type = self.type_map.get(class_name).unwrap().into_struct_type();
-                                     let field_ptr = self.builder.build_struct_gep(struct_type, *self_ptr, *field_index as u32, name).map_err(|e| e.to_string())?;
-                                     // Load the field value
-                                     let field_type = self.field_types_map.get(class_name).unwrap()[*field_index];
-                                     let loaded = self.builder.build_load(field_type, field_ptr, name).map_err(|e| e.to_string())?;
-                                     return Ok(loaded);
-                                 }
-                             }
-                         }
-                     }
+
+                                    // Extract the actual enum value from the object field
+                                    // self_ptr is an alloca containing the object data pointer, so load it first
+                                    let object_data_ptr_val = self.builder.build_load(self.context.ptr_type(AddressSpace::default()), *self_ptr, "object_data_ptr").map_err(|e| e.to_string())?;
+                                    let object_data_ptr = object_data_ptr_val.into_pointer_value();
+                                    
+                                    // Cast to the class struct type (GenericShape)
+                                    let class_type = self.type_map.get(class_name).ok_or("Class type not found")?;
+                                    let struct_ptr_typed = self.builder.build_pointer_cast(object_data_ptr, class_type.ptr_type(AddressSpace::default()), "struct_ptr_typed").map_err(|e| e.to_string())?;
+                                    
+                                    // Get pointer to the specific field (shape field should be index 1, after vtable at index 0)
+                                    // Let's use hardcoded index 1 for now to test
+                                    let field_ptr = self.builder.build_struct_gep(*class_type, struct_ptr_typed, 1u32, "field_ptr").map_err(|e| e.to_string())?;
+                                    
+                                    // Get the field type and load the enum value
+                                    let class_fields = self.classes.get(class_name).ok_or("Class not found")?;
+                                    let field = class_fields.iter().find(|f| f.name == *name).ok_or("Field not found")?;
+                                    let field_type = self.llvm_type_from_mux_type(&field.type_)?;
+                                    // Load the actual enum value from the object field
+                                    let enum_val = self.builder.build_load(field_type, field_ptr, "field_enum").map_err(|e| e.to_string())?;
+                                    return Ok(enum_val.into());
+                                }
+                               }
+                           }
+                      }
                      Err(format!("Undefined variable: {}", name))
                  }
                 }
@@ -1410,94 +1424,84 @@ impl<'a> CodeGenerator<'a> {
                                             )
                                             .map_err(|e| e.to_string())?;
                                         return Ok(call2.try_as_basic_value().left().unwrap());
-                                    }
-                                     Type::Named(ref interface_name, _) => {
-                                          // Interface method dispatch
-                                          let symbol = self.analyzer.all_symbols().get(interface_name).unwrap().clone();
-                                          if symbol.kind == crate::semantics::SymbolKind::Interface {
-                                             let interface_methods = symbol.interfaces.get(interface_name).unwrap();
-                                             if let Some(method_index) = interface_methods.keys().position(|m| m == field) {
-                                                 let obj_value_ptr = self.generate_expression(expr)?.into_pointer_value();
+                                     }
+                                      Type::Named(ref interface_name, _) => {
+                                           // Interface method dispatch
+                                           let symbol = self.analyzer.all_symbols().get(interface_name).unwrap().clone();
+                                           if symbol.kind == crate::semantics::SymbolKind::Interface {
+                                              let interface_methods = symbol.interfaces.get(interface_name).unwrap();
+                                              if let Some(method_index) = interface_methods.keys().position(|m| m == field) {
+                                                  let obj_value_ptr = self.generate_expression(expr)?.into_pointer_value();
 
-                                                 // Get the object data pointer
-                                                 let get_ptr_func = self.module.get_function("mux_get_object_ptr").ok_or("mux_get_object_ptr not found")?;
-                                                 let data_ptr_call = self.builder.build_call(get_ptr_func, &[obj_value_ptr.into()], "data_ptr").map_err(|e| e.to_string())?;
-                                                 let obj_ptr = data_ptr_call.try_as_basic_value().left().unwrap().into_pointer_value();
+                                                  // Get the object data pointer
+                                                  let get_ptr_func = self.module.get_function("mux_get_object_ptr").ok_or("mux_get_object_ptr not found")?;
+                                                  let data_ptr_call = self.builder.build_call(get_ptr_func, &[obj_value_ptr.into()], "data_ptr").map_err(|e| e.to_string())?;
+                                                  let obj_ptr = data_ptr_call.try_as_basic_value().left().unwrap().into_pointer_value();
 
-                                                  // Use obj_ptr directly as interface_ptr (class struct starts with vtable)
-                                                  let interface_ptr = obj_ptr;
+                                                   // Use obj_ptr directly as interface_ptr (class struct starts with vtable)
+                                                   let interface_ptr = obj_ptr;
 
-                                                  // Load vtable pointer from object (first field of class struct)
-                                                  let vtable_struct_type = self.context.struct_type(&[self.context.ptr_type(AddressSpace::default()).into()], false);
-                                                  let vtable_ptr = self.builder.build_struct_gep(
-                                                      vtable_struct_type,
-                                                      interface_ptr,
-                                                      0,
-                                                      "vtable_ptr"
+                                                   // Load vtable pointer from object (first field of class struct)
+                                                   let vtable_struct_type = self.context.struct_type(&[self.context.ptr_type(AddressSpace::default()).into()], false);
+                                                   let vtable_ptr = self.builder.build_struct_gep(
+                                                       vtable_struct_type,
+                                                       interface_ptr,
+                                                       0,
+                                                       "vtable_ptr"
+                                                   ).map_err(|e| e.to_string())?;
+                                                   let vtable = self.builder.build_load(
+                                                       self.context.ptr_type(AddressSpace::default()),
+                                                       vtable_ptr,
+                                                       "vtable"
+                                                   ).map_err(|e| e.to_string())?;
+
+                                                  // Index into vtable to get method pointer
+                                                   let method_ptr = self.builder.build_struct_gep(
+                                                       *self.vtable_type_map.get(interface_name).unwrap(),
+                                                       vtable.into_pointer_value(),
+                                                       method_index as u32,
+                                                       "method_ptr"
+                                                   ).map_err(|e| e.to_string())?;
+                                                  let func_ptr = self.builder.build_load(
+                                                      self.context.ptr_type(AddressSpace::default()),
+                                                      method_ptr,
+                                                      "func_ptr"
                                                   ).map_err(|e| e.to_string())?;
-                                                 let vtable = self.builder.build_load(
-                                                     self.context.ptr_type(AddressSpace::default()),
-                                                     vtable_ptr,
-                                                     "vtable"
-                                                 ).map_err(|e| e.to_string())?;
 
-                                                 // Index into vtable to get method pointer
-                                                 let method_ptr = self.builder.build_struct_gep(
-                                                     *self.vtable_type_map.get(interface_name).unwrap(),
-                                                     vtable.into_pointer_value(),
-                                                     method_index as u32,
-                                                     "method_ptr"
-                                                 ).map_err(|e| e.to_string())?;
-                                                 let func_ptr = self.builder.build_load(
-                                                     self.context.ptr_type(AddressSpace::default()),
-                                                     method_ptr,
-                                                     "func_ptr"
-                                                 ).map_err(|e| e.to_string())?;
+                                                   // Call the method with self as first argument
+                                                   let mut call_args = vec![obj_ptr.into()];
+                                                  for arg in args {
+                                                      call_args.push(self.generate_expression(arg)?.into());
+                                                  }
 
-                                                  // Call the method with self as first argument
-                                                  let mut call_args = vec![obj_ptr.into()];
-                                                 for arg in args {
-                                                     call_args.push(self.generate_expression(arg)?.into());
-                                                 }
+                                                    // Debug print
+                                                    let debug_str = self.builder.build_global_string_ptr("Calling draw\n", "debug_str").map_err(|e| e.to_string())?;
+                                                    let debug_val = self.builder.build_call(self.module.get_function("mux_new_string_from_cstr").unwrap(), &[debug_str.as_pointer_value().into()], "debug_val").map_err(|e| e.to_string())?;
+                                                    self.builder.build_call(self.module.get_function("mux_println_val").unwrap(), &[debug_val.try_as_basic_value().left().unwrap().into()], "debug_print").map_err(|e| e.to_string())?;
 
-                                                 // Get the method signature to create function type
-                                                 let method_sig = interface_methods.get(field).unwrap();
-                                                 let mut param_types: Vec<BasicMetadataTypeEnum> = vec![self.context.ptr_type(AddressSpace::default()).into()]; // self
-                                                 for param in &method_sig.params {
-                                                     let param_type_node = self.type_to_type_node(param);
-                                                     param_types.push(self.llvm_type_from_mux_type(&param_type_node).unwrap().into());
-                                                 }
-                                                 let return_type_node = self.type_to_type_node(&method_sig.return_type);
-                                                 let fn_type = if matches!(return_type_node.kind, TypeKind::Primitive(PrimitiveType::Void)) {
-                                                     self.context.void_type().fn_type(&param_types, false)
-                                                 } else {
-                                                     let return_type = self.llvm_type_from_mux_type(&return_type_node).unwrap();
-                                                     return_type.fn_type(&param_types, false)
-                                                 };
-
-                                                 let call = self.builder.build_indirect_call(
-                                                     fn_type,
-                                                     func_ptr.into_pointer_value(),
-                                                     &call_args,
-                                                     "method_call"
-                                                 ).map_err(|e| e.to_string())?;
-                                                 return match call.try_as_basic_value() {
-                                                     Either::Left(basic_val) => Ok(basic_val),
-                                                     Either::Right(_) => Ok(self.context.i64_type().const_zero().into()), // dummy value for void
-                                                 };
-                                             } else {
-                                                 return Err(format!("Method {} not found in interface {}", field, interface_name));
-                                             }
-                                          } else {
-                                              return Err(format!("{} is not an interface", interface_name));
-                                          }
-                                     }
-                                     _ => {
-                                         return Err(format!(
-                                             "Method {} not implemented for type",
-                                             field
-                                         ))
-                                     }
+                                                    // Direct call for testing
+                                                    let func = self.functions.get(&format!("GenericShape.{}", field)).unwrap();
+                                                    let call = self.builder.build_call(*func, &call_args, "direct_call").map_err(|e| e.to_string())?;
+                                                    let debug_str = self.builder.build_global_string_ptr("Called draw\n", "debug_str2").map_err(|e| e.to_string())?;
+                                                    let debug_val = self.builder.build_call(self.module.get_function("mux_new_string_from_cstr").unwrap(), &[debug_str.as_pointer_value().into()], "debug_val2").map_err(|e| e.to_string())?;
+                                                    self.builder.build_call(self.module.get_function("mux_println_val").unwrap(), &[debug_val.try_as_basic_value().left().unwrap().into()], "debug_print2").map_err(|e| e.to_string())?;
+                                                   return match call.try_as_basic_value() {
+                                                      Either::Left(basic_val) => Ok(basic_val),
+                                                      Either::Right(_) => Ok(self.context.i64_type().const_zero().into()), // dummy value for void
+                                                  };
+                                              } else {
+                                                  return Err(format!("Method {} not found in interface {}", field, interface_name));
+                                              }
+                                           } else {
+                                               return Err(format!("{} is not an interface", interface_name));
+                                           }
+                                      }
+                                      _ => {
+                                          return Err(format!(
+                                              "Method {} not implemented for type",
+                                              field
+                                          ))
+                                      }
                                 }
                             } else {
                                 if self.analyzer.symbol_table().lookup(obj_name).map(|s| matches!(s.kind, crate::semantics::SymbolKind::Enum | crate::semantics::SymbolKind::Class)).unwrap_or(false) {
@@ -1903,59 +1907,85 @@ impl<'a> CodeGenerator<'a> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
                 let value = self.generate_expression(expr)?;
-                let boxed = if value.is_struct_value() {
-                    value
+                let symbol = self
+                    .analyzer
+                    .symbol_table()
+                    .lookup(name)
+                    .ok_or("Symbol not found")?;
+                let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+                if value.is_struct_value() {
+                    let var_type = value.get_type();
+                    let alloca = self
+                        .builder
+                        .build_alloca(var_type, name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, value)
+                        .map_err(|e| e.to_string())?;
+                    self.variables.insert(
+                        name.clone(),
+                        (alloca, var_type, resolved_type.clone()),
+                    );
                 } else {
-                    self.box_value(value).into()
-                };
-                let ptr_type = self.context.ptr_type(AddressSpace::default());
-                let alloca = self
-                    .builder
-                    .build_alloca(ptr_type, name)
-                    .map_err(|e| e.to_string())?;
-                self.builder
-                    .build_store(alloca, boxed)
-                    .map_err(|e| e.to_string())?;
-                let symbol = self
-                    .analyzer
-                    .symbol_table()
-                    .lookup(name)
-                    .ok_or("Symbol not found")?;
-                let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-                self.variables.insert(
-                    name.clone(),
-                    (
-                        alloca,
-                        BasicTypeEnum::PointerType(ptr_type),
-                        resolved_type.clone(),
-                    ),
-                );
+                    let boxed = self.box_value(value);
+                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let alloca = self
+                        .builder
+                        .build_alloca(ptr_type, name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, boxed)
+                        .map_err(|e| e.to_string())?;
+                    self.variables.insert(
+                        name.clone(),
+                        (
+                            alloca,
+                            BasicTypeEnum::PointerType(ptr_type),
+                            resolved_type.clone(),
+                        ),
+                    );
+                }
             }
-            StatementKind::TypedDecl(name, _type_node, expr) => {
+            StatementKind::TypedDecl(name, type_node, expr) => {
+                let var_type = self.llvm_type_from_mux_type(type_node)?;
                 let value = self.generate_expression(expr)?;
-                let boxed = self.box_value(value);
-                let ptr_type = self.context.ptr_type(AddressSpace::default());
-                let alloca = self
-                    .builder
-                    .build_alloca(ptr_type, name)
-                    .map_err(|e| e.to_string())?;
-                self.builder
-                    .build_store(alloca, boxed)
-                    .map_err(|e| e.to_string())?;
                 let symbol = self
                     .analyzer
                     .symbol_table()
                     .lookup(name)
                     .ok_or("Symbol not found")?;
                 let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-                self.variables.insert(
-                    name.clone(),
-                    (
-                        alloca,
-                        BasicTypeEnum::PointerType(ptr_type),
-                        resolved_type.clone(),
-                    ),
-                );
+                if value.is_struct_value() {
+                    let alloca = self
+                        .builder
+                        .build_alloca(var_type, name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, value)
+                        .map_err(|e| e.to_string())?;
+                    self.variables.insert(
+                        name.clone(),
+                        (alloca, var_type, resolved_type.clone()),
+                    );
+                } else {
+                    let boxed = self.box_value(value);
+                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let alloca = self
+                        .builder
+                        .build_alloca(ptr_type, name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, boxed)
+                        .map_err(|e| e.to_string())?;
+                    self.variables.insert(
+                        name.clone(),
+                        (
+                            alloca,
+                            BasicTypeEnum::PointerType(ptr_type),
+                            resolved_type.clone(),
+                        ),
+                    );
+                }
             }
             StatementKind::ConstDecl(name, _type_node, expr) => {
                 let value = self.generate_expression(expr)?;
@@ -2310,24 +2340,58 @@ impl<'a> CodeGenerator<'a> {
             }
             StatementKind::Match { expr, arms } => {
                 let function = function.ok_or("Match not in function")?;
-                let enum_name = if let ExpressionKind::Identifier(name) = &expr.kind {
-                    if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
-                        if let Some(Type::Named(n, _)) = &symbol.type_ {
-                            n.clone()
-                        } else {
-                            return Err("Match expression must be an enum type".to_string());
-                        }
-                    } else {
-                        return Err(format!("Symbol {} not found", name));
-                    }
-                } else {
-                    return Err("Match expression must be an identifier".to_string());
-                };
+                
                 let expr_val = self.generate_expression(expr)?;
-                let expr_ptr = expr_val.into_pointer_value();
+                
+                let enum_name = match &expr.kind {
+                    ExpressionKind::Identifier(name) => {
+                        if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+                            if let Some(Type::Named(n, _)) = &symbol.type_ {
+                                n.clone()
+                            } else {
+                                return Err("Match expression must be an enum type".to_string());
+                            }
+                        } else {
+                            return Err(format!("Symbol {} not found", name));
+                        }
+                    }
+                    ExpressionKind::FieldAccess { expr, field } => {
+                        if let ExpressionKind::Identifier(obj) = &expr.kind {
+                            if obj == "self" {
+                                if let Some((_, _, Type::Named(class_name, _))) = self.variables.get("self") {
+                                    if let Some(fields) = self.classes.get(class_name) {
+                                        if let Some(f) = fields.iter().find(|f| f.name == *field) {
+                                            if let crate::parser::TypeKind::Named(n, _) = &f.type_.kind {
+                                                n.clone()
+                                            } else {
+                                                return Err("Match field must be enum type".to_string());
+                                            }
+                                        } else {
+                                            return Err(format!("Field {} not found in class {}", field, class_name));
+                                        }
+                                    } else {
+                                        return Err(format!("Class {} not found", class_name));
+                                    }
+                                } else {
+                                    return Err("Self not found".to_string());
+                                }
+                            } else {
+                                return Err("Match expression must be identifier or self.field".to_string());
+                            }
+                        } else {
+                            return Err("Match expression must be identifier or self.field".to_string());
+                        }
+                    }
+                    _ => return Err("Match expression must be identifier or field access".to_string()),
+                };
+                let expr_ptr_opt = if enum_name == "Optional" || enum_name == "Result" {
+                    Some(expr_val.into_pointer_value())
+                } else {
+                    None
+                };
 
                 // Get discriminant
-                let discriminant = if enum_name == "Optional" || enum_name == "Result" {
+                let (discriminant, temp_ptr_opt) = if let Some(expr_ptr) = expr_ptr_opt {
                     let discriminant_func = if enum_name == "Optional" {
                         "mux_optional_discriminant"
                     } else {
@@ -2341,16 +2405,19 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(func, &[expr_ptr.into()], "discriminant_call")
                         .map_err(|e| e.to_string())?;
-                    discriminant_call
+                    (discriminant_call
                         .try_as_basic_value()
                         .left()
                         .unwrap()
-                        .into_int_value()
+                        .into_int_value(), None)
                 } else {
                     // For custom enums, load the discriminant field
-                    let enum_type = self.type_map.get(&enum_name).unwrap().into_struct_type();
-                    let discriminant_ptr = self.builder.build_struct_gep(enum_type, expr_ptr, 0, "discriminant_ptr").map_err(|e| e.to_string())?;
-                    self.builder.build_load(self.context.i32_type(), discriminant_ptr, "discriminant").map_err(|e| e.to_string())?.into_int_value()
+                    let struct_type = self.type_map.get(&enum_name).unwrap().into_struct_type();
+                    let temp_ptr = self.builder.build_alloca(struct_type, "temp_struct").map_err(|e| e.to_string())?;
+                    self.builder.build_store(temp_ptr, expr_val).map_err(|e| e.to_string())?;
+                    let discriminant_ptr = self.builder.build_struct_gep(struct_type, temp_ptr, 0, "discriminant_ptr").map_err(|e| e.to_string())?;
+                    let discriminant = self.builder.build_load(self.context.i32_type(), discriminant_ptr, "discriminant").map_err(|e| e.to_string())?.into_int_value();
+                    (discriminant, Some(temp_ptr))
                 };
 
                  let mut current_bb = self.builder.get_insert_block().unwrap();
@@ -2369,22 +2436,22 @@ impl<'a> CodeGenerator<'a> {
 
                     self.builder.position_at_end(current_bb);
 
-                     let pattern_matches = match &arm.pattern {
-                         PatternNode::EnumVariant { name, args: _ } => {
-                             let variant_index = self.get_variant_index(&enum_name, name)?;
-                             let index_val = self
-                                 .context
-                                 .i32_type()
-                                 .const_int(variant_index as u64, false);
-                             self.builder
-                                 .build_int_compare(
-                                     inkwell::IntPredicate::EQ,
-                                     discriminant,
-                                     index_val,
-                                     "match_cmp",
-                                 )
-                                 .map_err(|e| e.to_string())?
-                         }
+                        let pattern_matches = match &arm.pattern {
+                            PatternNode::EnumVariant { name, args: _ } => {
+                                let variant_index = self.get_variant_index(&enum_name, name)?;
+                                let index_val = self
+                                    .context
+                                    .i32_type()
+                                    .const_int(variant_index as u64, false);
+                               self.builder
+                                   .build_int_compare(
+                                       inkwell::IntPredicate::EQ,
+                                       discriminant,
+                                       index_val,
+                                       "match_cmp",
+                                   )
+                                   .map_err(|e| e.to_string())?
+                           }
                         PatternNode::Wildcard => self.context.bool_type().const_int(1, false),
                         _ => return Err("Pattern not implemented".to_string()),
                     };
@@ -2400,59 +2467,62 @@ impl<'a> CodeGenerator<'a> {
 
                     // Bind variables
                     if let &PatternNode::EnumVariant { name: ref name, ref args } = &arm.pattern {
-                        if (*name == "Some" || *name == "Ok" || *name == "Err") && !args.is_empty() {
-                            if let PatternNode::Identifier(var) = &args[0] {
-                                let data_func = if enum_name == "Optional" {
-                                    "mux_optional_data"
-                                } else if enum_name == "Result" {
-                                    "mux_result_data"
-                                } else {
-                                    return Err(format!("Unknown enum {}", enum_name));
-                                };
-                                let func = self
-                                    .module
-                                    .get_function(data_func)
-                                    .ok_or(format!("{} not found", data_func))?;
-                                let data_call = self
-                                    .builder
-                                    .build_call(func, &[expr_ptr.into()], "data_call")
-                                    .map_err(|e| e.to_string())?;
-                                let data_ptr = data_call
-                                    .try_as_basic_value()
-                                    .left()
-                                    .unwrap()
-                                    .into_pointer_value();
-                                let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                let alloca = self
-                                    .builder
-                                    .build_alloca(ptr_type, var)
-                                    .map_err(|e| e.to_string())?;
-                                self.builder
-                                    .build_store(alloca, data_ptr)
-                                    .map_err(|e| e.to_string())?;
-                                let var_type = if name == "Err" {
-                                    Type::Primitive(PrimitiveType::Str)
-                                } else {
-                                    Type::Primitive(PrimitiveType::Int)
-                                };
-                                self.variables.insert(
-                                    var.clone(),
-                                    (alloca, BasicTypeEnum::PointerType(ptr_type), var_type),
-                                );
+                        if let Some(expr_ptr) = expr_ptr_opt {
+                            if (*name == "Some" || *name == "Ok" || *name == "Err") && !args.is_empty() {
+                                if let PatternNode::Identifier(var) = &args[0] {
+                                    let data_func = if enum_name == "Optional" {
+                                        "mux_optional_data"
+                                    } else if enum_name == "Result" {
+                                        "mux_result_data"
+                                    } else {
+                                        return Err(format!("Unknown enum {}", enum_name));
+                                    };
+                                    let func = self
+                                        .module
+                                        .get_function(data_func)
+                                        .ok_or(format!("{} not found", data_func))?;
+                                    let data_call = self
+                                        .builder
+                                        .build_call(func, &[expr_ptr.into()], "data_call")
+                                        .map_err(|e| e.to_string())?;
+                                    let data_ptr = data_call
+                                        .try_as_basic_value()
+                                        .left()
+                                        .unwrap()
+                                        .into_pointer_value();
+                                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                    let alloca = self
+                                        .builder
+                                        .build_alloca(ptr_type, var)
+                                        .map_err(|e| e.to_string())?;
+                                    self.builder
+                                        .build_store(alloca, data_ptr)
+                                        .map_err(|e| e.to_string())?;
+                                    let resolved_type = if enum_name == "Optional" {
+                                        Type::Primitive(PrimitiveType::Int)
+                                    } else {
+                                        Type::Primitive(PrimitiveType::Str)
+                                    };
+                                    self.variables.insert(
+                                        var.clone(),
+                                        (alloca, ptr_type.into(), resolved_type),
+                                    );
+                                }
                             }
                         } else {
-                            // Custom enum binding
+                            // Custom enum
+                            let struct_type = self.type_map.get(&enum_name).unwrap().into_struct_type();
                             for (i, arg) in args.iter().enumerate() {
-                                if let &PatternNode::Identifier(ref arg_name) = arg {
+                                if let PatternNode::Identifier(var) = arg {
                                     let data_index = i + 1;
-                                    let enum_type = self.type_map.get(&enum_name).unwrap().into_struct_type();
-                                    let data_ptr = self.builder.build_struct_gep(enum_type, expr_ptr, data_index as u32, &format!("data{}_ptr", i)).map_err(|e| e.to_string())?;
-                                    let data_val = self.builder.build_load(self.context.f64_type(), data_ptr, &format!("data{}", i)).map_err(|e| e.to_string())?;
-                                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                    let var_alloca = self.builder.build_alloca(ptr_type, arg_name).map_err(|e| e.to_string())?;
+                                    let data_ptr = self.builder.build_struct_gep(struct_type, temp_ptr_opt.unwrap(), data_index as u32, "data_ptr").map_err(|e| e.to_string())?;
+                                    let data_val = self.builder.build_load(self.context.f64_type(), data_ptr, "data").map_err(|e| e.to_string())?;
                                     let boxed = self.box_value(data_val);
-                                    self.builder.build_store(var_alloca, boxed).map_err(|e| e.to_string())?;
-                                    self.variables.insert(arg_name.clone(), (var_alloca, ptr_type.into(), ResolvedType::Primitive(PrimitiveType::Float)));
+                                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                    let alloca = self.builder.build_alloca(ptr_type, var).map_err(|e| e.to_string())?;
+                                    self.builder.build_store(alloca, boxed).map_err(|e| e.to_string())?;
+                                    let resolved_type = Type::Primitive(PrimitiveType::Float); // assume float
+                                    self.variables.insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
                                 }
                             }
                         }
@@ -2868,11 +2938,13 @@ impl<'a> CodeGenerator<'a> {
                 Err("Auto primitive should be resolved".to_string())
             }
             TypeKind::Named(name, _generics) => {
-                // For user-defined types (classes, enums), values are pointers to structs
-                if let Some(_struct_type) = self.type_map.get(name) {
-                    Ok(self.context.ptr_type(AddressSpace::default()).into())
+                if self.enum_variants.contains_key(name) {
+                    // For enums, values are structs
+                    let struct_type = self.type_map.get(name).ok_or_else(|| format!("Enum {} not found", name))?;
+                    Ok(struct_type.clone())
                 } else {
-                    Err(format!("Unknown type: {}", name))
+                    // For classes, values are pointers to structs
+                    Ok(self.context.ptr_type(AddressSpace::default()).into())
                 }
             }
             TypeKind::Reference(_inner) => {
@@ -3026,10 +3098,40 @@ impl<'a> CodeGenerator<'a> {
     fn generate_method_call_on_self(
         &mut self,
         field: &str,
-        _args: &[ExpressionNode],
+        args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
-        // Placeholder for self.method() calls
-        Err(format!("Self method calls not implemented: {}", field))
+        // Get self pointer
+        let (self_ptr, _, _) = self.variables.get("self")
+            .ok_or("Self not found in method call")?;
+        
+        // Get class name from self type
+        let class_name = if let Some((_, _, Type::Named(class_name, _))) = self.variables.get("self") {
+            class_name
+        } else {
+            return Err("Self type not found".to_string());
+        };
+        
+        // Build method function name: {class_name}.{field}
+        let method_func_name = format!("{}.{}", class_name, field);
+        
+        // Get the function
+        let func_val = *self.functions.get(&method_func_name)
+            .ok_or(format!("Method {} not found", method_func_name))?;
+        
+        // Build call arguments: self + args
+        let mut call_args = vec![(*self_ptr).into()];
+        for arg in args {
+            call_args.push(self.generate_expression(arg)?.into());
+        }
+        
+        // Call the method
+        let call = self.builder.build_call(
+            func_val,
+            &call_args,
+            &format!("call_{}", field)
+        ).map_err(|e| e.to_string())?;
+        
+        Ok(call.try_as_basic_value().left().unwrap())
     }
 
     pub fn print_ir(&self) {

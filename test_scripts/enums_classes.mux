@@ -7,8 +7,8 @@ class GenericShape is DrawableShape {
     Shape shape  // Class contains enum for data
     func draw() returns void {
         match shape {
-            Circ(r) { println("Drawing circle with radius: " + r.to_string()) }
-            Rect(w, h) { println("Drawing rectangle with width: " + w.to_string() + " height: " + h.to_string()) }
+            Circ(r) { println("In Circ arm") println("Drawing circle with radius: " + r.to_string()) }
+            Rect(w, h) { println("In Rect arm") println("Drawing rectangle with width: " + w.to_string() + " height: " + h.to_string()) }
         }
     }
 }

@@ -6,6 +6,7 @@ use ::std::mem;
 use ::std::cmp;
 use ::std::sync::Arc;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
+use libc::{malloc, free};
 
 pub type TypeId = u32;
 
@@ -204,3 +205,8 @@ pub use std::{
     mux_value_list_length,
     mux_value_list_get_value,
 };
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_alloc(size: usize) -> *mut c_void {
+    unsafe { malloc(size as libc::size_t) as *mut c_void }
+}

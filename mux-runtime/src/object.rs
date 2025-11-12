@@ -61,8 +61,6 @@ pub fn alloc_object(type_id: TypeId) -> *mut Value {
     // Create Value::Object
     let value = Value::Object(obj_ref.clone());
 
-    println!("Allocated object of type {} at {:p}, ref_count: {}", obj_type.name, ptr, obj_ref.ref_count.load(Ordering::Relaxed));
-
     // Return boxed value
     Box::into_raw(Box::new(value))
 }

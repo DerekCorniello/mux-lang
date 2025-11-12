@@ -27,6 +27,7 @@ pub extern "C" fn mux_int_value(i: i64) -> *mut Value {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_value(f: f64) -> *mut Value {
+    println!("mux_float_value called with f: {}", f);
     Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(f))))
 }
 
