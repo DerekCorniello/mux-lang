@@ -73,13 +73,7 @@ pub unsafe extern "C" fn mux_int_from_value(v: *mut crate::Value) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn mux_int_to_float(v: *mut Value) -> *mut Value {
-    if let Value::Int(i) = unsafe { &*v } {
-        Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(*i as f64))))
-    } else {
-        panic!("Expected Int value");
-    }
-}
+
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_int_add(a: i64, b: i64) -> i64 {

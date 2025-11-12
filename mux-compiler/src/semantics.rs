@@ -1119,23 +1119,27 @@ impl SemanticAnalyzer {
                 // built-in methods for primitives
                 match prim {
                     PrimitiveType::Int => match method_name {
-                        "to_string" | "to_float" => Some(MethodSig {
+                        "to_string" | "to_float" | "to_int" => Some(MethodSig {
                             params: vec![],
                             return_type: if method_name == "to_string" {
                                 Type::Primitive(PrimitiveType::Str)
-                            } else {
+                            } else if method_name == "to_float" {
                                 Type::Primitive(PrimitiveType::Float)
+                            } else {
+                                Type::Primitive(PrimitiveType::Int)
                             },
                         }),
                         _ => None,
                     },
                     PrimitiveType::Float => match method_name {
-                        "to_string" | "to_int" => Some(MethodSig {
+                        "to_string" | "to_int" | "to_float" => Some(MethodSig {
                             params: vec![],
                             return_type: if method_name == "to_string" {
                                 Type::Primitive(PrimitiveType::Str)
-                            } else {
+                            } else if method_name == "to_int" {
                                 Type::Primitive(PrimitiveType::Int)
+                            } else {
+                                Type::Primitive(PrimitiveType::Float)
                             },
                         }),
                         _ => None,
@@ -1152,12 +1156,14 @@ impl SemanticAnalyzer {
                         _ => None,
                     },
                     PrimitiveType::Bool => match method_name {
-                        "to_string" | "to_int" => Some(MethodSig {
+                        "to_string" | "to_int" | "to_float" => Some(MethodSig {
                             params: vec![],
                             return_type: if method_name == "to_string" {
                                 Type::Primitive(PrimitiveType::Str)
-                            } else {
+                            } else if method_name == "to_int" {
                                 Type::Primitive(PrimitiveType::Int)
+                            } else {
+                                Type::Primitive(PrimitiveType::Float)
                             },
                         }),
                         _ => None,

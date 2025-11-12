@@ -22,6 +22,7 @@ impl fmt::Display for Bool {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_bool_to_string(b: bool) -> *mut c_char {
+    eprintln!("mux_bool_to_string called with b: {}", b);
     let s = format!("{}", Bool(b));
     CString::new(s).unwrap().into_raw()
 }
@@ -37,7 +38,24 @@ pub unsafe extern "C" fn mux_bool_from_value(v: *mut Value) -> bool {
     }
 }
 
+/// # Safety
+/// v must be a valid pointer to a Value::Bool.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_bool_to_int(b: bool) -> i64 {
-    Bool(b).to_int()
+pub unsafe extern "C" fn mux_bool_to_int(v: *mut Value) -> *mut Value {
+    if let Value::Bool(b) = unsafe { &*v } {
+        Box::into_raw(Box::new(Value::Int(Bool(*b).to_int())))
+    } else {
+        panic!("Expected Bool value");
+    }
+}
+
+/// # Safety
+/// v must be a valid pointer to a Value::Bool.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_bool_to_float(v: *mut Value) -> *mut Value {
+    if let Value::Bool(b) = unsafe { &*v } {
+        Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(Bool(*b).to_int() as f64))))
+    } else {
+        panic!("Expected Bool value");
+    }
 }

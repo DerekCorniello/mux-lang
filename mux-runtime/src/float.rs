@@ -80,9 +80,27 @@ pub unsafe extern "C" fn mux_float_from_value(v: *mut Value) -> f64 {
     }
 }
 
+/// # Safety
+/// v must be a valid pointer to a Value::Float.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_float_to_int(f: f64) -> *mut Value {
-    Box::into_raw(Box::new(Value::Int(Float(ordered_float::OrderedFloat(f)).to_int())))
+pub unsafe extern "C" fn mux_int_to_float(v: *mut Value) -> *mut Value {
+    if let Value::Int(i) = unsafe { &*v } {
+        let f = *i as f64;
+        Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(f))))
+    } else {
+        panic!("Expected Int value");
+    }
+}
+
+/// # Safety
+/// v must be a valid pointer to a Value::Float.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_float_to_int(v: *mut Value) -> *mut Value {
+    if let Value::Float(f) = unsafe { &*v } {
+        Box::into_raw(Box::new(Value::Int(f.into_inner() as i64)))
+    } else {
+        panic!("Expected Float value");
+    }
 }
 
 #[unsafe(no_mangle)]

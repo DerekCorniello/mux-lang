@@ -159,7 +159,10 @@ impl fmt::Display for Value {
         match self {
             Value::Bool(b) => write!(f, "{}", if *b { "true" } else { "false" }),
             Value::Int(i) => write!(f, "{}", i),
-            Value::Float(fl) => write!(f, "{}", fl),
+            // Floats use Debug formatting ({:?}) instead of Display ({}) to preserve decimal places
+            // This ensures 1.0 displays as "1.0" rather than "1", which is important for
+            // method chaining like int.to_float().to_string() where users expect to see the float nature
+            Value::Float(fl) => write!(f, "{:?}", fl),
             Value::String(s) => write!(f, "{}", s),
             Value::List(l) => {
                 let strs: Vec<String> = l.iter().map(|v| format!("{}", v)).collect();

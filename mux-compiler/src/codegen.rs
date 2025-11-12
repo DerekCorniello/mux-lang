@@ -103,6 +103,16 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_bool_to_string", fn_type, None);
 
+        // mux_bool_to_int: (*mut Value) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_bool_to_int", fn_type, None);
+
+        // mux_bool_to_float: (*mut Value) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_bool_to_float", fn_type, None);
+
         // mux_string_to_string: (*const c_char) -> *const c_char
         let params = &[i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
@@ -1276,39 +1286,9 @@ impl<'a> CodeGenerator<'a> {
                                 Ok(ptr_to_boxed.into())
                             }
                         }
-                        Type::Primitive(PrimitiveType::Int) => {
-                            let func = self
-                                .module
-                                .get_function("mux_int_from_value")
-                                .ok_or("mux_int_from_value not found")?;
-                            let call = self
-                                .builder
-                                .build_call(func, &[ptr_to_boxed.into()], "int_from_value")
-                                .map_err(|e| e.to_string())?;
-                            Ok(call.try_as_basic_value().left().unwrap())
-                        }
-                        Type::Primitive(PrimitiveType::Float) => {
-                            let func = self
-                                .module
-                                .get_function("mux_float_from_value")
-                                .ok_or("mux_float_from_value not found")?;
-                            let call = self
-                                .builder
-                                .build_call(func, &[ptr_to_boxed.into()], "float_from_value")
-                                .map_err(|e| e.to_string())?;
-                            Ok(call.try_as_basic_value().left().unwrap())
-                        }
-                        Type::Primitive(PrimitiveType::Bool) => {
-                            let func = self
-                                .module
-                                .get_function("mux_bool_from_value")
-                                .ok_or("mux_bool_from_value not found")?;
-                            let call = self
-                                .builder
-                                .build_call(func, &[ptr_to_boxed.into()], "bool_from_value")
-                                .map_err(|e| e.to_string())?;
-                            Ok(call.try_as_basic_value().left().unwrap())
-                        }
+                        Type::Primitive(PrimitiveType::Int) => Ok(ptr_to_boxed.into()),
+                        Type::Primitive(PrimitiveType::Float) => Ok(ptr_to_boxed.into()),
+                        Type::Primitive(PrimitiveType::Bool) => Ok(ptr_to_boxed.into()),
                         Type::Primitive(PrimitiveType::Str) => Ok(ptr_to_boxed.into()),
                         _ => {
                             // boxed types
@@ -3023,6 +3003,10 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?;
                     Ok(call.try_as_basic_value().left().unwrap())
                 }
+                "to_int" => {
+                    // int.to_int() just returns itself (identity operation)
+                    Ok(obj_value)
+                }
                 _ => Err(format!("Method {} not implemented for int", method_name)),
             },
             PrimitiveType::Float => match method_name {
@@ -3059,6 +3043,10 @@ impl<'a> CodeGenerator<'a> {
                         .build_call(func, &[obj_value.into()], "float_to_int")
                         .map_err(|e| e.to_string())?;
                     Ok(call.try_as_basic_value().left().unwrap())
+                }
+                "to_float" => {
+                    // float.to_float() just returns itself (identity operation)
+                    Ok(obj_value)
                 }
                 _ => Err(format!("Method {} not implemented for float", method_name)),
             },
@@ -3101,6 +3089,7 @@ impl<'a> CodeGenerator<'a> {
             },
             PrimitiveType::Bool => match method_name {
                 "to_string" => {
+                    eprintln!("DEBUG: Compiling bool.to_string() method call");
                     let func = self
                         .module
                         .get_function("mux_value_to_string")
@@ -3134,17 +3123,29 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?;
                     Ok(call.try_as_basic_value().left().unwrap())
                 }
+                "to_float" => {
+                    let func = self
+                        .module
+                        .get_function("mux_bool_to_float")
+                        .ok_or("mux_bool_to_float not found")?;
+                    let call = self
+                        .builder
+                        .build_call(func, &[obj_value.into()], "bool_to_float")
+                        .map_err(|e| e.to_string())?;
+                    Ok(call.try_as_basic_value().left().unwrap())
+                }
                 _ => Err(format!("Method {} not implemented for bool", method_name)),
             },
             PrimitiveType::Char => match method_name {
                 "to_string" => {
+                    eprintln!("DEBUG: Compiling char.to_string() method call");
                     let func = self
                         .module
-                        .get_function("mux_char_to_string")
-                        .ok_or("mux_char_to_string not found")?;
+                        .get_function("mux_bool_to_string")
+                        .ok_or("mux_bool_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "char_to_str")
+                        .build_call(func, &[obj_value.into()], "bool_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module
@@ -3288,7 +3289,10 @@ impl<'a> CodeGenerator<'a> {
                     .context
                     .bool_type()
                     .const_int(if *b { 1 } else { 0 }, false);
-                Ok(val.into())
+                let bool_val = self
+                    .generate_runtime_call("mux_bool_value", &[val.into()])
+                    .unwrap();
+                Ok(bool_val.into())
             }
             LiteralNode::String(s) => {
                 let name = format!("str_{}", self.string_counter);

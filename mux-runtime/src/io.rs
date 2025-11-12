@@ -81,11 +81,7 @@ pub extern "C" fn mux_println(s: *const c_char) {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_println_val(val: *mut Value) {
     let val = unsafe { &*val };
-    if let Value::String(s) = val {
-        println!("{}", s);
-    } else {
-        println!("{:?}", val);
-    }
+    println!("{}", val);
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
