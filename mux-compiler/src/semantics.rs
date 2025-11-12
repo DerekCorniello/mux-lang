@@ -633,7 +633,7 @@ impl SemanticAnalyzer {
     }
 
     // get the type of an expression
-    fn get_expression_type(&mut self, expr: &ExpressionNode) -> Result<Type, SemanticError> {
+    pub fn get_expression_type(&mut self, expr: &ExpressionNode) -> Result<Type, SemanticError> {
         match &expr.kind {
             ExpressionKind::Literal(lit) => match lit {
                 LiteralNode::Integer(_) => Ok(Type::Primitive(crate::parser::PrimitiveType::Int)),
@@ -781,10 +781,11 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::ListAccess { expr, index: _ } => {
-                // list access returns Optional<element_type> for safety
+                // list access returns direct element_type (runtime error if out of bounds)
+                // Use .get() method for safe Optional access
                 let list_type = self.get_expression_type(expr)?;
                 match list_type {
-                    Type::List(elem_type) => Ok(Type::Optional(elem_type)),
+                    Type::List(elem_type) => Ok(*elem_type),
                     _ => Err(SemanticError {
                         message: "Cannot index non-list type".into(),
                         span: expr.span,
@@ -1188,6 +1189,10 @@ impl SemanticAnalyzer {
                 "length" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Int),
+                }),
+                "get" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Int)],
+                    return_type: Type::Optional(elem_type.clone()),
                 }),
                 _ => None,
             },

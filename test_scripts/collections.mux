@@ -13,3 +13,7 @@ println("matrix: " + matrix.to_string())
 println("avgs: " + avgs.to_string())
 println("grid: " + grid.to_string())
 println("myset: " + myset.to_string())
+
+// Demonstrate both list access methods
+println("Direct access: " + nums[0].to_string())  // Direct access with runtime error if out of bounds
+println("Safe access: " + nums.get(0).to_string())  // Safe access returns Optional

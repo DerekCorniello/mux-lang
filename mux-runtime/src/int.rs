@@ -73,8 +73,8 @@ pub unsafe extern "C" fn mux_int_from_value(v: *mut crate::Value) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_int_to_float(i: i64) -> f64 {
-    Int(i).to_float()
+pub extern "C" fn mux_int_to_float(i: i64) -> *mut Value {
+    Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(Int(i).to_float()))))
 }
 
 #[unsafe(no_mangle)]

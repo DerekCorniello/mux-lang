@@ -38,7 +38,7 @@ fn main() {
                     }
 
                     let context = inkwell::context::Context::create();
-                    let mut codegen = codegen::CodeGenerator::new(&context, &analyzer);
+                    let mut codegen = codegen::CodeGenerator::new(&context, &mut analyzer);
                     if let Err(e) = codegen.generate(&nodes) {
                         println!("Codegen error: {}", e);
                         process::exit(1);
