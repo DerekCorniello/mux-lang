@@ -796,9 +796,24 @@ impl SemanticAnalyzer {
                 if elements.is_empty() {
                     Ok(Type::EmptyList)
                 } else {
-                    // assume all elements have the same type
-                    let elem_type = self.get_expression_type(&elements[0])?;
-                    Ok(Type::List(Box::new(elem_type)))
+                    // Check that all elements have the same type
+                    let first_type = self.get_expression_type(&elements[0])?;
+                    
+                    // Validate ALL elements match the first element's type
+                    for (index, element) in elements.iter().enumerate() {
+                        let element_type = self.get_expression_type(element)?;
+                        if let Err(_) = self.check_type_compatibility(&first_type, &element_type, element.span) {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "Heterogeneous list: expected all elements to be of type {:?}, but element at index {} has type {:?}",
+                                    first_type, index, element_type
+                                ),
+                                span: element.span,
+                            });
+                        }
+                    }
+                    
+                    Ok(Type::List(Box::new(first_type)))
                 }
             }
             ExpressionKind::MapLiteral { entries, .. } => {
