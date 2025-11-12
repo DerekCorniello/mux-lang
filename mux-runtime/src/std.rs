@@ -125,7 +125,7 @@ pub extern "C" fn mux_value_get_list(val: *mut Value) -> *mut List {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_to_string(val: *mut Value) -> *mut c_char {
-    let value = unsafe { Box::from_raw(val) };
+    let value = unsafe { &*val };
     let s = value.to_string();
     let c_str = CString::new(s).unwrap();
     c_str.into_raw()

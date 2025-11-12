@@ -3270,11 +3270,22 @@ impl<'a> CodeGenerator<'a> {
                     return Err("get() method takes exactly 1 argument".to_string());
                 }
                 let index_val = self.generate_expression(&args[0])?;
+                
+                // Extract raw List pointer from Value (same as direct access)
+                let raw_list = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_list").unwrap(),
+                        &[obj_value.into()],
+                        "extract_list",
+                    )
+                    .map_err(|e| e.to_string())?;
+                
                 let call = self
                     .builder
                     .build_call(
                         self.module.get_function("mux_list_get").unwrap(),
-                        &[obj_value.into(), index_val.into()],
+                        &[raw_list.try_as_basic_value().left().unwrap().into(), index_val.into()],
                         "list_get",
                     )
                     .map_err(|e| e.to_string())?;
