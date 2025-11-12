@@ -1573,27 +1573,23 @@ impl<'a> CodeGenerator<'a> {
             }
             ExpressionKind::Call { func, args } => {
                 if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
-                    eprintln!("DEBUG: Method call on field {}", field);
-                    eprintln!("DEBUG: Object expression kind: {:?}", expr.kind);
+
 
                     // Special case: method calls on 'self' (keep existing logic)
                     if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                        eprintln!("DEBUG: Object is identifier: {}", obj_name);
+
                         if obj_name == "self" {
-                            eprintln!("DEBUG: Routing to generate_method_call_on_self");
                             return self.generate_method_call_on_self(field, args);
                         }
                     }
 
                     // NEW: Handle method calls on ANY expression type
-                    eprintln!("DEBUG: Routing to generate_method_call");
                     let obj_value = self.generate_expression(expr)?;
                     
                     // Use semantic analyzer for robust type inference
                     let obj_type = self.analyzer.get_expression_type(expr)
                         .map_err(|e| format!("Type inference failed: {}", e))?;
                     
-                    eprintln!("DEBUG: Object type: {:?}", obj_type);
                     return self.generate_method_call(obj_value, &obj_type, field, args);
                 } else if let ExpressionKind::Identifier(name) = &func.kind {
                     // Handle regular function calls (non-methods)
@@ -3017,7 +3013,6 @@ impl<'a> CodeGenerator<'a> {
                     Ok(call2.try_as_basic_value().left().unwrap())
                 }
                 "to_float" => {
-                    eprintln!("DEBUG: to_float called on obj_value: {:?}", obj_value);
                     let func = self
                         .module
                         .get_function("mux_int_to_float")
@@ -3026,7 +3021,6 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(func, &[obj_value.into()], "int_to_float")
                         .map_err(|e| e.to_string())?;
-                    eprintln!("DEBUG: to_float call result: {:?}", call);
                     Ok(call.try_as_basic_value().left().unwrap())
                 }
                 _ => Err(format!("Method {} not implemented for int", method_name)),
@@ -3035,11 +3029,11 @@ impl<'a> CodeGenerator<'a> {
                 "to_string" => {
                     let func = self
                         .module
-                        .get_function("mux_float_to_string")
-                        .ok_or("mux_float_to_string not found")?;
+                        .get_function("mux_value_to_string")
+                        .ok_or("mux_value_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "float_to_str")
+                        .build_call(func, &[obj_value.into()], "value_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module
@@ -3072,11 +3066,11 @@ impl<'a> CodeGenerator<'a> {
                 "to_string" => {
                     let func = self
                         .module
-                        .get_function("mux_string_to_string")
-                        .ok_or("mux_string_to_string not found")?;
+                        .get_function("mux_value_to_string")
+                        .ok_or("mux_value_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "str_to_str")
+                        .build_call(func, &[obj_value.into()], "value_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module
@@ -3109,11 +3103,11 @@ impl<'a> CodeGenerator<'a> {
                 "to_string" => {
                     let func = self
                         .module
-                        .get_function("mux_bool_to_string")
-                        .ok_or("mux_bool_to_string not found")?;
+                        .get_function("mux_value_to_string")
+                        .ok_or("mux_value_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "bool_to_str")
+                        .build_call(func, &[obj_value.into()], "value_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module
@@ -3800,17 +3794,8 @@ impl<'a> CodeGenerator<'a> {
     ) -> Option<BasicValueEnum<'a>> {
         eprintln!("DEBUG: generate_runtime_call called with function: {}", name);
         let func = match self.module.get_function(name) {
-            Some(f) => {
-                eprintln!("DEBUG: Found function: {}", name);
-                f
-            }
+            Some(f) => f,
             None => {
-                eprintln!("DEBUG: Function '{}' not found!", name);
-                eprintln!("DEBUG: All available functions:");
-                for func_name in self.module.get_functions() {
-                    let name_str = func_name.get_name().to_str().unwrap_or("invalid");
-                    eprintln!("  '{}'", name_str);
-                }
                 panic!("Function '{}' not found in module", name);
             }
         };
