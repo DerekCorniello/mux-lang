@@ -1253,12 +1253,40 @@ impl SemanticAnalyzer {
         right_type: &Type,
         op: &BinaryOp,
     ) -> Option<Type> {
-        // types must be compatible
-        if left_type != right_type {
-            return None;
-        }
+        // Handle 'in' operator separately since it doesn't require same types
+        if let BinaryOp::In = op {
+            // 'in' operator checks if left operand is contained in right operand
+            // Right operand should be a collection type (list, set, or map)
+            match right_type {
+                Type::List(_) | Type::Set(_) => {
+                    // For list and set, left operand should be compatible with element type
+                    Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                }
+                Type::Map(key_type, _) => {
+                    // For map, left operand should be compatible with key type
+                    if left_type == key_type.as_ref() {
+                        Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                    } else {
+                        None
+                    }
+                }
+                Type::Primitive(PrimitiveType::Str) => {
+                    // For string, left operand should be a character or string
+                    if matches!(left_type, Type::Primitive(PrimitiveType::Char | PrimitiveType::Str)) {
+                        Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            // For all other operators, types must be compatible
+            if left_type != right_type {
+                return None;
+            }
 
-        match op {
+            match op {
             BinaryOp::Add => {
                 // built-in support for primitives, or interface support for custom types
                 if matches!(
@@ -1306,6 +1334,7 @@ impl SemanticAnalyzer {
                 }
             }
             _ => None,
+            }
         }
     }
 

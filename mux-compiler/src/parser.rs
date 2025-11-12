@@ -2201,6 +2201,7 @@ impl<'a> Parser<'a> {
             TokenType::Ge => Some(BinaryOp::GreaterEqual),
             TokenType::And => Some(BinaryOp::LogicalAnd),
             TokenType::Or => Some(BinaryOp::LogicalOr),
+            TokenType::In => Some(BinaryOp::In),
             TokenType::PlusEq => Some(BinaryOp::AddAssign),
             TokenType::MinusEq => Some(BinaryOp::SubtractAssign),
             TokenType::StarEq => Some(BinaryOp::MultiplyAssign),
@@ -2235,6 +2236,7 @@ impl<'a> Parser<'a> {
             TokenType::Ge => Some(BinaryOp::GreaterEqual),
             TokenType::And => Some(BinaryOp::LogicalAnd),
             TokenType::Or => Some(BinaryOp::LogicalOr),
+            TokenType::In => Some(BinaryOp::In),
             TokenType::PlusEq => Some(BinaryOp::AddAssign),
             TokenType::MinusEq => Some(BinaryOp::SubtractAssign),
             TokenType::StarEq => Some(BinaryOp::MultiplyAssign),
@@ -2277,6 +2279,8 @@ impl<'a> Parser<'a> {
             BinaryOp::LogicalOr => Precedence::Or,
 
             BinaryOp::LogicalAnd => Precedence::And,
+
+            BinaryOp::In => Precedence::Comparison,
 
             BinaryOp::Equal | BinaryOp::NotEqual => Precedence::Equality,
 
@@ -2745,6 +2749,8 @@ pub enum BinaryOp {
 
     LogicalAnd,
     LogicalOr,
+
+    In,
 
     Assign,
     AddAssign,

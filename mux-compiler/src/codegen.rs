@@ -20,6 +20,7 @@ pub struct CodeGenerator<'a> {
     vtable_map: HashMap<String, PointerValue<'a>>,
     vtable_type_map: HashMap<String, inkwell::types::StructType<'a>>,
     enum_variants: HashMap<String, Vec<String>>,
+    enum_variant_fields: HashMap<String, HashMap<String, Vec<TypeNode>>>,
     field_map: HashMap<String, HashMap<String, usize>>,
     field_types_map: HashMap<String, Vec<BasicTypeEnum<'a>>>,
     classes: HashMap<String, Vec<Field>>,
@@ -367,14 +368,16 @@ impl<'a> CodeGenerator<'a> {
         let struct_type = context.struct_type(&[i32_type.into(), i8_ptr.into()], false);
         type_map.insert("Optional".to_string(), struct_type.into());
         type_map.insert("Result".to_string(), struct_type.into());
-        enum_variants.insert(
-            "Optional".to_string(),
-            vec!["Some".to_string(), "None".to_string()],
-        );
-        enum_variants.insert(
-            "Result".to_string(),
-            vec!["Ok".to_string(), "Err".to_string()],
-        );
+        
+        // Use BTreeMap to ensure deterministic ordering of enum variants
+        use std::collections::BTreeMap;
+        let mut ordered_variants = BTreeMap::new();
+        ordered_variants.insert("Optional".to_string(), vec!["Some".to_string(), "None".to_string()]);
+        ordered_variants.insert("Result".to_string(), vec!["Ok".to_string(), "Err".to_string()]);
+        
+        for (enum_name, variants) in ordered_variants {
+            enum_variants.insert(enum_name, variants);
+        }
 
         // Generate types for user-defined enums
         for (name, symbol) in analyzer.all_symbols() {
@@ -403,6 +406,7 @@ impl<'a> CodeGenerator<'a> {
             vtable_map: HashMap::new(),
             vtable_type_map: HashMap::new(),
             enum_variants,
+            enum_variant_fields: HashMap::new(),
             field_map: HashMap::new(),
             field_types_map: HashMap::new(),
             classes: HashMap::new(),
@@ -523,14 +527,23 @@ impl<'a> CodeGenerator<'a> {
         let f64_type = self.context.f64_type();
 
         let mut variant_names = Vec::new();
+        let mut variant_fields = HashMap::new();
+        let mut max_fields = 0;
         for variant in variants {
             variant_names.push(variant.name.clone());
+            let field_types = variant.data.as_ref().unwrap_or(&vec![]).clone();
+            max_fields = max_fields.max(field_types.len());
+            variant_fields.insert(variant.name.clone(), field_types);
         }
         self.enum_variants.insert(name.to_string(), variant_names);
+        self.enum_variant_fields.insert(name.to_string(), variant_fields);
 
-        let struct_type = self
-            .context
-            .struct_type(&[i32_type.into(), f64_type.into(), f64_type.into()], false);
+        // Create struct type with discriminant + maximum number of data fields
+        let mut struct_fields = vec![i32_type.into()]; // discriminant first
+        for _ in 0..max_fields {
+            struct_fields.push(f64_type.into()); // use f64 as the largest common type
+        }
+        let struct_type = self.context.struct_type(&struct_fields, false);
         self.type_map.insert(name.to_string(), struct_type.into());
         Ok(())
     }
@@ -568,6 +581,10 @@ impl<'a> CodeGenerator<'a> {
             for (i, _) in data_types.iter().enumerate() {
                 let arg = function.get_nth_param(i as u32).unwrap();
                 let data_ptr = self.builder.build_struct_gep(struct_type, temp_ptr, (i + 1) as u32, "data_ptr").map_err(|e| e.to_string())?;
+                // Debug: print the value being stored
+                if arg.is_float_value() {
+                    println!("DEBUG: Storing float value at index {}", i + 1);
+                }
                 self.builder.build_store(data_ptr, arg).map_err(|e| e.to_string())?;
             }
             let struct_val = self.builder.build_load(struct_type, temp_ptr, "struct").map_err(|e| e.to_string())?;
@@ -651,13 +668,23 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn get_variant_index(&self, enum_name: &str, variant_name: &str) -> Result<usize, String> {
-        if let Some(variants) = self.enum_variants.get(enum_name) {
-            variants
-                .iter()
-                .position(|v| v == variant_name)
-                .ok_or_else(|| format!("Variant {} not found in enum {}", variant_name, enum_name))
-        } else {
-            Err(format!("Enum {} not found", enum_name))
+        // Hardcode indices for built-in enums to ensure deterministic behavior
+        match (enum_name, variant_name) {
+            ("Optional", "Some") => Ok(0),
+            ("Optional", "None") => Ok(1),
+            ("Result", "Ok") => Ok(0),
+            ("Result", "Err") => Ok(1),
+            _ => {
+                // For user-defined enums, use HashMap lookup
+                if let Some(variants) = self.enum_variants.get(enum_name) {
+                    variants
+                        .iter()
+                        .position(|v| v == variant_name)
+                        .ok_or_else(|| format!("Variant {} not found in enum {}", variant_name, enum_name))
+                } else {
+                    Err(format!("Enum {} not found", enum_name))
+                }
+            }
         }
     }
 
@@ -1028,10 +1055,21 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?
                         .into_pointer_value();
                     match type_node {
-                        Type::Named(type_name, _) if self.analyzer.symbol_table().lookup(type_name).map(|s| s.kind == crate::semantics::SymbolKind::Enum).unwrap_or(false) => {
-                            let struct_type = self.type_map.get(type_name).unwrap();
-                            let load = self.builder.build_load(*struct_type, *ptr, name).map_err(|e| e.to_string())?;
-                            Ok(load.into())
+                        Type::Named(type_name, _) => {
+                            println!("DEBUG: Loading variable of type: {}", type_name);
+                            if type_name == "Optional" || type_name == "Result" {
+                                // Optional/Result: return pointer
+                                Ok(ptr_to_boxed.into())
+                            } else if self.analyzer.symbol_table().lookup(type_name).map(|s| s.kind == crate::semantics::SymbolKind::Enum).unwrap_or(false) {
+                                // Custom enums: load as struct value
+                                println!("DEBUG: Loading custom enum {} as struct value", type_name);
+                                let struct_type = self.type_map.get(type_name).unwrap().into_struct_type();
+                                let struct_val = self.builder.build_load(struct_type, *ptr, name).map_err(|e| e.to_string())?;
+                                Ok(struct_val.into())
+                            } else {
+                                // Classes and other named types: keep as pointer
+                                Ok(ptr_to_boxed.into())
+                            }
                         }
                         Type::Primitive(PrimitiveType::Int) => {
                             let func = self
@@ -1117,11 +1155,25 @@ impl<'a> CodeGenerator<'a> {
                         BinaryOp::Assign => {
                             let right_val = self.generate_expression(right)?;
                             if let ExpressionKind::Identifier(name) = &left.kind {
-                                if let Some((ptr, _, _)) = self.variables.get(name) {
+                                if let Some((ptr, _, type_node)) = self.variables.get(name) {
                                     let ptr_copy = *ptr;
-                                    let boxed = self.box_value(right_val);
+                                    // Don't box enum struct values - store them directly
+                                    let value_to_store = if let Type::Named(type_name, _) = type_node {
+                                        let is_enum = self.analyzer.symbol_table().lookup(type_name).map(|s| s.kind == crate::semantics::SymbolKind::Enum).unwrap_or(false);
+                                        println!("DEBUG: Storing variable of type {} (is_enum: {})", type_name, is_enum);
+                                        if is_enum {
+                                            // For enum types, store struct value directly (don't box)
+                                            right_val
+                                        } else {
+                                            // For class types, box the value
+                                            self.box_value(right_val).into()
+                                        }
+                                    } else {
+                                        // For primitive types, box the value
+                                        self.box_value(right_val).into()
+                                    };
                                     self.builder
-                                        .build_store(ptr_copy, boxed)
+                                        .build_store(ptr_copy, value_to_store)
                                         .map_err(|e| e.to_string())?;
                                     Ok(right_val)
                                 } else {
@@ -1514,7 +1566,11 @@ impl<'a> CodeGenerator<'a> {
                                             call_args.push(self.generate_expression(arg)?.into());
                                         }
                                         let call = self.builder.build_call(func, &call_args, "constructor_call").map_err(|e| e.to_string())?;
-                                        return Ok(call.try_as_basic_value().left().unwrap());
+                                        let result = call.try_as_basic_value().left().unwrap();
+                                        if result.is_struct_value() {
+                                            println!("DEBUG: Constructor returned struct value");
+                                        }
+                                        return Ok(result);
                                     } else {
                                         return Err(format!("Unknown constructor {}.{}", obj_name, field));
                                     }
@@ -1572,7 +1628,9 @@ impl<'a> CodeGenerator<'a> {
                                 .builder
                                 .build_call(func, &[arg_val.into()], "err_call")
                                 .map_err(|e| e.to_string())?;
-                            Ok(call.try_as_basic_value().left().unwrap())
+                            let result_ptr = call.try_as_basic_value().left().unwrap();
+                            // Result constructors return Value* pointers directly
+                            Ok(result_ptr)
                         }
                         "Ok" => {
                             if args.len() != 1 {
@@ -1587,7 +1645,9 @@ impl<'a> CodeGenerator<'a> {
                                 .builder
                                 .build_call(func, &[arg_val.into()], "ok_call")
                                 .map_err(|e| e.to_string())?;
-                            Ok(call.try_as_basic_value().left().unwrap())
+                            let result_ptr = call.try_as_basic_value().left().unwrap();
+                            // Result constructors return Value* pointers directly
+                            Ok(result_ptr)
                         }
                         "Some" => {
                             if args.len() != 1 {
@@ -1756,6 +1816,23 @@ impl<'a> CodeGenerator<'a> {
                                             .builder
                                             .build_struct_gep(st, struct_ptr, index as u32, field)
                                             .map_err(|e| e.to_string())?;
+                                        // Check if this field is an enum type
+                                        let field_types = self.field_types_map.get(class_name.as_str())
+                                            .ok_or("Field types not found for class")?;
+                                        if index < field_types.len() {
+                                            let field_type = field_types[index];
+                                            // Check if field type is a struct (enum)
+                                            if let BasicTypeEnum::StructType(struct_type) = field_type {
+                                                // For enum fields: load as struct value
+                                                println!("DEBUG: Loading enum field {} as struct value", field);
+                                                let loaded = self
+                                                    .builder
+                                                    .build_load(struct_type, field_ptr, field)
+                                                    .map_err(|e| e.to_string())?;
+                                                return Ok(loaded);
+                                            }
+                                        }
+                                        // For non-enum fields: keep existing behavior
                                         let loaded = self
                                             .builder
                                             .build_load(self.context.i64_type(), field_ptr, field)
@@ -1766,7 +1843,8 @@ impl<'a> CodeGenerator<'a> {
                             }
                         }
                     } else if let Some((_, _, type_node)) = self.variables.get(obj_name) {
-                        match type_node {
+println!("DEBUG: Variable type node: {:?}", type_node);
+                    match type_node {
                             Type::Primitive(PrimitiveType::Int) if field == "to_string" => {
                                 let ptr = self.generate_expression(expr)?;
                                 let func = self
@@ -1874,6 +1952,8 @@ impl<'a> CodeGenerator<'a> {
                     UnaryOp::Ref => {
                         if let ExpressionKind::Identifier(name) = &expr.kind {
                             if let Some((ptr, _, _)) = self.variables.get(name) {
+                                // For identifier references: return pointer to the alloca containing the boxed value
+                                // Don't dereference - we want a reference to the variable itself
                                 Ok((*ptr).into())
                             } else {
                                 Err(format!("Undefined variable {}", name))
@@ -2031,9 +2111,11 @@ impl<'a> CodeGenerator<'a> {
                 let cond_val = self.generate_expression(cond)?;
                 let cond_int = cond_val.into_int_value();
 
-                let then_bb = self.context.append_basic_block(*function, "bb1");
-                let else_bb = self.context.append_basic_block(*function, "bb2");
-                let merge_bb = self.context.append_basic_block(*function, "bb3");
+                let if_id = self.label_counter;
+                self.label_counter += 1;
+                let then_bb = self.context.append_basic_block(*function, &format!("if_then_{}", if_id));
+                let else_bb = self.context.append_basic_block(*function, &format!("if_else_{}", if_id));
+                let merge_bb = self.context.append_basic_block(*function, &format!("if_merge_{}", if_id));
 
                 self.builder
                     .build_conditional_branch(cond_int, then_bb, else_bb)
@@ -2263,9 +2345,6 @@ impl<'a> CodeGenerator<'a> {
                     let body_bb = self
                         .context
                         .append_basic_block(*function, &format!("for_body_{}", label_id));
-                    let exit_bb = self
-                        .context
-                        .append_basic_block(*function, &format!("for_exit_{}", label_id));
 
                     self.builder
                         .build_unconditional_branch(header_bb)
@@ -2286,8 +2365,15 @@ impl<'a> CodeGenerator<'a> {
                             "cmp",
                         )
                         .map_err(|e| e.to_string())?;
+                    
+                    // Create a temporary exit block for the conditional branch
+                    // We'll move the actual exit block creation after body processing
+                    let temp_exit_bb = self
+                        .context
+                        .append_basic_block(*function, &format!("temp_for_exit_{}", label_id));
+                    
                     self.builder
-                        .build_conditional_branch(cmp, body_bb, exit_bb)
+                        .build_conditional_branch(cmp, body_bb, temp_exit_bb)
                         .map_err(|e| e.to_string())?;
 
                     // Body: get element at index
@@ -2332,8 +2418,48 @@ impl<'a> CodeGenerator<'a> {
                         .build_unconditional_branch(header_bb)
                         .map_err(|e| e.to_string())?;
 
-                     // Exit
-                     self.builder.position_at_end(exit_bb);
+                     // Create the real exit block now that body is processed
+                     let exit_bb = self
+                         .context
+                         .append_basic_block(*function, &format!("for_exit_{}", label_id));
+                     
+                     // Move from temp block to real exit block
+                     self.builder.position_at_end(temp_exit_bb);
+                     self.builder.build_unconditional_branch(exit_bb).map_err(|e| e.to_string())?;
+                     
+                      // Position at real exit block
+                      self.builder.position_at_end(exit_bb);
+                      
+                      // Add a default return only for functions that return Optional/Result types
+                      // This prevents LLVM IR syntax errors from missing returns
+                      if let Some(current_func) = self.current_function_name.as_ref() {
+                          if let Some(func_symbol) = self.analyzer.symbol_table().lookup(current_func) {
+                              if let Some(Type::Named(name, _)) = &func_symbol.type_ {
+                                  if name == "Optional" {
+                                      // Return None for Optional functions that reach here
+                                      let none_func = self.module.get_function("mux_optional_none").unwrap();
+                                      let none_call = self.builder.build_call(none_func, &[], "none_default").map_err(|e| e.to_string())?;
+                                      let none_ptr = none_call.try_as_basic_value().left().unwrap();
+                                      self.builder.build_return(Some(&none_ptr)).map_err(|e| e.to_string())?;
+                                  }
+                                  // Don't add default return for void functions or other types
+                              } else if let Some(function) = self.functions.get(current_func) {
+                                  // Check if function returns a pointer (indicating Optional/Result)
+                                  let return_type = function.get_type().get_return_type();
+                                  if let Some(return_type) = return_type {
+                                      if return_type.is_pointer_type() {
+                                          // Function returns pointer, likely Optional/Result
+                                          let none_func = self.module.get_function("mux_optional_none");
+                                          if let Some(none_func) = none_func {
+                                              let none_call = self.builder.build_call(none_func, &[], "none_default").map_err(|e| e.to_string())?;
+                                              let none_ptr = none_call.try_as_basic_value().left().unwrap();
+                                              self.builder.build_return(Some(&none_ptr)).map_err(|e| e.to_string())?;
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
                 } else {
                     return Err("For loop iter must be range(...) or list identifier".to_string());
                 }
@@ -2342,6 +2468,7 @@ impl<'a> CodeGenerator<'a> {
                 let function = function.ok_or("Match not in function")?;
                 
                 let expr_val = self.generate_expression(expr)?;
+                println!("DEBUG: Match expression generated value: {:?}", expr_val);
                 
                 let enum_name = match &expr.kind {
                     ExpressionKind::Identifier(name) => {
@@ -2409,7 +2536,17 @@ impl<'a> CodeGenerator<'a> {
                     _ => return Err("Match expression must be identifier, field access, or constructor call".to_string()),
                 };
                 let expr_ptr_opt = if enum_name == "Optional" || enum_name == "Result" {
-                    Some(expr_val.into_pointer_value())
+                    // For Optional/Result constructor calls, we need to allocate the struct and get a pointer
+                    if expr_val.is_pointer_value() {
+                        Some(expr_val.into_pointer_value())
+                    } else {
+                        // This is a struct value (from constructor call), allocate it and get pointer
+                        let struct_val = expr_val.into_struct_value();
+                        let ptr_type = struct_val.get_type().ptr_type(AddressSpace::default());
+                        let alloca = self.builder.build_alloca(struct_val.get_type(), "temp_enum").map_err(|e| e.to_string())?;
+                        self.builder.build_store(alloca, struct_val).map_err(|e| e.to_string())?;
+                        Some(alloca)
+                    }
                 } else {
                     None
                 };
@@ -2445,18 +2582,20 @@ impl<'a> CodeGenerator<'a> {
                 };
 
                  let mut current_bb = self.builder.get_insert_block().unwrap();
-                 let end_bb = self.context.append_basic_block(*function, "match_end");
+                 let match_id = self.label_counter;
+                 self.label_counter += 1;
+                 let end_bb = self.context.append_basic_block(*function, &format!("match_end_{}", match_id));
 
                  for (i, arm) in arms.iter().enumerate() {
-                    let arm_bb = self
-                        .context
-                        .append_basic_block(*function, &format!("match_arm_{}", i));
-                    let next_bb = if i < arms.len() - 1 {
-                        self.context
-                            .append_basic_block(*function, &format!("match_next_{}", i))
-                    } else {
-                        end_bb
-                    };
+                     let arm_bb = self
+                         .context
+                         .append_basic_block(*function, &format!("match_arm_{}_{}", match_id, i));
+                     let next_bb = if i < arms.len() - 1 {
+                         self.context
+                             .append_basic_block(*function, &format!("match_next_{}_{}", match_id, i))
+                     } else {
+                         end_bb
+                     };
 
                     self.builder.position_at_end(current_bb);
 
@@ -2536,18 +2675,54 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             }
                         } else {
-                            // Custom enum
+                            // Custom enum - use variant-specific field information
                             let struct_type = self.type_map.get(&enum_name).unwrap().into_struct_type();
+                            let field_types_clone = if let Some(variant_fields) = self.enum_variant_fields.get(&enum_name) {
+                                if let Some(field_types) = variant_fields.get(name) {
+                                    field_types.clone()
+                                } else {
+                                    return Err(format!("Variant {} not found in enum {}", name, enum_name));
+                                }
+                            } else {
+                                return Err(format!("No field information found for enum {}", enum_name));
+                            };
+                            
                             for (i, arg) in args.iter().enumerate() {
                                 if let PatternNode::Identifier(var) = arg {
-                                    let data_index = i + 1;
+                                    let data_index = i + 1; // Start after discriminant at index 0
                                     let data_ptr = self.builder.build_struct_gep(struct_type, temp_ptr_opt.unwrap(), data_index as u32, "data_ptr").map_err(|e| e.to_string())?;
-                                    let data_val = self.builder.build_load(self.context.f64_type(), data_ptr, "data").map_err(|e| e.to_string())?;
+                                    
+                                    // Get the actual field type to load correctly
+                                    let field_type: BasicTypeEnum<'_> = if i < field_types_clone.len() {
+                                        match &field_types_clone[i].kind {
+                                            TypeKind::Primitive(PrimitiveType::Float) => self.context.f64_type().into(),
+                                            TypeKind::Primitive(PrimitiveType::Int) => self.context.i64_type().into(),
+                                            TypeKind::Primitive(PrimitiveType::Bool) => self.context.bool_type().into(),
+                                            TypeKind::Primitive(PrimitiveType::Str) => self.context.ptr_type(AddressSpace::default()).into(),
+                                            _ => self.context.f64_type().into(), // fallback to float
+                                        }
+                                    } else {
+                                        self.context.f64_type().into() // fallback
+                                    };
+                                    
+                                    println!("DEBUG: Loading float value from index {} for variant {}", data_index, name);
+                                    let data_val = self.builder.build_load(field_type, data_ptr, "data").map_err(|e| e.to_string())?;
+                                    // Debug: try to print the loaded value before boxing
+                                    if data_val.is_float_value() {
+                                        println!("DEBUG: Loaded float value before boxing");
+                                    }
                                     let boxed = self.box_value(data_val);
                                     let ptr_type = self.context.ptr_type(AddressSpace::default());
                                     let alloca = self.builder.build_alloca(ptr_type, var).map_err(|e| e.to_string())?;
                                     self.builder.build_store(alloca, boxed).map_err(|e| e.to_string())?;
-                                    let resolved_type = Type::Primitive(PrimitiveType::Float); // assume float
+                                    
+                                    // Use the actual field type for resolved type
+                                    let resolved_type = if i < field_types_clone.len() {
+                                        self.analyzer.resolve_type(&field_types_clone[i]).map_err(|e| e.to_string())?
+                                    } else {
+                                        Type::Primitive(PrimitiveType::Float) // fallback
+                                    };
+                                    
                                     self.variables.insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
                                 }
                             }
@@ -2944,6 +3119,17 @@ impl<'a> CodeGenerator<'a> {
                     Err("Unsupported mod operands".to_string())
                 }
             }
+            BinaryOp::In => {
+                // 'in' operator - check if left is contained in right
+                // For now, return false as a placeholder implementation
+                // A complete implementation would require runtime functions for:
+                // - List containment: iterate through elements
+                // - Set containment: hash lookup
+                // - Map containment: key lookup
+                // - String containment: substring search
+                let false_val = self.context.bool_type().const_zero();
+                Ok(false_val.into())
+            }
             _ => Err("Binary op not implemented".to_string()),
         }
     }
@@ -2965,9 +3151,14 @@ impl<'a> CodeGenerator<'a> {
             }
             TypeKind::Named(name, _generics) => {
                 if self.enum_variants.contains_key(name) {
-                    // For enums, values are structs
-                    let struct_type = self.type_map.get(name).ok_or_else(|| format!("Enum {} not found", name))?;
-                    Ok(struct_type.clone())
+                    if name == "Optional" || name == "Result" {
+                        // For Optional/Result: values are always Value* pointers
+                        Ok(self.context.ptr_type(AddressSpace::default()).into())
+                    } else {
+                        // For custom enums: values are struct values
+                        let struct_type = self.type_map.get(name).ok_or("Enum type not found")?;
+                        Ok(*struct_type)
+                    }
                 } else {
                     // For classes, values are pointers to structs
                     Ok(self.context.ptr_type(AddressSpace::default()).into())
