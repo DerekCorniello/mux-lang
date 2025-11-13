@@ -252,8 +252,7 @@ entry:
   %n3 = load ptr, ptr %n1, align 8
   %get_int4 = call i64 @mux_value_get_int(ptr %n3)
   %mul = mul i64 %get_int, %get_int4
-  %call5 = call ptr @mux_int_value(i64 %mul)
-  ret ptr %call5
+  ret i64 %mul
 }
 
 define double @lambda_1(double %x) {
@@ -264,6 +263,5 @@ entry:
   %x2 = load ptr, ptr %x1, align 8
   %get_float = call double @mux_value_get_float(ptr %x2)
   %fmul_mixed = fmul double %get_float, 2.000000e+00
-  %call3 = call ptr @mux_float_value(double %fmul_mixed)
-  ret ptr %call3
+  ret double %fmul_mixed
 }

@@ -1005,6 +1005,19 @@ impl<'a> CodeGenerator<'a> {
         } else {
             None
         };
+
+        // Set current function return type for proper return handling
+        let resolved_return_type = if let Some(rt) = return_type_opt {
+            match rt {
+                BasicTypeEnum::IntType(_) => Some(ResolvedType::Primitive(PrimitiveType::Int)),
+                BasicTypeEnum::FloatType(_) => Some(ResolvedType::Primitive(PrimitiveType::Float)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let old_return_type = self.current_function_return_type.take();
+        self.current_function_return_type = resolved_return_type;
         let fn_type = if let Some(rt) = return_type_opt {
             rt.fn_type(&param_types, false)
         } else {
@@ -1065,6 +1078,9 @@ impl<'a> CodeGenerator<'a> {
 
         // Restore variables
         self.variables = old_variables;
+
+        // Restore return type
+        self.current_function_return_type = old_return_type;
 
         // Restore builder to previous block
         if let Some(bb) = old_bb {
