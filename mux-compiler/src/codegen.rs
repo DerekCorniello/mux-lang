@@ -1289,6 +1289,7 @@ impl<'a> CodeGenerator<'a> {
 
         // Generate function body
         for stmt in &func.body {
+            eprintln!("DEBUG: Generating statement in {}: {:?}", func.name, stmt.kind);
             self.generate_statement(stmt, Some(&function))?;
         }
 
@@ -1624,7 +1625,6 @@ impl<'a> CodeGenerator<'a> {
             ExpressionKind::Call { func, args } => {
                 if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
 
-
                     // Special case: method calls on 'self' (keep existing logic)
                     if let ExpressionKind::Identifier(obj_name) = &expr.kind {
 
@@ -1633,13 +1633,51 @@ impl<'a> CodeGenerator<'a> {
                         }
                     }
 
-                    // NEW: Handle method calls on ANY expression type
+                    // NEW: Handle field access on class fields within method context
+                    // Transform items.push_back(item) -> self.items.push_back(item)
+                    if let ExpressionKind::Identifier(field_name) = &expr.kind {
+                        if let Some(current_function) = &self.current_function_name {
+                            if current_function.contains('.') {
+                                // We're in a method, check if field_name is a field of current class
+                                let class_name = current_function.split('.').next().unwrap();
+                                if let Some(class_fields) = self.classes.get(class_name) {
+                                    if class_fields.iter().any(|f| f.name == *field_name) {
+                                        // Get the field type before borrowing self mutably
+                                        let field_type = class_fields.iter()
+                                            .find(|f| f.name == *field_name)
+                                            .unwrap()
+                                            .type_
+                                            .clone();
+                                        let resolved_field_type = self.analyzer.resolve_type(&field_type)
+                                            .map_err(|e| format!("Type resolution failed: {}", e))?;
+
+                                        // Transform to self.field access
+                                        let self_field_expr = ExpressionNode {
+                                            kind: ExpressionKind::FieldAccess {
+                                                expr: Box::new(ExpressionNode {
+                                                    kind: ExpressionKind::Identifier("self".to_string()),
+                                                    span: expr.span.clone(),
+                                                }),
+                                                field: field_name.clone(),
+                                            },
+                                            span: func.span.clone(),
+                                        };
+                                        // Generate method call on the transformed expression
+                                        let obj_value = self.generate_expression(&self_field_expr)?;
+                                        return self.generate_method_call(obj_value, &resolved_field_type, field, args);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle method calls on ANY expression type
                     let obj_value = self.generate_expression(expr)?;
-                    
+
                     // Use semantic analyzer for robust type inference
                     let obj_type = self.analyzer.get_expression_type(expr)
                         .map_err(|e| format!("Type inference failed: {}", e))?;
-                    
+
                     return self.generate_method_call(obj_value, &obj_type, field, args);
                 } else if let ExpressionKind::Identifier(name) = &func.kind {
                     // Handle regular function calls (non-methods)
@@ -1918,7 +1956,28 @@ impl<'a> CodeGenerator<'a> {
                 Ok(self.generate_lambda_expression(params, body)?)
             }
             ExpressionKind::FieldAccess { expr, field } => {
-                let struct_ptr = self.generate_expression(expr)?.into_pointer_value();
+                let struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                    if obj_name == "self" {
+                        // Special case: accessing field of 'self' - load actual object pointer from alloca first
+                        if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                            self.builder
+                                .build_load(
+                                    self.context.ptr_type(AddressSpace::default()),
+                                    *self_ptr,
+                                    "load_self_for_field_access",
+                                )
+                                .map_err(|e| e.to_string())?
+                                .into_pointer_value()
+                        } else {
+                            return Err("Self not found in field access".to_string());
+                        }
+                    } else {
+                        self.generate_expression(expr)?.into_pointer_value()
+                    }
+                } else {
+                    self.generate_expression(expr)?.into_pointer_value()
+                };
+                
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
                         if let Type::Named(class_name, _) = type_node {
@@ -4513,7 +4572,15 @@ impl<'a> CodeGenerator<'a> {
             .ok_or(format!("Method {} not found", method_func_name))?;
 
         // Build call arguments: self + args
-        let mut call_args = vec![(*self_ptr).into()];
+        // Load the actual object pointer from the alloca first
+        let self_loaded = self.builder
+            .build_load(
+                self.context.ptr_type(AddressSpace::default()),
+                *self_ptr,
+                "load_self_for_method_call",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut call_args = vec![self_loaded.into()];
         for arg in args {
             call_args.push(self.generate_expression(arg)?.into());
         }

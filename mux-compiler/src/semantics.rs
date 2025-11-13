@@ -578,6 +578,16 @@ impl SemanticAnalyzer {
                 }),
             },
             TypeKind::Named(name, type_args) => {
+                // Handle built-in generic types
+                if name == "Optional" && type_args.len() == 1 {
+                    let resolved_arg = self.resolve_type(&type_args[0])?;
+                    return Ok(Type::Optional(Box::new(resolved_arg)));
+                } else if name == "Result" && type_args.len() == 2 {
+                    let resolved_ok = self.resolve_type(&type_args[0])?;
+                    let resolved_err = self.resolve_type(&type_args[1])?;
+                    return Ok(Type::Named("Result".to_string(), vec![resolved_ok, resolved_err]));
+                }
+                
                 // for now, assume named types are classes/enums/interfaces
                 // todo, implement full type definition resolution for enums/interfaces (currently only handles generics).
                 let resolved_args = type_args
