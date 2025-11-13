@@ -33,6 +33,7 @@ pub struct CodeGenerator<'a> {
     variables: HashMap<String, (PointerValue<'a>, BasicTypeEnum<'a>, ResolvedType)>,
     functions: HashMap<String, FunctionValue<'a>>,
     current_function_name: Option<String>,
+    current_function_return_type: Option<ResolvedType>,
 }
 
 impl<'a> CodeGenerator<'a> {
@@ -496,6 +497,7 @@ impl<'a> CodeGenerator<'a> {
             variables: HashMap::new(),
             functions: HashMap::new(),
             current_function_name: None,
+            current_function_return_type: None,
         }
     }
 
@@ -1200,6 +1202,7 @@ impl<'a> CodeGenerator<'a> {
 
     fn generate_function(&mut self, func: &FunctionNode) -> Result<(), String> {
         self.current_function_name = Some(func.name.clone());
+        self.current_function_return_type = Some(self.analyzer.resolve_type(&func.return_type).map_err(|e| e.to_string())?);
 
         let function = *self
             .functions
@@ -2201,9 +2204,65 @@ impl<'a> CodeGenerator<'a> {
             }
             StatementKind::Return(Some(expr)) => {
                 let value = self.generate_expression(expr)?;
-                self.builder
-                    .build_return(Some(&value))
-                    .map_err(|e| e.to_string())?;
+                // Check if we need to return raw primitive or boxed value
+                if let Some(return_type) = &self.current_function_return_type {
+                    match return_type {
+                        ResolvedType::Primitive(PrimitiveType::Int) => {
+                            // For int, unbox if necessary
+                            let raw_int = self.get_raw_int_value(value)?;
+                            self.builder
+                                .build_return(Some(&raw_int))
+                                .map_err(|e| e.to_string())?;
+                        }
+                        ResolvedType::Primitive(PrimitiveType::Float) => {
+                            // For float, unbox if necessary
+                            let raw_float = self.get_raw_float_value(value)?;
+                            self.builder
+                                .build_return(Some(&raw_float))
+                                .map_err(|e| e.to_string())?;
+                        }
+                        ResolvedType::Primitive(PrimitiveType::Bool) => {
+                            // For bool, unbox if necessary and return i1
+                            if value.is_int_value() {
+                                // Already raw bool (i1)
+                                self.builder
+                                    .build_return(Some(&value))
+                                    .map_err(|e| e.to_string())?;
+                            } else if value.is_pointer_value() {
+                                // Extract from boxed value
+                                let ptr = value.into_pointer_value();
+                                let get_bool_fn = self.module.get_function("mux_value_get_bool")
+                                    .ok_or("mux_value_get_bool not found")?;
+                                let result = self.builder.build_call(get_bool_fn, &[ptr.into()], "get_bool")
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .ok_or("Call returned no value")?;
+                                self.builder
+                                    .build_return(Some(&result))
+                                    .map_err(|e| e.to_string())?;
+                            } else {
+                                return Err("Expected bool value or pointer".to_string());
+                            }
+                        }
+                        _ => {
+                            // For complex types, ensure it's boxed
+                            let boxed = match value {
+                                BasicValueEnum::PointerValue(_) => value, // Already boxed
+                                _ => self.box_value(value).into(), // Box it and convert to BasicValueEnum
+                            };
+                            self.builder
+                                .build_return(Some(&boxed))
+                                .map_err(|e| e.to_string())?;
+                        }
+                    }
+                } else {
+                    // Fallback: assume boxed
+                    let boxed = self.box_value(value);
+                    self.builder
+                        .build_return(Some(&boxed))
+                        .map_err(|e| e.to_string())?;
+                }
             }
             StatementKind::Return(None) => {
                 let _ = self.builder.build_return(None);
@@ -2225,9 +2284,27 @@ impl<'a> CodeGenerator<'a> {
                 let else_bb = self
                     .context
                     .append_basic_block(*function, &format!("if_else_{}", if_id));
-                let merge_bb = self
-                    .context
-                    .append_basic_block(*function, &format!("if_merge_{}", if_id));
+
+                // Check if we need a merge block
+                let then_ends_with_return = then_block
+                    .last()
+                    .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)));
+                let else_ends_with_return = if let Some(else_stmts) = &else_block {
+                    else_stmts
+                        .last()
+                        .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)))
+                } else {
+                    false
+                };
+                let needs_merge = !then_ends_with_return || !else_ends_with_return;
+
+                let merge_bb = if needs_merge {
+                    Some(self
+                        .context
+                        .append_basic_block(*function, &format!("if_merge_{}", if_id)))
+                } else {
+                    None
+                };
 
                 self.builder
                     .build_conditional_branch(cond_int, then_bb, else_bb)
@@ -2238,13 +2315,12 @@ impl<'a> CodeGenerator<'a> {
                 for stmt in then_block {
                     self.generate_statement(stmt, Some(function))?;
                 }
-                if !then_block
-                    .last()
-                    .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)))
-                {
-                    self.builder
-                        .build_unconditional_branch(merge_bb)
-                        .map_err(|e| e.to_string())?;
+                if !then_ends_with_return {
+                    if let Some(merge_bb) = merge_bb {
+                        self.builder
+                            .build_unconditional_branch(merge_bb)
+                            .map_err(|e| e.to_string())?;
+                    }
                 }
 
                 // else block
@@ -2254,12 +2330,18 @@ impl<'a> CodeGenerator<'a> {
                         self.generate_statement(stmt, Some(function))?;
                     }
                 }
-                self.builder
-                    .build_unconditional_branch(merge_bb)
-                    .map_err(|e| e.to_string())?;
+                if !else_ends_with_return {
+                    if let Some(merge_bb) = merge_bb {
+                        self.builder
+                            .build_unconditional_branch(merge_bb)
+                            .map_err(|e| e.to_string())?;
+                    }
+                }
 
                 // merge
-                self.builder.position_at_end(merge_bb);
+                if let Some(merge_bb) = merge_bb {
+                    self.builder.position_at_end(merge_bb);
+                }
             }
             StatementKind::While { cond, body } => {
                 let function = function.ok_or("While statement not in function")?;
@@ -3174,11 +3256,11 @@ impl<'a> CodeGenerator<'a> {
                     eprintln!("DEBUG: Compiling bool.to_string() method call");
                     let func = self
                         .module
-                        .get_function("mux_value_to_string")
-                        .ok_or("mux_value_to_string not found")?;
+                        .get_function("mux_bool_to_string")
+                        .ok_or("mux_bool_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "value_to_str")
+                        .build_call(func, &[obj_value.into()], "bool_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module

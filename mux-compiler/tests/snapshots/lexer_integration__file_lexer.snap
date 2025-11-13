@@ -9422,9 +9422,273 @@ expression: actual_tokens
         },
     },
     Token {
-        token_type: CloseBrace,
+        token_type: Id(
+            "println",
+        ),
         span: Span {
             row_start: 21,
+            row_end: Some(
+                21,
+            ),
+            col_start: 5,
+            col_end: Some(
+                12,
+            ),
+        },
+    },
+    Token {
+        token_type: OpenParen,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 12,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: Id(
+            "even",
+        ),
+        span: Span {
+            row_start: 21,
+            row_end: Some(
+                21,
+            ),
+            col_start: 13,
+            col_end: Some(
+                17,
+            ),
+        },
+    },
+    Token {
+        token_type: OpenParen,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 17,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: Int(
+            7,
+        ),
+        span: Span {
+            row_start: 21,
+            row_end: Some(
+                21,
+            ),
+            col_start: 18,
+            col_end: Some(
+                19,
+            ),
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 19,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: Dot,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 20,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: Id(
+            "to_string",
+        ),
+        span: Span {
+            row_start: 21,
+            row_end: Some(
+                21,
+            ),
+            col_start: 21,
+            col_end: Some(
+                30,
+            ),
+        },
+    },
+    Token {
+        token_type: OpenParen,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 30,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 31,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 32,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: NewLine,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 33,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: Id(
+            "println",
+        ),
+        span: Span {
+            row_start: 22,
+            row_end: Some(
+                22,
+            ),
+            col_start: 5,
+            col_end: Some(
+                12,
+            ),
+        },
+    },
+    Token {
+        token_type: OpenParen,
+        span: Span {
+            row_start: 22,
+            row_end: None,
+            col_start: 12,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: Id(
+            "odd",
+        ),
+        span: Span {
+            row_start: 22,
+            row_end: Some(
+                22,
+            ),
+            col_start: 13,
+            col_end: Some(
+                16,
+            ),
+        },
+    },
+    Token {
+        token_type: OpenParen,
+        span: Span {
+            row_start: 22,
+            row_end: None,
+            col_start: 16,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: Int(
+            8,
+        ),
+        span: Span {
+            row_start: 22,
+            row_end: Some(
+                22,
+            ),
+            col_start: 17,
+            col_end: Some(
+                18,
+            ),
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 22,
+            row_end: None,
+            col_start: 18,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: Dot,
+        span: Span {
+            row_start: 22,
+            row_end: None,
+            col_start: 19,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: Id(
+            "to_string",
+        ),
+        span: Span {
+            row_start: 22,
+            row_end: Some(
+                22,
+            ),
+            col_start: 20,
+            col_end: Some(
+                29,
+            ),
+        },
+    },
+    Token {
+        token_type: OpenParen,
+        span: Span {
+            row_start: 22,
+            row_end: None,
+            col_start: 29,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 22,
+            row_end: None,
+            col_start: 30,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 22,
+            row_end: None,
+            col_start: 31,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: NewLine,
+        span: Span {
+            row_start: 22,
+            row_end: None,
+            col_start: 32,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseBrace,
+        span: Span {
+            row_start: 23,
             row_end: None,
             col_start: 1,
             col_end: None,
@@ -9433,7 +9697,7 @@ expression: actual_tokens
     Token {
         token_type: NewLine,
         span: Span {
-            row_start: 21,
+            row_start: 23,
             row_end: None,
             col_start: 2,
             col_end: None,

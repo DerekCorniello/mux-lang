@@ -173,7 +173,8 @@ entry:
 
 if_then_0:                                        ; preds = %entry
   %call2 = call ptr @mux_bool_value(i1 true)
-  ret ptr %call2
+  %get_bool = call i1 @mux_value_get_bool(ptr %call2)
+  ret i1 %get_bool
 
 if_else_0:                                        ; preds = %entry
   %n3 = load ptr, ptr %n, align 8
@@ -181,9 +182,6 @@ if_else_0:                                        ; preds = %entry
   %sub = sub i64 %get_int4, 1
   %user_func_call = call i1 @odd(i64 %sub)
   ret i1 %user_func_call
-  br label %if_merge_0
-
-if_merge_0:                                       ; preds = %if_else_0
 }
 
 define i1 @odd(i64 %0) {
@@ -198,7 +196,8 @@ entry:
 
 if_then_1:                                        ; preds = %entry
   %call2 = call ptr @mux_bool_value(i1 false)
-  ret ptr %call2
+  %get_bool = call i1 @mux_value_get_bool(ptr %call2)
+  ret i1 %get_bool
 
 if_else_1:                                        ; preds = %entry
   %n3 = load ptr, ptr %n, align 8
@@ -206,20 +205,25 @@ if_else_1:                                        ; preds = %entry
   %sub = sub i64 %get_int4, 1
   %user_func_call = call i1 @even(i64 %sub)
   ret i1 %user_func_call
-  br label %if_merge_1
-
-if_merge_1:                                       ; preds = %if_else_1
 }
 
 define void @main() {
 entry:
   %user_func_call = call i1 @even(i64 4)
-  %value_to_str = call ptr @mux_value_to_string(i1 %user_func_call)
-  %new_str = call ptr @mux_new_string_from_cstr(ptr %value_to_str)
+  %bool_to_str = call ptr @mux_bool_to_string(i1 %user_func_call)
+  %new_str = call ptr @mux_new_string_from_cstr(ptr %bool_to_str)
   call void @mux_println_val(ptr %new_str)
   %user_func_call1 = call i1 @odd(i64 5)
-  %value_to_str2 = call ptr @mux_value_to_string(i1 %user_func_call1)
-  %new_str3 = call ptr @mux_new_string_from_cstr(ptr %value_to_str2)
+  %bool_to_str2 = call ptr @mux_bool_to_string(i1 %user_func_call1)
+  %new_str3 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str2)
   call void @mux_println_val(ptr %new_str3)
+  %user_func_call4 = call i1 @even(i64 7)
+  %bool_to_str5 = call ptr @mux_bool_to_string(i1 %user_func_call4)
+  %new_str6 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str5)
+  call void @mux_println_val(ptr %new_str6)
+  %user_func_call7 = call i1 @odd(i64 8)
+  %bool_to_str8 = call ptr @mux_bool_to_string(i1 %user_func_call7)
+  %new_str9 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str8)
+  call void @mux_println_val(ptr %new_str9)
   ret void
 }
