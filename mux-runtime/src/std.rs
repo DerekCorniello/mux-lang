@@ -124,6 +124,22 @@ pub extern "C" fn mux_value_get_list(val: *mut Value) -> *mut List {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_value_get_map(val: *mut Value) -> *mut Map {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*val {
+            Value::Map(map_data) => {
+                Box::into_raw(Box::new(Map(map_data.clone())))
+            }
+            _ => std::ptr::null_mut(),
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_value_to_string(val: *mut Value) -> *mut c_char {
     let value = unsafe { &*val };
     let s = value.to_string();

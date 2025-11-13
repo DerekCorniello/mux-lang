@@ -48,6 +48,7 @@ impl<'a> CodeGenerator<'a> {
         let bool_type = context.bool_type();
         let i8_ptr = context.ptr_type(AddressSpace::default());
         let list_ptr = i8_ptr; // placeholder for *mut List
+        let map_ptr = i8_ptr; // placeholder for *mut Map
 
         // mux_value_from_string: (*const c_char) -> *mut Value
         let params = &[i8_ptr.into()];
@@ -175,6 +176,10 @@ impl<'a> CodeGenerator<'a> {
         // mux_value_get_list: (*mut Value) -> *mut List
         let fn_type = list_ptr.fn_type(&[i8_ptr.into()], false);
         module.add_function("mux_value_get_list", fn_type, None);
+
+        // mux_value_get_map: (*mut Value) -> *mut Map
+        let fn_type = map_ptr.fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_get_map", fn_type, None);
 
         // mux_value_to_string: (*mut Value) -> *const c_char
         let params = &[i8_ptr.into()];
@@ -3574,11 +3579,22 @@ impl<'a> CodeGenerator<'a> {
                 }
                 let key_val = self.generate_expression(&args[0])?;
                 let value_val = self.generate_expression(&args[1])?;
+                let extract_map = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_map").unwrap(),
+                        &[obj_value.into()],
+                        "extract_map",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
                 let call = self
                     .builder
                     .build_call(
                         self.module.get_function("mux_map_put").unwrap(),
-                        &[obj_value.into(), key_val.into(), value_val.into()],
+                        &[extract_map.into(), key_val.into(), value_val.into()],
                         "map_put",
                     )
                     .map_err(|e| e.to_string())?;
@@ -3589,26 +3605,62 @@ impl<'a> CodeGenerator<'a> {
                     return Err("get() method takes exactly 1 argument".to_string());
                 }
                 let key_val = self.generate_expression(&args[0])?;
-                let call = self
+                let extract_map = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_map").unwrap(),
+                        &[obj_value.into()],
+                        "extract_map",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                let map_get_result = self
                     .builder
                     .build_call(
                         self.module.get_function("mux_map_get").unwrap(),
-                        &[obj_value.into(), key_val.into()],
+                        &[extract_map.into(), key_val.into()],
                         "map_get",
                     )
-                    .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                let optional_value = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_from_optional").unwrap(),
+                        &[map_get_result.into()],
+                        "optional_value",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                Ok(optional_value)
             }
             "contains" => {
                 if args.len() != 1 {
                     return Err("contains() method takes exactly 1 argument".to_string());
                 }
                 let key_val = self.generate_expression(&args[0])?;
+                let extract_map = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_map").unwrap(),
+                        &[obj_value.into()],
+                        "extract_map",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
                 let call = self
                     .builder
                     .build_call(
                         self.module.get_function("mux_map_contains").unwrap(),
-                        &[obj_value.into(), key_val.into()],
+                        &[extract_map.into(), key_val.into()],
                         "map_contains",
                     )
                     .map_err(|e| e.to_string())?;
@@ -3618,11 +3670,22 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("size() method takes no arguments".to_string());
                 }
+                let extract_map = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_map").unwrap(),
+                        &[obj_value.into()],
+                        "extract_map",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
                 let call = self
                     .builder
                     .build_call(
                         self.module.get_function("mux_map_size").unwrap(),
-                        &[obj_value.into()],
+                        &[extract_map.into()],
                         "map_size",
                     )
                     .map_err(|e| e.to_string())?;
@@ -3632,15 +3695,66 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("is_empty() method takes no arguments".to_string());
                 }
+                let extract_map = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_map").unwrap(),
+                        &[obj_value.into()],
+                        "extract_map",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
                 let call = self
                     .builder
                     .build_call(
                         self.module.get_function("mux_map_is_empty").unwrap(),
-                        &[obj_value.into()],
+                        &[extract_map.into()],
                         "map_is_empty",
                     )
                     .map_err(|e| e.to_string())?;
                 Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "remove" => {
+                if args.len() != 1 {
+                    return Err("remove() method takes exactly 1 argument".to_string());
+                }
+                let key_val = self.generate_expression(&args[0])?;
+                let extract_map = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_map").unwrap(),
+                        &[obj_value.into()],
+                        "extract_map",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                let map_remove_result = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_map_remove").unwrap(),
+                        &[extract_map.into(), key_val.into()],
+                        "map_remove",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                let optional_value = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_from_optional").unwrap(),
+                        &[map_remove_result.into()],
+                        "optional_value",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                Ok(optional_value)
             }
             _ => Err(format!("Method {} not implemented for maps", method_name)),
         }

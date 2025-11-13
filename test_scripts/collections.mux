@@ -19,3 +19,4 @@ println("abt to safe")
 println("Safe access: " + nums.get(0).to_string())  // Safe access returns Optional
 println("abt to direct")
 println("Direct access: " + nums[0].to_string())  // Direct access with runtime error if out of bounds
+println("Access a map: " + avgs.get("Alice").to_string())

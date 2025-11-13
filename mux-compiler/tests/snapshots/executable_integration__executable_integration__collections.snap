@@ -13,6 +13,7 @@ abt to safe
 Safe access: Some(1)
 abt to direct
 Direct access: 1
+Access a map: Some(90)
 
 STDERR:
 Concat: 'nums: ' + '[1, 2, 3, 4]' = 'nums: [1, 2, 3, 4]'
@@ -23,3 +24,4 @@ Concat: 'grid: ' + '[[1, 2], [3, 4]]' = 'grid: [[1, 2], [3, 4]]'
 Concat: 'myset: ' + '{1, 2, 4}' = 'myset: {1, 2, 4}'
 Concat: 'Safe access: ' + 'Some(1)' = 'Safe access: Some(1)'
 Concat: 'Direct access: ' + '1' = 'Direct access: 1'
+Concat: 'Access a map: ' + 'Some(90)' = 'Access a map: Some(90)'
