@@ -259,8 +259,9 @@ match_end_3:                                      ; preds = %match_arm_3_1, %mat
 
 match_arm_3_0:                                    ; preds = %entry
   %data_call = call ptr @mux_result_data(ptr %res1)
+  %to_str = call ptr @mux_value_to_string(ptr %data_call)
   %v = alloca ptr, align 8
-  store ptr %data_call, ptr %v, align 8
+  store ptr %to_str, ptr %v, align 8
   %call = call ptr @mux_new_string_from_cstr(ptr @str_1)
   %v2 = load ptr, ptr %v, align 8
   %get_type = call i32 @mux_value_get_type_tag(ptr %call)
@@ -280,18 +281,19 @@ match_next_3_0:                                   ; preds = %entry
 
 match_arm_3_1:                                    ; preds = %match_next_3_0
   %data_call7 = call ptr @mux_result_data(ptr %res1)
+  %to_str8 = call ptr @mux_value_to_string(ptr %data_call7)
   %e = alloca ptr, align 8
-  store ptr %data_call7, ptr %e, align 8
-  %call8 = call ptr @mux_new_string_from_cstr(ptr @str_2)
-  %e9 = load ptr, ptr %e, align 8
-  %get_type10 = call i32 @mux_value_get_type_tag(ptr %call8)
-  %is_string11 = icmp eq i32 %get_type10, 3
-  %get_type12 = call i32 @mux_value_get_type_tag(ptr %e9)
-  %is_string13 = icmp eq i32 %get_type12, 3
-  %get_string14 = call ptr @mux_value_get_string(ptr %call8)
-  %get_string15 = call ptr @mux_value_get_string(ptr %e9)
-  %string_concat16 = call ptr @mux_string_concat(ptr %get_string14, ptr %get_string15)
-  %from_string17 = call ptr @mux_value_from_string(ptr %string_concat16)
-  call void @mux_println_val(ptr %from_string17)
+  store ptr %to_str8, ptr %e, align 8
+  %call9 = call ptr @mux_new_string_from_cstr(ptr @str_2)
+  %e10 = load ptr, ptr %e, align 8
+  %get_type11 = call i32 @mux_value_get_type_tag(ptr %call9)
+  %is_string12 = icmp eq i32 %get_type11, 3
+  %get_type13 = call i32 @mux_value_get_type_tag(ptr %e10)
+  %is_string14 = icmp eq i32 %get_type13, 3
+  %get_string15 = call ptr @mux_value_get_string(ptr %call9)
+  %get_string16 = call ptr @mux_value_get_string(ptr %e10)
+  %string_concat17 = call ptr @mux_string_concat(ptr %get_string15, ptr %get_string16)
+  %from_string18 = call ptr @mux_value_from_string(ptr %string_concat17)
+  call void @mux_println_val(ptr %from_string18)
   br label %match_end_3
 }

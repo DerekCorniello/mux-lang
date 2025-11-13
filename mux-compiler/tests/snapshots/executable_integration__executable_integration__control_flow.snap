@@ -2,4 +2,29 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
+STDOUT:
 Positive
+Large: 15
+0
+1
+2
+even
+odd
+even
+odd
+even
+odd
+even
+odd
+even
+odd
+Zero
+other
+zero
+one
+nl brace then
+Final x: 3
+
+STDERR:
+Concat: 'Large: ' + '15' = 'Large: 15'
+Concat: 'Final x: ' + '3' = 'Final x: 3'

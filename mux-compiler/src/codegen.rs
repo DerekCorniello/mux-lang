@@ -1824,12 +1824,17 @@ impl<'a> CodeGenerator<'a> {
                     .build_unreachable()
                     .map_err(|e| e.to_string())?;
 
-                // Continue block: return the actual value, not pointer
+                // Continue block: extract the actual primitive value from the Value pointer
                 self.builder.position_at_end(continue_bb);
-                
-                // The result_ptr is already a *mut Value pointer, which represents our value
-                // In the LLVM world, we treat this as the value itself (like box_value does)
-                Ok(result_ptr.into())
+
+                // For now, assume it's an Int (since nums contains Ints)
+                // TODO: Make this general based on the inferred type
+                let get_int_func = self.module.get_function("mux_value_get_int")
+                    .ok_or("mux_value_get_int not found")?;
+                let int_val = self.builder.build_call(get_int_func, &[result_ptr.into()], "extracted_int")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value().left().unwrap();
+                Ok(int_val.into())
             }
             ExpressionKind::ListLiteral(elements) => {
                 let list_ptr = self
@@ -2814,43 +2819,64 @@ impl<'a> CodeGenerator<'a> {
                                 && !args.is_empty()
                             {
                                 if let PatternNode::Identifier(var) = &args[0] {
-                                    let data_func = if enum_name == "Optional" {
-                                        "mux_optional_data"
-                                    } else if enum_name == "Result" {
-                                        "mux_result_data"
-                                    } else {
-                                        return Err(format!("Unknown enum {}", enum_name));
-                                    };
-                                    let func = self
-                                        .module
-                                        .get_function(data_func)
-                                        .ok_or(format!("{} not found", data_func))?;
-                                    let data_call = self
-                                        .builder
-                                        .build_call(func, &[expr_ptr.into()], "data_call")
-                                        .map_err(|e| e.to_string())?;
-                                    let data_ptr = data_call
-                                        .try_as_basic_value()
-                                        .left()
-                                        .unwrap()
-                                        .into_pointer_value();
-                                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                    let alloca = self
-                                        .builder
-                                        .build_alloca(ptr_type, var)
-                                        .map_err(|e| e.to_string())?;
-                                    self.builder
-                                        .build_store(alloca, data_ptr)
-                                        .map_err(|e| e.to_string())?;
-                                    let resolved_type = if enum_name == "Optional" {
-                                        Type::Primitive(PrimitiveType::Int)
-                                    } else {
-                                        Type::Primitive(PrimitiveType::Str)
-                                    };
-                                    self.variables.insert(
-                                        var.clone(),
-                                        (alloca, ptr_type.into(), resolved_type),
-                                    );
+                                     let data_func = if enum_name == "Optional" {
+                                         "mux_optional_data"
+                                     } else if enum_name == "Result" {
+                                         "mux_result_data"
+                                     } else {
+                                         return Err(format!("Unknown enum {}", enum_name));
+                                     };
+                                     let func = self
+                                         .module
+                                         .get_function(data_func)
+                                         .ok_or(format!("{} not found", data_func))?;
+                                     let data_call = self
+                                         .builder
+                                         .build_call(func, &[expr_ptr.into()], "data_call")
+                                         .map_err(|e| e.to_string())?;
+                                     let data_ptr = data_call
+                                         .try_as_basic_value()
+                                         .left()
+                                         .unwrap()
+                                         .into_pointer_value();
+
+                                      // Extract the actual value and box it like custom enums
+                                      let data_val = if enum_name == "Optional" {
+                                          // Extract i64 from *mut Value
+                                          let get_int_func = self.module.get_function("mux_value_get_int")
+                                              .ok_or("mux_value_get_int not found")?;
+                                          self.builder.build_call(get_int_func, &[data_ptr.into()], "get_int")
+                                              .map_err(|e| e.to_string())?
+                                              .try_as_basic_value().left().unwrap()
+                                      } else {
+                                          // For Result, extract string pointer from *mut Value
+                                          let to_str_func = self.module.get_function("mux_value_to_string")
+                                              .ok_or("mux_value_to_string not found")?;
+                                          self.builder.build_call(to_str_func, &[data_ptr.into()], "to_str")
+                                              .map_err(|e| e.to_string())?
+                                              .try_as_basic_value().left().unwrap()
+                                      };
+
+                                      let boxed = self.box_value(data_val);
+                                      let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                      let alloca = self
+                                          .builder
+                                          .build_alloca(ptr_type, var)
+                                          .map_err(|e| e.to_string())?;
+                                      self.builder
+                                          .build_store(alloca, boxed)
+                                          .map_err(|e| e.to_string())?;
+
+                                      let resolved_type = if enum_name == "Optional" {
+                                          Type::Primitive(PrimitiveType::Int)
+                                      } else {
+                                          Type::Primitive(PrimitiveType::Str)
+                                      };
+
+                                      self.variables.insert(
+                                          var.clone(),
+                                          (alloca, ptr_type.into(), resolved_type),
+                                      );
                                 }
                             }
                         } else {
@@ -2911,18 +2937,10 @@ impl<'a> CodeGenerator<'a> {
                                             self.context.f64_type().into() // fallback
                                         };
 
-                                    println!(
-                                        "DEBUG: Loading float value from index {} for variant {}",
-                                        data_index, name
-                                    );
                                     let data_val = self
                                         .builder
                                         .build_load(field_type, data_ptr, "data")
                                         .map_err(|e| e.to_string())?;
-                                    // Debug: try to print the loaded value before boxing
-                                    if data_val.is_float_value() {
-                                        println!("DEBUG: Loaded float value before boxing");
-                                    }
                                     let boxed = self.box_value(data_val);
                                     let ptr_type = self.context.ptr_type(AddressSpace::default());
                                     let alloca = self
@@ -3036,11 +3054,11 @@ impl<'a> CodeGenerator<'a> {
                 "to_string" => {
                     let func = self
                         .module
-                        .get_function("mux_value_to_string")
-                        .ok_or("mux_value_to_string not found")?;
+                        .get_function("mux_int_to_string")
+                        .ok_or("mux_int_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "value_to_str")
+                        .build_call(func, &[obj_value.into()], "int_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module

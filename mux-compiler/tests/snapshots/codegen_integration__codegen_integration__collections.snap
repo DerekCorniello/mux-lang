@@ -369,8 +369,9 @@ index_error:                                      ; preds = %entry
   unreachable
 
 index_continue:                                   ; preds = %entry
-  %value_to_str = call ptr @mux_value_to_string(ptr %list_raw)
-  %new_str126 = call ptr @mux_new_string_from_cstr(ptr %value_to_str)
+  %extracted_int = call i64 @mux_value_get_int(ptr %list_raw)
+  %int_to_str = call ptr @mux_int_to_string(i64 %extracted_int)
+  %new_str126 = call ptr @mux_new_string_from_cstr(ptr %int_to_str)
   %get_type127 = call i32 @mux_value_get_type_tag(ptr %call122)
   %is_string128 = icmp eq i32 %get_type127, 3
   %get_type129 = call i32 @mux_value_get_type_tag(ptr %new_str126)
