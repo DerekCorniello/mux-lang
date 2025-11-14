@@ -13,6 +13,9 @@ class Stack<T> {
         if items.is_empty() { return None }
         return items.pop_back()
     }
+    common func who_am_i() returns string {
+        return "im a stack!"
+    }
 }
 
 auto s = Stack<int>.new([])
@@ -21,3 +24,4 @@ match s.pop() {
     Some(v) { println("Popped: " + v.to_string()) }
     None { println("Empty stack") }
 }
+println(Stack.who_am_i())

@@ -53,6 +53,7 @@ pub enum Type {
 pub struct MethodSig {
     pub params: Vec<Type>,
     pub return_type: Type,
+    pub is_static: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -438,6 +439,7 @@ pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
     current_bounds: std::collections::HashMap<String, Vec<String>>,
     errors: Vec<SemanticError>,
+    is_in_static_method: bool,
 }
 
 impl Default for SemanticAnalyzer {
@@ -453,6 +455,7 @@ impl SemanticAnalyzer {
             symbol_table,
             current_bounds: std::collections::HashMap::new(),
             errors: Vec::new(),
+            is_in_static_method: false,
         }
     }
 
@@ -1116,6 +1119,7 @@ impl SemanticAnalyzer {
                             return Some(MethodSig {
                                 params: substituted_params,
                                 return_type: substituted_return,
+                                is_static: false,
                             });
                         }
                     }
@@ -1157,6 +1161,7 @@ impl SemanticAnalyzer {
                             } else {
                                 Type::Primitive(PrimitiveType::Int)
                             },
+                            is_static: false,
                         }),
                         _ => None,
                     },
@@ -1170,6 +1175,7 @@ impl SemanticAnalyzer {
                             } else {
                                 Type::Primitive(PrimitiveType::Float)
                             },
+                            is_static: false,
                         }),
                         _ => None,
                     },
@@ -1181,6 +1187,7 @@ impl SemanticAnalyzer {
                             } else {
                                 Type::Primitive(PrimitiveType::Int)
                             },
+                            is_static: false,
                         }),
                         _ => None,
                     },
@@ -1194,6 +1201,7 @@ impl SemanticAnalyzer {
                             } else {
                                 Type::Primitive(PrimitiveType::Float)
                             },
+                            is_static: false,
                         }),
                         _ => None,
                     },
@@ -1201,6 +1209,7 @@ impl SemanticAnalyzer {
                         "to_string" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Primitive(PrimitiveType::Str),
+                            is_static: false,
                         }),
                         _ => None,
                     },
@@ -1212,22 +1221,27 @@ impl SemanticAnalyzer {
                 "push_back" => Some(MethodSig {
                     params: vec![*elem_type.clone()],
                     return_type: Type::Void,
+                    is_static: false,
                 }),
                 "pop_back" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Optional(elem_type.clone()),
+                    is_static: false,
                 }),
                 "get" => Some(MethodSig {
                     params: vec![Type::Primitive(PrimitiveType::Int)],
                     return_type: Type::Optional(elem_type.clone()),
+                    is_static: false,
                 }),
                 "is_empty" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
                 }),
                 "to_string" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
                 }),
                 _ => None,
             },
@@ -1235,26 +1249,32 @@ impl SemanticAnalyzer {
                 "put" => Some(MethodSig {
                     params: vec![*key_type.clone(), *value_type.clone()],
                     return_type: Type::Void,
+                    is_static: false,
                 }),
                 "get" => Some(MethodSig {
                     params: vec![*key_type.clone()],
                     return_type: Type::Optional(value_type.clone()),
+                    is_static: false,
                 }),
                 "contains" => Some(MethodSig {
                     params: vec![*key_type.clone()],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
                 }),
                 "remove" => Some(MethodSig {
                     params: vec![*key_type.clone()],
                     return_type: Type::Optional(value_type.clone()),
+                    is_static: false,
                 }),
                 "size" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
                 }),
                 "is_empty" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
                 }),
                 _ => None,
             },
@@ -1262,22 +1282,27 @@ impl SemanticAnalyzer {
                 "add" => Some(MethodSig {
                     params: vec![*elem_type.clone()],
                     return_type: Type::Void,
+                    is_static: false,
                 }),
                 "remove" => Some(MethodSig {
                     params: vec![*elem_type.clone()],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
                 }),
                 "contains" => Some(MethodSig {
                     params: vec![*elem_type.clone()],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
                 }),
                 "size" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
                 }),
                 "is_empty" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
                 }),
                 _ => None,
             },
@@ -1383,6 +1408,12 @@ impl SemanticAnalyzer {
         for node in ast {
             match node {
                 AstNode::Function(func) => {
+                    if func.is_common {
+                        return Err(SemanticError {
+                            message: "common methods are only allowed in classes".to_string(),
+                            span: func.span,
+                        });
+                    }
                     // resolve function type
                     let param_types = func
                         .params
@@ -1460,6 +1491,7 @@ impl SemanticAnalyzer {
                                         MethodSig {
                                             params: sub_params,
                                             return_type: sub_return,
+                                            is_static: method_sig.is_static,
                                         },
                                     );
                                 }
@@ -1509,6 +1541,7 @@ impl SemanticAnalyzer {
                         let method_sig = MethodSig {
                             params: param_types,
                             return_type: ret,
+                            is_static: method.is_common,
                         };
                         methods_map.insert(method.name.clone(), method_sig);
                     }
@@ -1522,6 +1555,7 @@ impl SemanticAnalyzer {
                                 .map(|(p, _)| Type::Variable(p.clone()))
                                 .collect::<Vec<_>>(),
                         ),
+                        is_static: true,
                     };
                     methods_map.insert("new".to_string(), new_sig);
 
@@ -1568,7 +1602,7 @@ impl SemanticAnalyzer {
                     for variant in variants {
                         let params = variant.data.clone().unwrap_or_default().into_iter().map(|t| self.resolve_type(&t).unwrap_or(Type::Void)).collect();
                         let return_type = Type::Named(name.clone(), vec![]);
-                        methods.insert(variant.name.clone(), MethodSig { params, return_type });
+                        methods.insert(variant.name.clone(), MethodSig { params, return_type, is_static: true });
                         println!("Added method {} to {}", variant.name, name);
                     }
                     if let Err(e) = self.symbol_table.add_symbol(
@@ -1602,6 +1636,7 @@ impl SemanticAnalyzer {
                         let method_sig = MethodSig {
                             params: param_types,
                             return_type,
+                            is_static: false,
                         };
                         interface_methods.insert(method.name.clone(), method_sig);
                     }
@@ -1643,7 +1678,15 @@ impl SemanticAnalyzer {
 
     fn analyze_node(&mut self, node: &AstNode) -> Result<(), SemanticError> {
         match node {
-            AstNode::Function(func) => self.analyze_function(func),
+            AstNode::Function(func) => {
+                if func.is_common {
+                    return Err(SemanticError {
+                        message: "common methods are only allowed in classes".to_string(),
+                        span: func.span,
+                    });
+                }
+                self.analyze_function(func)
+            },
             AstNode::Class {
                 name,
                 traits,
@@ -1658,6 +1701,9 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_function(&mut self, func: &FunctionNode) -> Result<(), SemanticError> {
+        let was_static = self.is_in_static_method;
+        self.is_in_static_method = func.is_common;
+
         // set current bounds
         self.current_bounds.clear();
         for (param, bounds) in &func.type_params {
@@ -1690,6 +1736,7 @@ impl SemanticAnalyzer {
         // clean up function scope.
         self.symbol_table.pop_scope()?;
         self.current_bounds.clear();
+        self.is_in_static_method = was_static;
         result
     }
 
@@ -2109,6 +2156,12 @@ impl SemanticAnalyzer {
     fn analyze_expression(&mut self, expr: &ExpressionNode) -> Result<(), SemanticError> {
         match &expr.kind {
             ExpressionKind::Identifier(name) => {
+                if name == "self" && self.is_in_static_method {
+                    return Err(SemanticError {
+                        message: "cannot use 'self' in common method".to_string(),
+                        span: expr.span,
+                    });
+                }
                 if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
                     return Err(SemanticError {
                         message: format!("undefined variable '{}'", name),

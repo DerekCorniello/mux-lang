@@ -1199,9 +1199,9 @@ impl<'a> CodeGenerator<'a> {
             .map(|p| self.llvm_type_from_mux_type(&p.type_).map(|t| t.into()))
             .collect::<Result<_, _>>()?;
 
-        // For class methods, add implicit 'self' parameter
+        // For class methods, add implicit 'self' parameter (unless static)
         let is_class_method = func.name.contains('.');
-        if is_class_method {
+        if is_class_method && !func.is_common {
             let class_name = func.name.split('.').next().unwrap();
             let class_type = self
                 .type_map
@@ -1244,7 +1244,7 @@ impl<'a> CodeGenerator<'a> {
         // Set up parameter variables
         let is_class_method = func.name.contains('.');
         let mut param_index = 0;
-        if is_class_method {
+        if is_class_method && !func.is_common {
             let class_name = func.name.split('.').next().unwrap();
             let class_type = self.type_map.get(class_name).unwrap();
             let arg = function.get_nth_param(param_index).unwrap();
@@ -1258,14 +1258,7 @@ impl<'a> CodeGenerator<'a> {
             self.builder
                 .build_store(alloca, arg)
                 .map_err(|e| e.to_string())?;
-            self.variables.insert(
-                "self".to_string(),
-                (
-                    alloca,
-                    ptr_type.into(),
-                    ResolvedType::Named(class_name.to_string(), vec![]),
-                ),
-            );
+            self.variables.insert("self".to_string(), (alloca, class_type.clone(), Type::Named(class_name.to_string(), vec![])));
         }
 
         for (i, param) in func.params.iter().enumerate() {
@@ -1710,9 +1703,12 @@ impl<'a> CodeGenerator<'a> {
                                  if let Some(class) = self.analyzer.symbol_table().lookup(name) {
                                      if class.kind == crate::semantics::SymbolKind::Class {
                                          // Handle constructor/static method calls
-                                         if let Some(method) = class.methods.get(field) {
-                                             println!("DEBUG: Found class '{}' with method '{}'", name, field);
-                                             // Generate static method call (no self parameter)
+                                          if let Some(method) = class.methods.get(field) {
+                                              if !method.is_static {
+                                                  return Err(format!("Method {} on class {} is not static", field, name));
+                                              }
+                                              println!("DEBUG: Found class '{}' with method '{}'", name, field);
+                                              // Generate static method call (no self parameter)
                                              let mut call_args = vec![];
                                              for arg in args {
                                                  call_args.push(self.generate_expression(arg)?.into());
@@ -3357,9 +3353,12 @@ impl<'a> CodeGenerator<'a> {
             }
             Type::Named(name, _) => {
                 if let Some(class) = self.analyzer.symbol_table().lookup(name) {
-                    if let Some(method) = class.methods.get(method_name) {
-                        // Generate instance method call
-                        let mut call_args = vec![obj_value.into()]; // self
+                     if let Some(method) = class.methods.get(method_name) {
+                         if method.is_static {
+                             return Err(format!("Cannot call static method {} on instance", method_name));
+                         }
+                         // Generate instance method call
+                         let mut call_args = vec![obj_value.into()]; // self
                         for arg in args {
                             call_args.push(self.generate_expression(arg)?.into());
                         }
@@ -5023,6 +5022,15 @@ impl<'a> CodeGenerator<'a> {
 
         // Build method function name: {class_name}.{method_name}
         let method_func_name = format!("{}.{}", class_name, method_name);
+
+        // Check if method is static
+        if let Some(class) = self.analyzer.symbol_table().lookup(class_name) {
+            if let Some(method) = class.methods.get(method_name) {
+                if method.is_static {
+                    return Err(format!("Cannot call static method {} with self", method_name));
+                }
+            }
+        }
 
         // Get the function
         let func_val = *self

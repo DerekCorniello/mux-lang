@@ -89,6 +89,7 @@ pub enum TokenType {
     Break,
     Continue,
     None,
+    Common,
 
     OpenParen,    // (
     CloseParen,   // )
@@ -471,6 +472,7 @@ impl<'a> Lexer<'a> {
                     "false" => TokenType::Bool(false),
                     "and" => TokenType::And,
                     "or" => TokenType::Or,
+                    "common" => TokenType::Common,
                     _ => TokenType::Id(ident),
                 };
                 Ok(Token::new(token_type, start_span))
@@ -1173,7 +1175,7 @@ world"
 
     #[test]
     fn test_keywords_and_identifiers() {
-        let input = "auto x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false and or";
+        let input = "auto x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false and or common";
         let mut source = Source::from_test_str(input);
         let mut lexer = Lexer::new(&mut source);
         let tokens: Vec<_> = lexer.lex_all().unwrap().into_iter().collect();
@@ -1211,6 +1213,7 @@ world"
                 TokenType::Bool(false),
                 TokenType::And,
                 TokenType::Or,
+                TokenType::Common,
             ] => {
                 assert_eq!(x, "x");
                 assert_eq!(range, "range");

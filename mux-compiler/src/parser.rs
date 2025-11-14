@@ -193,8 +193,11 @@ impl<'a> Parser<'a> {
             self.auto_declaration().map(Some)
         } else if self.check(TokenType::Const) {
             self.const_declaration().map(Some)
+        } else if self.check(TokenType::Common) {
+            self.consume();
+            self.function_declaration(true).map(Some)
         } else if self.check(TokenType::Func) {
-            self.function_declaration().map(Some)
+            self.function_declaration(false).map(Some)
         } else if let TokenType::Id(_) = &self.peek().token_type {
             let start = self.current;
             // Try to parse a type
@@ -414,7 +417,17 @@ impl<'a> Parser<'a> {
         while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
             match self.peek().token_type {
                 TokenType::Func => {
-                    let func_node = self.function_declaration()?;
+                    let func_node = self.function_declaration(false)?;
+                    match func_node {
+                        AstNode::Function(func) => methods.push(func),
+                        _ => {
+                            return Err(ParserError::new("Expected function in class", start_span));
+                        }
+                    }
+                }
+                TokenType::Common => {
+                    self.consume();
+                    let func_node = self.function_declaration(true)?;
                     match func_node {
                         AstNode::Function(func) => methods.push(func),
                         _ => {
@@ -575,6 +588,7 @@ impl<'a> Parser<'a> {
                     return_type,
                     body: vec![],
                     span: start_span,
+                    is_common: false,
                 });
 
                 // no semicolon needed in mux.
@@ -741,7 +755,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn function_declaration(&mut self) -> ParserResult<AstNode> {
+    fn function_declaration(&mut self, is_common: bool) -> ParserResult<AstNode> {
         let start_span = self.peek().span;
         self.consume_token(TokenType::Func, "Expected 'func' keyword")?;
 
@@ -847,6 +861,7 @@ impl<'a> Parser<'a> {
             return_type,
             body: body_statements,
             span,
+            is_common,
         }))
     }
 
@@ -866,7 +881,7 @@ impl<'a> Parser<'a> {
         } else if self.matches(&[TokenType::Return]) {
             self.return_statement()
         } else if self.matches(&[TokenType::Func]) {
-            self.function_declaration()
+            self.function_declaration(false)
         } else if self.looks_like_typed_decl() {
             self.typed_declaration()
         } else if self.check(TokenType::OpenBrace) {
@@ -2715,6 +2730,7 @@ pub struct FunctionNode {
     pub return_type: TypeNode,
     pub body: Vec<StatementNode>,
     pub span: Span,
+    pub is_common: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
