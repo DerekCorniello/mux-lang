@@ -1807,14 +1807,38 @@ impl<'a> CodeGenerator<'a> {
                              }
                          }
                           ExpressionKind::GenericType(class_name, _) => {
-                              // This is always a constructor call on a generic class
+                              // Check if this is a constructor call
                               if field == "new" {
                                   // Special case: constructor call - return directly without going through expression evaluation
                                   return self.generate_constructor_call(class_name, args);
-                              } else {
-                                  return Err(format!("Only 'new' method supported on generic types, got '{}'", field));
                               }
-                         }
+
+                              // Check for static methods on the class
+                              if let Some(class_symbol) = self.analyzer.symbol_table().lookup(class_name) {
+                                  if let Some(method) = class_symbol.methods.get(field) {
+                                      if method.is_static {
+                                          // Generate static method call (similar to class name handler)
+                                          let mut call_args = vec![];
+                                          for arg in args {
+                                              call_args.push(self.generate_expression(arg)?.into());
+                                          }
+                                          let function_name = format!("{}.{}", class_name, field);
+                                          let call = self.builder
+                                              .build_call(
+                                                  self.module.get_function(&function_name).unwrap(),
+                                                  &call_args,
+                                                  &format!("{}.{}_call", class_name, field),
+                                              )
+                                              .map_err(|e| e.to_string())?;
+                                          return Ok(call.try_as_basic_value().left().unwrap());
+                                      } else {
+                                          return Err(format!("Method {} on class {} is not static", field, class_name));
+                                      }
+                                  }
+                              }
+
+                              return Err(format!("Method {} not found on class {}", field, class_name));
+                          }
                          _ => {
                              // Complex expression, handle below
                          }

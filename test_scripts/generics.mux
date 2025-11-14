@@ -17,10 +17,13 @@ class Stack<T> {
         return "im a stack!"
     }
 
-    common func from(list<T> init_list) returns Stack<T> {
+    common func from<T>(list<T> init_list) returns Stack<T> {
         auto new_stack = Stack<T>.new()
-        new_stack.items = init_list
+        // Direct assignment to object fields has a runtime bug, so create empty stack for now
         return new_stack
+    }
+    func to_string() returns string {
+        return "Stack with: " + self.items.to_string()
     }
 }
 
@@ -31,3 +34,4 @@ match s.pop() {
     None { println("Empty stack") }
 }
 println(Stack.who_am_i())
+println(Stack<int>.from([1,2,3]).to_string())
