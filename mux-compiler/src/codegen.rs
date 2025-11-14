@@ -1519,11 +1519,87 @@ impl<'a> CodeGenerator<'a> {
                                 self.builder
                                     .build_store(ptr, boxed)
                                     .map_err(|e| e.to_string())?;
-                                Ok(right_val)
-                            } else {
-                                Err("Assignment to non-identifier/deref not implemented"
-                                    .to_string())
-                            }
+                                 Ok(right_val)
+                             } else if let ExpressionKind::FieldAccess { expr, field } = &left.kind {
+                                 // Handle field assignment
+                                 let struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                                     if obj_name == "self" {
+                                         // Special case: accessing field of 'self'
+                                         if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                                             let self_value_ptr = self.builder
+                                                 .build_load(
+                                                     self.context.ptr_type(AddressSpace::default()),
+                                                     *self_ptr,
+                                                     "load_self_for_field_assign",
+                                                 )
+                                                 .map_err(|e| e.to_string())?
+                                                 .into_pointer_value();
+                                             
+                                             // Get the raw data pointer from the boxed Value
+                                             let get_ptr_func = self
+                                                 .module
+                                                 .get_function("mux_get_object_ptr")
+                                                 .ok_or("mux_get_object_ptr not found")?;
+                                             let data_ptr = self
+                                                 .builder
+                                                 .build_call(get_ptr_func, &[self_value_ptr.into()], "self_data_ptr_assign")
+                                                 .map_err(|e| e.to_string())?
+                                                 .try_as_basic_value()
+                                                 .left()
+                                                 .unwrap()
+                                                 .into_pointer_value();
+                                             data_ptr
+                                         } else {
+                                             return Err("Self not found in field assignment".to_string());
+                                         }
+                                     } else {
+                                         self.generate_expression(expr)?.into_pointer_value()
+                                     }
+                                 } else {
+                                     self.generate_expression(expr)?.into_pointer_value()
+                                 };
+                                 
+                                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                                     if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
+                                         if let Type::Named(class_name, _) = type_node {
+                                             if let Some(field_indices) = self.field_map.get(class_name.as_str()) {
+                                                 if let Some(&index) = field_indices.get(field) {
+                                                     let struct_type = self
+                                                         .type_map
+                                                         .get(class_name.as_str())
+                                                         .ok_or("Class type not found")?;
+                                                     if let BasicTypeEnum::StructType(st) = *struct_type {
+                                                         let field_ptr = self
+                                                             .builder
+                                                             .build_struct_gep(st, struct_ptr, index as u32, field)
+                                                             .map_err(|e| e.to_string())?;
+                                                         // Store the boxed value
+                                                         let boxed = self.box_value(right_val);
+                                                         self.builder
+                                                             .build_store(field_ptr, boxed)
+                                                             .map_err(|e| e.to_string())?;
+                                                         Ok(right_val)
+                                                     } else {
+                                                         Err("Struct type expected".to_string())
+                                                     }
+                                                 } else {
+                                                     Err(format!("Field {} not found", field))
+                                                 }
+                                             } else {
+                                                 Err("Field map not found".to_string())
+                                             }
+                                         } else {
+                                             Err("Named type expected".to_string())
+                                         }
+                                     } else {
+                                         Err("Variable type not found".to_string())
+                                     }
+                                 } else {
+                                     Err("Field access on complex expression not supported for assignment".to_string())
+                                 }
+                             } else {
+                                 Err("Assignment to non-identifier/deref/field not implemented".to_string())
+                             }
                         }
                         BinaryOp::AddAssign => {
                             let left_val = self.generate_expression(left)?;

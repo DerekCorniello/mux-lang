@@ -6,9 +6,11 @@ expression: ll_content
 source_filename = "mux_module"
 
 @type_name_Stack = dso_local unnamed_addr constant [6 x i8] c"Stack\00", align 1
+@str_0 = global [12 x i8] c"im a stack!\00"
 @type_name_Stack.5 = private unnamed_addr constant [6 x i8] c"Stack\00", align 1
-@str_0 = global [9 x i8] c"Popped: \00"
-@str_1 = global [12 x i8] c"Empty stack\00"
+@type_name_Stack.6 = private unnamed_addr constant [6 x i8] c"Stack\00", align 1
+@str_1 = global [9 x i8] c"Popped: \00"
+@str_2 = global [12 x i8] c"Empty stack\00"
 
 declare ptr @mux_value_from_string(ptr)
 
@@ -243,6 +245,32 @@ if_merge_1:                                       ; preds = %if_else_1
   ret ptr %list_pop_back
 }
 
+define ptr @Stack.who_am_i() {
+entry:
+  %call = call ptr @mux_new_string_from_cstr(ptr @str_0)
+  ret ptr %call
+}
+
+define ptr @Stack.from(ptr %0) {
+entry:
+  %init_list = alloca ptr, align 8
+  store ptr %0, ptr %init_list, align 8
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_Stack.5, i64 ptrtoint (ptr getelementptr ({ ptr }, ptr null, i32 1) to i64))
+  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
+  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
+  %field_0 = getelementptr inbounds { ptr }, ptr %data_ptr, i32 0, i32 0
+  %new_list = call ptr @mux_new_list()
+  store ptr %new_list, ptr %field_0, align 8
+  %new_stack = alloca ptr, align 8
+  store ptr %obj_ptr, ptr %new_stack, align 8
+  %init_list1 = load ptr, ptr %init_list, align 8
+  %new_stack2 = load ptr, ptr %new_stack, align 8
+  %items = getelementptr inbounds { ptr }, ptr %new_stack2, i32 0, i32 0
+  store ptr %init_list1, ptr %items, align 8
+  %new_stack3 = load ptr, ptr %new_stack, align 8
+  ret ptr %new_stack3
+}
+
 define ptr @Stack_new(ptr %0) {
 entry:
   %type_id = call i32 @mux_register_object_type(ptr @type_name_Stack, i64 ptrtoint (ptr getelementptr ({ ptr }, ptr null, i32 1) to i64))
@@ -255,7 +283,7 @@ entry:
 
 define void @main() {
 entry:
-  %type_id = call i32 @mux_register_object_type(ptr @type_name_Stack.5, i64 ptrtoint (ptr getelementptr ({ ptr }, ptr null, i32 1) to i64))
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_Stack.6, i64 ptrtoint (ptr getelementptr ({ ptr }, ptr null, i32 1) to i64))
   %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
   %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
   %field_0 = getelementptr inbounds { ptr }, ptr %data_ptr, i32 0, i32 0
@@ -274,6 +302,8 @@ entry:
   br i1 %match_cmp, label %match_arm_3_0, label %match_next_3_0
 
 match_end_3:                                      ; preds = %match_arm_3_1, %match_next_3_0, %match_arm_3_0
+  %Stack.who_am_i_call = call ptr @Stack.who_am_i()
+  call void @mux_println_val(ptr %Stack.who_am_i_call)
   ret void
 
 match_arm_3_0:                                    ; preds = %entry
@@ -282,7 +312,7 @@ match_arm_3_0:                                    ; preds = %entry
   %call = call ptr @mux_int_value(i64 %get_int)
   %v = alloca ptr, align 8
   store ptr %call, ptr %v, align 8
-  %call3 = call ptr @mux_new_string_from_cstr(ptr @str_0)
+  %call3 = call ptr @mux_new_string_from_cstr(ptr @str_1)
   %v4 = load ptr, ptr %v, align 8
   %get_int5 = call i64 @mux_value_get_int(ptr %v4)
   %int_to_str = call ptr @mux_int_to_string(i64 %get_int5)
@@ -303,7 +333,7 @@ match_next_3_0:                                   ; preds = %entry
   br i1 %match_cmp9, label %match_arm_3_1, label %match_end_3
 
 match_arm_3_1:                                    ; preds = %match_next_3_0
-  %call10 = call ptr @mux_new_string_from_cstr(ptr @str_1)
+  %call10 = call ptr @mux_new_string_from_cstr(ptr @str_2)
   call void @mux_println_val(ptr %call10)
   br label %match_end_3
 }

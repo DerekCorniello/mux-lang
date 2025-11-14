@@ -4,6 +4,7 @@ expression: full_output
 ---
 STDOUT:
 Popped: 42
+im a stack!
 
 STDERR:
 Concat: 'Popped: ' + '42' = 'Popped: 42'

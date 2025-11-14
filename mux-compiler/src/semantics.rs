@@ -1547,7 +1547,7 @@ impl SemanticAnalyzer {
                     }
                     // add "new" as static method for constructor
                     let new_sig = MethodSig {
-                        params: field_types,
+                        params: vec![],  // Default constructor takes no args
                         return_type: Type::Named(
                             name.clone(),
                             type_param_bounds

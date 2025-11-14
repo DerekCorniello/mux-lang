@@ -16,9 +16,15 @@ class Stack<T> {
     common func who_am_i() returns string {
         return "im a stack!"
     }
+
+    common func from(list<T> init_list) returns Stack<T> {
+        auto new_stack = Stack<T>.new()
+        new_stack.items = init_list
+        return new_stack
+    }
 }
 
-auto s = Stack<int>.new([])
+auto s = Stack<int>.new()
 s.push(42)
 match s.pop() {
     Some(v) { println("Popped: " + v.to_string()) }
