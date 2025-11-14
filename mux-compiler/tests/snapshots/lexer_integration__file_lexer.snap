@@ -21445,7 +21445,7 @@ expression: actual_tokens
     },
     Token {
         token_type: Str(
-            "Popped: 42",
+            "Popped: ",
         ),
         span: Span {
             row_start: 21,
@@ -21454,21 +21454,40 @@ expression: actual_tokens
             ),
             col_start: 23,
             col_end: Some(
+                33,
+            ),
+        },
+    },
+    Token {
+        token_type: Plus,
+        span: Span {
+            row_start: 21,
+            row_end: Some(
+                21,
+            ),
+            col_start: 34,
+            col_end: Some(
                 35,
             ),
         },
     },
     Token {
-        token_type: CloseParen,
+        token_type: Id(
+            "v",
+        ),
         span: Span {
             row_start: 21,
-            row_end: None,
-            col_start: 35,
-            col_end: None,
+            row_end: Some(
+                21,
+            ),
+            col_start: 36,
+            col_end: Some(
+                37,
+            ),
         },
     },
     Token {
-        token_type: CloseBrace,
+        token_type: Dot,
         span: Span {
             row_start: 21,
             row_end: None,
@@ -21477,11 +21496,62 @@ expression: actual_tokens
         },
     },
     Token {
+        token_type: Id(
+            "to_string",
+        ),
+        span: Span {
+            row_start: 21,
+            row_end: Some(
+                21,
+            ),
+            col_start: 38,
+            col_end: Some(
+                47,
+            ),
+        },
+    },
+    Token {
+        token_type: OpenParen,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 47,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 48,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 49,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseBrace,
+        span: Span {
+            row_start: 21,
+            row_end: None,
+            col_start: 51,
+            col_end: None,
+        },
+    },
+    Token {
         token_type: NewLine,
         span: Span {
             row_start: 21,
             row_end: None,
-            col_start: 38,
+            col_start: 52,
             col_end: None,
         },
     },

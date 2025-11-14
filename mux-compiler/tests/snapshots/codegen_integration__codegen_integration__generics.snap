@@ -7,7 +7,7 @@ source_filename = "mux_module"
 
 @type_name_Stack = dso_local unnamed_addr constant [6 x i8] c"Stack\00", align 1
 @type_name_Stack.5 = private unnamed_addr constant [6 x i8] c"Stack\00", align 1
-@str_0 = global [11 x i8] c"Popped: 42\00"
+@str_0 = global [9 x i8] c"Popped: \00"
 @str_1 = global [12 x i8] c"Empty stack\00"
 
 declare ptr @mux_value_from_string(ptr)
@@ -283,15 +283,27 @@ match_arm_3_0:                                    ; preds = %entry
   %v = alloca ptr, align 8
   store ptr %call, ptr %v, align 8
   %call3 = call ptr @mux_new_string_from_cstr(ptr @str_0)
-  call void @mux_println_val(ptr %call3)
+  %v4 = load ptr, ptr %v, align 8
+  %get_int5 = call i64 @mux_value_get_int(ptr %v4)
+  %int_to_str = call ptr @mux_int_to_string(i64 %get_int5)
+  %new_str = call ptr @mux_new_string_from_cstr(ptr %int_to_str)
+  %get_type = call i32 @mux_value_get_type_tag(ptr %call3)
+  %is_string = icmp eq i32 %get_type, 3
+  %get_type6 = call i32 @mux_value_get_type_tag(ptr %new_str)
+  %is_string7 = icmp eq i32 %get_type6, 3
+  %get_string = call ptr @mux_value_get_string(ptr %call3)
+  %get_string8 = call ptr @mux_value_get_string(ptr %new_str)
+  %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string8)
+  %from_string = call ptr @mux_value_from_string(ptr %string_concat)
+  call void @mux_println_val(ptr %from_string)
   br label %match_end_3
 
 match_next_3_0:                                   ; preds = %entry
-  %match_cmp4 = icmp eq i32 %discriminant_call, 1
-  br i1 %match_cmp4, label %match_arm_3_1, label %match_end_3
+  %match_cmp9 = icmp eq i32 %discriminant_call, 1
+  br i1 %match_cmp9, label %match_arm_3_1, label %match_end_3
 
 match_arm_3_1:                                    ; preds = %match_next_3_0
-  %call5 = call ptr @mux_new_string_from_cstr(ptr @str_1)
-  call void @mux_println_val(ptr %call5)
+  %call10 = call ptr @mux_new_string_from_cstr(ptr @str_1)
+  call void @mux_println_val(ptr %call10)
   br label %match_end_3
 }
