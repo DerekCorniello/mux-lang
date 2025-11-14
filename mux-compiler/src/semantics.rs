@@ -37,6 +37,7 @@ pub enum Type {
     Optional(Box<Type>),
     Reference(Box<Type>),
     Void,
+    Never,
     EmptyList,
     EmptyMap,
     EmptySet,
@@ -131,6 +132,8 @@ impl Unifier {
             (Type::Map(_, _), Type::EmptyMap) | (Type::EmptyMap, Type::Map(_, _)) => {}
             (Type::Set(_), Type::EmptySet) | (Type::EmptySet, Type::Set(_)) => {}
             (Type::Map(_, _), Type::EmptySet) | (Type::EmptySet, Type::Map(_, _)) => {}
+            (Type::Never, _) => {}
+            (_, Type::Never) => {}
             _ => {
                 return Err(SemanticError {
                     message: format!("Type mismatch: {:?} vs {:?}", a, b),
@@ -652,6 +655,7 @@ impl SemanticAnalyzer {
                 LiteralNode::Boolean(_) => Ok(Type::Primitive(crate::parser::PrimitiveType::Bool)),
                 LiteralNode::Char(_) => Ok(Type::Primitive(crate::parser::PrimitiveType::Char)),
             },
+            ExpressionKind::None => Ok(Type::Optional(Box::new(Type::Never))),
             ExpressionKind::Identifier(name) => {
                 if let Some(symbol) = self.symbol_table.lookup(name) {
                     let type_ = symbol.type_.clone().ok_or_else(|| SemanticError {
@@ -2114,6 +2118,7 @@ impl SemanticAnalyzer {
                 Ok(())
             }
             ExpressionKind::Literal(_) => Ok(()), // literals are fine
+            ExpressionKind::None => Ok(()), // None is fine
             ExpressionKind::Binary { left, right, op: _ } => {
                 self.analyze_expression(left)?;
                 self.analyze_expression(right)?;
@@ -2162,6 +2167,24 @@ impl SemanticAnalyzer {
                 self.analyze_expression(func)?;
                 for arg in args {
                     self.analyze_expression(arg)?;
+                }
+                // Special check for Some
+                if let ExpressionKind::Identifier(name) = &func.kind {
+                    if name == "Some" {
+                        if args.len() != 1 {
+                            return Err(SemanticError {
+                                message: "Some() takes exactly 1 argument".to_string(),
+                                span: expr.span,
+                            });
+                        }
+                        let arg_type = self.get_expression_type(&args[0])?;
+                        if let Type::Optional(_) = arg_type {
+                            return Err(SemanticError {
+                                message: "Some() cannot take an optional value".to_string(),
+                                span: expr.span,
+                            });
+                        }
+                    }
                 }
                 // type check is done in get_expression_type when called
                 Ok(())

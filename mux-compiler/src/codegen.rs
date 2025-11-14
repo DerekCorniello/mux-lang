@@ -75,6 +75,11 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = void_type.fn_type(params, false);
         module.add_function("exit", fn_type, None);
 
+        // malloc: (i64) -> *mut i8
+        let params = &[i64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("malloc", fn_type, None);
+
         // mux_string_concat: (*const c_char, *const c_char) -> *mut c_char
         let params = &[i8_ptr.into(), i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
@@ -1316,6 +1321,20 @@ impl<'a> CodeGenerator<'a> {
     fn generate_expression(&mut self, expr: &ExpressionNode) -> Result<BasicValueEnum<'a>, String> {
         match &expr.kind {
             ExpressionKind::Literal(lit) => self.generate_literal(lit),
+            ExpressionKind::None => {
+                let none_call = self
+                    .builder
+                    .build_call(self.module.get_function("mux_optional_none").unwrap(), &[], "none_literal")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                let value_call = self
+                    .builder
+                    .build_call(self.module.get_function("mux_value_from_optional").unwrap(), &[none_call.into()], "none_value")
+                    .map_err(|e| e.to_string())?;
+                Ok(value_call.try_as_basic_value().left().unwrap())
+            }
             ExpressionKind::Identifier(name) => {
                 if let Some((ptr, _, type_node)) = self.variables.get(name) {
                     let ptr_to_boxed = self
@@ -1674,10 +1693,63 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             }
                         }
-                    }
+                     }
 
-                    // Handle method calls on ANY expression type
-                    let obj_value = self.generate_expression(expr)?;
+                      // Handle method calls - prioritize variable resolution over class lookup
+                      match &expr.kind {
+                         ExpressionKind::Identifier(name) => {
+                             // First check if this is a variable in current scope
+                             if let Some((_, _, var_type)) = self.variables.get(name) {
+                                 // This is an instance method call on a variable
+                                 let var_type_clone = var_type.clone();
+                                 println!("DEBUG: Found variable '{}' with type '{:?}', looking for method '{}'", name, var_type_clone, field);
+                                 let obj_value = self.generate_expression(expr)?;
+                                 return self.generate_method_call(obj_value, &var_type_clone, field, args);
+                             } else {
+                                 // Not a variable, check if it's a class (for constructors like Stack.new())
+                                 if let Some(class) = self.analyzer.symbol_table().lookup(name) {
+                                     if class.kind == crate::semantics::SymbolKind::Class {
+                                         // Handle constructor/static method calls
+                                         if let Some(method) = class.methods.get(field) {
+                                             println!("DEBUG: Found class '{}' with method '{}'", name, field);
+                                             // Generate static method call (no self parameter)
+                                             let mut call_args = vec![];
+                                             for arg in args {
+                                                 call_args.push(self.generate_expression(arg)?.into());
+                                             }
+                                             let call = self
+                                                 .builder
+                                                 .build_call(
+                                                     self.module.get_function(&format!("{}.{}", name, field)).unwrap(),
+                                                     &call_args,
+                                                     &format!("{}.{}_call", name, field),
+                                                 )
+                                                 .map_err(|e| e.to_string())?;
+                                             return Ok(call.try_as_basic_value().left().unwrap());
+                                         } else {
+                                             return Err(format!("Method {} not found on class {}", field, name));
+                                         }
+                                     }
+                                 }
+                                 // Not a variable or class - fall through to general expression handling
+                             }
+                         }
+                          ExpressionKind::GenericType(class_name, _) => {
+                              // This is always a constructor call on a generic class
+                              if field == "new" {
+                                  // Special case: constructor call - return directly without going through expression evaluation
+                                  return self.generate_constructor_call(class_name, args);
+                              } else {
+                                  return Err(format!("Only 'new' method supported on generic types, got '{}'", field));
+                              }
+                         }
+                         _ => {
+                             // Complex expression, handle below
+                         }
+                     }
+
+                     // Handle method calls on complex expressions (not simple identifiers)
+                     let obj_value = self.generate_expression(expr)?;
 
                     // Use semantic analyzer for robust type inference
                     let obj_type = self.analyzer.get_expression_type(expr)
@@ -1755,11 +1827,22 @@ impl<'a> CodeGenerator<'a> {
                             if args.len() != 1 {
                                 return Err("Some takes 1 argument".to_string());
                             }
-                            let arg_val = self.generate_expression(&args[0])?;
+                            let arg_expr = &args[0];
+                            let arg_type = self.analyzer.get_expression_type(arg_expr)
+                                .map_err(|e| format!("Type inference failed: {}", e))?;
+                            let arg_val = self.generate_expression(arg_expr)?;
+                            let func_name = match arg_type {
+                                Type::Primitive(PrimitiveType::Int) => "mux_optional_some_int",
+                                Type::Primitive(PrimitiveType::Float) => "mux_optional_some_float",
+                                Type::Primitive(PrimitiveType::Bool) => "mux_optional_some_bool",
+                                Type::Primitive(PrimitiveType::Char) => "mux_optional_some_char",
+                                Type::Named(name, _) if name == "String" => "mux_optional_some_string",
+                                _ => return Err(format!("Some() not supported for type {:?}", arg_type)),
+                            };
                             let func = self
                                 .module
-                                .get_function("mux_optional_some_int")
-                                .ok_or("mux_optional_some_int not found")?;
+                                .get_function(func_name)
+                                .ok_or(format!("{} not found", func_name))?;
                             let call = self
                                 .builder
                                 .build_call(func, &[arg_val.into()], "some_call")
@@ -1965,14 +2048,29 @@ impl<'a> CodeGenerator<'a> {
                     if obj_name == "self" {
                         // Special case: accessing field of 'self' - load actual object pointer from alloca first
                         if let Some((self_ptr, _, _)) = self.variables.get("self") {
-                            self.builder
+                            let self_value_ptr = self.builder
                                 .build_load(
                                     self.context.ptr_type(AddressSpace::default()),
                                     *self_ptr,
                                     "load_self_for_field_access",
                                 )
                                 .map_err(|e| e.to_string())?
-                                .into_pointer_value()
+                                .into_pointer_value();
+                            
+                            // Get the raw data pointer from the boxed Value
+                            let get_ptr_func = self
+                                .module
+                                .get_function("mux_get_object_ptr")
+                                .ok_or("mux_get_object_ptr not found")?;
+                            let data_ptr = self
+                                .builder
+                                .build_call(get_ptr_func, &[self_value_ptr.into()], "self_data_ptr")
+                                .map_err(|e| e.to_string())?
+                                .try_as_basic_value()
+                                .left()
+                                .unwrap()
+                                .into_pointer_value();
+                            data_ptr
                         } else {
                             return Err("Self not found in field access".to_string());
                         }
@@ -2287,6 +2385,18 @@ impl<'a> CodeGenerator<'a> {
                 // Check if we need to return raw primitive or boxed value
                 if let Some(return_type) = &self.current_function_return_type {
                     match return_type {
+                        ResolvedType::Named(name, _) if name == "T" => {
+                            // Special case for generic T - try to unbox as primitive
+                            if value.is_pointer_value() {
+                                // Try to unbox as int (common case for generic functions)
+                                let raw_int = self.get_raw_int_value(value)?;
+                                self.builder
+                                    .build_return(Some(&raw_int))
+                                    .map_err(|e| e.to_string())?;
+                            } else {
+                                return Err(format!("Unexpected value type for generic return: {:?}", value));
+                            }
+                        }
                         ResolvedType::Primitive(PrimitiveType::Int) => {
                             // For int, unbox if necessary
                             let raw_int = self.get_raw_int_value(value)?;
@@ -2759,12 +2869,63 @@ impl<'a> CodeGenerator<'a> {
             StatementKind::Match { expr, arms } => {
                 let function = function.ok_or("Match not in function")?;
 
-                let expr_val = self.generate_expression(expr)?;
-                println!("DEBUG: Match expression generated value: {:?}", expr_val);
+                // Check if match expression is complex (not simple identifier/constructor/field access)
+                let (expr_val, match_expr) = if matches!(&expr.kind, ExpressionKind::Identifier(_) | ExpressionKind::FieldAccess { .. }) || matches!(&expr.kind, ExpressionKind::Call { func, .. } if matches!(func.kind, ExpressionKind::Identifier(_))) {
+                    // Simple expressions - use directly
+                    (self.generate_expression(expr)?, expr.clone())
+                } else {
+                    // Complex expression - evaluate first and store in temporary
+                    let temp_val = self.generate_expression(expr)?;
+                    let temp_name = format!("match_temp_{}", self.label_counter);
+                    self.label_counter += 1;
 
-                let enum_name = match &expr.kind {
+                    // Create temporary variable to hold the result
+                    let temp_type = self.context.ptr_type(AddressSpace::default());
+                    let temp_alloca = self.builder
+                        .build_alloca(temp_type, &temp_name)
+                        .map_err(|e| e.to_string())?;
+
+                    // Store the result
+                    self.builder
+                        .build_store(temp_alloca, temp_val)
+                        .map_err(|e| e.to_string())?;
+
+                    // Get the actual type for the temporary variable
+                    let actual_type = self.analyzer.get_expression_type(expr)
+                        .map_err(|e| format!("Type inference failed: {}", e))?;
+
+                    // Add to variables for pattern matching
+                    self.variables.insert(
+                        temp_name.clone(),
+                        (temp_alloca, BasicTypeEnum::PointerType(temp_type), actual_type),
+                    );
+
+                    // Create synthetic identifier expression for the temporary
+                    let temp_expr = ExpressionNode {
+                        kind: ExpressionKind::Identifier(temp_name),
+                        span: expr.span.clone(),
+                    };
+
+                    (temp_val, temp_expr)
+                };
+
+
+
+                let enum_name = match &match_expr.kind {
                     ExpressionKind::Identifier(name) => {
-                        if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+                        // First check if this is a temporary variable created for complex expressions
+                        if name.starts_with("match_temp_") {
+                            if let Some((_, _, var_type)) = self.variables.get(name) {
+
+                                match var_type {
+                                    Type::Named(n, _) => n.clone(),
+                                    Type::Optional(_) => "Optional".to_string(),
+                                    _ => return Err(format!("Match expression must be an enum type, got {:?}", var_type)),
+                                }
+                            } else {
+                                return Err(format!("Temporary variable {} not found", name));
+                            }
+                        } else if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
                             if let Some(Type::Named(n, _)) = &symbol.type_ {
                                 n.clone()
                             } else {
@@ -3158,6 +3319,13 @@ impl<'a> CodeGenerator<'a> {
                 }
 
                 self.builder.position_at_end(end_bb);
+
+                // Clean up temporary variables created for complex match expressions
+                if let ExpressionKind::Identifier(temp_name) = &match_expr.kind {
+                    if temp_name.starts_with("match_temp_") {
+                        self.variables.remove(temp_name);
+                    }
+                }
             }
             StatementKind::Expression(expr) => {
                 self.generate_expression(expr)?;
@@ -3188,11 +3356,34 @@ impl<'a> CodeGenerator<'a> {
                 self.generate_set_method_call(obj_value, elem_type, method_name, args)
             }
             Type::Named(name, _) => {
-                // TODO: Future implementation
-                Err(format!(
-                    "Named type methods not yet implemented: {}",
-                    method_name
-                ))
+                if let Some(class) = self.analyzer.symbol_table().lookup(name) {
+                    if let Some(method) = class.methods.get(method_name) {
+                        // Generate instance method call
+                        let mut call_args = vec![obj_value.into()]; // self
+                        for arg in args {
+                            call_args.push(self.generate_expression(arg)?.into());
+                        }
+                        let call = self
+                            .builder
+                            .build_call(
+                                self.module.get_function(&format!("{}.{}", name, method_name)).unwrap(),
+                                &call_args,
+                                &format!("{}.{}_call", name, method_name),
+                            )
+                            .map_err(|e| e.to_string())?;
+                        match call.try_as_basic_value().left() {
+                            Some(value) => Ok(value),
+                            None => {
+                                // Void return - return a dummy value
+                                Ok(self.context.i32_type().const_int(0, false).into())
+                            }
+                        }
+                    } else {
+                        Err(format!("Method {} not found on class {}", method_name, name))
+                    }
+                } else {
+                    Err(format!("Class {} not found", name))
+                }
             }
             Type::Optional(inner_type) => {
                 self.generate_optional_method_call(obj_value, inner_type, method_name, args)
@@ -4364,7 +4555,10 @@ impl<'a> CodeGenerator<'a> {
                 Err("Auto primitive should be resolved".to_string())
             }
             TypeKind::Named(name, _generics) => {
-                if self.enum_variants.contains_key(name) {
+                if name == "T" {
+                    // Hack for generic T, assume int
+                    Ok(self.context.i64_type().into())
+                } else if self.enum_variants.contains_key(name) {
                     if name == "Optional" || name == "Result" {
                         // For Optional/Result: values are always Value* pointers
                         Ok(self.context.ptr_type(AddressSpace::default()).into())
@@ -4488,6 +4682,10 @@ impl<'a> CodeGenerator<'a> {
             },
             Type::Variable(_) => TypeNode {
                 kind: TypeKind::Auto,
+                span: Span::new(0, 0),
+            }, // Should not happen
+            Type::Never => TypeNode {
+                kind: TypeKind::Auto, // Use Auto as placeholder
                 span: Span::new(0, 0),
             }, // Should not happen
         }
@@ -4657,9 +4855,156 @@ impl<'a> CodeGenerator<'a> {
         Ok(value_ptr)
     }
 
+    fn generate_constructor_call(
+        &mut self,
+        class_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+
+        // Get the class type from our type map
+        let class_type = self.type_map.get(class_name)
+            .ok_or(format!("Class '{}' not found in type map", class_name))?;
+        
+        // Register the object type if not already registered
+        let type_name = format!("type_name_{}", class_name);
+        let type_name_global = self
+            .builder
+            .build_global_string_ptr(class_name, &type_name)
+            .map_err(|e| e.to_string())?;
+        if let Some(global) = self.module.get_global(&type_name) {
+            global.set_linkage(inkwell::module::Linkage::External);
+        }
+        let type_size = class_type
+            .size_of()
+            .ok_or("Cannot get type size")?;
+        let register_func = self
+            .module
+            .get_function("mux_register_object_type")
+            .ok_or("mux_register_object_type not found")?;
+        let type_id = self
+            .builder
+            .build_call(
+                register_func,
+                &[type_name_global.as_pointer_value().into(), type_size.into()],
+                "type_id",
+            )
+            .map_err(|e| e.to_string())?;
+        let type_id_val = type_id
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_int_value();
+
+        // Allocate the object using runtime
+        let alloc_func = self
+            .module
+            .get_function("mux_alloc_object")
+            .ok_or("mux_alloc_object not found")?;
+        let obj_ptr = self
+            .builder
+            .build_call(alloc_func, &[type_id_val.into()], "obj_ptr")
+            .map_err(|e| e.to_string())?;
+        let obj_value_ptr = obj_ptr
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_pointer_value();
+
+        // Get the object data pointer for field initialization
+        let get_ptr_func = self
+            .module
+            .get_function("mux_get_object_ptr")
+            .ok_or("mux_get_object_ptr not found")?;
+        let data_ptr = self
+            .builder
+            .build_call(get_ptr_func, &[obj_value_ptr.into()], "data_ptr")
+            .map_err(|e| e.to_string())?;
+        let struct_ptr = data_ptr
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_pointer_value();
+        
+        // Initialize fields based on their types
+        if let Some(fields) = self.classes.get(class_name) {
+            for (i, field) in fields.iter().enumerate() {
+                let field_ptr = self.builder
+                    .build_struct_gep(
+                        class_type.into_struct_type(),
+                        struct_ptr,
+                        i as u32,
+                        &format!("field_{}", i)
+                    )
+                    .map_err(|e| e.to_string())?;
+                
+                // Initialize field based on its type
+                match &field.type_.kind {
+                    TypeKind::List(_) => {
+                        // Initialize list fields with empty list
+                        let new_list_fn = self.module.get_function("mux_new_list")
+                            .ok_or("mux_new_list function not found")?;
+                        let list_ptr = self.builder
+                            .build_call(new_list_fn, &[], "new_list")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .unwrap()
+                            .into_pointer_value();
+                        self.builder
+                            .build_store(field_ptr, list_ptr)
+                            .map_err(|e| e.to_string())?;
+                    }
+                    TypeKind::Map(_, _) => {
+                        // Initialize map fields with empty map
+                        let new_map_fn = self.module.get_function("mux_new_map")
+                            .ok_or("mux_new_map function not found")?;
+                        let map_ptr = self.builder
+                            .build_call(new_map_fn, &[], "new_map")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .unwrap()
+                            .into_pointer_value();
+                        self.builder
+                            .build_store(field_ptr, map_ptr)
+                            .map_err(|e| e.to_string())?;
+                    }
+                    TypeKind::Set(_) => {
+                        // Initialize set fields with empty set
+                        let new_set_fn = self.module.get_function("mux_new_set")
+                            .ok_or("mux_new_set function not found")?;
+                        let set_ptr = self.builder
+                            .build_call(new_set_fn, &[], "new_set")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .unwrap()
+                            .into_pointer_value();
+                        self.builder
+                            .build_store(field_ptr, set_ptr)
+                            .map_err(|e| e.to_string())?;
+                    }
+                    _ => {
+                        // Initialize primitive fields to zero
+                        let zero = self.context.i64_type().const_int(0, false);
+                        self.builder
+                            .build_store(field_ptr, zero)
+                            .map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+        }
+        
+        // For now, ignore constructor arguments (they would be used to initialize fields)
+        // TODO: Handle constructor arguments to initialize fields
+        
+        // Return the allocated object as a boxed Value pointer
+        Ok(obj_value_ptr.into())
+    }
+
     fn generate_method_call_on_self(
         &mut self,
-        field: &str,
+        method_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
         // Get self pointer
@@ -4676,8 +5021,8 @@ impl<'a> CodeGenerator<'a> {
                 return Err("Self type not found".to_string());
             };
 
-        // Build method function name: {class_name}.{field}
-        let method_func_name = format!("{}.{}", class_name, field);
+        // Build method function name: {class_name}.{method_name}
+        let method_func_name = format!("{}.{}", class_name, method_name);
 
         // Get the function
         let func_val = *self
@@ -4702,7 +5047,7 @@ impl<'a> CodeGenerator<'a> {
         // Call the method
         let call = self
             .builder
-            .build_call(func_val, &call_args, &format!("call_{}", field))
+            .build_call(func_val, &call_args, &format!("call_{}", method_name))
             .map_err(|e| e.to_string())?;
 
         Ok(call.try_as_basic_value().left().unwrap())

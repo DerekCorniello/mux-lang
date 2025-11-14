@@ -2,6 +2,4 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
-STDOUT:
- 
-STDERR:
+Popped: 42

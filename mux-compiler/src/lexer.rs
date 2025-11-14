@@ -88,6 +88,7 @@ pub enum TokenType {
     In,
     Break,
     Continue,
+    None,
 
     OpenParen,    // (
     CloseParen,   // )
@@ -465,6 +466,7 @@ impl<'a> Lexer<'a> {
                     "in" => TokenType::In,
                     "break" => TokenType::Break,
                     "continue" => TokenType::Continue,
+                    "None" => TokenType::None,
                     "true" => TokenType::Bool(true),
                     "false" => TokenType::Bool(false),
                     "and" => TokenType::And,

@@ -20,6 +20,8 @@ source_filename = "mux_module"
 @str_12 = global [14 x i8] c"abt to direct\00"
 @str_13 = global [16 x i8] c"Direct access: \00"
 @error_msg = private unnamed_addr constant [25 x i8] c"List index out of bounds\00", align 1
+@str_14 = global [15 x i8] c"Access a map: \00"
+@str_15 = global [6 x i8] c"Alice\00"
 
 declare ptr @mux_value_from_string(ptr)
 
@@ -30,6 +32,8 @@ declare void @mux_print(ptr)
 declare void @mux_println_val(ptr)
 
 declare void @exit(i32)
+
+declare ptr @malloc(i64)
 
 declare ptr @mux_string_concat(ptr, ptr)
 
@@ -72,6 +76,8 @@ declare ptr @mux_optional_to_string(ptr)
 declare ptr @mux_value_from_optional(ptr)
 
 declare ptr @mux_value_get_list(ptr)
+
+declare ptr @mux_value_get_map(ptr)
 
 declare ptr @mux_value_to_string(ptr)
 
@@ -381,5 +387,22 @@ index_continue:                                   ; preds = %entry
   %string_concat133 = call ptr @mux_string_concat(ptr %get_string131, ptr %get_string132)
   %from_string134 = call ptr @mux_value_from_string(ptr %string_concat133)
   call void @mux_println_val(ptr %from_string134)
+  %call135 = call ptr @mux_new_string_from_cstr(ptr @str_14)
+  %avgs136 = load ptr, ptr %avgs, align 8
+  %call137 = call ptr @mux_new_string_from_cstr(ptr @str_15)
+  %extract_map = call ptr @mux_value_get_map(ptr %avgs136)
+  %map_get = call ptr @mux_map_get(ptr %extract_map, ptr %call137)
+  %optional_value = call ptr @mux_value_from_optional(ptr %map_get)
+  %val_to_str138 = call ptr @mux_value_to_string(ptr %optional_value)
+  %new_str139 = call ptr @mux_new_string_from_cstr(ptr %val_to_str138)
+  %get_type140 = call i32 @mux_value_get_type_tag(ptr %call135)
+  %is_string141 = icmp eq i32 %get_type140, 3
+  %get_type142 = call i32 @mux_value_get_type_tag(ptr %new_str139)
+  %is_string143 = icmp eq i32 %get_type142, 3
+  %get_string144 = call ptr @mux_value_get_string(ptr %call135)
+  %get_string145 = call ptr @mux_value_get_string(ptr %new_str139)
+  %string_concat146 = call ptr @mux_string_concat(ptr %get_string144, ptr %get_string145)
+  %from_string147 = call ptr @mux_value_from_string(ptr %string_concat146)
+  call void @mux_println_val(ptr %from_string147)
   ret void
 }

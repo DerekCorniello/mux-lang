@@ -1206,6 +1206,13 @@ impl<'a> Parser<'a> {
 
     fn parse_pattern(&mut self) -> ParserResult<PatternNode> {
         match &self.peek().token_type {
+            TokenType::None => {
+                self.current += 1; // consume None
+                Ok(PatternNode::EnumVariant {
+                    name: "None".to_string(),
+                    args: vec![],
+                })
+            }
             TokenType::Id(name) => {
                 let name_clone = name.clone();
                 self.current += 1; // consume the identifier
@@ -1815,6 +1822,14 @@ impl<'a> Parser<'a> {
             TokenType::Bool(b) => {
                 let expr = ExpressionNode {
                     kind: ExpressionKind::Literal(LiteralNode::Boolean(b)),
+                    span: token_span,
+                };
+                self.parse_postfix_operators(expr)
+            }
+
+            TokenType::None => {
+                let expr = ExpressionNode {
+                    kind: ExpressionKind::None,
                     span: token_span,
                 };
                 self.parse_postfix_operators(expr)
@@ -2473,6 +2488,7 @@ impl_spanned!(StatementNode);
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExpressionKind {
     Literal(LiteralNode),
+    None,
     Identifier(String),
     Binary {
         left: Box<ExpressionNode>,

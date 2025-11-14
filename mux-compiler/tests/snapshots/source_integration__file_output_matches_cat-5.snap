@@ -2,4 +2,4 @@
 source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Generics\nfunc max<T is comparable>(T a, T b) returns T { \n    if a > b { \n        return a\n    }\n    return b \n}\n\nclass Stack<T> {\n    list<T> items\n    func push(T item) returns void { items.push_back(item) }\n    func pop() returns Optional<T> {\n        if items.is_empty() { return None }\n        return Some(items.pop_back())\n    }\n}\n\nauto s = Stack<int>.new([])\ns.push(42)\nmatch s.pop() {\n    Some(v) { println(\"Popped: 42\") }\n    None { println(\"Empty stack\") }\n}\n"
+"// Optionals & Results\nfunc divide(int a, int b) returns Result<int, string> {\n    if b == 0 { return Err(\"Division by zero\") }\n    return Ok(a / b)\n}\n\nauto res = divide(10, 2)\nmatch res {\n    Ok(v) { println(\"Result: \" + v) }\n    Err(e) { println(\"Error: \" + e) }\n}\n\nfunc findEven(list<int> nums) returns Optional<int> {\n    for int n in nums { if n % 2 == 0 { return Some(n) } }\n}\n"

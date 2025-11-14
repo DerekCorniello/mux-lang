@@ -11,7 +11,7 @@ class Stack<T> {
     func push(T item) returns void { items.push_back(item) }
     func pop() returns Optional<T> {
         if items.is_empty() { return None }
-        return Some(items.pop_back())
+        return items.pop_back()
     }
 }
 

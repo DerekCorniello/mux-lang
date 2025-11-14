@@ -23,6 +23,8 @@ declare void @mux_println_val(ptr)
 
 declare void @exit(i32)
 
+declare ptr @malloc(i64)
+
 declare ptr @mux_string_concat(ptr, ptr)
 
 declare ptr @mux_value_get_string(ptr)
@@ -64,6 +66,8 @@ declare ptr @mux_optional_to_string(ptr)
 declare ptr @mux_value_from_optional(ptr)
 
 declare ptr @mux_value_get_list(ptr)
+
+declare ptr @mux_value_get_map(ptr)
 
 declare ptr @mux_value_to_string(ptr)
 
