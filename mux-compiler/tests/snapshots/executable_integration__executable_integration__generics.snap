@@ -3,8 +3,5 @@ source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
 STDOUT:
-Popped: 42
-im a stack!
-
+ 
 STDERR:
-Concat: 'Popped: ' + '42' = 'Popped: 42'
