@@ -19,7 +19,7 @@ class Stack<T> {
 
     common func from<T>(list<T> init_list) returns Stack<T> {
         auto new_stack = Stack<T>.new()
-        // Direct assignment to object fields has a runtime bug, so create empty stack for now
+        new_stack.items = init_list
         return new_stack
     }
     func to_string() returns string {
