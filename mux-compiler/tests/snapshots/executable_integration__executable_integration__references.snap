@@ -3,5 +3,15 @@ source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
 STDOUT:
- 
+ref value: 10
+val after ref update: 20
+abt to make list
+list made
+first element: 1
+val after update: 21
+
 STDERR:
+Concat: 'ref value: ' + '10' = 'ref value: 10'
+Concat: 'val after ref update: ' + '20' = 'val after ref update: 20'
+Concat: 'first element: ' + '1' = 'first element: 1'
+Concat: 'val after update: ' + '21' = 'val after update: 21'

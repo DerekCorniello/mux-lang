@@ -1265,27 +1265,33 @@ impl<'a> CodeGenerator<'a> {
             let arg = function
                 .get_nth_param((i as u32) + (param_index as u32))
                 .unwrap();
-            let boxed = self.box_value(arg);
+            
+            // Resolve parameter type first
+            let resolved_type = self.analyzer.resolve_type(&param.type_)
+                .map_err(|e| e.to_string())?;
+            
+            // For reference parameters, store pointer directly; otherwise box the value
+            let value_to_store = if matches!(resolved_type, Type::Reference(_)) {
+                arg.into_pointer_value()
+            } else {
+                self.box_value(arg)
+            };
+            
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             let alloca = self
                 .builder
                 .build_alloca(ptr_type, &param.name)
                 .map_err(|e| e.to_string())?;
             self.builder
-                .build_store(alloca, boxed)
+                .build_store(alloca, value_to_store)
                 .map_err(|e| e.to_string())?;
-            let symbol = self
-                .analyzer
-                .symbol_table()
-                .lookup(&param.name)
-                .ok_or("Symbol not found")?;
-            let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+            
             self.variables.insert(
                 param.name.clone(),
                 (
                     alloca,
                     BasicTypeEnum::PointerType(ptr_type),
-                    resolved_type.clone(),
+                    resolved_type,
                 ),
             );
         }
@@ -2389,20 +2395,64 @@ impl<'a> CodeGenerator<'a> {
                                 Err(format!("Undefined variable {}", name))
                             }
                         } else {
-                            // Complex expression: evaluate, allocate temp ptr, store the result ptr
-                            let expr_val = self.generate_expression(expr)?; // ptr to mux_value
+                            // Complex expression: evaluate, allocate temp ptr, store the result
+                            let expr_val = self.generate_expression(expr)?; 
+                            // Box the value if it's not already a pointer
+                            let boxed_val = if expr_val.is_pointer_value() {
+                                expr_val.into_pointer_value()
+                            } else {
+                                self.box_value(expr_val)
+                            };
                             let ptr_type = self.context.ptr_type(AddressSpace::default());
                             let temp = self
                                 .builder
                                 .build_alloca(ptr_type, "ref_temp")
                                 .map_err(|e| e.to_string())?;
                             self.builder
-                                .build_store(temp, expr_val.into_pointer_value())
+                                .build_store(temp, boxed_val)
                                 .map_err(|e| e.to_string())?;
                             Ok(temp.into())
                         }
                     }
-                    UnaryOp::Deref => self.generate_expression(expr),
+                    UnaryOp::Deref => {
+                        let ref_val = self.generate_expression(expr)?;
+                        // Load the pointer to the boxed value from the reference
+                        let boxed_ptr = self.builder.build_load(
+                            self.context.ptr_type(AddressSpace::default()),
+                            ref_val.into_pointer_value(),
+                            "boxed_ptr"
+                        ).map_err(|e| e.to_string())?;
+                        // Now we need to extract the actual value from the boxed pointer
+                        // This depends on the type of the referenced variable
+                        if let ExpressionKind::Identifier(name) = &expr.kind {
+                            if let Some((_, _, var_type)) = self.variables.get(name) {
+                                match var_type {
+                                    Type::Reference(inner_type) => {
+                                        match inner_type.as_ref() {
+                                            Type::Primitive(PrimitiveType::Int) => {
+                                                let raw_int = self.get_raw_int_value(boxed_ptr)?;
+                                                Ok(raw_int.into())
+                                            }
+                                            Type::Primitive(PrimitiveType::Float) => {
+                                                let raw_float = self.get_raw_float_value(boxed_ptr)?;
+                                                Ok(raw_float.into())
+                                            }
+                                            Type::Primitive(PrimitiveType::Bool) => {
+                                                let raw_bool = self.get_raw_bool_value(boxed_ptr)?;
+                                                Ok(raw_bool.into())
+                                            }
+                                            _ => Ok(boxed_ptr.into()),
+                                        }
+                                    }
+                                    _ => Ok(boxed_ptr.into()),
+                                }
+                            } else {
+                                Ok(boxed_ptr.into())
+                            }
+                        } else {
+                            Ok(boxed_ptr.into())
+                        }
+                    }
                     _ => Err("Unary op not implemented".to_string()),
                 }
             }

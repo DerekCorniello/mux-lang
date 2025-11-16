@@ -667,12 +667,8 @@ impl SemanticAnalyzer {
                         message: format!("Symbol '{}' has no type information", name),
                         span: expr.span,
                     })?;
-                    // auto-dereference references
-                    if let Type::Reference(inner) = type_ {
-                        Ok(*inner)
-                    } else {
-                        Ok(type_)
-                    }
+                    // Return the actual type of the variable (including Reference types)
+                    Ok(type_)
                 } else if let Some(sig) = self.get_builtin_sig(name) {
                     Ok(Type::Function {
                         params: sig.params.clone(),
@@ -745,6 +741,17 @@ impl SemanticAnalyzer {
                 UnaryOp::Ref => {
                     let operand_type = self.get_expression_type(expr)?;
                     Ok(Type::Reference(Box::new(operand_type)))
+                }
+                UnaryOp::Deref => {
+                    let operand_type = self.get_expression_type(expr)?;
+                    if let Type::Reference(inner) = operand_type {
+                        Ok(*inner)
+                    } else {
+                        Err(SemanticError {
+                            message: "Cannot dereference non-reference type".into(),
+                            span: expr.span,
+                        })
+                    }
                 }
                 _ => Err(SemanticError {
                     message: format!("Unsupported unary operator {:?}", op),
