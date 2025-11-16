@@ -24,6 +24,7 @@ pub struct Symbol {
     pub type_: Option<Type>,
     pub interfaces: std::collections::HashMap<String, std::collections::HashMap<String, MethodSig>>,
     pub methods: std::collections::HashMap<String, MethodSig>,
+    pub fields: std::collections::HashMap<String, Type>,
     pub type_params: Vec<(String, Vec<String>)>,
 }
 
@@ -541,19 +542,20 @@ impl SemanticAnalyzer {
                 params,
                 returns: Box::new(ret),
             };
-            self.symbol_table
-                .add_symbol(
-                    name,
-                    Symbol {
-                        kind: SymbolKind::Function,
-                        span: Span::new(0, 0), // built-in function, no source span
-                        type_: Some(func_type),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                    },
-                )
-                .unwrap();
+                self.symbol_table
+                    .add_symbol(
+                        name,
+                        Symbol {
+                            kind: SymbolKind::Function,
+                            span: Span::new(0, 0), // built-in function, no source span
+                            type_: Some(func_type),
+                            interfaces: std::collections::HashMap::new(),
+                            methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
+                            type_params: Vec::new(),
+                        },
+                    )
+                    .unwrap();
         }
     }
 
@@ -790,6 +792,23 @@ impl SemanticAnalyzer {
                         params: method_sig.params,
                         returns: Box::new(method_sig.return_type),
                     })
+                } else if let Type::Named(name, args) = &expr_type {
+                    if let Some(symbol) = self.symbol_table.lookup(name) {
+                        if let Some(field_type) = symbol.fields.get(field) {
+                            let substituted = self.substitute_type_params(field_type, &symbol.type_params, args);
+                            Ok(substituted)
+                        } else {
+                            Err(SemanticError {
+                                message: format!("Unknown field '{}' on type {:?}", field, expr_type),
+                                span: expr.span,
+                            })
+                        }
+                    } else {
+                        Err(SemanticError {
+                            message: format!("Unknown method '{}' on type {:?}", field, expr_type),
+                            span: expr.span,
+                        })
+                    }
                 } else {
                     Err(SemanticError {
                         message: format!("Unknown method '{}' on type {:?}", field, expr_type),
@@ -1440,6 +1459,7 @@ impl SemanticAnalyzer {
                             type_: Some(func_type),
                             interfaces: std::collections::HashMap::new(),
                             methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
                             type_params: func
                                 .type_params
                                 .iter()
@@ -1504,11 +1524,15 @@ impl SemanticAnalyzer {
                         .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
                         .collect();
 
-                    // collect field types for constructor
+                    // collect field types for constructor and fields map
                     let mut field_types = Vec::new();
+                    let mut fields_map = std::collections::HashMap::new();
                     for field in fields {
                         match self.resolve_type(&field.type_) {
-                            Ok(t) => field_types.push(t),
+                            Ok(t) => {
+                                field_types.push(t.clone());
+                                fields_map.insert(field.name.clone(), t);
+                            }
                             Err(e) => self.errors.push(e),
                         }
                     }
@@ -1591,6 +1615,7 @@ impl SemanticAnalyzer {
                             type_: Some(Type::Named(name.clone(), vec![])),
                             interfaces: implemented_interfaces,
                             methods: methods_map,
+                            fields: fields_map,
                             type_params: type_param_bounds,
                         },
                     ) {
@@ -1613,6 +1638,7 @@ impl SemanticAnalyzer {
                             type_: Some(Type::Named(name.clone(), vec![])),
                             interfaces: std::collections::HashMap::new(),
                             methods,
+                            fields: std::collections::HashMap::new(),
                             type_params: Vec::new(),
                         },
                     ) {
@@ -1650,6 +1676,7 @@ impl SemanticAnalyzer {
                             type_: None,
                             interfaces: interfaces_map,
                             methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
                             type_params: type_params
                                 .iter()
                                 .map(|(p, b)| {
@@ -1685,22 +1712,29 @@ impl SemanticAnalyzer {
                         span: func.span,
                     });
                 }
-                self.analyze_function(func)
+                self.analyze_function(func, None)
             },
             AstNode::Class {
                 name,
                 traits,
                 fields,
                 methods,
+                type_params,
                 ..
-            } => self.analyze_class(name, traits, fields, methods),
+            } => {
+                let type_param_bounds: Vec<(String, Vec<String>)> = type_params
+                    .iter()
+                    .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
+                    .collect();
+                self.analyze_class(name, traits, fields, methods, &type_param_bounds)
+            },
             AstNode::Enum { .. } => Ok(()), // enums don't need further analysis.
             AstNode::Interface { .. } => Ok(()), // interfaces don't need further analysis.
             AstNode::Statement(stmt) => self.analyze_statement(stmt),
         }
     }
 
-    fn analyze_function(&mut self, func: &FunctionNode) -> Result<(), SemanticError> {
+    fn analyze_function(&mut self, func: &FunctionNode, self_type: Option<Type>) -> Result<(), SemanticError> {
         let was_static = self.is_in_static_method;
         self.is_in_static_method = func.is_common;
 
@@ -1714,6 +1748,22 @@ impl SemanticAnalyzer {
         // create new scope for function parameters and body.
         self.symbol_table.push_scope()?;
 
+        // add self if provided
+        if let Some(self_type) = self_type {
+            self.symbol_table.add_symbol(
+                "self",
+                Symbol {
+                    kind: SymbolKind::Variable,
+                    span: func.span,
+                    type_: Some(self_type),
+                    interfaces: std::collections::HashMap::new(),
+                    methods: std::collections::HashMap::new(),
+                    fields: std::collections::HashMap::new(),
+                    type_params: Vec::new(),
+                },
+            )?;
+        }
+
         // add parameters to function scope.
         for param in &func.params {
             let param_type = self.resolve_type(&param.type_)?;
@@ -1725,6 +1775,7 @@ impl SemanticAnalyzer {
                     type_: Some(param_type),
                     interfaces: std::collections::HashMap::new(),
                     methods: std::collections::HashMap::new(),
+                    fields: std::collections::HashMap::new(),
                     type_params: Vec::new(),
                 },
             )?;
@@ -1746,6 +1797,7 @@ impl SemanticAnalyzer {
         _traits: &[crate::parser::TraitRef],
         fields: &[Field],
         methods: &[FunctionNode],
+        type_params: &[(String, Vec<String>)],
     ) -> Result<(), SemanticError> {
         // create new scope for class members.
         self.symbol_table.push_scope()?;
@@ -1761,6 +1813,7 @@ impl SemanticAnalyzer {
                     type_: Some(field_type),
                     interfaces: std::collections::HashMap::new(),
                     methods: std::collections::HashMap::new(),
+                    fields: std::collections::HashMap::new(),
                     type_params: Vec::new(),
                 },
             )?;
@@ -1788,10 +1841,16 @@ impl SemanticAnalyzer {
                     type_: Some(method_type),
                     interfaces: std::collections::HashMap::new(),
                     methods: std::collections::HashMap::new(),
+                    fields: std::collections::HashMap::new(),
                     type_params: Vec::new(),
                 },
             )?;
-            self.analyze_function(method)?;
+            let self_type = if method.is_common {
+                None
+            } else {
+                Some(Type::Named(_name.to_string(), type_params.iter().map(|(p, _)| Type::Variable(p.clone())).collect()))
+            };
+            self.analyze_function(method, self_type)?;
         }
 
         // clean up class scope.
@@ -1811,6 +1870,7 @@ impl SemanticAnalyzer {
                         type_: None, // will be resolved later
                         interfaces: std::collections::HashMap::new(),
                         methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
                     },
                 )?;
@@ -1852,6 +1912,7 @@ impl SemanticAnalyzer {
                         type_: Some(expr_type),
                         interfaces: std::collections::HashMap::new(),
                         methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
                     },
                 )?;
@@ -1868,6 +1929,7 @@ impl SemanticAnalyzer {
                         type_: Some(declared_type),
                         interfaces: std::collections::HashMap::new(),
                         methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
                     },
                 )?;
@@ -1888,6 +1950,7 @@ impl SemanticAnalyzer {
                         type_: Some(declared_type),
                         interfaces: std::collections::HashMap::new(),
                         methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
                     },
                 )?;
@@ -1924,10 +1987,11 @@ impl SemanticAnalyzer {
                     var,
                     Symbol {
                         kind: SymbolKind::Variable,
-                        span: stmt.span,
+                    span: stmt.span,
                         type_: Some(var_type),
                         interfaces: std::collections::HashMap::new(),
                         methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
                     },
                 )?;
@@ -1998,6 +2062,7 @@ impl SemanticAnalyzer {
                         type_,
                         interfaces: std::collections::HashMap::new(),
                         methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
                     },
                 )?;
@@ -2024,6 +2089,7 @@ impl SemanticAnalyzer {
                         type_: Some(expected_type.clone()),
                         interfaces: std::collections::HashMap::new(),
                         methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
                     },
                 )?;
@@ -2374,6 +2440,7 @@ impl SemanticAnalyzer {
                             type_: Some(param_type),
                             interfaces: std::collections::HashMap::new(),
                             methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
                             type_params: Vec::new(),
                         },
                     )?;

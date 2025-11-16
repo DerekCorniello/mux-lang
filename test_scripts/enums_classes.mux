@@ -13,6 +13,25 @@ class GenericShape is DrawableShape {
     }
 }
 
+class Pair<T is Printable, U is Printable> {
+    T left
+    U right
+    common func from(T left, U right) returns Pair<T, U> {
+        auto new_pair = Pair<T, U>.new()
+        new_pair.left = left
+        new_pair.right = right
+        return new_pair
+    }
+
+    func get_left() returns T {
+        return self.left
+    }
+
+    func get_right() returns U {
+        return self.right
+    }
+}
+
 // Usage: Create shapes via enum, wrap in class for behavior
 auto circleShape = Shape.Circ(5.0)
 auto rectShape = Shape.Rect(10.0, 20.0)
@@ -26,4 +45,5 @@ for DrawableShape s in shapes {
     s.draw()  // Polymorphic call via interface
 }
 
-println("Extended test: enum for data, interface/class for behavior")
+auto homogenous_pair = Pair<int, int>.from(1, 9)
+auto heterogenous_pair = Pair<string, bool>.from("status successful", true)

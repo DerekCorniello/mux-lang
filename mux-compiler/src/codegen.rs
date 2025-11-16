@@ -1522,42 +1522,64 @@ impl<'a> CodeGenerator<'a> {
                                  Ok(right_val)
                              } else if let ExpressionKind::FieldAccess { expr, field } = &left.kind {
                                  // Handle field assignment
-                                 let struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                                     if obj_name == "self" {
-                                         // Special case: accessing field of 'self'
-                                         if let Some((self_ptr, _, _)) = self.variables.get("self") {
-                                             let self_value_ptr = self.builder
-                                                 .build_load(
-                                                     self.context.ptr_type(AddressSpace::default()),
-                                                     *self_ptr,
-                                                     "load_self_for_field_assign",
-                                                 )
-                                                 .map_err(|e| e.to_string())?
-                                                 .into_pointer_value();
-                                             
-                                             // Get the raw data pointer from the boxed Value
-                                             let get_ptr_func = self
-                                                 .module
-                                                 .get_function("mux_get_object_ptr")
-                                                 .ok_or("mux_get_object_ptr not found")?;
-                                             let data_ptr = self
-                                                 .builder
-                                                 .build_call(get_ptr_func, &[self_value_ptr.into()], "self_data_ptr_assign")
-                                                 .map_err(|e| e.to_string())?
-                                                 .try_as_basic_value()
-                                                 .left()
-                                                 .unwrap()
-                                                 .into_pointer_value();
-                                             data_ptr
-                                         } else {
-                                             return Err("Self not found in field assignment".to_string());
-                                         }
-                                     } else {
-                                         self.generate_expression(expr)?.into_pointer_value()
-                                     }
-                                 } else {
-                                     self.generate_expression(expr)?.into_pointer_value()
-                                 };
+                                  let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                                      if obj_name == "self" {
+                                          // Special case: accessing field of 'self'
+                                          if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                                              let self_value_ptr = self.builder
+                                                  .build_load(
+                                                      self.context.ptr_type(AddressSpace::default()),
+                                                      *self_ptr,
+                                                      "load_self_for_field_assign",
+                                                  )
+                                                  .map_err(|e| e.to_string())?
+                                                  .into_pointer_value();
+
+                                              // Get the raw data pointer from the boxed Value
+                                              let get_ptr_func = self
+                                                  .module
+                                                  .get_function("mux_get_object_ptr")
+                                                  .ok_or("mux_get_object_ptr not found")?;
+                                              let data_ptr = self
+                                                  .builder
+                                                  .build_call(get_ptr_func, &[self_value_ptr.into()], "self_data_ptr_assign")
+                                                  .map_err(|e| e.to_string())?
+                                                  .try_as_basic_value()
+                                                  .left()
+                                                  .unwrap()
+                                                  .into_pointer_value();
+                                              data_ptr
+                                          } else {
+                                              return Err("Self not found in field assignment".to_string());
+                                          }
+                                      } else {
+                                          self.generate_expression(expr)?.into_pointer_value()
+                                      }
+                                  } else {
+                                      self.generate_expression(expr)?.into_pointer_value()
+                                  };
+
+                                  // For non-self class objects, get the data pointer
+                                  if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                                      if obj_name != "self" {
+                                          if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
+                                              if let Type::Named(_, _) = type_node {
+                                                  let get_ptr_func = self
+                                                      .module
+                                                      .get_function("mux_get_object_ptr")
+                                                      .ok_or("mux_get_object_ptr not found")?;
+                                                  struct_ptr = self
+                                                      .builder
+                                                      .build_call(get_ptr_func, &[struct_ptr.into()], "data_ptr_assign")
+                                                      .map_err(|e| e.to_string())?
+                                                      .try_as_basic_value()
+                                                      .left()
+                                                      .unwrap()
+                                                      .into_pointer_value();
+                                              }
+                                          }
+                                      }
+                                  }
                                  
                                  if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                                      if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
@@ -2140,7 +2162,7 @@ impl<'a> CodeGenerator<'a> {
                 Ok(self.generate_lambda_expression(params, body)?)
             }
             ExpressionKind::FieldAccess { expr, field } => {
-                let struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name == "self" {
                         // Special case: accessing field of 'self' - load actual object pointer from alloca first
                         if let Some((self_ptr, _, _)) = self.variables.get("self") {
@@ -2152,7 +2174,7 @@ impl<'a> CodeGenerator<'a> {
                                 )
                                 .map_err(|e| e.to_string())?
                                 .into_pointer_value();
-                            
+
                             // Get the raw data pointer from the boxed Value
                             let get_ptr_func = self
                                 .module
@@ -2176,6 +2198,28 @@ impl<'a> CodeGenerator<'a> {
                 } else {
                     self.generate_expression(expr)?.into_pointer_value()
                 };
+
+                // For non-self class objects, get the data pointer
+                if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                    if obj_name != "self" {
+                        if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
+                            if let Type::Named(_, _) = type_node {
+                                let get_ptr_func = self
+                                    .module
+                                    .get_function("mux_get_object_ptr")
+                                    .ok_or("mux_get_object_ptr not found")?;
+                                struct_ptr = self
+                                    .builder
+                                    .build_call(get_ptr_func, &[struct_ptr.into()], "data_ptr")
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap()
+                                    .into_pointer_value();
+                            }
+                        }
+                    }
+                }
                 
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {

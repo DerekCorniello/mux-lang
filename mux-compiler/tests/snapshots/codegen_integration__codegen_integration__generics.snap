@@ -2,4 +2,402 @@
 source: mux-compiler/tests/codegen_integration.rs
 expression: ll_content
 ---
+; ModuleID = 'mux_module'
+source_filename = "mux_module"
 
+@type_name_Stack = dso_local unnamed_addr constant [6 x i8] c"Stack\00", align 1
+@str_0 = global [12 x i8] c"im a stack!\00"
+@type_name_Stack.5 = private unnamed_addr constant [6 x i8] c"Stack\00", align 1
+@str_1 = global [13 x i8] c"init new obj\00"
+@str_2 = global [11 x i8] c"init items\00"
+@str_3 = global [13 x i8] c"Stack with: \00"
+@type_name_Stack.6 = private unnamed_addr constant [6 x i8] c"Stack\00", align 1
+@str_4 = global [9 x i8] c"Popped: \00"
+@str_5 = global [12 x i8] c"Empty stack\00"
+@str_6 = global [28 x i8] c"trying to instantiate stack\00"
+@str_7 = global [19 x i8] c"instantiated stack\00"
+@str_8 = global [12 x i8] c"stack has: \00"
+
+declare ptr @mux_value_from_string(ptr)
+
+declare ptr @mux_new_string_from_cstr(ptr)
+
+declare void @mux_print(ptr)
+
+declare void @mux_println_val(ptr)
+
+declare void @exit(i32)
+
+declare ptr @malloc(i64)
+
+declare ptr @mux_string_concat(ptr, ptr)
+
+declare ptr @mux_value_get_string(ptr)
+
+declare ptr @mux_value_from_string.1(ptr)
+
+declare ptr @mux_int_to_string(i64)
+
+declare ptr @mux_int_to_float(i64)
+
+declare ptr @mux_float_to_int(double)
+
+declare ptr @mux_float_to_string(double)
+
+declare ptr @mux_bool_to_string(i1)
+
+declare ptr @mux_bool_to_int(ptr)
+
+declare ptr @mux_bool_to_float(ptr)
+
+declare ptr @mux_string_to_string(ptr)
+
+declare ptr @mux_list_to_string(ptr)
+
+declare ptr @mux_map_to_string(ptr)
+
+declare i32 @mux_register_object_type(ptr, i64)
+
+declare ptr @mux_alloc_object(i32)
+
+declare void @mux_free_object(ptr)
+
+declare ptr @mux_get_object_ptr(ptr)
+
+declare ptr @mux_set_to_string(ptr)
+
+declare ptr @mux_optional_to_string(ptr)
+
+declare ptr @mux_value_from_optional(ptr)
+
+declare ptr @mux_value_get_list(ptr)
+
+declare ptr @mux_value_get_map(ptr)
+
+declare ptr @mux_value_to_string(ptr)
+
+declare ptr @mux_list_value(ptr)
+
+declare ptr @mux_map_value(ptr)
+
+declare ptr @mux_set_value(ptr)
+
+declare ptr @mux_range(i64, i64)
+
+declare ptr @mux_new_list()
+
+declare ptr @mux_new_map()
+
+declare ptr @mux_new_set()
+
+declare ptr @mux_value_add(ptr, ptr)
+
+declare i64 @mux_value_get_int(ptr)
+
+declare double @mux_value_get_float(ptr)
+
+declare i1 @mux_value_get_bool(ptr)
+
+declare i32 @mux_value_get_type_tag(ptr)
+
+declare void @mux_free_value(ptr)
+
+declare void @mux_list_push_back(ptr, ptr)
+
+declare ptr @mux_list_get(ptr, i64)
+
+declare ptr @mux_list_get_value(ptr, i64)
+
+declare i64 @mux_list_length(ptr)
+
+declare i64 @mux_value_list_length(ptr)
+
+declare ptr @mux_value_list_get_value(ptr, i64)
+
+declare ptr @mux_list_pop_back(ptr)
+
+declare i1 @mux_list_is_empty(ptr)
+
+declare void @mux_map_put(ptr, ptr, ptr)
+
+declare ptr @mux_map_get(ptr, ptr)
+
+declare i1 @mux_map_contains(ptr, ptr)
+
+declare ptr @mux_map_remove(ptr, ptr)
+
+declare void @mux_set_add(ptr, ptr)
+
+declare i1 @mux_set_contains(ptr, ptr)
+
+declare i1 @mux_set_remove(ptr, ptr)
+
+declare i64 @mux_set_size(ptr)
+
+declare i1 @mux_set_is_empty(ptr)
+
+declare i64 @mux_map_size(ptr)
+
+declare i1 @mux_map_is_empty(ptr)
+
+declare ptr @mux_int_value(i64)
+
+declare ptr @mux_float_value(double)
+
+declare ptr @mux_bool_value(i1)
+
+declare ptr @mux_string_value(ptr)
+
+declare ptr @mux_int_to_string.2(i64)
+
+declare i64 @mux_int_from_value(ptr)
+
+declare double @mux_float_from_value(ptr)
+
+declare i1 @mux_bool_from_value(ptr)
+
+declare ptr @mux_string_from_value(ptr)
+
+declare ptr @mux_result_ok_int(i64)
+
+declare ptr @mux_result_err_str(ptr)
+
+declare ptr @mux_optional_some_int(i64)
+
+declare ptr @mux_optional_none()
+
+declare ptr @mux_result_ok_int.3(i64)
+
+declare ptr @mux_result_err_str.4(ptr)
+
+declare i32 @mux_optional_discriminant(ptr)
+
+declare ptr @mux_optional_data(ptr)
+
+declare i32 @mux_result_discriminant(ptr)
+
+declare ptr @mux_result_data(ptr)
+
+define i64 @max(i64 %0, i64 %1) {
+entry:
+  %call = call ptr @mux_int_value(i64 %0)
+  %a = alloca ptr, align 8
+  store ptr %call, ptr %a, align 8
+  %call1 = call ptr @mux_int_value(i64 %1)
+  %b = alloca ptr, align 8
+  store ptr %call1, ptr %b, align 8
+  %a2 = load ptr, ptr %a, align 8
+  %b3 = load ptr, ptr %b, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %a2)
+  %get_int4 = call i64 @mux_value_get_int(ptr %b3)
+  %gt = icmp sgt i64 %get_int, %get_int4
+  br i1 %gt, label %if_then_0, label %if_else_0
+
+if_then_0:                                        ; preds = %entry
+  %a5 = load ptr, ptr %a, align 8
+  %get_int6 = call i64 @mux_value_get_int(ptr %a5)
+  ret i64 %get_int6
+
+if_else_0:                                        ; preds = %entry
+  br label %if_merge_0
+
+if_merge_0:                                       ; preds = %if_else_0
+  %b7 = load ptr, ptr %b, align 8
+  %get_int8 = call i64 @mux_value_get_int(ptr %b7)
+  ret i64 %get_int8
+}
+
+define void @Stack.push(ptr %0, i64 %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %call = call ptr @mux_int_value(i64 %1)
+  %item = alloca ptr, align 8
+  store ptr %call, ptr %item, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %items = getelementptr inbounds { ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %items1 = load i64, ptr %items, align 4
+  %item2 = load ptr, ptr %item, align 8
+  call void @mux_list_push_back(i64 %items1, ptr %item2)
+  ret void
+}
+
+define ptr @Stack.pop(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %items = getelementptr inbounds { ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %items1 = load i64, ptr %items, align 4
+  %list_is_empty = call i1 @mux_list_is_empty(i64 %items1)
+  br i1 %list_is_empty, label %if_then_1, label %if_else_1
+
+if_then_1:                                        ; preds = %entry
+  %none_literal = call ptr @mux_optional_none()
+  %none_value = call ptr @mux_value_from_optional(ptr %none_literal)
+  ret ptr %none_value
+
+if_else_1:                                        ; preds = %entry
+  br label %if_merge_1
+
+if_merge_1:                                       ; preds = %if_else_1
+  %load_self_for_field_access2 = load ptr, ptr %self, align 8
+  %self_data_ptr3 = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access2)
+  %items4 = getelementptr inbounds { ptr }, ptr %self_data_ptr3, i32 0, i32 0
+  %items5 = load i64, ptr %items4, align 4
+  %list_pop_back = call ptr @mux_list_pop_back(i64 %items5)
+  ret ptr %list_pop_back
+}
+
+define ptr @Stack.who_am_i() {
+entry:
+  %call = call ptr @mux_new_string_from_cstr(ptr @str_0)
+  ret ptr %call
+}
+
+define ptr @Stack.from(ptr %0) {
+entry:
+  %init_list = alloca ptr, align 8
+  store ptr %0, ptr %init_list, align 8
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_Stack.5, i64 ptrtoint (ptr getelementptr ({ ptr }, ptr null, i32 1) to i64))
+  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
+  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
+  %field_0 = getelementptr inbounds { ptr }, ptr %data_ptr, i32 0, i32 0
+  %new_list = call ptr @mux_new_list()
+  store ptr %new_list, ptr %field_0, align 8
+  %new_stack = alloca ptr, align 8
+  store ptr %obj_ptr, ptr %new_stack, align 8
+  %call = call ptr @mux_new_string_from_cstr(ptr @str_1)
+  call void @mux_println_val(ptr %call)
+  %init_list1 = load ptr, ptr %init_list, align 8
+  %new_stack2 = load ptr, ptr %new_stack, align 8
+  %data_ptr_assign = call ptr @mux_get_object_ptr(ptr %new_stack2)
+  %items = getelementptr inbounds { ptr }, ptr %data_ptr_assign, i32 0, i32 0
+  store ptr %init_list1, ptr %items, align 8
+  %call3 = call ptr @mux_new_string_from_cstr(ptr @str_2)
+  call void @mux_println_val(ptr %call3)
+  %new_stack4 = load ptr, ptr %new_stack, align 8
+  ret ptr %new_stack4
+}
+
+define ptr @Stack.to_string(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %call = call ptr @mux_new_string_from_cstr(ptr @str_3)
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %items = getelementptr inbounds { ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %items1 = load i64, ptr %items, align 4
+  %val_to_str = call ptr @mux_value_to_string(i64 %items1)
+  %new_str = call ptr @mux_new_string_from_cstr(ptr %val_to_str)
+  %get_type = call i32 @mux_value_get_type_tag(ptr %call)
+  %is_string = icmp eq i32 %get_type, 3
+  %get_type2 = call i32 @mux_value_get_type_tag(ptr %new_str)
+  %is_string3 = icmp eq i32 %get_type2, 3
+  %get_string = call ptr @mux_value_get_string(ptr %call)
+  %get_string4 = call ptr @mux_value_get_string(ptr %new_str)
+  %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string4)
+  %from_string = call ptr @mux_value_from_string(ptr %string_concat)
+  ret ptr %from_string
+}
+
+define ptr @Stack_new(ptr %0) {
+entry:
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_Stack, i64 ptrtoint (ptr getelementptr ({ ptr }, ptr null, i32 1) to i64))
+  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
+  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
+  %items = getelementptr inbounds { ptr }, ptr %data_ptr, i32 0, i32 0
+  store ptr %0, ptr %items, align 8
+  ret ptr %obj_ptr
+}
+
+define void @main() {
+entry:
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_Stack.6, i64 ptrtoint (ptr getelementptr ({ ptr }, ptr null, i32 1) to i64))
+  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
+  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
+  %field_0 = getelementptr inbounds { ptr }, ptr %data_ptr, i32 0, i32 0
+  %new_list = call ptr @mux_new_list()
+  store ptr %new_list, ptr %field_0, align 8
+  %s = alloca ptr, align 8
+  store ptr %obj_ptr, ptr %s, align 8
+  %s1 = load ptr, ptr %s, align 8
+  call void @Stack.push(ptr %s1, i64 42)
+  %s2 = load ptr, ptr %s, align 8
+  %Stack.pop_call = call ptr @Stack.pop(ptr %s2)
+  %match_temp_2 = alloca ptr, align 8
+  store ptr %Stack.pop_call, ptr %match_temp_2, align 8
+  %discriminant_call = call i32 @mux_optional_discriminant(ptr %Stack.pop_call)
+  %match_cmp = icmp eq i32 %discriminant_call, 0
+  br i1 %match_cmp, label %match_arm_3_0, label %match_next_3_0
+
+match_end_3:                                      ; preds = %match_arm_3_1, %match_next_3_0, %match_arm_3_0
+  %Stack.who_am_i_call = call ptr @Stack.who_am_i()
+  call void @mux_println_val(ptr %Stack.who_am_i_call)
+  %call11 = call ptr @mux_new_string_from_cstr(ptr @str_6)
+  call void @mux_println_val(ptr %call11)
+  %call12 = call ptr @mux_new_list()
+  %call13 = call ptr @mux_int_value(i64 1)
+  call void @mux_list_push_back(ptr %call12, ptr %call13)
+  %call14 = call ptr @mux_int_value(i64 2)
+  call void @mux_list_push_back(ptr %call12, ptr %call14)
+  %call15 = call ptr @mux_int_value(i64 3)
+  call void @mux_list_push_back(ptr %call12, ptr %call15)
+  %call16 = call ptr @mux_list_value(ptr %call12)
+  %Stack.from_call = call ptr @Stack.from(ptr %call16)
+  %test = alloca ptr, align 8
+  store ptr %Stack.from_call, ptr %test, align 8
+  %call17 = call ptr @mux_new_string_from_cstr(ptr @str_7)
+  call void @mux_println_val(ptr %call17)
+  %call18 = call ptr @mux_new_string_from_cstr(ptr @str_8)
+  %test19 = load ptr, ptr %test, align 8
+  %data_ptr20 = call ptr @mux_get_object_ptr(ptr %test19)
+  %items = getelementptr inbounds { ptr }, ptr %data_ptr20, i32 0, i32 0
+  %items21 = load i64, ptr %items, align 4
+  %get_type22 = call i32 @mux_value_get_type_tag(ptr %call18)
+  %is_string23 = icmp eq i32 %get_type22, 3
+  %call24 = call ptr @mux_int_value(i64 %items21)
+  %get_string25 = call ptr @mux_value_get_string(ptr %call18)
+  %get_string26 = call ptr @mux_value_get_string(ptr %call24)
+  %string_concat27 = call ptr @mux_string_concat(ptr %get_string25, ptr %get_string26)
+  %from_string28 = call ptr @mux_value_from_string(ptr %string_concat27)
+  call void @mux_println_val(ptr %from_string28)
+  %test29 = load ptr, ptr %test, align 8
+  %Stack.to_string_call = call ptr @Stack.to_string(ptr %test29)
+  call void @mux_println_val(ptr %Stack.to_string_call)
+  ret void
+
+match_arm_3_0:                                    ; preds = %entry
+  %data_call = call ptr @mux_optional_data(ptr %Stack.pop_call)
+  %get_int = call i64 @mux_value_get_int(ptr %data_call)
+  %call = call ptr @mux_int_value(i64 %get_int)
+  %v = alloca ptr, align 8
+  store ptr %call, ptr %v, align 8
+  %call3 = call ptr @mux_new_string_from_cstr(ptr @str_4)
+  %v4 = load ptr, ptr %v, align 8
+  %get_int5 = call i64 @mux_value_get_int(ptr %v4)
+  %int_to_str = call ptr @mux_int_to_string(i64 %get_int5)
+  %new_str = call ptr @mux_new_string_from_cstr(ptr %int_to_str)
+  %get_type = call i32 @mux_value_get_type_tag(ptr %call3)
+  %is_string = icmp eq i32 %get_type, 3
+  %get_type6 = call i32 @mux_value_get_type_tag(ptr %new_str)
+  %is_string7 = icmp eq i32 %get_type6, 3
+  %get_string = call ptr @mux_value_get_string(ptr %call3)
+  %get_string8 = call ptr @mux_value_get_string(ptr %new_str)
+  %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string8)
+  %from_string = call ptr @mux_value_from_string(ptr %string_concat)
+  call void @mux_println_val(ptr %from_string)
+  br label %match_end_3
+
+match_next_3_0:                                   ; preds = %entry
+  %match_cmp9 = icmp eq i32 %discriminant_call, 1
+  br i1 %match_cmp9, label %match_arm_3_1, label %match_end_3
+
+match_arm_3_1:                                    ; preds = %match_next_3_0
+  %call10 = call ptr @mux_new_string_from_cstr(ptr @str_5)
+  call void @mux_println_val(ptr %call10)
+  br label %match_end_3
+}
