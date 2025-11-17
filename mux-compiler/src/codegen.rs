@@ -386,9 +386,9 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = f64_type.fn_type(params, false);
         module.add_function("mux_float_from_value", fn_type, None);
 
-        // mux_bool_from_value: (*mut Value) -> i1
+        // mux_bool_from_value: (*mut Value) -> i32
         let params = &[i8_ptr.into()];
-        let fn_type = bool_type.fn_type(params, false);
+        let fn_type = context.i32_type().fn_type(params, false);
         module.add_function("mux_bool_from_value", fn_type, None);
 
         // mux_string_from_value: (*mut Value) -> *const c_char
@@ -2913,6 +2913,20 @@ impl<'a> CodeGenerator<'a> {
                 );
             }
             StatementKind::Return(Some(expr)) => {
+                // Special handling for boolean literals in boolean functions
+                if let ExpressionKind::Literal(LiteralNode::Boolean(b)) = &expr.kind {
+                    if let Some(return_type) = &self.current_function_return_type {
+                        if let ResolvedType::Primitive(PrimitiveType::Bool) = return_type {
+                            // Return boolean literal directly as i1
+                            let bool_val = self.context.bool_type().const_int(if *b { 1 } else { 0 }, false);
+                            self.builder
+                                .build_return(Some(&bool_val))
+                                .map_err(|e| e.to_string())?;
+                            return Ok(());
+                        }
+                    }
+                }
+
                 let value = self.generate_expression(expr)?;
                 // Check if we need to return raw primitive or boxed value
                 if let Some(return_type) = &self.current_function_return_type {
@@ -2950,19 +2964,25 @@ impl<'a> CodeGenerator<'a> {
                                 self.builder
                                     .build_return(Some(&value))
                                     .map_err(|e| e.to_string())?;
-                            } else if value.is_pointer_value() {
-                                // Extract from boxed value
-                                let ptr = value.into_pointer_value();
-                                let get_bool_fn = self.module.get_function("mux_value_get_bool")
-                                    .ok_or("mux_value_get_bool not found")?;
-                                let result = self.builder.build_call(get_bool_fn, &[ptr.into()], "get_bool")
-                                    .map_err(|e| e.to_string())?
-                                    .try_as_basic_value()
-                                    .left()
-                                    .ok_or("Call returned no value")?;
-                                self.builder
-                                    .build_return(Some(&result))
-                                    .map_err(|e| e.to_string())?;
+                             } else if value.is_pointer_value() {
+                                 // Extract from boxed value
+                                 let ptr = value.into_pointer_value();
+                                 let get_bool_fn = self.module.get_function("mux_value_get_bool")
+                                     .ok_or("mux_value_get_bool not found")?;
+                                 let result = self.builder.build_call(get_bool_fn, &[ptr.into()], "get_bool")
+                                     .map_err(|e| e.to_string())?
+                                     .try_as_basic_value()
+                                     .left()
+                                     .ok_or("Call returned no value")?;
+                                 // Convert i32 to i1 for return
+                                 let bool_val = self.builder.build_int_truncate(
+                                     result.into_int_value(),
+                                     self.context.bool_type(),
+                                     "i32_to_i1"
+                                 ).map_err(|e| e.to_string())?;
+                                 self.builder
+                                     .build_return(Some(&bool_val))
+                                     .map_err(|e| e.to_string())?;
                             } else {
                                 return Err("Expected bool value or pointer".to_string());
                             }
@@ -4119,26 +4139,38 @@ impl<'a> CodeGenerator<'a> {
             PrimitiveType::Bool => match method_name {
                 "to_string" => {
                     eprintln!("DEBUG: Compiling bool.to_string() method call");
-                    // First extract the boolean value from the Value object
-                    let extract_func = self
-                        .module
-                        .get_function("mux_value_get_bool")
-                        .ok_or("mux_value_get_bool not found")?;
-                    let extracted_bool = self
-                        .builder
-                        .build_call(extract_func, &[obj_value.into()], "extract_bool")
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .ok_or("Call returned no value")?;
-                    // Then call mux_bool_to_string with the extracted i32 value
+                    let bool_value: BasicValueEnum<'a>;
+                    if obj_value.is_int_value() {
+                        // Already a primitive boolean (i1), convert to i32 for mux_bool_to_string
+                        let i1_val = obj_value.into_int_value();
+                        bool_value = self.builder.build_int_z_extend(i1_val, self.context.i32_type(), "i1_to_i32")
+                            .map_err(|e| e.to_string())?
+                            .into();
+                    } else if obj_value.is_pointer_value() {
+                        // Boxed boolean, extract the value
+                        let extract_func = self
+                            .module
+                            .get_function("mux_value_get_bool")
+                            .ok_or("mux_value_get_bool not found")?;
+                        bool_value = self
+                            .builder
+                            .build_call(extract_func, &[obj_value.into()], "extract_bool")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+                    } else {
+                        return Err("Invalid boolean value type".to_string());
+                    }
+
+                    // Call mux_bool_to_string with the i32 value
                     let func = self
                         .module
                         .get_function("mux_bool_to_string")
                         .ok_or("mux_bool_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[extracted_bool.into()], "bool_to_str")
+                        .build_call(func, &[bool_value.into()], "bool_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module
@@ -5590,6 +5622,51 @@ impl<'a> CodeGenerator<'a> {
                 self.builder.build_store(field_ptr, null_ptr)
                     .map_err(|e| e.to_string())?;
             }
+            Type::List(_) => {
+                // Initialize list fields with empty list
+                let new_list_fn = self.module.get_function("mux_new_list")
+                    .ok_or("mux_new_list function not found")?;
+                let list_ptr = self.builder
+                    .build_call(new_list_fn, &[], "new_list")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap()
+                    .into_pointer_value();
+                self.builder
+                    .build_store(field_ptr, list_ptr)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Map(_, _) => {
+                // Initialize map fields with empty map
+                let new_map_fn = self.module.get_function("mux_new_map")
+                    .ok_or("mux_new_map function not found")?;
+                let map_ptr = self.builder
+                    .build_call(new_map_fn, &[], "new_map")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap()
+                    .into_pointer_value();
+                self.builder
+                    .build_store(field_ptr, map_ptr)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Set(_) => {
+                // Initialize set fields with empty set
+                let new_set_fn = self.module.get_function("mux_new_set")
+                    .ok_or("mux_new_set function not found")?;
+                let set_ptr = self.builder
+                    .build_call(new_set_fn, &[], "new_set")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap()
+                    .into_pointer_value();
+                self.builder
+                    .build_store(field_ptr, set_ptr)
+                    .map_err(|e| e.to_string())?;
+            }
             Type::Named(class_name, type_args) => {
                 // Handle built-in types
                 if class_name == "string" && type_args.is_empty() {
@@ -5612,16 +5689,6 @@ impl<'a> CodeGenerator<'a> {
                     self.builder.build_store(field_ptr, nested_obj)
                         .map_err(|e| e.to_string())?;
                 }
-            }
-            Type::Instantiated(class_name, type_args) => {
-                // Handle instantiated generic classes
-                let nested_obj = self.generate_constructor_call_with_types(
-                    &class_name,
-                    &type_args,
-                    &[]
-                )?;
-                self.builder.build_store(field_ptr, nested_obj)
-                    .map_err(|e| e.to_string())?;
             }
             _ => return Err(format!("Unsupported field type: {:?}", resolved_type))
         }

@@ -30,11 +30,11 @@ pub extern "C" fn mux_bool_to_string(b: i32) -> *mut c_char {
 /// # Safety
 /// v must be a valid pointer to a Value::Bool.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn mux_bool_from_value(v: *mut Value) -> bool {
+pub unsafe extern "C" fn mux_bool_from_value(v: *mut Value) -> i32 {
     if let Value::Bool(b) = unsafe { &*v } {
-        *b
+        if *b { 1 } else { 0 }
     } else {
-        panic!("Expected Bool value");
+        0
     }
 }
 
