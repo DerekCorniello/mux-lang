@@ -12,11 +12,15 @@ Drawing rectangle with width: 10 height: 20
 1
 9
 status successful
+true
+status failed
 false
+done
 
 STDERR:
 Concat: 'Drawing circle with radius: ' + '5' = 'Drawing circle with radius: 5'
 Concat: 'Drawing rectangle with width: ' + '10' = 'Drawing rectangle with width: 10'
 Concat: 'Drawing rectangle with width: 10' + ' height: ' = 'Drawing rectangle with width: 10 height: '
 Concat: 'Drawing rectangle with width: 10 height: ' + '20' = 'Drawing rectangle with width: 10 height: 20'
-mux_bool_to_string called with b: false
+mux_bool_to_string called with b: 1
+mux_bool_to_string called with b: 0

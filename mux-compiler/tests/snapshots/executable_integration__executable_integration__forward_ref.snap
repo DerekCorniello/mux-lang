@@ -9,7 +9,7 @@ false
 false
 
 STDERR:
-mux_bool_to_string called with b: true
-mux_bool_to_string called with b: true
-mux_bool_to_string called with b: false
-mux_bool_to_string called with b: false
+mux_bool_to_string called with b: 1
+mux_bool_to_string called with b: 1
+mux_bool_to_string called with b: 0
+mux_bool_to_string called with b: 0

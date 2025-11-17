@@ -17,6 +17,8 @@ source_filename = "mux_module"
 @str_6 = global [5 x i8] c"none\00"
 @type_name_Pair.5 = private unnamed_addr constant [5 x i8] c"Pair\00", align 1
 @str_7 = global [18 x i8] c"status successful\00"
+@str_8 = global [14 x i8] c"status failed\00"
+@str_9 = global [5 x i8] c"done\00"
 
 declare ptr @mux_value_from_string(ptr)
 
@@ -44,7 +46,7 @@ declare ptr @mux_float_to_int(double)
 
 declare ptr @mux_float_to_string(double)
 
-declare ptr @mux_bool_to_string(i1)
+declare ptr @mux_bool_to_string(i32)
 
 declare ptr @mux_bool_to_int(ptr)
 
@@ -96,7 +98,7 @@ declare i64 @mux_value_get_int(ptr)
 
 declare double @mux_value_get_float(ptr)
 
-declare i1 @mux_value_get_bool(ptr)
+declare i32 @mux_value_get_bool(ptr)
 
 declare i32 @mux_value_get_type_tag(ptr)
 
@@ -144,7 +146,7 @@ declare ptr @mux_int_value(i64)
 
 declare ptr @mux_float_value(double)
 
-declare ptr @mux_bool_value(i1)
+declare ptr @mux_bool_value(i32)
 
 declare ptr @mux_string_value(ptr)
 
@@ -154,7 +156,7 @@ declare i64 @mux_int_from_value(ptr)
 
 declare double @mux_float_from_value(ptr)
 
-declare i1 @mux_bool_from_value(ptr)
+declare i32 @mux_bool_from_value(ptr)
 
 declare ptr @mux_string_from_value(ptr)
 
@@ -314,9 +316,9 @@ entry:
   %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
   %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
   %field_0 = getelementptr inbounds { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
-  store i64 0, ptr %field_0, align 4
+  store ptr null, ptr %field_0, align 8
   %field_1 = getelementptr inbounds { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
-  store i64 0, ptr %field_1, align 4
+  store i1 false, ptr %field_1, align 1
   %new_pair = alloca ptr, align 8
   store ptr %obj_ptr, ptr %new_pair, align 8
   %left1 = load ptr, ptr %left, align 8
@@ -460,29 +462,48 @@ for_exit_1:                                       ; preds = %temp_for_exit_1
   %homogenous_pair = alloca ptr, align 8
   store ptr %Pair.from_call, ptr %homogenous_pair, align 8
   %call7 = call ptr @mux_new_string_from_cstr(ptr @str_7)
-  %call8 = call ptr @mux_bool_value(i1 true)
+  %call8 = call ptr @mux_bool_value(i32 1)
   %Pair.from_call9 = call ptr @Pair.from(ptr %call7, ptr %call8)
   %heterogenous_pair = alloca ptr, align 8
   store ptr %Pair.from_call9, ptr %heterogenous_pair, align 8
-  %homogenous_pair10 = load ptr, ptr %homogenous_pair, align 8
-  %Pair.get_left_call = call i64 @Pair.get_left(ptr %homogenous_pair10)
+  %call10 = call ptr @mux_new_string_from_cstr(ptr @str_8)
+  %call11 = call ptr @mux_bool_value(i32 0)
+  %Pair.from_call12 = call ptr @Pair.from(ptr %call10, ptr %call11)
+  %heterogenous_pair_2 = alloca ptr, align 8
+  store ptr %Pair.from_call12, ptr %heterogenous_pair_2, align 8
+  %homogenous_pair13 = load ptr, ptr %homogenous_pair, align 8
+  %Pair.get_left_call = call i64 @Pair.get_left(ptr %homogenous_pair13)
   %int_to_str = call ptr @mux_int_to_string(i64 %Pair.get_left_call)
   %new_str = call ptr @mux_new_string_from_cstr(ptr %int_to_str)
   call void @mux_println_val(ptr %new_str)
-  %homogenous_pair11 = load ptr, ptr %homogenous_pair, align 8
-  %Pair.get_right_call = call ptr @Pair.get_right(ptr %homogenous_pair11)
-  %int_to_str12 = call ptr @mux_int_to_string(ptr %Pair.get_right_call)
-  %new_str13 = call ptr @mux_new_string_from_cstr(ptr %int_to_str12)
-  call void @mux_println_val(ptr %new_str13)
-  %heterogenous_pair14 = load ptr, ptr %heterogenous_pair, align 8
-  %Pair.get_left_call15 = call i64 @Pair.get_left(ptr %heterogenous_pair14)
-  %value_to_str = call ptr @mux_value_to_string(i64 %Pair.get_left_call15)
-  %new_str16 = call ptr @mux_new_string_from_cstr(ptr %value_to_str)
+  %homogenous_pair14 = load ptr, ptr %homogenous_pair, align 8
+  %Pair.get_right_call = call ptr @Pair.get_right(ptr %homogenous_pair14)
+  %int_to_str15 = call ptr @mux_int_to_string(ptr %Pair.get_right_call)
+  %new_str16 = call ptr @mux_new_string_from_cstr(ptr %int_to_str15)
   call void @mux_println_val(ptr %new_str16)
   %heterogenous_pair17 = load ptr, ptr %heterogenous_pair, align 8
-  %Pair.get_right_call18 = call ptr @Pair.get_right(ptr %heterogenous_pair17)
-  %bool_to_str = call ptr @mux_bool_to_string(ptr %Pair.get_right_call18)
-  %new_str19 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str)
+  %Pair.get_left_call18 = call i64 @Pair.get_left(ptr %heterogenous_pair17)
+  %value_to_str = call ptr @mux_value_to_string(i64 %Pair.get_left_call18)
+  %new_str19 = call ptr @mux_new_string_from_cstr(ptr %value_to_str)
   call void @mux_println_val(ptr %new_str19)
+  %heterogenous_pair20 = load ptr, ptr %heterogenous_pair, align 8
+  %Pair.get_right_call21 = call ptr @Pair.get_right(ptr %heterogenous_pair20)
+  %extract_bool = call i32 @mux_value_get_bool(ptr %Pair.get_right_call21)
+  %bool_to_str = call ptr @mux_bool_to_string(i32 %extract_bool)
+  %new_str22 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str)
+  call void @mux_println_val(ptr %new_str22)
+  %heterogenous_pair_223 = load ptr, ptr %heterogenous_pair_2, align 8
+  %Pair.get_left_call24 = call i64 @Pair.get_left(ptr %heterogenous_pair_223)
+  %value_to_str25 = call ptr @mux_value_to_string(i64 %Pair.get_left_call24)
+  %new_str26 = call ptr @mux_new_string_from_cstr(ptr %value_to_str25)
+  call void @mux_println_val(ptr %new_str26)
+  %heterogenous_pair_227 = load ptr, ptr %heterogenous_pair_2, align 8
+  %Pair.get_right_call28 = call ptr @Pair.get_right(ptr %heterogenous_pair_227)
+  %extract_bool29 = call i32 @mux_value_get_bool(ptr %Pair.get_right_call28)
+  %bool_to_str30 = call ptr @mux_bool_to_string(i32 %extract_bool29)
+  %new_str31 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str30)
+  call void @mux_println_val(ptr %new_str31)
+  %call32 = call ptr @mux_new_string_from_cstr(ptr @str_9)
+  call void @mux_println_val(ptr %call32)
   ret void
 }

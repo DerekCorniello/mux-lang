@@ -39,7 +39,7 @@ declare ptr @mux_float_to_int(double)
 
 declare ptr @mux_float_to_string(double)
 
-declare ptr @mux_bool_to_string(i1)
+declare ptr @mux_bool_to_string(i32)
 
 declare ptr @mux_bool_to_int(ptr)
 
@@ -91,7 +91,7 @@ declare i64 @mux_value_get_int(ptr)
 
 declare double @mux_value_get_float(ptr)
 
-declare i1 @mux_value_get_bool(ptr)
+declare i32 @mux_value_get_bool(ptr)
 
 declare i32 @mux_value_get_type_tag(ptr)
 
@@ -139,7 +139,7 @@ declare ptr @mux_int_value(i64)
 
 declare ptr @mux_float_value(double)
 
-declare ptr @mux_bool_value(i1)
+declare ptr @mux_bool_value(i32)
 
 declare ptr @mux_string_value(ptr)
 
@@ -149,7 +149,7 @@ declare i64 @mux_int_from_value(ptr)
 
 declare double @mux_float_from_value(ptr)
 
-declare i1 @mux_bool_from_value(ptr)
+declare i32 @mux_bool_from_value(ptr)
 
 declare ptr @mux_string_from_value(ptr)
 

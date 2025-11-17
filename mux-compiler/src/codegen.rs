@@ -3463,20 +3463,27 @@ impl<'a> CodeGenerator<'a> {
 
 
 
-                 // Get the full type of the match expression
-                 let match_expr_type = match &match_expr.kind {
-                     ExpressionKind::Identifier(name) => {
-                         if name == "self" {
-                             if let Some((_, _, var_type)) = self.variables.get(name) {
-                                 var_type.clone()
-                             } else {
-                                 return Err("Self not found".to_string());
-                             }
-                         } else {
-                             self.analyzer.get_expression_type(&match_expr)
-                                 .map_err(|e| format!("Type inference failed: {}", e))?
-                         }
-                     }
+                  // Get the full type of the match expression
+                  let match_expr_type = match &match_expr.kind {
+                      ExpressionKind::Identifier(name) => {
+                          if name == "self" {
+                              if let Some((_, _, var_type)) = self.variables.get(name) {
+                                  var_type.clone()
+                              } else {
+                                  return Err("Self not found".to_string());
+                              }
+                          } else if name.starts_with("match_temp_") {
+                              // Temporary variable created during codegen
+                              if let Some((_, _, var_type)) = self.variables.get(name) {
+                                  var_type.clone()
+                              } else {
+                                  return Err(format!("Temporary variable {} not found", name));
+                              }
+                          } else {
+                              self.analyzer.get_expression_type(&match_expr)
+                                  .map_err(|e| format!("Type inference failed: {}", e))?
+                          }
+                      }
                      ExpressionKind::FieldAccess { expr, field } => {
                          if let ExpressionKind::Identifier(obj) = &expr.kind {
                              if obj == "self" {

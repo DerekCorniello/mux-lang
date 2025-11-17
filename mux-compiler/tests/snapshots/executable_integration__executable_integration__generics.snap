@@ -9,10 +9,10 @@ trying to instantiate stack
 init new obj
 init items
 instantiated stack
-stack has: 
+stack has: [1, 2, 3]
 Stack with: [1, 2, 3]
 
 STDERR:
 Concat: 'Popped: ' + '42' = 'Popped: 42'
-Concat: 'stack has: ' + '' = 'stack has: '
+Concat: 'stack has: ' + '[1, 2, 3]' = 'stack has: [1, 2, 3]'
 Concat: 'Stack with: ' + '[1, 2, 3]' = 'Stack with: [1, 2, 3]'

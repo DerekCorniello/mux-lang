@@ -44,7 +44,7 @@ declare ptr @mux_float_to_int(double)
 
 declare ptr @mux_float_to_string(double)
 
-declare ptr @mux_bool_to_string(i1)
+declare ptr @mux_bool_to_string(i32)
 
 declare ptr @mux_bool_to_int(ptr)
 
@@ -96,7 +96,7 @@ declare i64 @mux_value_get_int(ptr)
 
 declare double @mux_value_get_float(ptr)
 
-declare i1 @mux_value_get_bool(ptr)
+declare i32 @mux_value_get_bool(ptr)
 
 declare i32 @mux_value_get_type_tag(ptr)
 
@@ -144,7 +144,7 @@ declare ptr @mux_int_value(i64)
 
 declare ptr @mux_float_value(double)
 
-declare ptr @mux_bool_value(i1)
+declare ptr @mux_bool_value(i32)
 
 declare ptr @mux_string_value(ptr)
 
@@ -154,7 +154,7 @@ declare i64 @mux_int_from_value(ptr)
 
 declare double @mux_float_from_value(ptr)
 
-declare i1 @mux_bool_from_value(ptr)
+declare i32 @mux_bool_from_value(ptr)
 
 declare ptr @mux_string_from_value(ptr)
 
@@ -357,17 +357,19 @@ match_end_3:                                      ; preds = %match_arm_3_1, %mat
   %data_ptr20 = call ptr @mux_get_object_ptr(ptr %test19)
   %items = getelementptr inbounds { ptr }, ptr %data_ptr20, i32 0, i32 0
   %items21 = load ptr, ptr %items, align 8
-  %get_type22 = call i32 @mux_value_get_type_tag(ptr %call18)
-  %is_string23 = icmp eq i32 %get_type22, 3
-  %get_type24 = call i32 @mux_value_get_type_tag(ptr %items21)
-  %is_string25 = icmp eq i32 %get_type24, 3
-  %get_string26 = call ptr @mux_value_get_string(ptr %call18)
-  %get_string27 = call ptr @mux_value_get_string(ptr %items21)
-  %string_concat28 = call ptr @mux_string_concat(ptr %get_string26, ptr %get_string27)
-  %from_string29 = call ptr @mux_value_from_string(ptr %string_concat28)
-  call void @mux_println_val(ptr %from_string29)
-  %test30 = load ptr, ptr %test, align 8
-  %Stack.to_string_call = call ptr @Stack.to_string(ptr %test30)
+  %val_to_str = call ptr @mux_value_to_string(ptr %items21)
+  %new_str22 = call ptr @mux_new_string_from_cstr(ptr %val_to_str)
+  %get_type23 = call i32 @mux_value_get_type_tag(ptr %call18)
+  %is_string24 = icmp eq i32 %get_type23, 3
+  %get_type25 = call i32 @mux_value_get_type_tag(ptr %new_str22)
+  %is_string26 = icmp eq i32 %get_type25, 3
+  %get_string27 = call ptr @mux_value_get_string(ptr %call18)
+  %get_string28 = call ptr @mux_value_get_string(ptr %new_str22)
+  %string_concat29 = call ptr @mux_string_concat(ptr %get_string27, ptr %get_string28)
+  %from_string30 = call ptr @mux_value_from_string(ptr %string_concat29)
+  call void @mux_println_val(ptr %from_string30)
+  %test31 = load ptr, ptr %test, align 8
+  %Stack.to_string_call = call ptr @Stack.to_string(ptr %test31)
   call void @mux_println_val(ptr %Stack.to_string_call)
   ret void
 
