@@ -48,6 +48,14 @@ pub enum Type {
     },
     Named(String, Vec<Type>),
     Variable(String),
+    Generic(String),  // Generic parameter like "T", "U"
+    Instantiated(String, Vec<Type>),  // Concrete instantiation like "Pair<string, bool>"
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericContext {
+    pub type_params: HashMap<String, Type>,  // T -> string, U -> bool
+    pub class_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

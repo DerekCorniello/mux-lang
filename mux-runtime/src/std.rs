@@ -28,8 +28,8 @@ pub extern "C" fn mux_int_value(i: i64) -> *mut Value {
 
 
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_bool_value(b: bool) -> *mut Value {
-    Box::into_raw(Box::new(Value::Bool(b)))
+pub extern "C" fn mux_bool_value(b: i32) -> *mut Value {
+    Box::into_raw(Box::new(Value::Bool(b != 0)))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -269,11 +269,11 @@ pub extern "C" fn mux_value_get_float(val: *const Value) -> f64 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_value_get_bool(val: *const Value) -> bool {
+pub extern "C" fn mux_value_get_bool(val: *const Value) -> i32 {
     unsafe {
         match &*val {
-            Value::Bool(b) => *b,
-            _ => false, // Return default value instead of panicking
+            Value::Bool(b) => if *b { 1 } else { 0 },
+            _ => 0, // Return default value instead of panicking
         }
     }
 }

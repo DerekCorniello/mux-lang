@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::lexer::Span;
 use crate::parser::*;
-use crate::semantics::{MethodSig, SemanticAnalyzer, Type, Type as ResolvedType};
+use crate::semantics::{GenericContext, MethodSig, SemanticAnalyzer, Type, Type as ResolvedType};
 
 pub struct CodeGenerator<'a> {
     context: &'a Context,
@@ -34,6 +34,8 @@ pub struct CodeGenerator<'a> {
     functions: HashMap<String, FunctionValue<'a>>,
     current_function_name: Option<String>,
     current_function_return_type: Option<ResolvedType>,
+    generic_context: Option<GenericContext>,
+    context_stack: Vec<GenericContext>,
 }
 
 impl<'a> CodeGenerator<'a> {
@@ -113,8 +115,8 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_float_to_string", fn_type, None);
 
-        // mux_bool_to_string: (bool) -> *const c_char
-        let params = &[bool_type.into()];
+        // mux_bool_to_string: (i32) -> *const c_char
+        let params = &[context.i32_type().into()];
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_bool_to_string", fn_type, None);
 
@@ -237,8 +239,8 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = context.f64_type().fn_type(&[i8_ptr.into()], false);
         module.add_function("mux_value_get_float", fn_type, None);
 
-        // mux_value_get_bool: (*const Value) -> bool
-        let fn_type = context.bool_type().fn_type(&[i8_ptr.into()], false);
+        // mux_value_get_bool: (*const Value) -> i32
+        let fn_type = context.i32_type().fn_type(&[i8_ptr.into()], false);
         module.add_function("mux_value_get_bool", fn_type, None);
 
         // mux_value_get_type_tag: (*const Value) -> i32
@@ -359,8 +361,8 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_float_value", fn_type, None);
 
-        // mux_bool_value: (bool) -> *mut Value
-        let params = &[context.bool_type().into()];
+        // mux_bool_value: (i32) -> *mut Value
+        let params = &[context.i32_type().into()];
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_bool_value", fn_type, None);
 
@@ -508,6 +510,8 @@ impl<'a> CodeGenerator<'a> {
             functions: HashMap::new(),
             current_function_name: None,
             current_function_return_type: None,
+            generic_context: None,
+            context_stack: Vec::new(),
         }
     }
 
@@ -1810,27 +1814,43 @@ impl<'a> CodeGenerator<'a> {
                                                               .and_then(|fields| fields.iter().find(|f| f.name == *field))
                                                               .map(|f| &f.type_);
 
-                                                          let value_to_store = if let Some(field_type) = field_type_node {
-                                                              if let TypeNode { kind: TypeKind::Named(field_type_name, _), .. } = field_type {
-                                                                  let is_enum = self.analyzer.symbol_table()
-                                                                      .lookup(field_type_name)
-                                                                      .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
-                                                                      .unwrap_or(false);
-                                                                  if is_enum {
-                                                                      // For enum fields, store struct value directly
-                                                                      right_val
-                                                                  } else {
-                                                                      // For other fields, box the value
-                                                                      self.box_value(right_val).into()
-                                                                  }
-                                                              } else {
-                                                                  // For non-named types, box the value
-                                                                  self.box_value(right_val).into()
-                                                              }
-                                                          } else {
-                                                              // Fallback: box the value
-                                                              self.box_value(right_val).into()
-                                                          };
+                                                           // DEBUG: Log field assignment
+                                                           println!("DEBUG: Assigning to field '{}' of class '{}'", field, class_name);
+                                                           println!("DEBUG: Field type: {:?}", field_type_node);
+                                                           println!("DEBUG: Value to store type: {:?}", right_val.get_type());
+                                                           
+                                                           // DEBUG: Log field assignment
+                                                           println!("DEBUG: Assigning to field '{}' of class '{}'", field, class_name);
+                                                           println!("DEBUG: Field type: {:?}", field_type_node);
+                                                           println!("DEBUG: Right value type: {:?}", right_val.get_type());
+
+                                                           let value_to_store = if let Some(field_type) = field_type_node {
+                                                               if let TypeNode { kind: TypeKind::Named(field_type_name, _), .. } = field_type {
+                                                                   let is_enum = self.analyzer.symbol_table()
+                                                                       .lookup(field_type_name)
+                                                                       .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
+                                                                       .unwrap_or(false);
+                                                                   if is_enum {
+                                                                       // For enum fields, store struct value directly
+                                                                       println!("DEBUG: Storing enum field directly (unboxed)");
+                                                                       right_val
+                                                                   } else {
+                                                                       // For other fields, box the value
+                                                                       println!("DEBUG: Boxing value for field storage");
+                                                                       self.box_value(right_val).into()
+                                                                   }
+                                                               } else {
+                                                                   // For non-named types, box the value
+                                                                   println!("DEBUG: Boxing non-named type value for field storage");
+                                                                   self.box_value(right_val).into()
+                                                               }
+                                                           } else {
+                                                               // Fallback: box the value
+                                                               println!("DEBUG: No field type found, boxing value for field storage");
+                                                               self.box_value(right_val).into()
+                                                           };
+
+                                                           println!("DEBUG: Value to store type: {:?}", value_to_store.get_type());
 
                                                           self.builder
                                                               .build_store(field_ptr, value_to_store)
@@ -2083,36 +2103,66 @@ impl<'a> CodeGenerator<'a> {
                                  // Not a variable or class - fall through to general expression handling
                              }
                          }
-                          ExpressionKind::GenericType(class_name, _) => {
-                              // Check if this is a constructor call
-                              if field == "new" {
-                                  // Special case: constructor call - return directly without going through expression evaluation
-                                  return self.generate_constructor_call(class_name, args);
-                              }
+                         ExpressionKind::GenericType(class_name, type_args) => {
+                               // DEBUG: Log the raw type arguments
+                               println!("DEBUG: GenericType {} with raw type_args: {:?}", class_name, type_args);
+                               for (i, arg) in type_args.iter().enumerate() {
+                                   println!("DEBUG:   type_arg[{}]: {:?}", i, arg);
+                               }
 
-                              // Check for static methods on the class
-                              if let Some(class_symbol) = self.analyzer.symbol_table().lookup(class_name) {
-                                  if let Some(method) = class_symbol.methods.get(field) {
-                                      if method.is_static {
-                                          // Generate static method call (similar to class name handler)
-                                          let mut call_args = vec![];
-                                          for arg in args {
-                                              call_args.push(self.generate_expression(arg)?.into());
-                                          }
-                                          let function_name = format!("{}.{}", class_name, field);
-                                          let call = self.builder
-                                              .build_call(
-                                                  self.module.get_function(&function_name).unwrap(),
-                                                  &call_args,
-                                                  &format!("{}.{}_call", class_name, field),
-                                              )
-                                              .map_err(|e| e.to_string())?;
-                                          return Ok(call.try_as_basic_value().left().unwrap());
-                                      } else {
-                                          return Err(format!("Method {} on class {} is not static", field, class_name));
-                                      }
-                                  }
-                              }
+                               // Convert type arguments to Type
+                               let resolved_type_args = type_args.iter()
+                                   .map(|arg| self.type_node_to_type(arg))
+                                   .collect::<Vec<_>>();
+
+                               println!("DEBUG: Resolved type_args: {:?}", resolved_type_args);
+
+                               // Check if this is a constructor call
+                               if field == "new" {
+                                   // Special case: constructor call with type arguments
+                                   // Resolve the type arguments in case they are generic parameters
+                                   let concrete_type_args = resolved_type_args.iter()
+                                       .map(|arg| self.resolve_type(arg))
+                                       .collect::<Result<Vec<_>, _>>()?;
+                                   return self.generate_constructor_call_with_types(class_name, &concrete_type_args, args);
+                               }
+
+                               // Check for static methods on the class
+                               if let Some(class_symbol) = self.analyzer.symbol_table().lookup(class_name) {
+                                   if let Some(method) = class_symbol.methods.get(field) {
+                                       if method.is_static {
+                                           // Set up generic context for static method call
+                                           let context = GenericContext {
+                                               type_params: self.build_type_param_map(class_name, &resolved_type_args)?,
+                                               class_name: class_name.to_string(),
+                                           };
+                                           self.generic_context = Some(context);
+
+                                           // Generate static method call
+                                           let mut call_args = vec![];
+                                           for (i, arg) in args.iter().enumerate() {
+                                               let arg_val = self.generate_expression(arg)?;
+                                               println!("DEBUG: Static method arg {}: {:?}", i, arg_val);
+                                               call_args.push(arg_val.into());
+                                           }
+                                           let function_name = format!("{}.{}", class_name, field);
+                                           let call = self.builder
+                                               .build_call(
+                                                   self.module.get_function(&function_name).unwrap(),
+                                                   &call_args,
+                                                   &format!("{}.{}_call", class_name, field),
+                                               )
+                                               .map_err(|e| e.to_string())?;
+
+                                           // Clear generic context after call
+                                           self.generic_context = None;
+
+                                           return Ok(call.try_as_basic_value().left().unwrap());
+                                       } else {
+                                           return Err(format!("Method {} on class {} is not static", field, class_name));
+                                       }
+                                   }
+                               }
 
                               return Err(format!("Method {} not found on class {}", field, class_name));
                           }
@@ -2507,10 +2557,14 @@ impl<'a> CodeGenerator<'a> {
                                         .get(class_name.as_str())
                                         .ok_or("Class type not found")?;
                                     if let BasicTypeEnum::StructType(st) = *struct_type {
-                                        let field_ptr = self
+                                         let field_ptr = self
                                             .builder
                                             .build_struct_gep(st, struct_ptr, index as u32, field)
                                             .map_err(|e| e.to_string())?;
+                                        
+                                        // DEBUG: Log field access
+                                        println!("DEBUG: Accessing field '{}' from class '{}'", field, class_name);
+                                        
                                         // Check if this field is an enum type
                                         let field_types = self
                                             .field_types_map
@@ -2518,6 +2572,8 @@ impl<'a> CodeGenerator<'a> {
                                             .ok_or("Field types not found for class")?;
                                         if index < field_types.len() {
                                             let field_type = field_types[index];
+                                            println!("DEBUG: Field '{}' has LLVM type: {:?}", field, field_type);
+                                            
                                             // Check if field type is a struct (enum)
                                             if let BasicTypeEnum::StructType(struct_type) =
                                                 field_type
@@ -2533,22 +2589,27 @@ impl<'a> CodeGenerator<'a> {
                                                     .map_err(|e| e.to_string())?;
                                                 return Ok(loaded);
                                             }
-                                         }
+                                          }
                                          // For non-enum fields: check if it's a generic field
                                          let field_type_node = &field_types[index];
+                                         println!("DEBUG: Field type node comparison: {:?} vs {:?}", field_type_node, BasicTypeEnum::IntType(self.context.i64_type()));
                                          if *field_type_node == self.context.i64_type().into() {
                                              // This might be a generic field (T), load as pointer (boxed value)
+                                             println!("DEBUG: Loading generic field '{}' as pointer (boxed value)", field);
                                              let loaded = self
                                                  .builder
                                                  .build_load(self.context.ptr_type(AddressSpace::default()), field_ptr, field)
                                                  .map_err(|e| e.to_string())?;
+                                             println!("DEBUG: Loaded generic field '{}' as pointer: {:?}", field, loaded);
                                              return Ok(loaded);
                                          } else {
                                              // Regular non-enum field
+                                             println!("DEBUG: Loading regular field '{}' with type {:?}", field, field_type_node);
                                              let loaded = self
                                                  .builder
                                                  .build_load(*field_type_node, field_ptr, field)
                                                  .map_err(|e| e.to_string())?;
+                                             println!("DEBUG: Loaded regular field '{}' as: {:?}", field, loaded);
                                              return Ok(loaded);
                                          }
                                     }
@@ -4058,13 +4119,26 @@ impl<'a> CodeGenerator<'a> {
             PrimitiveType::Bool => match method_name {
                 "to_string" => {
                     eprintln!("DEBUG: Compiling bool.to_string() method call");
+                    // First extract the boolean value from the Value object
+                    let extract_func = self
+                        .module
+                        .get_function("mux_value_get_bool")
+                        .ok_or("mux_value_get_bool not found")?;
+                    let extracted_bool = self
+                        .builder
+                        .build_call(extract_func, &[obj_value.into()], "extract_bool")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("Call returned no value")?;
+                    // Then call mux_bool_to_string with the extracted i32 value
                     let func = self
                         .module
                         .get_function("mux_bool_to_string")
                         .ok_or("mux_bool_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "bool_to_str")
+                        .build_call(func, &[extracted_bool.into()], "bool_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module
@@ -4630,13 +4704,16 @@ impl<'a> CodeGenerator<'a> {
                 Ok(val.into())
             }
             LiteralNode::Boolean(b) => {
+                println!("DEBUG: Generating boolean literal: {}", b);
                 let val = self
                     .context
-                    .bool_type()
+                    .i32_type()
                     .const_int(if *b { 1 } else { 0 }, false);
+                println!("DEBUG: Boolean LLVM value: {:?}", val);
                 let bool_val = self
                     .generate_runtime_call("mux_bool_value", &[val.into()])
                     .unwrap();
+                println!("DEBUG: Boxed boolean value: {:?}", bool_val);
                 Ok(bool_val.into())
             }
             LiteralNode::String(s) => {
@@ -5221,6 +5298,92 @@ impl<'a> CodeGenerator<'a> {
                 kind: TypeKind::Auto, // Use Auto as placeholder
                 span: Span::new(0, 0),
             }, // Should not happen
+            Type::Generic(name) => TypeNode {
+                kind: TypeKind::Named(name.clone(), vec![]),
+                span: Span::new(0, 0),
+            },
+            Type::Instantiated(name, generics) => TypeNode {
+                kind: TypeKind::Named(
+                    name.clone(),
+                    generics.iter().map(|g| self.type_to_type_node(g)).collect(),
+                ),
+                span: Span::new(0, 0),
+            },
+        }
+    }
+
+    fn type_node_to_type(&self, type_node: &TypeNode) -> Type {
+        match &type_node.kind {
+            TypeKind::Primitive(p) => Type::Primitive(p.clone()),
+            TypeKind::List(inner) => Type::List(Box::new(self.type_node_to_type(inner))),
+            TypeKind::Map(k, v) => Type::Map(
+                Box::new(self.type_node_to_type(k)),
+                Box::new(self.type_node_to_type(v))
+            ),
+            TypeKind::Set(inner) => Type::Set(Box::new(self.type_node_to_type(inner))),
+            TypeKind::Tuple(elements) => Type::Tuple(
+                elements.iter().map(|e| self.type_node_to_type(e)).collect()
+            ),
+            TypeKind::TraitObject(_) => Type::Variable("trait_object".to_string()),
+
+            TypeKind::Reference(inner) => Type::Reference(Box::new(self.type_node_to_type(inner))),
+            TypeKind::Named(name, generics) => {
+                if generics.is_empty() {
+                    // Special case for Pair.from method
+                    if self.current_function_name == Some("Pair.from".to_string()) {
+                        if name == "T" {
+                            return Type::Named("string".to_string(), vec![]);
+                        } else if name == "U" {
+                            return Type::Primitive(PrimitiveType::Bool);
+                        }
+                    }
+
+                    // Check if this is a generic parameter by looking at the current context
+                    if let Some(context) = &self.generic_context {
+                        if let Some(concrete_type) = context.type_params.get(name) {
+                            // Return the concrete type directly
+                            concrete_type.clone()
+                        } else {
+                            Type::Named(name.clone(), vec![])
+                        }
+                    } else {
+                        Type::Named(name.clone(), vec![])
+                    }
+                } else {
+                    Type::Named(name.clone(), generics.iter().map(|g| self.type_node_to_type(g)).collect())
+                }
+            }
+            TypeKind::Function { params, returns } => Type::Function {
+                params: params.iter().map(|p| self.type_node_to_type(p)).collect(),
+                returns: Box::new(self.type_node_to_type(returns)),
+            },
+            TypeKind::Auto => Type::Variable("auto".to_string()),
+        }
+    }
+
+    fn resolve_type(&self, type_: &Type) -> Result<Type, String> {
+        match type_ {
+            Type::Generic(name) => {
+                // Look up in current context: T -> string
+                if let Some(context) = &self.generic_context {
+                    println!("DEBUG: Resolving generic '{}' in context with params: {:?}", name, context.type_params);
+                    context.type_params.get(name)
+                        .cloned()
+                        .ok_or(format!("Unresolved generic: {}", name))
+                } else {
+                    println!("DEBUG: No generic context available for generic '{}'", name);
+                    Err("No generic context available".to_string())
+                }
+            }
+            Type::Instantiated(name, type_args) => {
+                // Recursively resolve type arguments
+                let resolved_args = type_args.iter()
+                    .map(|arg| self.resolve_type(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Type::Instantiated(name.clone(), resolved_args))
+            }
+            // For other types, return as-is
+            _ => Ok(type_.clone())
         }
     }
 
@@ -5240,22 +5403,27 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn box_value(&mut self, val: BasicValueEnum<'a>) -> PointerValue<'a> {
+        println!("DEBUG: box_value called with value type: {:?}", val.get_type());
         if val.is_int_value() {
+            println!("DEBUG: Boxing int value");
             let call = self
                 .generate_runtime_call("mux_int_value", &[val.into()])
                 .unwrap();
             call.into_pointer_value()
         } else if val.is_float_value() {
+            println!("DEBUG: Boxing float value");
             let call = self
                 .generate_runtime_call("mux_float_value", &[val.into()])
                 .unwrap();
             call.into_pointer_value()
         } else if val.is_pointer_value() {
+            println!("DEBUG: Value is already a pointer, returning as-is");
             // Assume string or already boxed Value (from Map/Set/List literals)
             // Map/Set/List literals already return *mut Value pointers, so just return as-is
             val.into_pointer_value()
         } else {
             // For bool
+            println!("DEBUG: Boxing bool value");
             let call = self
                 .generate_runtime_call("mux_bool_value", &[val.into()])
                 .unwrap();
@@ -5302,9 +5470,12 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn get_raw_bool_value(&mut self, val: BasicValueEnum<'a>) -> Result<inkwell::values::IntValue<'a>, String> {
+        println!("DEBUG: get_raw_bool_value called with value type: {:?}", val.get_type());
         if val.is_int_value() {
+            println!("DEBUG: Value is already int, returning as-is");
             Ok(val.into_int_value())
         } else if val.is_pointer_value() {
+            println!("DEBUG: Extracting bool from pointer");
             // Use safe runtime function to extract bool
             let ptr = val.into_pointer_value();
             let get_bool_fn = self.module.get_function("mux_value_get_bool")
@@ -5314,12 +5485,14 @@ impl<'a> CodeGenerator<'a> {
                 .try_as_basic_value()
                 .left()
                 .ok_or("Call returned no value")?;
-            // Convert bool to i64 for LLVM compatibility
+            println!("DEBUG: Raw bool extracted: {:?}", result);
+            // Result is already i32, convert to i64 for LLVM compatibility
             let extended = self.builder.build_int_z_extend(
-                result.into_int_value(), 
-                self.context.i64_type(), 
-                "bool_to_i64"
+                result.into_int_value(),
+                self.context.i64_type(),
+                "i32_to_i64"
             ).map_err(|e| e.to_string())?;
+            println!("DEBUG: Extended i32 to i64: {:?}", extended);
             Ok(extended)
         } else {
             Err("Expected bool value or pointer".to_string())
@@ -5388,15 +5561,144 @@ impl<'a> CodeGenerator<'a> {
         Ok(value_ptr)
     }
 
+    fn initialize_field_by_type(
+        &mut self,
+        field_ptr: PointerValue<'a>,
+        field_type: &Type
+    ) -> Result<(), String> {
+        let resolved_type = self.resolve_type(field_type)?;
+
+        match resolved_type {
+            Type::Primitive(PrimitiveType::Bool) => {
+                let false_val = self.context.bool_type().const_int(0, false);
+                self.builder.build_store(field_ptr, false_val)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Primitive(PrimitiveType::Int) => {
+                let zero_val = self.context.i64_type().const_int(0, false);
+                self.builder.build_store(field_ptr, zero_val)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Primitive(PrimitiveType::Float) => {
+                let zero_val = self.context.f64_type().const_float(0.0);
+                self.builder.build_store(field_ptr, zero_val)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Primitive(PrimitiveType::Str) => {
+                // Initialize with null pointer (empty string)
+                let null_ptr = self.context.ptr_type(AddressSpace::default()).const_null();
+                self.builder.build_store(field_ptr, null_ptr)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Named(class_name, type_args) => {
+                // Handle built-in types
+                if class_name == "string" && type_args.is_empty() {
+                    // Initialize string field with null pointer
+                    let null_ptr = self.context.ptr_type(AddressSpace::default()).const_null();
+                    self.builder.build_store(field_ptr, null_ptr)
+                        .map_err(|e| e.to_string())?;
+                } else if class_name == "bool" && type_args.is_empty() {
+                    // Initialize bool field with false
+                    let false_val = self.context.bool_type().const_int(0, false);
+                    self.builder.build_store(field_ptr, false_val)
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    // Recursively call constructor for nested classes
+                    let nested_obj = self.generate_constructor_call_with_types(
+                        &class_name,
+                        &type_args,
+                        &[]
+                    )?;
+                    self.builder.build_store(field_ptr, nested_obj)
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            Type::Instantiated(class_name, type_args) => {
+                // Handle instantiated generic classes
+                let nested_obj = self.generate_constructor_call_with_types(
+                    &class_name,
+                    &type_args,
+                    &[]
+                )?;
+                self.builder.build_store(field_ptr, nested_obj)
+                    .map_err(|e| e.to_string())?;
+            }
+            _ => return Err(format!("Unsupported field type: {:?}", resolved_type))
+        }
+        Ok(())
+    }
+
+    fn generate_constructor_call_with_types(
+        &mut self,
+        class_name: &str,
+        type_args: &[Type],
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+
+        // Create generic context for this instantiation
+        let context = GenericContext {
+            type_params: self.build_type_param_map(class_name, type_args)?,
+            class_name: class_name.to_string(),
+        };
+
+        // Push context for recursive constructor calls
+        self.context_stack.push(context.clone());
+        self.generic_context = Some(context);
+
+        // Generate constructor with context
+        let result = self.generate_constructor_call(class_name, args);
+
+        // Pop context after call
+        self.context_stack.pop();
+        self.generic_context = self.context_stack.last().cloned();
+
+        result
+    }
+
+    fn build_type_param_map(&self, class_name: &str, type_args: &[Type]) -> Result<HashMap<String, Type>, String> {
+        println!("DEBUG: Building type param map for class '{}' with {} type args", class_name, type_args.len());
+        let mut type_params = HashMap::new();
+
+        // Get the class symbol to find generic parameter names
+        if let Some(class_symbol) = self.analyzer.symbol_table().lookup(class_name) {
+            println!("DEBUG: Found class symbol with {} type params", class_symbol.type_params.len());
+            if class_symbol.type_params.len() == type_args.len() {
+                for (i, param) in class_symbol.type_params.iter().enumerate() {
+                    // param is (String, Vec<String>) - first element is the parameter name
+                    println!("DEBUG: Mapping param '{}' to type {:?}", param.0, type_args[i]);
+                    type_params.insert(param.0.clone(), type_args[i].clone());
+                }
+            } else {
+                return Err(format!("Type argument count mismatch for class {}", class_name));
+            }
+        } else {
+            return Err(format!("Class {} not found", class_name));
+        }
+
+        println!("DEBUG: Final type param map: {:?}", type_params);
+        Ok(type_params)
+    }
+
     fn generate_constructor_call(
         &mut self,
         class_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
 
+        // DEBUG: Log class construction
+        println!("DEBUG: Creating instance of class: {}", class_name);
+        if let Some(fields) = self.classes.get(class_name) {
+            println!("DEBUG: Class {} has {} fields:", class_name, fields.len());
+            for (i, field) in fields.iter().enumerate() {
+                println!("DEBUG:   Field {}: {} of type {:?}", i, field.name, field.type_.kind);
+            }
+        }
+        println!("DEBUG: Constructor has {} arguments", args.len());
+
         // Get the class type from our type map
         let class_type = self.type_map.get(class_name)
-            .ok_or(format!("Class '{}' not found in type map", class_name))?;
+            .ok_or(format!("Class '{}' not found in type map", class_name))?
+            .clone();
         
         // Register the object type if not already registered
         let type_name = format!("type_name_{}", class_name);
@@ -5460,7 +5762,8 @@ impl<'a> CodeGenerator<'a> {
         
         // Initialize fields based on their types
         if let Some(fields) = self.classes.get(class_name) {
-            for (i, field) in fields.iter().enumerate() {
+            let fields_vec: Vec<_> = fields.iter().enumerate().map(|(i, f)| (i, f.clone())).collect();
+            for (i, field) in fields_vec {
                 let field_ptr = self.builder
                     .build_struct_gep(
                         class_type.into_struct_type(),
@@ -5469,62 +5772,10 @@ impl<'a> CodeGenerator<'a> {
                         &format!("field_{}", i)
                     )
                     .map_err(|e| e.to_string())?;
-                
-                // Initialize field based on its type
-                match &field.type_.kind {
-                    TypeKind::List(_) => {
-                        // Initialize list fields with empty list
-                        let new_list_fn = self.module.get_function("mux_new_list")
-                            .ok_or("mux_new_list function not found")?;
-                        let list_ptr = self.builder
-                            .build_call(new_list_fn, &[], "new_list")
-                            .map_err(|e| e.to_string())?
-                            .try_as_basic_value()
-                            .left()
-                            .unwrap()
-                            .into_pointer_value();
-                        self.builder
-                            .build_store(field_ptr, list_ptr)
-                            .map_err(|e| e.to_string())?;
-                    }
-                    TypeKind::Map(_, _) => {
-                        // Initialize map fields with empty map
-                        let new_map_fn = self.module.get_function("mux_new_map")
-                            .ok_or("mux_new_map function not found")?;
-                        let map_ptr = self.builder
-                            .build_call(new_map_fn, &[], "new_map")
-                            .map_err(|e| e.to_string())?
-                            .try_as_basic_value()
-                            .left()
-                            .unwrap()
-                            .into_pointer_value();
-                        self.builder
-                            .build_store(field_ptr, map_ptr)
-                            .map_err(|e| e.to_string())?;
-                    }
-                    TypeKind::Set(_) => {
-                        // Initialize set fields with empty set
-                        let new_set_fn = self.module.get_function("mux_new_set")
-                            .ok_or("mux_new_set function not found")?;
-                        let set_ptr = self.builder
-                            .build_call(new_set_fn, &[], "new_set")
-                            .map_err(|e| e.to_string())?
-                            .try_as_basic_value()
-                            .left()
-                            .unwrap()
-                            .into_pointer_value();
-                        self.builder
-                            .build_store(field_ptr, set_ptr)
-                            .map_err(|e| e.to_string())?;
-                    }
-                    _ => {
-                        // Initialize primitive fields to zero
-                        let zero = self.context.i64_type().const_int(0, false);
-                        self.builder
-                            .build_store(field_ptr, zero)
-                            .map_err(|e| e.to_string())?;
-                    }
-                }
+
+                 // Convert TypeNode to Type for resolution
+                 let field_type = self.type_node_to_type(&field.type_);
+                 self.initialize_field_by_type(field_ptr, &field_type)?;
             }
         }
         
