@@ -2166,18 +2166,39 @@ impl<'a> CodeGenerator<'a> {
                             if args.len() != 1 {
                                 return Err("Err takes 1 argument".to_string());
                             }
-                            let arg_val = self.generate_expression(&args[0])?;
-                            let func = self
-                                .module
-                                .get_function("mux_result_err_str")
-                                .ok_or("mux_result_err_str not found")?;
-                            let call = self
-                                .builder
-                                .build_call(func, &[arg_val.into()], "err_call")
-                                .map_err(|e| e.to_string())?;
-                            let result_ptr = call.try_as_basic_value().left().unwrap();
-                            // Result constructors return Value* pointers directly
-                            Ok(result_ptr)
+                            if let ExpressionKind::Literal(LiteralNode::String(s)) = &args[0].kind {
+                                // Generate null-terminated string pointer
+                                let name = format!("str_{}", self.string_counter);
+                                self.string_counter += 1;
+                                let bytes = s.as_bytes();
+                                let mut values = vec![];
+                                for &b in bytes {
+                                    values.push(self.context.i8_type().const_int(b as u64, false));
+                                }
+                                values.push(self.context.i8_type().const_int(0, false));
+                                let array_type = self.context.i8_type().array_type(values.len() as u32);
+                                let const_array = self.context.i8_type().const_array(&values);
+                                let global = self.module.add_global(array_type, Some(AddressSpace::default()), &name);
+                                global.set_linkage(inkwell::module::Linkage::External);
+                                global.set_initializer(&const_array);
+                                let ptr = unsafe {
+                                    self.builder.build_in_bounds_gep(
+                                        array_type,
+                                        global.as_pointer_value(),
+                                        &[
+                                            self.context.i32_type().const_int(0, false),
+                                            self.context.i32_type().const_int(0, false),
+                                        ],
+                                        &name,
+                                    )
+                                }.map_err(|e| e.to_string())?;
+                                let func = self.module.get_function("mux_result_err_str").ok_or("mux_result_err_str not found")?;
+                                let call = self.builder.build_call(func, &[ptr.into()], "err_call").map_err(|e| e.to_string())?;
+                                let result_ptr = call.try_as_basic_value().left().unwrap();
+                                Ok(result_ptr)
+                            } else {
+                                return Err("Err argument must be a string literal".to_string());
+                            }
                         }
                         "Ok" => {
                             if args.len() != 1 {
@@ -3361,30 +3382,74 @@ impl<'a> CodeGenerator<'a> {
 
 
 
-                let enum_name = match &match_expr.kind {
-                    ExpressionKind::Identifier(name) => {
-                        // First check if this is a temporary variable created for complex expressions
-                        if name.starts_with("match_temp_") {
-                            if let Some((_, _, var_type)) = self.variables.get(name) {
+                 // Get the full type of the match expression
+                 let match_expr_type = match &match_expr.kind {
+                     ExpressionKind::Identifier(name) => {
+                         if name == "self" {
+                             if let Some((_, _, var_type)) = self.variables.get(name) {
+                                 var_type.clone()
+                             } else {
+                                 return Err("Self not found".to_string());
+                             }
+                         } else {
+                             self.analyzer.get_expression_type(&match_expr)
+                                 .map_err(|e| format!("Type inference failed: {}", e))?
+                         }
+                     }
+                     ExpressionKind::FieldAccess { expr, field } => {
+                         if let ExpressionKind::Identifier(obj) = &expr.kind {
+                             if obj == "self" {
+                                 if let Some((_, _, Type::Named(class_name, _))) = self.variables.get("self") {
+                                     if let Some(fields) = self.classes.get(class_name) {
+                                         if let Some(f) = fields.iter().find(|f| f.name == *field) {
+                                             self.analyzer.resolve_type(&f.type_)
+                                                 .map_err(|e| format!("Type resolution failed: {}", e))?
+                                         } else {
+                                             return Err(format!("Field {} not found in class {}", field, class_name));
+                                         }
+                                     } else {
+                                         return Err(format!("Class {} not found", class_name));
+                                     }
+                                 } else {
+                                     return Err("Self not found".to_string());
+                                 }
+                             } else {
+                                 self.analyzer.get_expression_type(&match_expr)
+                                     .map_err(|e| format!("Type inference failed: {}", e))?
+                             }
+                         } else {
+                             self.analyzer.get_expression_type(&match_expr)
+                                 .map_err(|e| format!("Type inference failed: {}", e))?
+                         }
+                     }
+                     _ => self.analyzer.get_expression_type(&match_expr)
+                         .map_err(|e| format!("Type inference failed: {}", e))?
+                 };
 
-                                match var_type {
-                                    Type::Named(n, _) => n.clone(),
-                                    Type::Optional(_) => "Optional".to_string(),
-                                    _ => return Err(format!("Match expression must be an enum type, got {:?}", var_type)),
-                                }
-                            } else {
-                                return Err(format!("Temporary variable {} not found", name));
-                            }
-                        } else if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
-                            if let Some(Type::Named(n, _)) = &symbol.type_ {
-                                n.clone()
-                            } else {
-                                return Err("Match expression must be an enum type".to_string());
-                            }
-                        } else {
-                            return Err(format!("Symbol {} not found", name));
-                        }
-                    }
+                 let enum_name = match &match_expr.kind {
+                     ExpressionKind::Identifier(name) => {
+                         // First check if this is a temporary variable created for complex expressions
+                         if name.starts_with("match_temp_") {
+                             if let Some((_, _, var_type)) = self.variables.get(name) {
+
+                                 match var_type {
+                                     Type::Named(n, _) => n.clone(),
+                                     Type::Optional(_) => "Optional".to_string(),
+                                     _ => return Err(format!("Match expression must be an enum type, got {:?}", var_type)),
+                                 }
+                             } else {
+                                 return Err(format!("Temporary variable {} not found", name));
+                             }
+                         } else if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+                             if let Some(Type::Named(n, _)) = &symbol.type_ {
+                                 n.clone()
+                             } else {
+                                 return Err("Match expression must be an enum type".to_string());
+                             }
+                         } else {
+                             return Err(format!("Symbol {} not found", name));
+                         }
+                     }
                     ExpressionKind::FieldAccess { expr, field } => {
                         if let ExpressionKind::Identifier(obj) = &expr.kind {
                             if obj == "self" {
@@ -3608,38 +3673,51 @@ impl<'a> CodeGenerator<'a> {
                                          .unwrap()
                                          .into_pointer_value();
 
-                                      // Extract the actual value and box it like custom enums
-                                      let data_val = if enum_name == "Optional" {
-                                          // Extract i64 from *mut Value
-                                          let get_int_func = self.module.get_function("mux_value_get_int")
-                                              .ok_or("mux_value_get_int not found")?;
-                                          self.builder.build_call(get_int_func, &[data_ptr.into()], "get_int")
-                                              .map_err(|e| e.to_string())?
-                                              .try_as_basic_value().left().unwrap()
-                                      } else {
-                                          // For Result, extract string pointer from *mut Value
-                                          let to_str_func = self.module.get_function("mux_value_to_string")
-                                              .ok_or("mux_value_to_string not found")?;
-                                          self.builder.build_call(to_str_func, &[data_ptr.into()], "to_str")
-                                              .map_err(|e| e.to_string())?
-                                              .try_as_basic_value().left().unwrap()
-                                      };
+                                       // Extract the actual value based on the variant type
+                                       let (data_val, resolved_type) = if enum_name == "Optional" {
+                                           // Optional always wraps the element type
+                                           let get_int_func = self.module.get_function("mux_value_get_int")
+                                               .ok_or("mux_value_get_int not found")?;
+                                           let val = self.builder.build_call(get_int_func, &[data_ptr.into()], "get_int")
+                                               .map_err(|e| e.to_string())?
+                                               .try_as_basic_value().left().unwrap();
+                                           (val, Type::Primitive(PrimitiveType::Int))
+                                       } else if enum_name == "Result" {
+                                           // Result<T, E>: Ok wraps T, Err wraps E
+                                           if let Type::Named(_, generics) = &match_expr_type {
+                                               if *name == "Ok" {
+                                                   // Extract as T
+                                                   match &generics[0] {
+                                                       Type::Primitive(PrimitiveType::Int) => {
+                                                           let get_int_func = self.module.get_function("mux_value_get_int")
+                                                               .ok_or("mux_value_get_int not found")?;
+                                                           let val = self.builder.build_call(get_int_func, &[data_ptr.into()], "get_int")
+                                                               .map_err(|e| e.to_string())?
+                                                               .try_as_basic_value().left().unwrap();
+                                                           (val, generics[0].clone())
+                                                       }
+                                                       _ => return Err(format!("Unsupported Ok type: {:?}", generics[0])),
+                                                   }
+                                               } else { // Err
+                                                   // For Err, data_ptr is already *mut Value to String
+                                                   (data_ptr.into(), generics[1].clone())
+                                               }
+                                           } else {
+                                               return Err("Result type not properly resolved".to_string());
+                                           }
+                                       } else {
+                                           return Err(format!("Unknown enum {}", enum_name));
+                                       };
 
-                                      let boxed = self.box_value(data_val);
-                                      let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                      let alloca = self
-                                          .builder
-                                          .build_alloca(ptr_type, var)
-                                          .map_err(|e| e.to_string())?;
-                                      self.builder
-                                          .build_store(alloca, boxed)
-                                          .map_err(|e| e.to_string())?;
-
-                                      let resolved_type = if enum_name == "Optional" {
-                                          Type::Primitive(PrimitiveType::Int)
-                                      } else {
-                                          Type::Primitive(PrimitiveType::Str)
-                                      };
+                                       let boxed = self.box_value(data_val);
+                                       let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                       let alloca = self
+                                           .builder
+                                           .build_alloca(ptr_type, var)
+                                           .map_err(|e| e.to_string())?;
+                                       self.builder
+                                           .build_store(alloca, boxed)
+                                           .map_err(|e| e.to_string())?;
 
                                       self.variables.insert(
                                           var.clone(),
