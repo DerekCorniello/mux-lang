@@ -217,9 +217,9 @@ entry:
   %load_self_for_field_access = load ptr, ptr %self, align 8
   %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
   %items = getelementptr inbounds { ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %items1 = load i64, ptr %items, align 4
+  %items1 = load ptr, ptr %items, align 8
   %item2 = load ptr, ptr %item, align 8
-  call void @mux_list_push_back(i64 %items1, ptr %item2)
+  call void @mux_list_push_back(ptr %items1, ptr %item2)
   ret void
 }
 
@@ -230,8 +230,8 @@ entry:
   %load_self_for_field_access = load ptr, ptr %self, align 8
   %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
   %items = getelementptr inbounds { ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %items1 = load i64, ptr %items, align 4
-  %list_is_empty = call i1 @mux_list_is_empty(i64 %items1)
+  %items1 = load ptr, ptr %items, align 8
+  %list_is_empty = call i1 @mux_list_is_empty(ptr %items1)
   br i1 %list_is_empty, label %if_then_1, label %if_else_1
 
 if_then_1:                                        ; preds = %entry
@@ -246,8 +246,8 @@ if_merge_1:                                       ; preds = %if_else_1
   %load_self_for_field_access2 = load ptr, ptr %self, align 8
   %self_data_ptr3 = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access2)
   %items4 = getelementptr inbounds { ptr }, ptr %self_data_ptr3, i32 0, i32 0
-  %items5 = load i64, ptr %items4, align 4
-  %list_pop_back = call ptr @mux_list_pop_back(i64 %items5)
+  %items5 = load ptr, ptr %items4, align 8
+  %list_pop_back = call ptr @mux_list_pop_back(ptr %items5)
   ret ptr %list_pop_back
 }
 
@@ -290,8 +290,8 @@ entry:
   %load_self_for_field_access = load ptr, ptr %self, align 8
   %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
   %items = getelementptr inbounds { ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %items1 = load i64, ptr %items, align 4
-  %val_to_str = call ptr @mux_value_to_string(i64 %items1)
+  %items1 = load ptr, ptr %items, align 8
+  %val_to_str = call ptr @mux_value_to_string(ptr %items1)
   %new_str = call ptr @mux_new_string_from_cstr(ptr %val_to_str)
   %get_type = call i32 @mux_value_get_type_tag(ptr %call)
   %is_string = icmp eq i32 %get_type, 3
@@ -304,7 +304,7 @@ entry:
   ret ptr %from_string
 }
 
-define ptr @Stack_new(ptr %0) {
+define ptr @Stack.new(ptr %0) {
 entry:
   %type_id = call i32 @mux_register_object_type(ptr @type_name_Stack, i64 ptrtoint (ptr getelementptr ({ ptr }, ptr null, i32 1) to i64))
   %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
@@ -356,17 +356,18 @@ match_end_3:                                      ; preds = %match_arm_3_1, %mat
   %test19 = load ptr, ptr %test, align 8
   %data_ptr20 = call ptr @mux_get_object_ptr(ptr %test19)
   %items = getelementptr inbounds { ptr }, ptr %data_ptr20, i32 0, i32 0
-  %items21 = load i64, ptr %items, align 4
+  %items21 = load ptr, ptr %items, align 8
   %get_type22 = call i32 @mux_value_get_type_tag(ptr %call18)
   %is_string23 = icmp eq i32 %get_type22, 3
-  %call24 = call ptr @mux_int_value(i64 %items21)
-  %get_string25 = call ptr @mux_value_get_string(ptr %call18)
-  %get_string26 = call ptr @mux_value_get_string(ptr %call24)
-  %string_concat27 = call ptr @mux_string_concat(ptr %get_string25, ptr %get_string26)
-  %from_string28 = call ptr @mux_value_from_string(ptr %string_concat27)
-  call void @mux_println_val(ptr %from_string28)
-  %test29 = load ptr, ptr %test, align 8
-  %Stack.to_string_call = call ptr @Stack.to_string(ptr %test29)
+  %get_type24 = call i32 @mux_value_get_type_tag(ptr %items21)
+  %is_string25 = icmp eq i32 %get_type24, 3
+  %get_string26 = call ptr @mux_value_get_string(ptr %call18)
+  %get_string27 = call ptr @mux_value_get_string(ptr %items21)
+  %string_concat28 = call ptr @mux_string_concat(ptr %get_string26, ptr %get_string27)
+  %from_string29 = call ptr @mux_value_from_string(ptr %string_concat28)
+  call void @mux_println_val(ptr %from_string29)
+  %test30 = load ptr, ptr %test, align 8
+  %Stack.to_string_call = call ptr @Stack.to_string(ptr %test30)
   call void @mux_println_val(ptr %Stack.to_string_call)
   ret void
 
