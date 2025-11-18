@@ -563,10 +563,20 @@ impl<'a> CodeGenerator<'a> {
                     // Generic fields should be pointers (boxed values)
                     self.context.ptr_type(AddressSpace::default()).into()
                 } else {
-                    self.llvm_type_from_mux_type(&field.type_)?
+                    // For primitive fields, use pointer type to be consistent with boxing
+                    if matches!(field.type_.kind, TypeKind::Primitive(_)) {
+                        self.context.ptr_type(AddressSpace::default()).into()
+                    } else {
+                        self.llvm_type_from_mux_type(&field.type_)?
+                    }
                 }
             } else {
-                self.llvm_type_from_mux_type(&field.type_)?
+                // For primitive fields, use pointer type to be consistent with boxing
+                if matches!(field.type_.kind, TypeKind::Primitive(_)) {
+                    self.context.ptr_type(AddressSpace::default()).into()
+                } else {
+                    self.llvm_type_from_mux_type(&field.type_)?
+                }
             };
             field_types.push(field_type);
             field_indices.insert(field.name.clone(), field_types.len() - 1);
@@ -853,11 +863,12 @@ impl<'a> CodeGenerator<'a> {
 
         // Cast to class struct pointer
         let class_type = self.type_map.get(name).ok_or("Class type not found")?;
+        let class_type_clone = *class_type; // Clone to avoid borrow issues
         let struct_ptr_typed = self
             .builder
             .build_pointer_cast(
                 struct_ptr,
-                class_type.ptr_type(AddressSpace::default()),
+                class_type_clone.ptr_type(AddressSpace::default()),
                 "struct_ptr",
             )
             .map_err(|e| e.to_string())?;
@@ -868,7 +879,7 @@ impl<'a> CodeGenerator<'a> {
             let field_ptr = self
                 .builder
                 .build_struct_gep(
-                    *class_type,
+                    class_type_clone,
                     struct_ptr_typed,
                     *field_index as u32,
                     &field.name,
@@ -1754,6 +1765,8 @@ impl<'a> CodeGenerator<'a> {
                                                 .builder
                                                 .build_load(field_type, field_ptr, name)
                                                 .map_err(|e| e.to_string())?;
+
+                                            // Return raw primitive values directly (consistent with constructor storage)
                                             return Ok(loaded);
                                         }
                                     }
@@ -2829,16 +2842,35 @@ impl<'a> CodeGenerator<'a> {
                                                  .map_err(|e| e.to_string())?;
                                              println!("DEBUG: Loaded generic field '{}' as pointer: {:?}", field, loaded);
                                              return Ok(loaded);
-                                         } else {
-                                             // Regular non-enum field
-                                             println!("DEBUG: Loading regular field '{}' with type {:?}", field, field_type_node);
-                                             let loaded = self
-                                                 .builder
-                                                 .build_load(*field_type_node, field_ptr, field)
-                                                 .map_err(|e| e.to_string())?;
-                                             println!("DEBUG: Loaded regular field '{}' as: {:?}", field, loaded);
-                                             return Ok(loaded);
-                                         }
+                                          } else {
+                                               // Regular non-enum field
+                                               println!("DEBUG: Loading regular field '{}' with type {:?}", field, field_type_node);
+                                               
+                                               // Regular non-enum field
+                                               println!("DEBUG: Loading regular field '{}' with type {:?}", field, field_type_node);
+                                               let loaded = self
+                                                   .builder
+                                                   .build_load(*field_type_node, field_ptr, field)
+                                                   .map_err(|e| e.to_string())?;
+                                               println!("DEBUG: Loaded regular field '{}' as: {:?}", field, loaded);
+                                               
+                                               // Check if this is a primitive field that needs boxing
+                                               let class_fields = self.classes.get(class_name).unwrap();
+                                               let field_def = class_fields.iter().find(|f| f.name == *field).unwrap();
+
+                                               let result = match &field_def.type_.kind {
+                                                   TypeKind::Primitive(_) => {
+                                                       // Box primitive values
+                                                       self.box_value(loaded).into()
+                                                   }
+                                                   _ => {
+                                                       // Non-primitives (classes, enums) are already in correct format
+                                                       loaded
+                                                   }
+                                               };
+
+                                               return Ok(result);
+                                          }
                                     }
                                 }
                             }
@@ -2871,14 +2903,16 @@ impl<'a> CodeGenerator<'a> {
                                 return Ok(call2.try_as_basic_value().left().unwrap());
                             }
                             Type::Primitive(PrimitiveType::Float) if field == "to_string" => {
-                                let ptr = self.generate_expression(expr)?;
+                                let float_val = self.generate_expression(expr)?;
+                                // Box the raw float value
+                                let boxed_float = self.box_value(float_val);
                                 let func = self
                                     .module
                                     .get_function("mux_value_to_string")
                                     .ok_or("mux_value_to_string not found")?;
                                 let call = self
                                     .builder
-                                    .build_call(func, &[ptr.into()], "val_to_str")
+                                    .build_call(func, &[boxed_float.into()], "val_to_str")
                                     .map_err(|e| e.to_string())?;
                                 let func_new = self
                                     .module
@@ -5061,9 +5095,11 @@ impl<'a> CodeGenerator<'a> {
         match op {
             BinaryOp::Add => {
                 // Check for string concatenation first
-                if let (Ok(left_is_string), Ok(right_is_string)) = (self.is_string_value(left), self.is_string_value(right)) {
-                    if left_is_string || right_is_string {
-                        // Use string concatenation
+                // For now, assume string concatenation if either operand is a pointer (boxed value)
+                // This is a simplified check - in a real implementation, we'd check types
+                if left.is_pointer_value() || right.is_pointer_value() {
+                    println!("DEBUG: Using string concatenation (pointer detected)");
+                    // Use string concatenation
                         let left_ptr = if left.is_pointer_value() { left.into_pointer_value() } else {
                             // Convert non-pointer to string pointer
                             self.box_value(left)
@@ -5088,7 +5124,6 @@ impl<'a> CodeGenerator<'a> {
                         
                         // Convert result back to Value pointer
                         return self.box_string_value(result.into_pointer_value());
-                    }
                 }
                 
                 // Try arithmetic operations

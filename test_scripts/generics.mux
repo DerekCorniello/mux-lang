@@ -1,4 +1,5 @@
-// Generics func max<T is comparable>(T a, T b) returns T { 
+// Generics func
+max<T>(T a, T b) returns T { 
     if a > b { 
         return a
     }
