@@ -1410,7 +1410,10 @@ impl<'a> CodeGenerator<'a> {
             self.builder
                 .build_store(alloca, arg)
                 .map_err(|e| e.to_string())?;
-            self.variables.insert("self".to_string(), (alloca, class_type.clone(), Type::Named(class_name.to_string(), vec![])));
+            let self_type = Type::Named(class_name.to_string(), vec![]);
+            self.variables.insert("self".to_string(), (alloca, class_type.clone(), self_type.clone()));
+            // Also set current_self_type in the analyzer for type checking
+            self.analyzer.current_self_type = Some(self_type);
         }
 
         for (i, param) in func.params.iter().enumerate() {
@@ -1514,6 +1517,9 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
         }
+
+        // Clear current_self_type
+        self.analyzer.current_self_type = None;
 
         Ok(())
     }
@@ -1702,6 +1708,59 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             }
                         }
+                        // Check if we're in a method and this is a field access
+                        if let Some(ref func_name) = self.current_function_name {
+                            if func_name.contains('.') {
+                                let class_name = func_name.split('.').next().unwrap();
+                                if let Some(class_fields) = self.classes.get(class_name) {
+                                    if let Some(field_index) = self.field_map.get(class_name).and_then(|fields| fields.get(name)) {
+                                        // This is a field access on self
+                                        if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                                            // Load the object pointer from the alloca
+                                            let self_value_ptr = self.builder
+                                                .build_load(
+                                                    self.context.ptr_type(AddressSpace::default()),
+                                                    *self_ptr,
+                                                    "load_self_for_field_access",
+                                                )
+                                                .map_err(|e| e.to_string())?
+                                                .into_pointer_value();
+
+                                            // Get the raw data pointer from the boxed Value
+                                            let get_ptr_func = self
+                                                .module
+                                                .get_function("mux_get_object_ptr")
+                                                .ok_or("mux_get_object_ptr not found")?;
+                                            let data_ptr = self
+                                                .builder
+                                                .build_call(get_ptr_func, &[self_value_ptr.into()], "get_data_ptr")
+                                                .map_err(|e| e.to_string())?
+                                                .try_as_basic_value()
+                                                .left()
+                                                .unwrap()
+                                                .into_pointer_value();
+
+                                            // Get the struct type and field pointer
+                                            let struct_type = self.type_map.get(class_name).unwrap();
+                                            let field_ptr = self
+                                                .builder
+                                                .build_struct_gep(*struct_type, data_ptr, *field_index as u32, &format!("{}_ptr", name))
+                                                .map_err(|e| e.to_string())?;
+
+                                            // Load the field value
+                                            let field_types = self.field_types_map.get(class_name).unwrap();
+                                            let field_type = field_types[*field_index];
+                                            let loaded = self
+                                                .builder
+                                                .build_load(field_type, field_ptr, name)
+                                                .map_err(|e| e.to_string())?;
+                                            return Ok(loaded);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // Check if this is a global function reference
                         if let Some(func) = self.module.get_function(name) {
                             // Return function as a pointer value
@@ -1718,6 +1777,54 @@ impl<'a> CodeGenerator<'a> {
                         BinaryOp::Assign => {
                             let right_val = self.generate_expression(right)?;
                             if let ExpressionKind::Identifier(name) = &left.kind {
+                                // Check if this is a field assignment (bare identifier in method)
+                                if let Some(ref func_name) = self.current_function_name {
+                                    if func_name.contains('.') {
+                                        let class_name = func_name.split('.').next().unwrap();
+                                        if let Some(field_index) = self.field_map.get(class_name).and_then(|fields| fields.get(name)) {
+                                            // This is a field assignment on self
+                                            if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                                                // Load the object pointer from the alloca
+                                                let self_value_ptr = self.builder
+                                                    .build_load(
+                                                        self.context.ptr_type(AddressSpace::default()),
+                                                        *self_ptr,
+                                                        "load_self_for_field_assign",
+                                                    )
+                                                    .map_err(|e| e.to_string())?
+                                                    .into_pointer_value();
+
+                                                // Get the raw data pointer from the boxed Value
+                                                let get_ptr_func = self
+                                                    .module
+                                                    .get_function("mux_get_object_ptr")
+                                                    .ok_or("mux_get_object_ptr not found")?;
+                                                let data_ptr = self
+                                                    .builder
+                                                    .build_call(get_ptr_func, &[self_value_ptr.into()], "get_data_ptr")
+                                                    .map_err(|e| e.to_string())?
+                                                    .try_as_basic_value()
+                                                    .left()
+                                                    .unwrap()
+                                                    .into_pointer_value();
+
+                                                // Get the struct type and field pointer
+                                                let struct_type = self.type_map.get(class_name).unwrap();
+                                                let field_ptr = self
+                                                    .builder
+                                                    .build_struct_gep(*struct_type, data_ptr, *field_index as u32, &format!("{}_ptr", name))
+                                                    .map_err(|e| e.to_string())?;
+
+                                                // Store the value
+                                                self.builder
+                                                    .build_store(field_ptr, right_val)
+                                                    .map_err(|e| e.to_string())?;
+                                                return Ok(right_val);
+                                            }
+                                        }
+                                    }
+                                }
+
                                 if let Some((ptr, _, type_node)) = self.variables.get(name) {
                                     let ptr_copy = *ptr;
                                     // Don't box enum struct values - store them directly

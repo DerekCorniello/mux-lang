@@ -418,7 +418,10 @@ impl SymbolTable {
         }
 
         current_borrow.symbols.insert(name.to_string(), symbol.clone());
-        self.all_symbols.insert(name.to_string(), symbol);
+        // Don't add 'self' to global symbol table - it should only exist in local scope
+        if name != "self" {
+            self.all_symbols.insert(name.to_string(), symbol);
+        }
         Ok(())
     }
 
@@ -449,6 +452,7 @@ pub struct SemanticAnalyzer {
     current_bounds: std::collections::HashMap<String, Vec<String>>,
     errors: Vec<SemanticError>,
     is_in_static_method: bool,
+    pub current_self_type: Option<Type>,
 }
 
 impl Default for SemanticAnalyzer {
@@ -465,6 +469,7 @@ impl SemanticAnalyzer {
             current_bounds: std::collections::HashMap::new(),
             errors: Vec::new(),
             is_in_static_method: false,
+            current_self_type: None,
         }
     }
 
@@ -670,23 +675,39 @@ impl SemanticAnalyzer {
             },
             ExpressionKind::None => Ok(Type::Optional(Box::new(Type::Never))),
             ExpressionKind::Identifier(name) => {
-                if let Some(symbol) = self.symbol_table.lookup(name) {
-                    let type_ = symbol.type_.clone().ok_or_else(|| SemanticError {
-                        message: format!("Symbol '{}' has no type information", name),
-                        span: expr.span,
-                    })?;
-                    // Return the actual type of the variable (including Reference types)
-                    Ok(type_)
-                } else if let Some(sig) = self.get_builtin_sig(name) {
-                    Ok(Type::Function {
-                        params: sig.params.clone(),
-                        returns: Box::new(sig.return_type.clone()),
-                    })
+                if name == "self" {
+                    // For 'self', use the current self type if available
+                    if let Some(self_type) = &self.current_self_type {
+                        println!("DEBUG: get_expression_type: Found self type: {:?} at {:?}", self_type, expr.span);
+                        Ok(self_type.clone())
+                    } else {
+                        println!("DEBUG: get_expression_type: No current self type available at {:?}, is_in_static_method: {}", expr.span, self.is_in_static_method);
+                        // For now, return a placeholder type to allow analysis to continue
+                        Ok(Type::Named("Unknown".to_string(), vec![]))
+                    }
                 } else {
-                    Err(SemanticError {
-                        message: format!("Undefined variable '{}'", name),
-                        span: expr.span,
-                    })
+                    // For other identifiers, check current scope first, then global symbols
+                    let symbol = self.symbol_table.get_cloned(name)
+                        .or_else(|| self.symbol_table.lookup(name));
+
+                    if let Some(symbol) = symbol {
+                        let type_ = symbol.type_.clone().ok_or_else(|| SemanticError {
+                            message: format!("Symbol '{}' has no type information", name),
+                            span: expr.span,
+                        })?;
+                        // Return the actual type of the variable (including Reference types)
+                        Ok(type_)
+                    } else if let Some(sig) = self.get_builtin_sig(name) {
+                        Ok(Type::Function {
+                            params: sig.params.clone(),
+                            returns: Box::new(sig.return_type.clone()),
+                        })
+                    } else {
+                        Err(SemanticError {
+                            message: format!("undefined variable '{}'", name),
+                            span: expr.span,
+                        })
+                    }
                 }
             }
             ExpressionKind::Binary { left, right, op } => {
@@ -1751,7 +1772,10 @@ impl SemanticAnalyzer {
 
     fn analyze_function(&mut self, func: &FunctionNode, self_type: Option<Type>) -> Result<(), SemanticError> {
         let was_static = self.is_in_static_method;
+        let old_self_type = self.current_self_type.clone();
         self.is_in_static_method = func.is_common;
+        self.current_self_type = self_type.clone();
+        println!("DEBUG: analyze_function {} with self_type: {:?}, current_self_type set to: {:?}", func.name, self_type, self.current_self_type);
 
         // set current bounds
         self.current_bounds.clear();
@@ -1803,6 +1827,7 @@ impl SemanticAnalyzer {
         self.symbol_table.pop_scope()?;
         self.current_bounds.clear();
         self.is_in_static_method = was_static;
+        self.current_self_type = old_self_type;
         result
     }
 
@@ -1865,7 +1890,12 @@ impl SemanticAnalyzer {
             } else {
                 Some(Type::Named(_name.to_string(), type_params.iter().map(|(p, _)| Type::Variable(p.clone())).collect()))
             };
+            // Set current_self_type for method body analysis
+            let old_self_type = self.current_self_type.clone();
+            self.current_self_type = self_type.clone();
             self.analyze_function(method, self_type)?;
+            // Restore previous self type
+            self.current_self_type = old_self_type;
         }
 
         // clean up class scope.
@@ -2237,11 +2267,21 @@ impl SemanticAnalyzer {
     fn analyze_expression(&mut self, expr: &ExpressionNode) -> Result<(), SemanticError> {
         match &expr.kind {
             ExpressionKind::Identifier(name) => {
-                if name == "self" && self.is_in_static_method {
-                    return Err(SemanticError {
-                        message: "cannot use 'self' in common method".to_string(),
-                        span: expr.span,
-                    });
+                if name == "self" {
+                    if self.is_in_static_method {
+                        return Err(SemanticError {
+                            message: "cannot use 'self' in common method".to_string(),
+                            span: expr.span,
+                        });
+                    }
+                    // For 'self', check if we have a current self type
+                    if self.current_self_type.is_none() {
+                        return Err(SemanticError {
+                            message: "cannot use 'self' outside of method".to_string(),
+                            span: expr.span,
+                        });
+                    }
+                    return Ok(());
                 }
                 if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
                     return Err(SemanticError {

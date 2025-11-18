@@ -14,7 +14,6 @@ class Circle is Drawable, ShapeLike {
     func resize(float newRadius, string _) returns void { radius = newRadius }
 }
 
-func max<T is comparable>(T a, T b) returns T { if a > b { return a } return b }
 class Stack<T> {
     list<T> items
     func push(T item) returns void { items.push_back(item) }
@@ -69,8 +68,6 @@ func main() returns void {
     println("cirs created with 2 circles")
     for Circle c in cirs { c.draw() }
 
-    auto maximum = max(7, 12)
-    println("maximum of 7 and 12: " + maximum)
     auto stack = Stack<int>.new()
     println("stack created")
     stack.push(99)
