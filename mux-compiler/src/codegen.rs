@@ -1455,6 +1455,23 @@ impl<'a> CodeGenerator<'a> {
                         ),
                     );
                     continue; // Skip the normal pointer wrapping
+                } else if matches!(resolved_type, Type::Function { .. }) {
+                    // For function type parameters, store raw function pointer directly
+                    let func_ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let alloca = self.builder.build_alloca(func_ptr_type, &param.name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder.build_store(alloca, arg)
+                        .map_err(|e| e.to_string())?;
+                    
+                    self.variables.insert(
+                        param.name.clone(),
+                        (
+                            alloca,
+                            func_ptr_type.into(),
+                            resolved_type,
+                        ),
+                    );
+                    continue; // Skip the normal pointer wrapping
                 } else {
                     // For class and primitive types, box the value
                     self.box_value(arg)
@@ -1582,16 +1599,24 @@ impl<'a> CodeGenerator<'a> {
                                      Err(format!("Unsupported primitive type {:?}", prim))
                                  }
                              }
-                         }
-                         _ => {
-                             // boxed types
-                             let ptr_to_boxed = self
-                                 .builder
-                                 .build_load(self.context.ptr_type(AddressSpace::default()), *ptr, name)
-                                 .map_err(|e| e.to_string())?
-                                 .into_pointer_value();
-                             Ok(ptr_to_boxed.into())
-                         }
+                          }
+                          Type::Function { .. } => {
+                              // For function types, load and return raw function pointer
+                              let func_ptr = self.builder
+                                  .build_load(self.context.ptr_type(AddressSpace::default()), *ptr, name)
+                                  .map_err(|e| e.to_string())?
+                                  .into_pointer_value();
+                              Ok(func_ptr.into())
+                          }
+                          _ => {
+                              // boxed types
+                              let ptr_to_boxed = self
+                                  .builder
+                                  .build_load(self.context.ptr_type(AddressSpace::default()), *ptr, name)
+                                  .map_err(|e| e.to_string())?
+                                  .into_pointer_value();
+                              Ok(ptr_to_boxed.into())
+                          }
                      }
                 } else {
                     if self
@@ -1677,7 +1702,13 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             }
                         }
-                        Err(format!("Undefined variable: {}", name))
+                        // Check if this is a global function reference
+                        if let Some(func) = self.module.get_function(name) {
+                            // Return function as a pointer value
+                            Ok(func.as_global_value().as_pointer_value().into())
+                        } else {
+                            Err(format!("Undefined variable: {}", name))
+                        }
                     }
                 }
             }
@@ -2312,23 +2343,112 @@ impl<'a> CodeGenerator<'a> {
                             Ok(result_ptr)
                         }
                         _ => {
-                            // User-defined function calls
-                            if let Some(func) = self.module.get_function(name) {
-                                let mut call_args = vec![];
-                                for arg in args {
-                                    call_args.push(self.generate_expression(arg)?.into());
-                                }
-                                let call = self
-                                    .builder
-                                    .build_call(func, &call_args, "user_func_call")
-                                    .map_err(|e| e.to_string())?;
-                                // Handle void functions - return a dummy value
-                                match call.try_as_basic_value().left() {
-                                    Some(val) => Ok(val),
-                                    None => Ok(self.context.i32_type().const_int(0, false).into()),
+                            // First check if this is a function pointer variable
+                            if let Some((ptr, _, var_type)) = self.variables.get(name) {
+                                let var_type_clone = var_type.clone();
+                                if matches!(var_type, Type::Function { .. }) {
+                                    // Load function pointer
+                                    let func_ptr = self.builder
+                                        .build_load(self.context.ptr_type(AddressSpace::default()), *ptr, name)
+                                        .map_err(|e| e.to_string())?
+                                        .into_pointer_value();
+                                    
+                                    // Generate arguments
+                                    let mut call_args = vec![];
+                                    for arg in args {
+                                        call_args.push(self.generate_expression(arg)?.into());
+                                    }
+                                    
+                                    // Get function type from resolved type
+                                    let func_type = if let Type::Function { params, returns } = var_type_clone {
+                                        // Convert parameter types to LLVM types
+                                        let mut param_types = Vec::new();
+                                        for param in params {
+                                            let type_node = self.type_to_type_node(&param);
+                                            param_types.push(self.llvm_type_from_mux_type(&type_node)?.into());
+                                        }
+                                        // Convert return type to LLVM type
+                                        let return_type_node = self.type_to_type_node(&returns);
+                                        let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
+                                        return_type.fn_type(&param_types, false)
+                                    } else {
+                                        return Err("Expected function type".to_string());
+                                    };
+                                    
+                                    // Make indirect call through function pointer
+                                    let call = self.builder
+                                        .build_indirect_call(func_type, func_ptr, &call_args, "indirect_func_call")
+                                        .map_err(|e| e.to_string())?;
+                                    
+                                    // Handle return value
+                                    return match call.try_as_basic_value().left() {
+                                        Some(val) => Ok(val),
+                                        None => Ok(self.context.i32_type().const_int(0, false).into()),
+                                    };
+                                    
+                                    // Get function type from the resolved type
+                                    let func_type = if let Type::Function { params, returns } = var_type {
+                                        // Convert parameter types to LLVM types
+                                        let mut param_types = Vec::new();
+                                        for param in params {
+                                            let type_node = self.type_to_type_node(param);
+                                            param_types.push(self.llvm_type_from_mux_type(&type_node)?.into());
+                                        }
+                                        // Convert return type to LLVM type
+                                        let return_type_node = self.type_to_type_node(returns);
+                                        let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
+                                        return_type.fn_type(&param_types, false)
+                                    } else {
+                                        return Err("Expected function type".to_string());
+                                    };
+                                    
+                                    // Make indirect call through function pointer
+                                    let call = self.builder
+                                        .build_indirect_call(func_type, func_ptr, &call_args, "indirect_func_call")
+                                        .map_err(|e| e.to_string())?;
+                                    
+                                    // Handle return value
+                                    match call.try_as_basic_value().left() {
+                                        Some(val) => Ok(val),
+                                        None => Ok(self.context.i32_type().const_int(0, false).into()),
+                                    }
+                                } else {
+                                    // Not a function pointer, try global function lookup
+                                    if let Some(func) = self.module.get_function(name) {
+                                        let mut call_args = vec![];
+                                        for arg in args {
+                                            call_args.push(self.generate_expression(arg)?.into());
+                                        }
+                                        let call = self
+                                            .builder
+                                            .build_call(func, &call_args, "user_func_call")
+                                            .map_err(|e| e.to_string())?;
+                                        match call.try_as_basic_value().left() {
+                                            Some(val) => Ok(val),
+                                            None => Ok(self.context.i32_type().const_int(0, false).into()),
+                                        }
+                                    } else {
+                                        Err(format!("Undefined function: {}", name))
+                                    }
                                 }
                             } else {
-                                Err(format!("Undefined function: {}", name))
+                                // Not a variable, try global function lookup
+                                if let Some(func) = self.module.get_function(name) {
+                                    let mut call_args = vec![];
+                                    for arg in args {
+                                        call_args.push(self.generate_expression(arg)?.into());
+                                    }
+                                    let call = self
+                                        .builder
+                                        .build_call(func, &call_args, "user_func_call")
+                                        .map_err(|e| e.to_string())?;
+                                    match call.try_as_basic_value().left() {
+                                        Some(val) => Ok(val),
+                                        None => Ok(self.context.i32_type().const_int(0, false).into()),
+                                    }
+                                } else {
+                                    Err(format!("Undefined function: {}", name))
+                                }
                             }
                         }
                     }
@@ -3528,13 +3648,17 @@ impl<'a> CodeGenerator<'a> {
                              } else {
                                  return Err(format!("Temporary variable {} not found", name));
                              }
-                         } else if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
-                             if let Some(Type::Named(n, _)) = &symbol.type_ {
-                                 n.clone()
-                             } else {
-                                 return Err("Match expression must be an enum type".to_string());
-                             }
-                         } else {
+                          } else if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+                              if let Some(symbol_type) = &symbol.type_ {
+                                  match symbol_type {
+                                      Type::Named(n, _) => n.clone(),
+                                      Type::Optional(_) => "Optional".to_string(),
+                                      _ => return Err("Match expression must be an enum type".to_string()),
+                                  }
+                              } else {
+                                  return Err("Match expression must be an enum type".to_string());
+                              }
+                          } else {
                              return Err(format!("Symbol {} not found", name));
                          }
                      }
