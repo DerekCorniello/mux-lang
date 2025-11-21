@@ -100,8 +100,8 @@ pub extern "C" fn mux_value_add(a: *mut Value, b: *mut Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_value(list: *mut List) -> *mut Value {
-    let list = unsafe { *Box::from_raw(list) };
-    Box::into_raw(Box::new(Value::List(list.0)))
+    let list_ref = unsafe { &*list };
+    Box::into_raw(Box::new(Value::List(list_ref.0.clone())))
 }
 
 
@@ -115,6 +115,8 @@ pub extern "C" fn mux_value_get_list(val: *mut Value) -> *mut List {
     unsafe {
         match &*val {
             Value::List(list_data) => {
+                // Return a pointer to a new List containing the same data
+                // This allows us to modify the list while keeping the original Value intact
                 Box::into_raw(Box::new(List(list_data.clone())))
             }
             _ => std::ptr::null_mut(),

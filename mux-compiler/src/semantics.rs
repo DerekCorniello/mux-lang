@@ -915,6 +915,25 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::Lambda { params, body } => {
+                self.symbol_table.push_scope()?;
+                for param in params {
+                    let param_type = self.resolve_type(&param.type_)?;
+                    self.symbol_table.add_symbol(
+                        &param.name,
+                        Symbol {
+                            kind: SymbolKind::Variable,
+                            span: param.type_.span,
+                            type_: Some(param_type),
+                            interfaces: std::collections::HashMap::new(),
+                            methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
+                            type_params: Vec::new(),
+                        },
+                    )?;
+                }
+                self.analyze_block(body)?;
+                self.symbol_table.pop_scope()?;
+                
                 let param_types = params
                     .iter()
                     .map(|p| self.resolve_type(&p.type_))
@@ -1279,6 +1298,26 @@ impl SemanticAnalyzer {
                     is_static: false,
                 }),
                 "pop_back" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Optional(elem_type.clone()),
+                    is_static: false,
+                }),
+                "push" => Some(MethodSig {
+                    params: vec![*elem_type.clone()],
+                    return_type: Type::Void,
+                    is_static: false,
+                }),
+                "push_front" => Some(MethodSig {
+                    params: vec![*elem_type.clone()],
+                    return_type: Type::Void,
+                    is_static: false,
+                }),
+                "pop" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Optional(elem_type.clone()),
+                    is_static: false,
+                }),
+                "pop_front" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Optional(elem_type.clone()),
                     is_static: false,

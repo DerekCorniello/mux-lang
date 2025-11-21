@@ -287,6 +287,56 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_list_pop_back", fn_type, None);
 
+        // mux_list_push: (*mut List, *mut Value) -> ()
+        let params = &[list_ptr.into(), i8_ptr.into()];
+        let fn_type = void_type.fn_type(params, false);
+        module.add_function("mux_list_push", fn_type, None);
+
+        // mux_list_pop: (*mut List) -> *mut Optional
+        let params = &[list_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_list_pop", fn_type, None);
+
+        // mux_list_push_front: (*mut List, *mut Value) -> ()
+        let params = &[list_ptr.into(), i8_ptr.into()];
+        let fn_type = void_type.fn_type(params, false);
+        module.add_function("mux_list_push_front", fn_type, None);
+
+        // mux_list_pop_front: (*mut List) -> *mut Optional
+        let params = &[list_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_list_pop_front", fn_type, None);
+
+        // mux_list_push_back_value: (*mut Value, *mut Value) -> ()
+        let params = &[i8_ptr.into(), i8_ptr.into()];
+        let fn_type = void_type.fn_type(params, false);
+        module.add_function("mux_list_push_back_value", fn_type, None);
+
+        // mux_list_push_value: (*mut Value, *mut Value) -> ()
+        let params = &[i8_ptr.into(), i8_ptr.into()];
+        let fn_type = void_type.fn_type(params, false);
+        module.add_function("mux_list_push_value", fn_type, None);
+
+        // mux_list_push_front_value: (*mut Value, *mut Value) -> ()
+        let params = &[i8_ptr.into(), i8_ptr.into()];
+        let fn_type = void_type.fn_type(params, false);
+        module.add_function("mux_list_push_front_value", fn_type, None);
+
+        // mux_list_pop_back_value: (*mut Value) -> *mut Optional
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_list_pop_back_value", fn_type, None);
+
+        // mux_list_pop_value: (*mut Value) -> *mut Optional
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_list_pop_value", fn_type, None);
+
+        // mux_list_pop_front_value: (*mut Value) -> *mut Optional
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_list_pop_front_value", fn_type, None);
+
         // mux_list_is_empty: (*const List) -> bool
         let params = &[list_ptr.into()];
         let fn_type = context.bool_type().fn_type(params, false);
@@ -1166,15 +1216,21 @@ impl<'a> CodeGenerator<'a> {
 
         // Determine return type from body
         let return_type_opt: Option<BasicTypeEnum<'a>> = if let Some(StatementNode {
-            kind: StatementKind::Return(Some(_)),
+            kind: StatementKind::Return(Some(expr)),
             ..
         }) = body.last()
         {
-            Some(match &params[0].type_.kind {
-                TypeKind::Primitive(PrimitiveType::Int) => self.context.i64_type().into(),
-                TypeKind::Primitive(PrimitiveType::Float) => self.context.f64_type().into(),
-                _ => unreachable!(),
-            })
+            // Get the return type from the actual return expression
+            let return_type = self.analyzer.get_expression_type(expr).map_err(|e| e.to_string())?;
+            Some(self.llvm_type_from_resolved_type(&return_type)?)
+        } else if let Some(StatementNode {
+            kind: StatementKind::Expression(expr),
+            ..
+        }) = body.last()
+        {
+            // If the last statement is an expression, use its type as return type
+            let return_type = self.analyzer.get_expression_type(expr).map_err(|e| e.to_string())?;
+            Some(self.llvm_type_from_resolved_type(&return_type)?)
         } else {
             None
         };
@@ -1236,17 +1292,33 @@ impl<'a> CodeGenerator<'a> {
             );
         }
 
-        // Generate body
-        for stmt in body {
+        // Check if there's an explicit return
+        let has_explicit_return = body.last().is_some_and(|s| matches!(s.kind, StatementKind::Return(_)));
+
+        // Generate all statements except last expression statement
+        for (i, stmt) in body.iter().enumerate() {
+            // Skip last expression statement since it will be handled by return logic
+            if !has_explicit_return && i == body.len() - 1 && matches!(stmt.kind, StatementKind::Expression(_)) {
+                continue;
+            }
             self.generate_statement(stmt, Some(&function))?;
         }
 
         // Add implicit return if no explicit return
-        if !body
-            .last()
-            .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)))
-        {
-            self.builder.build_return(None).map_err(|e| e.to_string())?;
+        if !has_explicit_return {
+            // If last statement is an expression, return its value
+            if let Some(StatementNode {
+                kind: StatementKind::Expression(expr),
+                ..
+            }) = body.last()
+            {
+                let value = self.generate_expression(expr)?;
+                eprintln!("DEBUG: Building return instruction for expression");
+                self.builder.build_return(Some(&value)).map_err(|e| e.to_string())?;
+            } else {
+                eprintln!("DEBUG: Building void return");
+                self.builder.build_return(None).map_err(|e| e.to_string())?;
+            }
         }
 
         // Restore variables
@@ -4588,8 +4660,9 @@ impl<'a> CodeGenerator<'a> {
                 }
                 let elem_val = self.generate_expression(&args[0])?;
                 let elem_ptr = self.box_value(elem_val);
+                
                 self.generate_runtime_call(
-                    "mux_list_push_back",
+                    "mux_list_push_back_value",
                     &[obj_value.into(), elem_ptr.into()],
                 );
                 Ok(self.context.i32_type().const_int(0, false).into()) // Return dummy value
@@ -4598,12 +4671,69 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("pop_back() method takes no arguments".to_string());
                 }
+                
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_list_pop_back").unwrap(),
+                        self.module.get_function("mux_list_pop_back_value").unwrap(),
                         &[obj_value.into()],
                         "list_pop_back",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "push" => {
+                if args.len() != 1 {
+                    return Err("push() method takes exactly 1 argument".to_string());
+                }
+                let elem_val = self.generate_expression(&args[0])?;
+                let elem_ptr = self.box_value(elem_val);
+                
+                self.generate_runtime_call(
+                    "mux_list_push_value",
+                    &[obj_value.into(), elem_ptr.into()],
+                );
+                Ok(self.context.i32_type().const_int(0, false).into()) // Return dummy value
+            }
+            "pop" => {
+                if !args.is_empty() {
+                    return Err("pop() method takes no arguments".to_string());
+                }
+                
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_list_pop_value").unwrap(),
+                        &[obj_value.into()],
+                        "list_pop",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "push_front" => {
+                if args.len() != 1 {
+                    return Err("push_front() method takes exactly 1 argument".to_string());
+                }
+                let elem_val = self.generate_expression(&args[0])?;
+                let elem_ptr = self.box_value(elem_val);
+                
+                self.generate_runtime_call(
+                    "mux_list_push_front_value",
+                    &[obj_value.into(), elem_ptr.into()],
+                );
+                Ok(self.context.i32_type().const_int(0, false).into()) // Return dummy value
+            }
+            "pop_front" => {
+                if !args.is_empty() {
+                    return Err("pop_front() method takes no arguments".to_string());
+                }
+                
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_list_pop_front_value").unwrap(),
+                        &[obj_value.into()],
+                        "list_pop_front",
                     )
                     .map_err(|e| e.to_string())?;
                 Ok(call.try_as_basic_value().left().unwrap())
@@ -4612,11 +4742,22 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("is_empty() method takes no arguments".to_string());
                 }
+                
+                // Extract raw List pointer from Value
+                let raw_list = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_list").unwrap(),
+                        &[obj_value.into()],
+                        "extract_list",
+                    )
+                    .map_err(|e| e.to_string())?;
+                
                 let call = self
                     .builder
                     .build_call(
                         self.module.get_function("mux_list_is_empty").unwrap(),
-                        &[obj_value.into()],
+                        &[raw_list.try_as_basic_value().left().unwrap().into()],
                         "list_is_empty",
                     )
                     .map_err(|e| e.to_string())?;
@@ -4626,11 +4767,22 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("length() method takes no arguments".to_string());
                 }
+                
+                // Extract raw List pointer from Value
+                let raw_list = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_list").unwrap(),
+                        &[obj_value.into()],
+                        "extract_list",
+                    )
+                    .map_err(|e| e.to_string())?;
+                
                 let call = self
                     .builder
                     .build_call(
                         self.module.get_function("mux_list_length").unwrap(),
-                        &[obj_value.into()],
+                        &[raw_list.try_as_basic_value().left().unwrap().into()],
                         "list_length",
                     )
                     .map_err(|e| e.to_string())?;
@@ -5451,6 +5603,79 @@ impl<'a> CodeGenerator<'a> {
                 Ok(false_val.into())
             }
             _ => Err("Binary op not implemented".to_string()),
+        }
+    }
+
+    fn llvm_type_from_resolved_type(&self, resolved_type: &ResolvedType) -> Result<BasicTypeEnum<'a>, String> {
+        match resolved_type {
+            ResolvedType::Primitive(PrimitiveType::Int) => Ok(self.context.i64_type().into()),
+            ResolvedType::Primitive(PrimitiveType::Float) => Ok(self.context.f64_type().into()),
+            ResolvedType::Primitive(PrimitiveType::Bool) => Ok(self.context.bool_type().into()),
+            ResolvedType::Primitive(PrimitiveType::Str) => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::Primitive(PrimitiveType::Char) => Ok(self.context.i8_type().into()),
+            ResolvedType::Primitive(PrimitiveType::Void) => {
+                Err("Void type not allowed here".to_string())
+            }
+            ResolvedType::Void => {
+                Err("Void type not allowed here".to_string())
+            }
+            ResolvedType::Primitive(PrimitiveType::Auto) => {
+                Err("Auto type should be resolved".to_string())
+            }
+            ResolvedType::Named(name, _generics) => {
+                if name == "T" {
+                    // Hack for generic T, assume int
+                    Ok(self.context.i64_type().into())
+                } else if let Some(class_type) = self.classes.get(name) {
+                    Ok(self.context.ptr_type(AddressSpace::default()).into())
+                } else {
+                    Err(format!("Unknown type: {}", name))
+                }
+            }
+            ResolvedType::Function { params: _, returns: _ } => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::List(_elem_type) => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::Map(_, _) => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::Set(_elem_type) => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::Optional(_inner_type) => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::Reference(_inner_type) => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::Tuple(_types) => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::EmptyList => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::EmptyMap => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::EmptySet => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            ResolvedType::Generic(_) => {
+                Err("Generic types should be resolved".to_string())
+            }
+            ResolvedType::Instantiated(_, _) => {
+                Err("Instantiated types should be resolved".to_string())
+            }
+            ResolvedType::Variable(_) => {
+                Err("Variable types should be resolved".to_string())
+            }
+            ResolvedType::Never => {
+                Err("Never type not allowed here".to_string())
+            }
         }
     }
 
