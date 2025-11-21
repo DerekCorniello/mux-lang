@@ -197,7 +197,11 @@ pub extern "C" fn mux_list_pop_value(list_val: *mut Value) -> *mut crate::option
         };
 
         if let Some(mut list_data) = current_list {
-            let popped = list_data.pop();  // Remove from back
+            let popped = if list_data.is_empty() {
+                None
+            } else {
+                Some(list_data.remove(0))  // Remove from front
+            };
             // Update the original Value
             *list_val = Value::List(list_data);
             popped
