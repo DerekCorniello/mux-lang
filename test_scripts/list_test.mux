@@ -1,0 +1,34 @@
+list<int> test = []
+test.push_back(3)
+test.push_back(4)
+
+println(test.to_string())
+
+test.push(2)
+println(test.to_string())
+test.push(1)
+
+println(test.to_string())
+
+auto front_pop = test.pop()
+auto back_pop = test.pop_back()
+
+println(test.to_string())
+println("--------")
+
+match front_pop {
+    Some(val) {
+        println("front pop: " + val.to_string())
+    }
+    _ {
+        println("issue")
+    }
+}
+match back_pop {
+    Some(val) {
+        println("back pop: " + val.to_string())
+    }
+    _ {
+        println("issue")
+    }
+}
