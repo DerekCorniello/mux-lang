@@ -104,6 +104,9 @@ pub extern "C" fn mux_list_pop_front(list: *mut List) -> *mut crate::optional::O
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_list_is_empty(list: *const List) -> bool {
+    if list.is_null() {
+        return false;
+    }
     unsafe { (*list).length() == 0 }
 }
 

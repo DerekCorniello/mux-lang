@@ -140,6 +140,21 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_list_to_string", fn_type, None);
 
+        // mux_list_value: (*mut List) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_list_value", fn_type, None);
+
+        // mux_map_value: (*mut Map) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_map_value", fn_type, None);
+
+        // mux_set_value: (*mut Set) -> *mut Value
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_set_value", fn_type, None);
+
         // mux_map_to_string: (*mut Map) -> *const c_char
         let params = &[i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
@@ -6134,10 +6149,17 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap()
-                    .into_pointer_value();
+                    .unwrap();
+                let list_value_fn = self.module.get_function("mux_list_value")
+                    .ok_or("mux_list_value function not found")?;
+                let list_val = self.builder
+                    .build_call(list_value_fn, &[list_ptr.into()], "list_value")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
                 self.builder
-                    .build_store(field_ptr, list_ptr)
+                    .build_store(field_ptr, list_val)
                     .map_err(|e| e.to_string())?;
             }
             Type::Map(_, _) => {
@@ -6149,10 +6171,17 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap()
-                    .into_pointer_value();
+                    .unwrap();
+                let map_value_fn = self.module.get_function("mux_map_value")
+                    .ok_or("mux_map_value function not found")?;
+                let map_val = self.builder
+                    .build_call(map_value_fn, &[map_ptr.into()], "map_value")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
                 self.builder
-                    .build_store(field_ptr, map_ptr)
+                    .build_store(field_ptr, map_val)
                     .map_err(|e| e.to_string())?;
             }
             Type::Set(_) => {
@@ -6164,10 +6193,17 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap()
-                    .into_pointer_value();
+                    .unwrap();
+                let set_value_fn = self.module.get_function("mux_set_value")
+                    .ok_or("mux_set_value function not found")?;
+                let set_val = self.builder
+                    .build_call(set_value_fn, &[set_ptr.into()], "set_value")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
                 self.builder
-                    .build_store(field_ptr, set_ptr)
+                    .build_store(field_ptr, set_val)
                     .map_err(|e| e.to_string())?;
             }
             Type::Named(class_name, type_args) => {
