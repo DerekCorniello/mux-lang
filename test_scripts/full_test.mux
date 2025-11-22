@@ -74,8 +74,11 @@ func main() returns void {
     println("pushed 99 to stack")
     auto popped = stack.pop()
     match popped {
-        Ok(val) {
+        Some(val) {
             println("popped from stack: " + popped)
+        }
+        None {
+            println("nothing popped")
         }
     }
 

@@ -49,6 +49,12 @@ declare ptr @mux_string_to_string(ptr)
 
 declare ptr @mux_list_to_string(ptr)
 
+declare ptr @mux_list_value(ptr)
+
+declare ptr @mux_map_value(ptr)
+
+declare ptr @mux_set_value(ptr)
+
 declare ptr @mux_map_to_string(ptr)
 
 declare i32 @mux_register_object_type(ptr, i64)
@@ -71,11 +77,11 @@ declare ptr @mux_value_get_map(ptr)
 
 declare ptr @mux_value_to_string(ptr)
 
-declare ptr @mux_list_value(ptr)
+declare ptr @mux_list_value.2(ptr)
 
-declare ptr @mux_map_value(ptr)
+declare ptr @mux_map_value.3(ptr)
 
-declare ptr @mux_set_value(ptr)
+declare ptr @mux_set_value.4(ptr)
 
 declare ptr @mux_range(i64, i64)
 
@@ -111,6 +117,26 @@ declare ptr @mux_value_list_get_value(ptr, i64)
 
 declare ptr @mux_list_pop_back(ptr)
 
+declare void @mux_list_push(ptr, ptr)
+
+declare ptr @mux_list_pop(ptr)
+
+declare void @mux_list_push_front(ptr, ptr)
+
+declare ptr @mux_list_pop_front(ptr)
+
+declare void @mux_list_push_back_value(ptr, ptr)
+
+declare void @mux_list_push_value(ptr, ptr)
+
+declare void @mux_list_push_front_value(ptr, ptr)
+
+declare ptr @mux_list_pop_back_value(ptr)
+
+declare ptr @mux_list_pop_value(ptr)
+
+declare ptr @mux_list_pop_front_value(ptr)
+
 declare i1 @mux_list_is_empty(ptr)
 
 declare void @mux_map_put(ptr, ptr, ptr)
@@ -143,7 +169,7 @@ declare ptr @mux_bool_value(i32)
 
 declare ptr @mux_string_value(ptr)
 
-declare ptr @mux_int_to_string.2(i64)
+declare ptr @mux_int_to_string.5(i64)
 
 declare i64 @mux_int_from_value(ptr)
 
@@ -161,9 +187,9 @@ declare ptr @mux_optional_some_int(i64)
 
 declare ptr @mux_optional_none()
 
-declare ptr @mux_result_ok_int.3(i64)
+declare ptr @mux_result_ok_int.6(i64)
 
-declare ptr @mux_result_err_str.4(ptr)
+declare ptr @mux_result_err_str.7(ptr)
 
 declare i32 @mux_optional_discriminant(ptr)
 
@@ -200,99 +226,83 @@ entry:
   %get_int = call i64 @mux_value_get_int(ptr %boxed_ptr)
   %int_to_str = call ptr @mux_int_to_string(i64 %get_int)
   %new_str = call ptr @mux_new_string_from_cstr(ptr %int_to_str)
-  %get_type = call i32 @mux_value_get_type_tag(ptr %call1)
-  %is_string = icmp eq i32 %get_type, 3
-  %get_type3 = call i32 @mux_value_get_type_tag(ptr %new_str)
-  %is_string4 = icmp eq i32 %get_type3, 3
   %get_string = call ptr @mux_value_get_string(ptr %call1)
-  %get_string5 = call ptr @mux_value_get_string(ptr %new_str)
-  %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string5)
+  %get_string3 = call ptr @mux_value_get_string(ptr %new_str)
+  %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string3)
   %from_string = call ptr @mux_value_from_string(ptr %string_concat)
   call void @mux_println_val(ptr %from_string)
-  %r6 = load ptr, ptr %r, align 8
-  %call7 = call ptr @mux_int_value(i64 20)
-  store ptr %call7, ptr %r6, align 8
-  %call8 = call ptr @mux_new_string_from_cstr(ptr @str_1)
-  %r9 = load ptr, ptr %r, align 8
-  %boxed_ptr10 = load ptr, ptr %r9, align 8
-  %get_int11 = call i64 @mux_value_get_int(ptr %boxed_ptr10)
-  %int_to_str12 = call ptr @mux_int_to_string(i64 %get_int11)
-  %new_str13 = call ptr @mux_new_string_from_cstr(ptr %int_to_str12)
-  %get_type14 = call i32 @mux_value_get_type_tag(ptr %call8)
-  %is_string15 = icmp eq i32 %get_type14, 3
-  %get_type16 = call i32 @mux_value_get_type_tag(ptr %new_str13)
-  %is_string17 = icmp eq i32 %get_type16, 3
-  %get_string18 = call ptr @mux_value_get_string(ptr %call8)
-  %get_string19 = call ptr @mux_value_get_string(ptr %new_str13)
-  %string_concat20 = call ptr @mux_string_concat(ptr %get_string18, ptr %get_string19)
-  %from_string21 = call ptr @mux_value_from_string(ptr %string_concat20)
-  call void @mux_println_val(ptr %from_string21)
-  %call22 = call ptr @mux_new_string_from_cstr(ptr @str_2)
-  call void @mux_println_val(ptr %call22)
-  %call23 = call ptr @mux_new_list()
-  %call24 = call ptr @mux_int_value(i64 1)
-  call void @mux_list_push_back(ptr %call23, ptr %call24)
-  %call25 = call ptr @mux_int_value(i64 2)
-  call void @mux_list_push_back(ptr %call23, ptr %call25)
-  %call26 = call ptr @mux_int_value(i64 3)
-  call void @mux_list_push_back(ptr %call23, ptr %call26)
-  %call27 = call ptr @mux_int_value(i64 4)
-  call void @mux_list_push_back(ptr %call23, ptr %call27)
-  %call28 = call ptr @mux_int_value(i64 5)
-  call void @mux_list_push_back(ptr %call23, ptr %call28)
-  %call29 = call ptr @mux_list_value(ptr %call23)
+  %r4 = load ptr, ptr %r, align 8
+  %call5 = call ptr @mux_int_value(i64 20)
+  store ptr %call5, ptr %r4, align 8
+  %call6 = call ptr @mux_new_string_from_cstr(ptr @str_1)
+  %r7 = load ptr, ptr %r, align 8
+  %boxed_ptr8 = load ptr, ptr %r7, align 8
+  %get_int9 = call i64 @mux_value_get_int(ptr %boxed_ptr8)
+  %int_to_str10 = call ptr @mux_int_to_string(i64 %get_int9)
+  %new_str11 = call ptr @mux_new_string_from_cstr(ptr %int_to_str10)
+  %get_string12 = call ptr @mux_value_get_string(ptr %call6)
+  %get_string13 = call ptr @mux_value_get_string(ptr %new_str11)
+  %string_concat14 = call ptr @mux_string_concat(ptr %get_string12, ptr %get_string13)
+  %from_string15 = call ptr @mux_value_from_string(ptr %string_concat14)
+  call void @mux_println_val(ptr %from_string15)
+  %call16 = call ptr @mux_new_string_from_cstr(ptr @str_2)
+  call void @mux_println_val(ptr %call16)
+  %call17 = call ptr @mux_new_list()
+  %call18 = call ptr @mux_int_value(i64 1)
+  call void @mux_list_push_back(ptr %call17, ptr %call18)
+  %call19 = call ptr @mux_int_value(i64 2)
+  call void @mux_list_push_back(ptr %call17, ptr %call19)
+  %call20 = call ptr @mux_int_value(i64 3)
+  call void @mux_list_push_back(ptr %call17, ptr %call20)
+  %call21 = call ptr @mux_int_value(i64 4)
+  call void @mux_list_push_back(ptr %call17, ptr %call21)
+  %call22 = call ptr @mux_int_value(i64 5)
+  call void @mux_list_push_back(ptr %call17, ptr %call22)
+  %call23 = call ptr @mux_list_value(ptr %call17)
   %numbers = alloca ptr, align 8
-  store ptr %call29, ptr %numbers, align 8
-  %call30 = call ptr @mux_new_string_from_cstr(ptr @str_3)
-  call void @mux_println_val(ptr %call30)
-  %numbers31 = load ptr, ptr %numbers, align 8
-  %extract_list = call ptr @mux_value_get_list(ptr %numbers31)
+  store ptr %call23, ptr %numbers, align 8
+  %call24 = call ptr @mux_new_string_from_cstr(ptr @str_3)
+  call void @mux_println_val(ptr %call24)
+  %numbers25 = load ptr, ptr %numbers, align 8
+  %extract_list = call ptr @mux_value_get_list(ptr %numbers25)
   %list_raw = call ptr @mux_list_get_value(ptr %extract_list, i64 0)
   %is_null = icmp eq ptr %list_raw, null
   br i1 %is_null, label %index_error, label %index_continue
 
 index_error:                                      ; preds = %entry
-  %call32 = call ptr @mux_new_string_from_cstr(ptr @error_msg)
-  call void @mux_println_val(ptr %call32)
+  %call26 = call ptr @mux_new_string_from_cstr(ptr @error_msg)
+  call void @mux_println_val(ptr %call26)
   call void @exit(i32 1)
   unreachable
 
 index_continue:                                   ; preds = %entry
   %extracted_int = call i64 @mux_value_get_int(ptr %list_raw)
-  %call33 = call ptr @mux_int_value(i64 %extracted_int)
+  %call27 = call ptr @mux_int_value(i64 %extracted_int)
   %ref_temp = alloca ptr, align 8
-  store ptr %call33, ptr %ref_temp, align 8
+  store ptr %call27, ptr %ref_temp, align 8
   %first = alloca ptr, align 8
   store ptr %ref_temp, ptr %first, align 8
-  %call34 = call ptr @mux_new_string_from_cstr(ptr @str_4)
-  %first35 = load ptr, ptr %first, align 8
-  %boxed_ptr36 = load ptr, ptr %first35, align 8
-  %get_int37 = call i64 @mux_value_get_int(ptr %boxed_ptr36)
-  %int_to_str38 = call ptr @mux_int_to_string(i64 %get_int37)
-  %new_str39 = call ptr @mux_new_string_from_cstr(ptr %int_to_str38)
-  %get_type40 = call i32 @mux_value_get_type_tag(ptr %call34)
-  %is_string41 = icmp eq i32 %get_type40, 3
-  %get_type42 = call i32 @mux_value_get_type_tag(ptr %new_str39)
-  %is_string43 = icmp eq i32 %get_type42, 3
-  %get_string44 = call ptr @mux_value_get_string(ptr %call34)
-  %get_string45 = call ptr @mux_value_get_string(ptr %new_str39)
-  %string_concat46 = call ptr @mux_string_concat(ptr %get_string44, ptr %get_string45)
-  %from_string47 = call ptr @mux_value_from_string(ptr %string_concat46)
-  call void @mux_println_val(ptr %from_string47)
+  %call28 = call ptr @mux_new_string_from_cstr(ptr @str_4)
+  %first29 = load ptr, ptr %first, align 8
+  %boxed_ptr30 = load ptr, ptr %first29, align 8
+  %get_int31 = call i64 @mux_value_get_int(ptr %boxed_ptr30)
+  %int_to_str32 = call ptr @mux_int_to_string(i64 %get_int31)
+  %new_str33 = call ptr @mux_new_string_from_cstr(ptr %int_to_str32)
+  %get_string34 = call ptr @mux_value_get_string(ptr %call28)
+  %get_string35 = call ptr @mux_value_get_string(ptr %new_str33)
+  %string_concat36 = call ptr @mux_string_concat(ptr %get_string34, ptr %get_string35)
+  %from_string37 = call ptr @mux_value_from_string(ptr %string_concat36)
+  call void @mux_println_val(ptr %from_string37)
   call void @update(ptr %val)
-  %call48 = call ptr @mux_new_string_from_cstr(ptr @str_5)
-  %val49 = load ptr, ptr %val, align 8
-  %get_int50 = call i64 @mux_value_get_int(ptr %val49)
-  %int_to_str51 = call ptr @mux_int_to_string(i64 %get_int50)
-  %new_str52 = call ptr @mux_new_string_from_cstr(ptr %int_to_str51)
-  %get_type53 = call i32 @mux_value_get_type_tag(ptr %call48)
-  %is_string54 = icmp eq i32 %get_type53, 3
-  %get_type55 = call i32 @mux_value_get_type_tag(ptr %new_str52)
-  %is_string56 = icmp eq i32 %get_type55, 3
-  %get_string57 = call ptr @mux_value_get_string(ptr %call48)
-  %get_string58 = call ptr @mux_value_get_string(ptr %new_str52)
-  %string_concat59 = call ptr @mux_string_concat(ptr %get_string57, ptr %get_string58)
-  %from_string60 = call ptr @mux_value_from_string(ptr %string_concat59)
-  call void @mux_println_val(ptr %from_string60)
+  %call38 = call ptr @mux_new_string_from_cstr(ptr @str_5)
+  %val39 = load ptr, ptr %val, align 8
+  %get_int40 = call i64 @mux_value_get_int(ptr %val39)
+  %int_to_str41 = call ptr @mux_int_to_string(i64 %get_int40)
+  %new_str42 = call ptr @mux_new_string_from_cstr(ptr %int_to_str41)
+  %get_string43 = call ptr @mux_value_get_string(ptr %call38)
+  %get_string44 = call ptr @mux_value_get_string(ptr %new_str42)
+  %string_concat45 = call ptr @mux_string_concat(ptr %get_string43, ptr %get_string44)
+  %from_string46 = call ptr @mux_value_from_string(ptr %string_concat45)
+  call void @mux_println_val(ptr %from_string46)
   ret void
 }

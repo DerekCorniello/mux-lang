@@ -49,6 +49,12 @@ declare ptr @mux_string_to_string(ptr)
 
 declare ptr @mux_list_to_string(ptr)
 
+declare ptr @mux_list_value(ptr)
+
+declare ptr @mux_map_value(ptr)
+
+declare ptr @mux_set_value(ptr)
+
 declare ptr @mux_map_to_string(ptr)
 
 declare i32 @mux_register_object_type(ptr, i64)
@@ -71,11 +77,11 @@ declare ptr @mux_value_get_map(ptr)
 
 declare ptr @mux_value_to_string(ptr)
 
-declare ptr @mux_list_value(ptr)
+declare ptr @mux_list_value.2(ptr)
 
-declare ptr @mux_map_value(ptr)
+declare ptr @mux_map_value.3(ptr)
 
-declare ptr @mux_set_value(ptr)
+declare ptr @mux_set_value.4(ptr)
 
 declare ptr @mux_range(i64, i64)
 
@@ -111,6 +117,26 @@ declare ptr @mux_value_list_get_value(ptr, i64)
 
 declare ptr @mux_list_pop_back(ptr)
 
+declare void @mux_list_push(ptr, ptr)
+
+declare ptr @mux_list_pop(ptr)
+
+declare void @mux_list_push_front(ptr, ptr)
+
+declare ptr @mux_list_pop_front(ptr)
+
+declare void @mux_list_push_back_value(ptr, ptr)
+
+declare void @mux_list_push_value(ptr, ptr)
+
+declare void @mux_list_push_front_value(ptr, ptr)
+
+declare ptr @mux_list_pop_back_value(ptr)
+
+declare ptr @mux_list_pop_value(ptr)
+
+declare ptr @mux_list_pop_front_value(ptr)
+
 declare i1 @mux_list_is_empty(ptr)
 
 declare void @mux_map_put(ptr, ptr, ptr)
@@ -143,7 +169,7 @@ declare ptr @mux_bool_value(i32)
 
 declare ptr @mux_string_value(ptr)
 
-declare ptr @mux_int_to_string.2(i64)
+declare ptr @mux_int_to_string.5(i64)
 
 declare i64 @mux_int_from_value(ptr)
 
@@ -161,9 +187,9 @@ declare ptr @mux_optional_some_int(i64)
 
 declare ptr @mux_optional_none()
 
-declare ptr @mux_result_ok_int.3(i64)
+declare ptr @mux_result_ok_int.6(i64)
 
-declare ptr @mux_result_err_str.4(ptr)
+declare ptr @mux_result_err_str.7(ptr)
 
 declare i32 @mux_optional_discriminant(ptr)
 
