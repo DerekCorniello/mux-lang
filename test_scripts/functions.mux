@@ -9,7 +9,7 @@ func greet(string name, int times = 1) returns void {
 
 // Lambda examples
 auto square = func (int n) returns int { return n * n }
-auto doubled = func (float x) returns float { return x * (2.0) }
+auto doubled = func (float x) returns float { return x * 2.0 }
 
 println("add(3,4): " + add(3,4).to_string())
 greet("World", 2)

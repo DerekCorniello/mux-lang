@@ -109,7 +109,11 @@ pub extern "C" fn mux_string_to_string(s: *const c_char) -> *mut c_char {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_new_string_from_cstr(s: *const c_char) -> *mut Value {
+    if s.is_null() {
+        return std::ptr::null_mut();
+    }
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy().to_string();
-    Box::into_raw(Box::new(Value::String(rust_str)))
+    let value = Value::String(rust_str);
+    Box::into_raw(Box::new(value))
 }

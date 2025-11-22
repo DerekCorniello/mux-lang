@@ -65,8 +65,9 @@ impl fmt::Display for Float {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_to_string(f: f64) -> *mut c_char {
-    let s = format!("{}", Float(ordered_float::OrderedFloat(f)));
-    CString::new(s).unwrap().into_raw()
+    let s = format!("{:.1}", f);
+    let c_str = CString::new(s).unwrap();
+    c_str.into_raw()
 }
 
 /// # Safety

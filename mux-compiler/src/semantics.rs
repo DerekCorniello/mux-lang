@@ -943,6 +943,7 @@ impl SemanticAnalyzer {
                 } else {
                     match &body.last().unwrap().kind {
                         StatementKind::Expression(expr) => self.get_expression_type(expr)?,
+                        StatementKind::Return(Some(expr)) => self.get_expression_type(expr)?,
                         _ => Type::Void,
                     }
                 };

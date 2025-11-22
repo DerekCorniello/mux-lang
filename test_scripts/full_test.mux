@@ -73,7 +73,11 @@ func main() returns void {
     stack.push(99)
     println("pushed 99 to stack")
     auto popped = stack.pop()
-    println("popped from stack: " + popped)
+    match popped {
+        Ok(val) {
+            println("popped from stack: " + popped)
+        }
+    }
 
     auto res = divide(10, 2)
     println("divide(10, 2) result:")

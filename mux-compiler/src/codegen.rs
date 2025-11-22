@@ -1221,7 +1221,7 @@ impl<'a> CodeGenerator<'a> {
         }) = body.last()
         {
             // Get the return type from the actual return expression
-            let return_type = self.analyzer.get_expression_type(expr).map_err(|e| e.to_string())?;
+                let return_type = self.analyzer.get_expression_type(expr).map_err(|e| e.to_string())?;
             Some(self.llvm_type_from_resolved_type(&return_type)?)
         } else if let Some(StatementNode {
             kind: StatementKind::Expression(expr),
@@ -2215,8 +2215,8 @@ impl<'a> CodeGenerator<'a> {
                     Ok(self.generate_binary_op(left_val, op, right_val)?)
                 }
             }
-            ExpressionKind::Call { func, args } => {
-                if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
+             ExpressionKind::Call { func, args } => {
+                 if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
 
                     // Special case: method calls on 'self' (keep existing logic)
                     if let ExpressionKind::Identifier(obj_name) = &expr.kind {
@@ -2976,16 +2976,17 @@ impl<'a> CodeGenerator<'a> {
                             }
                             Type::Primitive(PrimitiveType::Float) if field == "to_string" => {
                                 let float_val = self.generate_expression(expr)?;
-                                // Box the raw float value
-                                let boxed_float = self.box_value(float_val);
+                                eprintln!("DEBUG: Float value generated: {:?}", float_val);
+                                // Call mux_float_to_string directly on the raw float
                                 let func = self
                                     .module
-                                    .get_function("mux_value_to_string")
-                                    .ok_or("mux_value_to_string not found")?;
+                                    .get_function("mux_float_to_string")
+                                    .ok_or("mux_float_to_string not found")?;
                                 let call = self
                                     .builder
-                                    .build_call(func, &[boxed_float.into()], "val_to_str")
+                                    .build_call(func, &[float_val.into()], "float_to_str")
                                     .map_err(|e| e.to_string())?;
+                                eprintln!("DEBUG: mux_float_to_string call result: {:?}", call);
                                 let func_new = self
                                     .module
                                     .get_function("mux_new_string_from_cstr")
@@ -2998,6 +2999,7 @@ impl<'a> CodeGenerator<'a> {
                                         "new_str",
                                     )
                                     .map_err(|e| e.to_string())?;
+                                eprintln!("DEBUG: Final result: {:?}", call2.try_as_basic_value().left().unwrap());
                                 return Ok(call2.try_as_basic_value().left().unwrap());
                             }
                             Type::Primitive(PrimitiveType::Bool) if field == "to_string" => {
@@ -3261,7 +3263,7 @@ impl<'a> CodeGenerator<'a> {
                 }
 
                 let value = self.generate_expression(expr)?;
-                // Check if we need to return raw primitive or boxed value
+                 // Check if we need to return raw primitive or boxed value
                 if let Some(return_type) = &self.current_function_return_type {
                     match return_type {
                         ResolvedType::Named(name, _) if name == "T" => {
@@ -4406,11 +4408,11 @@ impl<'a> CodeGenerator<'a> {
                 "to_string" => {
                     let func = self
                         .module
-                        .get_function("mux_value_to_string")
-                        .ok_or("mux_value_to_string not found")?;
+                        .get_function("mux_float_to_string")
+                        .ok_or("mux_float_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "value_to_str")
+                        .build_call(func, &[obj_value.into()], "float_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module
@@ -4556,19 +4558,21 @@ impl<'a> CodeGenerator<'a> {
             },
             PrimitiveType::Char => match method_name {
                 "to_string" => {
-                    eprintln!("DEBUG: Compiling char.to_string() method call");
+                    eprintln!("DEBUG: Using direct float to_string in primitive method call");
                     let func = self
                         .module
-                        .get_function("mux_bool_to_string")
-                        .ok_or("mux_bool_to_string not found")?;
+                        .get_function("mux_float_to_string")
+                        .ok_or("mux_float_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "bool_to_str")
+                        .build_call(func, &[obj_value.into()], "float_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module
                         .get_function("mux_new_string_from_cstr")
                         .ok_or("mux_new_string_from_cstr not found")?;
+                    // Handle pointer return value
+                    let call_result = call.try_as_basic_value().left().unwrap();
                     let call2 = self
                         .builder
                         .build_call(
@@ -4577,7 +4581,11 @@ impl<'a> CodeGenerator<'a> {
                             "new_str",
                         )
                         .map_err(|e| e.to_string())?;
-                    Ok(call2.try_as_basic_value().left().unwrap())
+                    eprintln!("DEBUG: Float to_string completed successfully");
+                    // mux_new_string_from_cstr returns a pointer
+                    let result = call2.try_as_basic_value().left().unwrap();
+                    eprintln!("DEBUG: Float to_string returning result: {:?}", result);
+                    Ok(result)
                 }
                 _ => Err(format!("Method {} not implemented for char", method_name)),
             },
@@ -5350,11 +5358,11 @@ impl<'a> CodeGenerator<'a> {
                         .build_int_mul(left_int, right_int, "mul")
                         .map_err(|e| e.to_string())
                         .map(|v| v.into())
-                } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
-                    self.builder
-                        .build_float_mul(left_float, right_float, "fmul")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
+                 } else if let (Ok(left_float), Ok(right_float)) = (self.get_raw_float_value(left), self.get_raw_float_value(right)) {
+                      let result = self.builder
+                          .build_float_mul(left_float, right_float, "fmul")
+                          .map_err(|e| e.to_string())?;
+                      Ok(result.into())
                 } else {
                     // Try mixed type: float * int or int * float
                     if let (Ok(left_float), Ok(right_int)) = (self.get_raw_float_value(left), self.get_raw_int_value(right)) {
@@ -5933,15 +5941,12 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn box_value(&mut self, val: BasicValueEnum<'a>) -> PointerValue<'a> {
-        println!("DEBUG: box_value called with value type: {:?}", val.get_type());
         if val.is_int_value() {
-            println!("DEBUG: Boxing int value");
             let call = self
                 .generate_runtime_call("mux_int_value", &[val.into()])
                 .unwrap();
             call.into_pointer_value()
         } else if val.is_float_value() {
-            println!("DEBUG: Boxing float value");
             let call = self
                 .generate_runtime_call("mux_float_value", &[val.into()])
                 .unwrap();
