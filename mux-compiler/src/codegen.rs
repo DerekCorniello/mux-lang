@@ -624,6 +624,7 @@ impl<'a> CodeGenerator<'a> {
         // Add class fields after
         for field in fields {
             let field_type = if let TypeNode { kind: TypeKind::Named(name, _), .. } = &field.type_ {
+                // TODO: why is this hardcoded??????????
                 if name == "T" || name == "U" {
                     // Generic fields should be pointers (boxed values)
                     self.context.ptr_type(AddressSpace::default()).into()
@@ -1222,6 +1223,10 @@ impl<'a> CodeGenerator<'a> {
         let func_name = format!("lambda_{}", self.lambda_counter);
         self.lambda_counter += 1;
 
+        // Set current function name for proper scoping
+        let old_function_name = self.current_function_name.take();
+        self.current_function_name = Some(func_name.clone());
+
         // Convert params to LLVM types
         let mut param_types = Vec::new();
         for param in params {
@@ -1307,33 +1312,9 @@ impl<'a> CodeGenerator<'a> {
             );
         }
 
-        // Check if there's an explicit return
-        let has_explicit_return = body.last().is_some_and(|s| matches!(s.kind, StatementKind::Return(_)));
-
-        // Generate all statements except last expression statement
-        for (i, stmt) in body.iter().enumerate() {
-            // Skip last expression statement since it will be handled by return logic
-            if !has_explicit_return && i == body.len() - 1 && matches!(stmt.kind, StatementKind::Expression(_)) {
-                continue;
-            }
+        // Generate all statements
+        for stmt in body {
             self.generate_statement(stmt, Some(&function))?;
-        }
-
-        // Add implicit return if no explicit return
-        if !has_explicit_return {
-            // If last statement is an expression, return its value
-            if let Some(StatementNode {
-                kind: StatementKind::Expression(expr),
-                ..
-            }) = body.last()
-            {
-                let value = self.generate_expression(expr)?;
-                eprintln!("DEBUG: Building return instruction for expression");
-                self.builder.build_return(Some(&value)).map_err(|e| e.to_string())?;
-            } else {
-                eprintln!("DEBUG: Building void return");
-                self.builder.build_return(None).map_err(|e| e.to_string())?;
-            }
         }
 
         // Restore variables
@@ -1341,6 +1322,9 @@ impl<'a> CodeGenerator<'a> {
 
         // Restore return type
         self.current_function_return_type = old_return_type;
+
+        // Restore function name
+        self.current_function_name = old_function_name;
 
         // Restore builder to previous block
         if let Some(bb) = old_bb {
@@ -3178,7 +3162,9 @@ impl<'a> CodeGenerator<'a> {
                     self.variables
                         .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
                 } else {
+                    eprintln!("DEBUG: Boxing value for variable '{}' (AutoDecl)", name);
                     let boxed = self.box_value(value);
+                    eprintln!("DEBUG: Boxed value created for '{}' (AutoDecl)", name);
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
                     let alloca = self
                         .builder
@@ -3187,6 +3173,7 @@ impl<'a> CodeGenerator<'a> {
                     self.builder
                         .build_store(alloca, boxed)
                         .map_err(|e| e.to_string())?;
+                    eprintln!("DEBUG: Stored boxed value in variable '{}' (AutoDecl)", name);
                     self.variables.insert(
                         name.clone(),
                         (
@@ -3200,12 +3187,14 @@ impl<'a> CodeGenerator<'a> {
             StatementKind::TypedDecl(name, type_node, expr) => {
                 let var_type = self.llvm_type_from_mux_type(type_node)?;
                 let value = self.generate_expression(expr)?;
+                eprintln!("DEBUG: Variable '{}' assignment - generated value type: struct={}, pointer={}", name, value.is_struct_value(), value.is_pointer_value());
                 let symbol = self
                     .analyzer
                     .symbol_table()
                     .lookup(name)
                     .ok_or("Symbol not found")?;
                 let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+                eprintln!("DEBUG: Variable '{}' type: {:?}", name, resolved_type);
                 if value.is_struct_value() {
                     let alloca = self
                         .builder
@@ -3217,7 +3206,9 @@ impl<'a> CodeGenerator<'a> {
                     self.variables
                         .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
                 } else {
+                    eprintln!("DEBUG: Boxing value for variable '{}'", name);
                     let boxed = self.box_value(value);
+                    eprintln!("DEBUG: Boxed value created for '{}'", name);
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
                     let alloca = self
                         .builder
@@ -3226,6 +3217,7 @@ impl<'a> CodeGenerator<'a> {
                     self.builder
                         .build_store(alloca, boxed)
                         .map_err(|e| e.to_string())?;
+                    eprintln!("DEBUG: Stored boxed value in variable '{}'", name);
                     self.variables.insert(
                         name.clone(),
                         (
@@ -3335,6 +3327,20 @@ impl<'a> CodeGenerator<'a> {
                                      .map_err(|e| e.to_string())?;
                             } else {
                                 return Err("Expected bool value or pointer".to_string());
+                            }
+                        }
+                        ResolvedType::List(_) => {
+                            // For list types, return the wrapped Value* directly
+                            // The function signature should expect wrapped pointers for lists
+                            eprintln!("DEBUG: Processing list return statement");
+                            if value.is_pointer_value() {
+                                eprintln!("DEBUG: Returning wrapped Value* for list");
+                                self.builder
+                                    .build_return(Some(&value))
+                                    .map_err(|e| e.to_string())?;
+                                eprintln!("DEBUG: Return statement executed successfully");
+                            } else {
+                                return Err("Expected pointer value for list return".to_string());
                             }
                         }
                         _ => {
@@ -3631,6 +3637,9 @@ impl<'a> CodeGenerator<'a> {
                     let body_bb = self
                         .context
                         .append_basic_block(*function, &format!("for_body_{}", label_id));
+                    let exit_bb = self
+                        .context
+                        .append_basic_block(*function, &format!("for_exit_{}", label_id));
 
                     self.builder
                         .build_unconditional_branch(header_bb)
@@ -3652,14 +3661,8 @@ impl<'a> CodeGenerator<'a> {
                         )
                         .map_err(|e| e.to_string())?;
 
-                    // Create a temporary exit block for the conditional branch
-                    // We'll move the actual exit block creation after body processing
-                    let temp_exit_bb = self
-                        .context
-                        .append_basic_block(*function, &format!("temp_for_exit_{}", label_id));
-
                     self.builder
-                        .build_conditional_branch(cmp, body_bb, temp_exit_bb)
+                        .build_conditional_branch(cmp, body_bb, exit_bb)
                         .map_err(|e| e.to_string())?;
 
                     // Body: get element at index
@@ -3689,9 +3692,12 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?;
 
                     // Execute body
+                    eprintln!("DEBUG: Executing for loop body statements");
                     for stmt in body {
+                        eprintln!("DEBUG: Executing statement in for loop body");
                         self.generate_statement(stmt, Some(function))?;
                     }
+                    eprintln!("DEBUG: Finished executing for loop body");
 
                     // Increment index
                     let one = self.context.i64_type().const_int(1, false);
@@ -3706,64 +3712,19 @@ impl<'a> CodeGenerator<'a> {
                         .build_unconditional_branch(header_bb)
                         .map_err(|e| e.to_string())?;
 
-                    // Create the real exit block now that body is processed
-                    let exit_bb = self
+                    // Create continuation block for code after the loop
+                    let continue_bb = self
                         .context
-                        .append_basic_block(*function, &format!("for_exit_{}", label_id));
+                        .append_basic_block(*function, &format!("for_continue_{}", label_id));
 
-                    // Move from temp block to real exit block
-                    self.builder.position_at_end(temp_exit_bb);
+                    // Position exit block to branch to continuation
+                    self.builder.position_at_end(exit_bb);
                     self.builder
-                        .build_unconditional_branch(exit_bb)
+                        .build_unconditional_branch(continue_bb)
                         .map_err(|e| e.to_string())?;
 
-                    // Position at real exit block
-                    self.builder.position_at_end(exit_bb);
-
-                    // Add a default return only for functions that return Optional/Result types
-                    // This prevents LLVM IR syntax errors from missing returns
-                    if let Some(current_func) = self.current_function_name.as_ref() {
-                        if let Some(func_symbol) = self.analyzer.symbol_table().lookup(current_func)
-                        {
-                            if let Some(Type::Named(name, _)) = &func_symbol.type_ {
-                                if name == "Optional" {
-                                    // Return None for Optional functions that reach here
-                                    let none_func =
-                                        self.module.get_function("mux_optional_none").unwrap();
-                                    let none_call = self
-                                        .builder
-                                        .build_call(none_func, &[], "none_default")
-                                        .map_err(|e| e.to_string())?;
-                                    let none_ptr = none_call.try_as_basic_value().left().unwrap();
-                                    self.builder
-                                        .build_return(Some(&none_ptr))
-                                        .map_err(|e| e.to_string())?;
-                                }
-                                // Don't add default return for void functions or other types
-                            } else if let Some(function) = self.functions.get(current_func) {
-                                // Check if function returns a pointer (indicating Optional/Result)
-                                let return_type = function.get_type().get_return_type();
-                                if let Some(return_type) = return_type {
-                                    if return_type.is_pointer_type() {
-                                        // Function returns pointer, likely Optional/Result
-                                        let none_func =
-                                            self.module.get_function("mux_optional_none");
-                                        if let Some(none_func) = none_func {
-                                            let none_call = self
-                                                .builder
-                                                .build_call(none_func, &[], "none_default")
-                                                .map_err(|e| e.to_string())?;
-                                            let none_ptr =
-                                                none_call.try_as_basic_value().left().unwrap();
-                                            self.builder
-                                                .build_return(Some(&none_ptr))
-                                                .map_err(|e| e.to_string())?;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // Position at continuation block for code after loop
+                    self.builder.position_at_end(continue_bb);
                 } else {
                     return Err("For loop iter must be range(...) or list identifier".to_string());
                 }
@@ -4619,29 +4580,7 @@ impl<'a> CodeGenerator<'a> {
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
         match method_name {
-            "to_string" => {
-                let func = self
-                    .module
-                    .get_function("mux_value_to_string")
-                    .ok_or("mux_value_to_string not found")?;
-                let call = self
-                    .builder
-                    .build_call(func, &[obj_value.into()], "val_to_str")
-                    .map_err(|e| e.to_string())?;
-                let func_new = self
-                    .module
-                    .get_function("mux_new_string_from_cstr")
-                    .ok_or("mux_new_string_from_cstr not found")?;
-                let call2 = self
-                    .builder
-                    .build_call(
-                        func_new,
-                        &[call.try_as_basic_value().left().unwrap().into()],
-                        "new_str",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call2.try_as_basic_value().left().unwrap())
-            }
+            
             "get" => {
                 if args.len() != 1 {
                     return Err("get() method takes exactly 1 argument".to_string());
@@ -4678,16 +4617,20 @@ impl<'a> CodeGenerator<'a> {
                 Ok(boxed_call.try_as_basic_value().left().unwrap())
             }
             "push_back" => {
+                eprintln!("DEBUG: Calling push_back on list");
                 if args.len() != 1 {
                     return Err("push_back() method takes exactly 1 argument".to_string());
                 }
                 let elem_val = self.generate_expression(&args[0])?;
+                eprintln!("DEBUG: Generated element value for push_back");
                 let elem_ptr = self.box_value(elem_val);
-                
+                eprintln!("DEBUG: Boxed element for push_back");
+
                 self.generate_runtime_call(
                     "mux_list_push_back_value",
                     &[obj_value.into(), elem_ptr.into()],
                 );
+                eprintln!("DEBUG: Called mux_list_push_back_value");
                 Ok(self.context.i32_type().const_int(0, false).into()) // Return dummy value
             }
             "pop_back" => {
@@ -4810,6 +4753,42 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .map_err(|e| e.to_string())?;
                 Ok(call.try_as_basic_value().left().unwrap())
+            }
+            "to_string" => {
+                if !args.is_empty() {
+                    return Err("to_string() method takes no arguments".to_string());
+                }
+                // Extract raw List pointer from Value
+                let raw_list = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_value_get_list").unwrap(),
+                        &[obj_value.into()],
+                        "extract_list",
+                    )
+                    .map_err(|e| e.to_string())?;
+                
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("mux_list_to_string").unwrap(),
+                        &[raw_list.try_as_basic_value().left().unwrap().into()],
+                        "list_to_str",
+                    )
+                    .map_err(|e| e.to_string())?;
+                let func_new = self
+                    .module
+                    .get_function("mux_new_string_from_cstr")
+                    .ok_or("mux_new_string_from_cstr not found")?;
+                let call2 = self
+                    .builder
+                    .build_call(
+                        func_new,
+                        &[call.try_as_basic_value().left().unwrap().into()],
+                        "new_str",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call2.try_as_basic_value().left().unwrap())
             }
             _ => Err(format!("Method {} not implemented for lists", method_name)),
         }

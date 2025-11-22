@@ -1291,10 +1291,13 @@ impl<'a> Parser<'a> {
     fn return_statement(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current].span;
 
-        let value = if !self.check_next_line() {
-            Some(self.parse_expression()?)
-        } else {
+        // Check if there's an expression after return
+        let value = if self.is_at_end() || self.check(TokenType::NewLine) || self.check(TokenType::CloseBrace) {
+            // return at end of input, or followed by newline/closing brace - void return
             None
+        } else {
+            // Try to parse an expression
+            Some(self.parse_expression()?)
         };
 
         let end_span = value.as_ref().map_or(start_span, |v| v.span);
@@ -1996,13 +1999,14 @@ impl<'a> Parser<'a> {
                 self.parse_postfix_operators(expr)
             }
 
-            _ => Err(ParserError::from_token(
+            _ => {
+                Err(ParserError::from_token(
                 format!("Expected expression, got {:?}", token_type),
                 &Token {
                     token_type,
                     span: token_span,
                 },
-            )),
+            ))},
         }
     }
 

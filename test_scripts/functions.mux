@@ -5,6 +5,7 @@ func add(int a, int b) returns int {
 
 func greet(string name, int times = 1) returns void {
     for int i in range(0, times) { println("Hello " + name) }
+    return
 }
 
 // Lambda examples

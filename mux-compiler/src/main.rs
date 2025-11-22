@@ -73,10 +73,6 @@ fn main() {
                         }
                         Ok(output) => {
                             eprintln!("clang failed: {}", String::from_utf8_lossy(&output.stderr));
-                            eprintln!(
-                                "Note: LLVM compilation tools may not be installed. IR file generated at: {}",
-                                ir_file
-                            );
                         }
                         Err(e) => {
                             eprintln!(

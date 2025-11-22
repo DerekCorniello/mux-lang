@@ -18,4 +18,5 @@ match res2 {
 
 func findEven(list<int> nums) returns Optional<int> {
     for int n in nums { if n % 2 == 0 { return Some(n) } }
+    return None
 }
