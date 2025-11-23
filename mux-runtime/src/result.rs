@@ -44,6 +44,7 @@ impl fmt::Display for MuxResult {
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_result_discriminant(res: *mut MuxResult) -> i32 {
     if res.is_null() {
@@ -57,6 +58,7 @@ pub extern "C" fn mux_result_discriminant(res: *mut MuxResult) -> i32 {
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_result_data(res: *mut MuxResult) -> *mut Value {
     if res.is_null() {

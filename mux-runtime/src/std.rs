@@ -85,13 +85,13 @@ pub extern "C" fn mux_value_add(a: *mut Value, b: *mut Value) -> *mut Value {
     let result = match (a, b) {
         (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
         (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
-        (Value::String(a), Value::String(b)) => Value::String(a.clone() + &b),
+        (Value::String(a), Value::String(b)) => Value::String(a.clone() + b),
         (Value::String(a), Value::Int(b)) => Value::String(a.clone() + &b.to_string()),
-        (Value::Int(a), Value::String(b)) => Value::String(a.to_string() + &b),
+        (Value::Int(a), Value::String(b)) => Value::String(a.to_string() + b),
         (Value::String(a), Value::Float(b)) => Value::String(a.clone() + &b.to_string()),
-        (Value::Float(a), Value::String(b)) => Value::String(a.to_string() + &b),
+        (Value::Float(a), Value::String(b)) => Value::String(a.to_string() + b),
         (Value::String(a), Value::Bool(b)) => Value::String(a.clone() + &b.to_string()),
-        (Value::Bool(a), Value::String(b)) => Value::String(a.to_string() + &b),
+        (Value::Bool(a), Value::String(b)) => Value::String(a.to_string() + b),
         _ => Value::Int(0), // error
     };
     Box::into_raw(Box::new(result))

@@ -50,13 +50,15 @@ pub enum Type {
     Named(String, Vec<Type>),
     Variable(String),
     Generic(String),  // Generic parameter like "T", "U"
+    // not sure why this is needed to be allowed,
+    // i am using it in codegen
+    #[allow(dead_code)]
     Instantiated(String, Vec<Type>),  // Concrete instantiation like "Pair<string, bool>"
 }
 
 #[derive(Debug, Clone)]
 pub struct GenericContext {
     pub type_params: HashMap<String, Type>,  // T -> string, U -> bool
-    pub class_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -349,30 +351,6 @@ impl SymbolTable {
         SymbolTable { scopes: vec![root], all_symbols: std::collections::HashMap::new() }
     }
 
-    pub fn print(&self) {
-        println!("Symbol Table:");
-        self.print_scope(&self.scopes[0], 0);
-    }
-
-    #[allow(clippy::only_used_in_recursion)]
-    fn print_scope(&self, scope: &Rc<RefCell<Scope>>, depth: usize) {
-        let indent = "  ".repeat(depth);
-        println!("{}Scope {}:", indent, depth);
-
-        let scope_borrow = scope.borrow();
-        for (name, symbol) in &scope_borrow.symbols {
-            let type_str = match &symbol.type_ {
-                Some(t) => format!("{:?}", t),
-                None => "unresolved".to_string(),
-            };
-            println!("{}  {}: {} ({:?})", indent, name, type_str, symbol.kind);
-        }
-
-        for child in &scope_borrow.children {
-            self.print_scope(child, depth + 1);
-        }
-    }
-
     pub fn push_scope(&mut self) -> Result<(), SemanticError> {
         let new_scope = Rc::new(RefCell::new(Scope::default()));
         self.scopes
@@ -441,10 +419,6 @@ impl SymbolTable {
             }
         }
         None
-    }
-
-    pub fn all_symbols(&self) -> Vec<&Symbol> {
-        self.all_symbols.values().collect()
     }
 }
 
@@ -875,7 +849,7 @@ impl SemanticAnalyzer {
                     // Validate ALL elements match the first element's type
                     for (index, element) in elements.iter().enumerate() {
                         let element_type = self.get_expression_type(element)?;
-                        if let Err(_) = self.check_type_compatibility(&first_type, &element_type, element.span) {
+                        if self.check_type_compatibility(&first_type, &element_type, element.span).is_err() {
                             return Err(SemanticError {
                                 message: format!(
                                     "Heterogeneous list: expected all elements to be of type {:?}, but element at index {} has type {:?}",
@@ -1057,7 +1031,6 @@ impl SemanticAnalyzer {
         &self,
         interface_sig: &MethodSig,
         class_sig: &MethodSig,
-        _class_type_params: &[(String, Vec<String>)],
         span: Span,
     ) -> Result<(), SemanticError> {
         let mut unifier = Unifier::new();
@@ -1613,7 +1586,7 @@ impl SemanticAnalyzer {
                             Err(e) => self.errors.push(e),
                         }
                     }
-                    let constructor_type = if field_types.is_empty() {
+                    if field_types.is_empty() {
                         None
                     } else {
                         Some(Type::Function {
@@ -1667,7 +1640,6 @@ impl SemanticAnalyzer {
                                 if let Err(e) = self.check_method_compatibility(
                                     interface_sig,
                                     class_sig,
-                                    &type_param_bounds,
                                     *node.span(),
                                 ) {
                                     self.errors.push(e);
@@ -1793,7 +1765,6 @@ impl SemanticAnalyzer {
             },
             AstNode::Class {
                 name,
-                traits,
                 fields,
                 methods,
                 type_params,
@@ -1803,7 +1774,7 @@ impl SemanticAnalyzer {
                     .iter()
                     .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
                     .collect();
-                self.analyze_class(name, traits, fields, methods, &type_param_bounds)
+                self.analyze_class(name, fields, methods, &type_param_bounds)
             },
             AstNode::Enum { .. } => Ok(()), // enums don't need further analysis.
             AstNode::Interface { .. } => Ok(()), // interfaces don't need further analysis.
@@ -1829,7 +1800,7 @@ impl SemanticAnalyzer {
         self.symbol_table.push_scope()?;
 
         // add generic type parameters to symbol table
-        for (param_name, _bounds) in &func.type_params {
+        for (param_name, _) in &func.type_params {
             self.symbol_table.add_symbol(
                 param_name,
                 Symbol {
@@ -1890,8 +1861,7 @@ impl SemanticAnalyzer {
 
     fn analyze_class(
         &mut self,
-        _name: &str,
-        _traits: &[crate::parser::TraitRef],
+        name_: &str,
         fields: &[Field],
         methods: &[FunctionNode],
         type_params: &[(String, Vec<String>)],
@@ -1945,7 +1915,7 @@ impl SemanticAnalyzer {
             let self_type = if method.is_common {
                 None
             } else {
-                Some(Type::Named(_name.to_string(), type_params.iter().map(|(p, _)| Type::Variable(p.clone())).collect()))
+                Some(Type::Named(name_.to_string(), type_params.iter().map(|(p, _)| Type::Variable(p.clone())).collect()))
             };
             // Set current_self_type for method body analysis
             let old_self_type = self.current_self_type.clone();
@@ -2562,7 +2532,7 @@ impl SemanticAnalyzer {
                 Ok(())
             }
             // Instantiate generic types (e.g., Stack<int>)
-            ExpressionKind::GenericType(name, _type_args) => {
+            ExpressionKind::GenericType(name, _) => {
                 // check if the generic type name exists.
                 if !self.symbol_table.exists(name) {
                     return Err(SemanticError {

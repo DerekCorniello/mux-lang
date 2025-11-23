@@ -1,6 +1,5 @@
 ---
 source: mux-compiler/tests/executable_integration.rs
-assertion_line: 123
 expression: full_output
 ---
 STDOUT:

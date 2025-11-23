@@ -5,7 +5,7 @@ use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue,
 };
-use inkwell::{AddressSpace, Either};
+use inkwell::AddressSpace;
 use crate::semantics::SymbolKind;
 use std::collections::HashMap;
 
@@ -19,7 +19,6 @@ pub struct CodeGenerator<'a> {
     builder: Builder<'a>,
     analyzer: &'a mut SemanticAnalyzer,
     type_map: HashMap<String, BasicTypeEnum<'a>>,
-    #[allow(dead_code)]
     vtable_map: HashMap<String, PointerValue<'a>>,
     vtable_type_map: HashMap<String, inkwell::types::StructType<'a>>,
     enum_variants: HashMap<String, Vec<String>>,
@@ -49,7 +48,6 @@ impl<'a> CodeGenerator<'a> {
         let void_type = context.void_type();
         let i64_type = context.i64_type();
         let f64_type = context.f64_type();
-        let bool_type = context.bool_type();
         let i8_ptr = context.ptr_type(AddressSpace::default());
         let list_ptr = i8_ptr; // placeholder for *mut List
         let map_ptr = i8_ptr; // placeholder for *mut Map
@@ -540,6 +538,7 @@ impl<'a> CodeGenerator<'a> {
         // Generate types for user-defined enums
         for (name, symbol) in analyzer.all_symbols() {
             if symbol.kind == crate::semantics::SymbolKind::Enum {
+                // TODO: is this a hack?
                 // Assume all data are f64, max 2 fields for simplicity
                 let i32_type = context.i32_type();
                 let f64_type = context.f64_type();
@@ -547,9 +546,8 @@ impl<'a> CodeGenerator<'a> {
                     .struct_type(&[i32_type.into(), f64_type.into(), f64_type.into()], false);
                 type_map.insert(name.clone(), struct_type.into());
 
-                // Collect variants
                 let mut variants = vec![];
-                for (method_name, _) in &symbol.methods {
+                for method_name in symbol.methods.keys() {
                     variants.push(method_name.clone());
                 }
                 enum_variants.insert(name.clone(), variants);
@@ -671,8 +669,7 @@ impl<'a> CodeGenerator<'a> {
         for (interface_name, interface_methods) in interfaces {
             println!("  Interface: {}", interface_name);
             let mut vtable_values = Vec::new();
-            for (method_name, _interface_sig) in interface_methods {
-                // Find the class method
+            for method_name in interface_methods.keys() {
                 let class_method_name = format!("{}.{}", class_name, method_name);
                 println!(
                     "    Method: {} -> looking for {}",
@@ -719,11 +716,9 @@ impl<'a> CodeGenerator<'a> {
 
         // Create vtable as struct of function pointers (all (void*) -> void* for now)
         let ptr_type = self.context.ptr_type(AddressSpace::default());
-        let void_type = self.context.void_type();
-        let fn_type = void_type.fn_type(&[ptr_type.into()], false);
         let fn_ptr_type = ptr_type; // since fn_type.ptr_type deprecated, use ptr_type
 
-        let mut vtable_types = vec![fn_ptr_type.into(); interface_methods.len()];
+        let vtable_types = vec![fn_ptr_type.into(); interface_methods.len()];
 
         // Vtable type: struct of function pointers
         let vtable_struct_type = self.context.struct_type(&vtable_types, false);
@@ -741,9 +736,10 @@ impl<'a> CodeGenerator<'a> {
 
     fn generate_enum_type(&mut self, name: &str, variants: &[EnumVariant]) -> Result<(), String> {
         // Tagged union: {i32 discriminant, f64 data0, f64 data1} for now
+        // TODO:
+        // unused?
+        // let f64_type = self.context.f64_type();
         let i32_type = self.context.i32_type();
-        let f64_type = self.context.f64_type();
-
         let mut variant_names = Vec::new();
         let mut variant_fields = HashMap::new();
         let mut max_fields = 0;
@@ -937,7 +933,7 @@ impl<'a> CodeGenerator<'a> {
             .builder
             .build_pointer_cast(
                 struct_ptr,
-                class_type_clone.ptr_type(AddressSpace::default()),
+                self.context.ptr_type(AddressSpace::default()),
                 "struct_ptr",
             )
             .map_err(|e| e.to_string())?;
@@ -1439,12 +1435,7 @@ impl<'a> CodeGenerator<'a> {
         // For class methods, add implicit 'self' parameter (unless static)
         let is_class_method = func.name.contains('.');
         if is_class_method && !func.is_common {
-            let class_name = func.name.split('.').next().unwrap();
-            let class_type = self
-                .type_map
-                .get(class_name)
-                .ok_or_else(|| format!("Class type {} not found", class_name))?;
-            param_types.insert(0, class_type.ptr_type(AddressSpace::default()).into());
+            param_types.insert(0, self.context.ptr_type(AddressSpace::default()).into());
         }
 
         let fn_type = if matches!(
@@ -1497,14 +1488,14 @@ impl<'a> CodeGenerator<'a> {
                 .build_store(alloca, arg)
                 .map_err(|e| e.to_string())?;
             let self_type = Type::Named(class_name.to_string(), vec![]);
-            self.variables.insert("self".to_string(), (alloca, class_type.clone(), self_type.clone()));
+            self.variables.insert("self".to_string(), (alloca, *class_type, self_type.clone()));
             // Also set current_self_type in the analyzer for type checking
             self.analyzer.current_self_type = Some(self_type);
         }
 
         for (i, param) in func.params.iter().enumerate() {
             let arg = function
-                .get_nth_param((i as u32) + (param_index as u32))
+                .get_nth_param((i as u32) + param_index)
                 .unwrap();
             
             // Resolve parameter type first
@@ -1652,7 +1643,7 @@ impl<'a> CodeGenerator<'a> {
                                          .builder
                                          .build_load(st, *ptr, &format!("load_{}", name))
                                          .map_err(|e| e.to_string())?;
-                                     Ok(struct_val.into())
+                                     Ok(struct_val)
                                  } else {
                                      Err(format!("Expected struct type for enum variable {}", name))
                                  }
@@ -1710,8 +1701,7 @@ impl<'a> CodeGenerator<'a> {
                               Ok(ptr_to_boxed.into())
                           }
                      }
-                } else {
-                    if self
+                } else if self
                         .analyzer
                         .symbol_table()
                         .lookup(name)
@@ -1725,10 +1715,11 @@ impl<'a> CodeGenerator<'a> {
                             if func_name.contains('.') {
                                 let class_name = func_name.split('.').next().unwrap();
                                 if let Some((self_ptr, _, _)) = self.variables.get("self") {
-                                    if let Some(field_index) = self
+                                    if self
                                         .field_map
                                         .get(class_name)
                                         .and_then(|fields| fields.get(name))
+                                        .is_some()
                                     {
                                         // Extract the actual enum value from the object field
                                         // self_ptr is an alloca containing the object data pointer, so load it first
@@ -1752,7 +1743,7 @@ impl<'a> CodeGenerator<'a> {
                                             .builder
                                             .build_pointer_cast(
                                                 object_data_ptr,
-                                                class_type.ptr_type(AddressSpace::default()),
+                                                self.context.ptr_type(AddressSpace::default()),
                                                 "struct_ptr_typed",
                                             )
                                             .map_err(|e| e.to_string())?;
@@ -1789,7 +1780,7 @@ impl<'a> CodeGenerator<'a> {
                                             .builder
                                             .build_load(field_type, field_ptr, "field_enum")
                                             .map_err(|e| e.to_string())?;
-                                        return Ok(enum_val.into());
+                                        return Ok(enum_val);
                                     }
                                 }
                             }
@@ -1798,7 +1789,7 @@ impl<'a> CodeGenerator<'a> {
                         if let Some(ref func_name) = self.current_function_name {
                             if func_name.contains('.') {
                                 let class_name = func_name.split('.').next().unwrap();
-                                if let Some(class_fields) = self.classes.get(class_name) {
+                                if self.classes.contains_key(class_name) {
                                     if let Some(field_index) = self.field_map.get(class_name).and_then(|fields| fields.get(name)) {
                                         // This is a field access on self
                                         if let Some((self_ptr, _, _)) = self.variables.get("self") {
@@ -1858,7 +1849,7 @@ impl<'a> CodeGenerator<'a> {
                             Err(format!("Undefined variable: {}", name))
                         }
                     }
-                }
+                
             }
             ExpressionKind::Binary { left, op, right } => {
                 if op.is_assignment() {
@@ -2003,22 +1994,20 @@ impl<'a> CodeGenerator<'a> {
                                   // For non-self class objects, get the data pointer
                                   if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                                       if obj_name != "self" {
-                                          if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
-                                              if let Type::Named(_, _) = type_node {
-                                                  let get_ptr_func = self
-                                                      .module
-                                                      .get_function("mux_get_object_ptr")
-                                                      .ok_or("mux_get_object_ptr not found")?;
-                                                  struct_ptr = self
-                                                      .builder
-                                                      .build_call(get_ptr_func, &[struct_ptr.into()], "data_ptr_assign")
-                                                      .map_err(|e| e.to_string())?
-                                                      .try_as_basic_value()
-                                                      .left()
-                                                      .unwrap()
-                                                      .into_pointer_value();
-                                              }
-                                          }
+                                       if let Some(Type::Named(_, _)) = self.variables.get(obj_name).map(|(_, _, t)| t) {
+                                           let get_ptr_func = self
+                                               .module
+                                               .get_function("mux_get_object_ptr")
+                                               .ok_or("mux_get_object_ptr not found")?;
+                                           struct_ptr = self
+                                               .builder
+                                               .build_call(get_ptr_func, &[struct_ptr.into()], "data_ptr_assign")
+                                               .map_err(|e| e.to_string())?
+                                               .try_as_basic_value()
+                                               .left()
+                                               .unwrap()
+                                               .into_pointer_value();
+                                       }
                                       }
                                   }
                                  
@@ -2253,11 +2242,11 @@ impl<'a> CodeGenerator<'a> {
                                             kind: ExpressionKind::FieldAccess {
                                                 expr: Box::new(ExpressionNode {
                                                     kind: ExpressionKind::Identifier("self".to_string()),
-                                                    span: expr.span.clone(),
+                                                    span: expr.span,
                                                 }),
                                                 field: field_name.clone(),
                                             },
-                                            span: func.span.clone(),
+                                            span: func.span,
                                         };
                                         // Generate method call on the transformed expression
                                         let obj_value = self.generate_expression(&self_field_expr)?;
@@ -2361,7 +2350,6 @@ impl<'a> CodeGenerator<'a> {
                                            // Set up generic context for static method call
                                            let context = GenericContext {
                                                type_params: self.build_type_param_map(class_name, &resolved_type_args)?,
-                                               class_name: class_name.to_string(),
                                            };
                                            self.generic_context = Some(context);
 
@@ -2405,7 +2393,8 @@ impl<'a> CodeGenerator<'a> {
                     let obj_type = self.analyzer.get_expression_type(expr)
                         .map_err(|e| format!("Type inference failed: {}", e))?;
 
-                    return self.generate_method_call(obj_value, &obj_type, field, args);
+                    self.generate_method_call(obj_value, &obj_type, field, args)
+
                 } else if let ExpressionKind::Identifier(name) = &func.kind {
                     // Handle regular function calls (non-methods)
                     match name.as_str() {
@@ -2523,7 +2512,7 @@ impl<'a> CodeGenerator<'a> {
                             Ok(result_ptr)
                         }
                         "None" => {
-                            if args.len() != 0 {
+                            if args.is_empty() {
                                 return Err("None takes 0 arguments".to_string());
                             }
                             let func = self
@@ -2582,32 +2571,6 @@ impl<'a> CodeGenerator<'a> {
                                         None => Ok(self.context.i32_type().const_int(0, false).into()),
                                     };
                                     
-                                    // Get function type from the resolved type
-                                    let func_type = if let Type::Function { params, returns } = var_type {
-                                        // Convert parameter types to LLVM types
-                                        let mut param_types = Vec::new();
-                                        for param in params {
-                                            let type_node = self.type_to_type_node(param);
-                                            param_types.push(self.llvm_type_from_mux_type(&type_node)?.into());
-                                        }
-                                        // Convert return type to LLVM type
-                                        let return_type_node = self.type_to_type_node(returns);
-                                        let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
-                                        return_type.fn_type(&param_types, false)
-                                    } else {
-                                        return Err("Expected function type".to_string());
-                                    };
-                                    
-                                    // Make indirect call through function pointer
-                                    let call = self.builder
-                                        .build_indirect_call(func_type, func_ptr, &call_args, "indirect_func_call")
-                                        .map_err(|e| e.to_string())?;
-                                    
-                                    // Handle return value
-                                    match call.try_as_basic_value().left() {
-                                        Some(val) => Ok(val),
-                                        None => Ok(self.context.i32_type().const_int(0, false).into()),
-                                    }
                                 } else {
                                     // Not a function pointer, try global function lookup
                                     if let Some(func) = self.module.get_function(name) {
@@ -2683,7 +2646,7 @@ impl<'a> CodeGenerator<'a> {
                         }
                     }
                 } else {
-                    Err(format!("Unsupported function call type"))
+                    Err("Unsupported function call type".to_string())
                 }
             }
             ExpressionKind::ListAccess { expr, index } => {
@@ -2773,7 +2736,7 @@ impl<'a> CodeGenerator<'a> {
                 let int_val = self.builder.build_call(get_int_func, &[result_ptr.into()], "extracted_int")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value().left().unwrap();
-                Ok(int_val.into())
+                Ok(int_val)
             }
             ExpressionKind::ListLiteral(elements) => {
                 let list_ptr = self
@@ -2878,21 +2841,19 @@ impl<'a> CodeGenerator<'a> {
                 // For non-self class objects, get the data pointer
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name != "self" {
-                        if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
-                            if let Type::Named(_, _) = type_node {
-                                let get_ptr_func = self
-                                    .module
-                                    .get_function("mux_get_object_ptr")
-                                    .ok_or("mux_get_object_ptr not found")?;
-                                struct_ptr = self
-                                    .builder
-                                    .build_call(get_ptr_func, &[struct_ptr.into()], "data_ptr")
-                                    .map_err(|e| e.to_string())?
-                                    .try_as_basic_value()
-                                    .left()
-                                    .unwrap()
-                                    .into_pointer_value();
-                            }
+                        if let Some(Type::Named(_, _)) = self.variables.get(obj_name).map(|(_, _, t)| t) {
+                            let get_ptr_func = self
+                                .module
+                                .get_function("mux_get_object_ptr")
+                                .ok_or("mux_get_object_ptr not found")?;
+                            struct_ptr = self
+                                .builder
+                                .build_call(get_ptr_func, &[struct_ptr.into()], "data_ptr")
+                                .map_err(|e| e.to_string())?
+                                .try_as_basic_value()
+                                .left()
+                                .unwrap()
+                                .into_pointer_value();
                         }
                     }
                 }
@@ -3159,16 +3120,16 @@ impl<'a> CodeGenerator<'a> {
                                                 let raw_bool = self.get_raw_bool_value(boxed_ptr)?;
                                                 Ok(raw_bool.into())
                                             }
-                                            _ => Ok(boxed_ptr.into()),
+                                            _ => Ok(boxed_ptr),
                                         }
                                     }
-                                    _ => Ok(boxed_ptr.into()),
+                                    _ => Ok(boxed_ptr),
                                 }
                             } else {
-                                Ok(boxed_ptr.into())
+                                Ok(boxed_ptr)
                             }
                         } else {
-                            Ok(boxed_ptr.into())
+                            Ok(boxed_ptr)
                         }
                     }
                     _ => Err("Unary op not implemented".to_string()),
@@ -3270,7 +3231,7 @@ impl<'a> CodeGenerator<'a> {
                     );
                 }
             }
-            StatementKind::ConstDecl(name, _type_node, expr) => {
+            StatementKind::ConstDecl(name, _, expr) => {
                 let value = self.generate_expression(expr)?;
                 let boxed = self.box_value(value);
                 let ptr_type = self.context.ptr_type(AddressSpace::default());
@@ -3299,15 +3260,13 @@ impl<'a> CodeGenerator<'a> {
             StatementKind::Return(Some(expr)) => {
                 // Special handling for boolean literals in boolean functions
                 if let ExpressionKind::Literal(LiteralNode::Boolean(b)) = &expr.kind {
-                    if let Some(return_type) = &self.current_function_return_type {
-                        if let ResolvedType::Primitive(PrimitiveType::Bool) = return_type {
-                            // Return boolean literal directly as i1
-                            let bool_val = self.context.bool_type().const_int(if *b { 1 } else { 0 }, false);
-                            self.builder
-                                .build_return(Some(&bool_val))
-                                .map_err(|e| e.to_string())?;
-                            return Ok(());
-                        }
+                    if let Some(ResolvedType::Primitive(PrimitiveType::Bool)) = &self.current_function_return_type {
+                        // Return boolean literal directly as i1
+                        let bool_val = self.context.bool_type().const_int(if *b { 1 } else { 0 }, false);
+                        self.builder
+                            .build_return(Some(&bool_val))
+                            .map_err(|e| e.to_string())?;
+                        return Ok(());
                     }
                 }
 
@@ -3621,7 +3580,7 @@ impl<'a> CodeGenerator<'a> {
                     } else {
                         return Err("For loop iter must be range call".to_string());
                     }
-                } else if let ExpressionKind::Identifier(_list_name) = &iter.kind {
+                } else if let ExpressionKind::Identifier(_) = &iter.kind {
                     // Iterate over list
                     let resolved_var_type = self
                         .analyzer
@@ -3808,7 +3767,7 @@ impl<'a> CodeGenerator<'a> {
                     // Create synthetic identifier expression for the temporary
                     let temp_expr = ExpressionNode {
                         kind: ExpressionKind::Identifier(temp_name),
-                        span: expr.span.clone(),
+                        span: expr.span,
                     };
 
                     (temp_val, temp_expr)
@@ -4009,7 +3968,6 @@ impl<'a> CodeGenerator<'a> {
                     } else {
                         // This is a struct value (from constructor call), allocate it and get pointer
                         let struct_val = expr_val.into_struct_value();
-                        let ptr_type = struct_val.get_type().ptr_type(AddressSpace::default());
                         let alloca = self
                             .builder
                             .build_alloca(struct_val.get_type(), "temp_enum")
@@ -4087,9 +4045,9 @@ impl<'a> CodeGenerator<'a> {
                     self.builder.position_at_end(arm_bb);
 
                     // Bind variables
-                    if let &PatternNode::EnumVariant {
-                        name: ref name,
-                        ref args,
+                    if let PatternNode::EnumVariant {
+                        name,
+                        args,
                     } = &arm.pattern
                     {
                         if let Some(expr_ptr) = expr_ptr_opt {
@@ -4312,16 +4270,16 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         match obj_type {
             Type::Primitive(prim) => {
-                self.generate_primitive_method_call(obj_value, prim, method_name, args)
+                self.generate_primitive_method_call(obj_value, prim, method_name)
             }
-            Type::List(elem_type) => {
-                self.generate_list_method_call(obj_value, elem_type, method_name, args)
+            Type::List(_) => {
+                self.generate_list_method_call(obj_value, method_name, args)
             }
-            Type::Map(key_type, value_type) => {
-                self.generate_map_method_call(obj_value, key_type, value_type, method_name, args)
+            Type::Map(_, _) => {
+                self.generate_map_method_call(obj_value, method_name, args)
             }
-            Type::Set(elem_type) => {
-                self.generate_set_method_call(obj_value, elem_type, method_name, args)
+            Type::Set(_) => {
+                self.generate_set_method_call(obj_value, method_name, args)
             }
             Type::Named(name, _) => {
                 if let Some(class) = self.analyzer.symbol_table().lookup(name) {
@@ -4363,8 +4321,8 @@ impl<'a> CodeGenerator<'a> {
                     Err(format!("Class {} not found", name))
                 }
             }
-            Type::Optional(inner_type) => {
-                self.generate_optional_method_call(obj_value, inner_type, method_name, args)
+            Type::Optional(_) => {
+                self.generate_optional_method_call(obj_value, method_name, args)
             }
             _ => Err(format!(
                 "Method {} not implemented for type {:?}",
@@ -4378,7 +4336,6 @@ impl<'a> CodeGenerator<'a> {
         obj_value: BasicValueEnum<'a>,
         prim: &PrimitiveType,
         method_name: &str,
-        args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
         match prim {
             PrimitiveType::Int => match method_name {
@@ -4590,7 +4547,6 @@ impl<'a> CodeGenerator<'a> {
                         .get_function("mux_new_string_from_cstr")
                         .ok_or("mux_new_string_from_cstr not found")?;
                     // Handle pointer return value
-                    let call_result = call.try_as_basic_value().left().unwrap();
                     let call2 = self
                         .builder
                         .build_call(
@@ -4617,7 +4573,6 @@ impl<'a> CodeGenerator<'a> {
     fn generate_list_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
-        elem_type: &Type,
         method_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
@@ -4839,8 +4794,6 @@ impl<'a> CodeGenerator<'a> {
     fn generate_map_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
-        _key_type: &Type,
-        _value_type: &Type,
         method_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
@@ -5061,7 +5014,6 @@ impl<'a> CodeGenerator<'a> {
     fn generate_set_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
-        _elem_type: &Type,
         method_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
@@ -5157,7 +5109,6 @@ impl<'a> CodeGenerator<'a> {
     fn generate_optional_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
-        _inner_type: &Type,
         method_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
@@ -5214,7 +5165,7 @@ impl<'a> CodeGenerator<'a> {
                     .generate_runtime_call("mux_bool_value", &[val.into()])
                     .unwrap();
                 println!("DEBUG: Boxed boolean value: {:?}", bool_val);
-                Ok(bool_val.into())
+                Ok(bool_val)
             }
             LiteralNode::String(s) => {
                 let name = format!("str_{}", self.string_counter);
@@ -5247,7 +5198,7 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .generate_runtime_call("mux_new_string_from_cstr", &[ptr.into()])
                     .unwrap();
-                Ok(call.into())
+                Ok(call)
             }
             _ => Err("Literal type not implemented".to_string()),
         }
@@ -5259,35 +5210,6 @@ impl<'a> CodeGenerator<'a> {
         op: &BinaryOp,
         right: BasicValueEnum<'a>,
     ) -> Result<BasicValueEnum<'a>, String> {
-        // Type coercion for arithmetic
-        let (left_val, right_val) = if left.is_float_value() && right.is_int_value() {
-            (
-                left,
-                self.builder
-                    .build_signed_int_to_float(
-                        right.into_int_value(),
-                        self.context.f64_type(),
-                        "int_to_float",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .into(),
-            )
-        } else if left.is_int_value() && right.is_float_value() {
-            (
-                self.builder
-                    .build_signed_int_to_float(
-                        left.into_int_value(),
-                        self.context.f64_type(),
-                        "int_to_float",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .into(),
-                right,
-            )
-        } else {
-            (left, right)
-        };
-
         match op {
             BinaryOp::Add => {
                 // Check for string concatenation first
@@ -5668,11 +5590,13 @@ impl<'a> CodeGenerator<'a> {
             ResolvedType::Primitive(PrimitiveType::Auto) => {
                 Err("Auto type should be resolved".to_string())
             }
-            ResolvedType::Named(name, _generics) => {
+            ResolvedType::Named(name, _) => {
                 if name == "T" {
+                    // TODO: this is a hack
                     // Hack for generic T, assume int
+                    // this may have been fixed tho, idk
                     Ok(self.context.i64_type().into())
-                } else if let Some(class_type) = self.classes.get(name) {
+                } else if self.classes.contains_key(name) {
                     Ok(self.context.ptr_type(AddressSpace::default()).into())
                 } else {
                     Err(format!("Unknown type: {}", name))
@@ -5681,22 +5605,22 @@ impl<'a> CodeGenerator<'a> {
             ResolvedType::Function { params: _, returns: _ } => {
                 Ok(self.context.ptr_type(AddressSpace::default()).into())
             }
-            ResolvedType::List(_elem_type) => {
+            ResolvedType::List(_) => {
                 Ok(self.context.ptr_type(AddressSpace::default()).into())
             }
             ResolvedType::Map(_, _) => {
                 Ok(self.context.ptr_type(AddressSpace::default()).into())
             }
-            ResolvedType::Set(_elem_type) => {
+            ResolvedType::Set(_) => {
                 Ok(self.context.ptr_type(AddressSpace::default()).into())
             }
-            ResolvedType::Optional(_inner_type) => {
+            ResolvedType::Optional(_) => {
                 Ok(self.context.ptr_type(AddressSpace::default()).into())
             }
-            ResolvedType::Reference(_inner_type) => {
+            ResolvedType::Reference(_) => {
                 Ok(self.context.ptr_type(AddressSpace::default()).into())
             }
-            ResolvedType::Tuple(_types) => {
+            ResolvedType::Tuple(_) => {
                 Ok(self.context.ptr_type(AddressSpace::default()).into())
             }
             ResolvedType::EmptyList => {
@@ -5738,9 +5662,11 @@ impl<'a> CodeGenerator<'a> {
             TypeKind::Primitive(PrimitiveType::Auto) => {
                 Err("Auto primitive should be resolved".to_string())
             }
-            TypeKind::Named(name, _generics) => {
+            TypeKind::Named(name, _) => {
                 if name == "T" {
                     // Hack for generic T, assume int
+                    // again,
+                    // TODO: is this fixed or not?
                     Ok(self.context.i64_type().into())
                 } else if self.enum_variants.contains_key(name) {
                     if name == "Optional" || name == "Result" {
@@ -5756,7 +5682,7 @@ impl<'a> CodeGenerator<'a> {
                     Ok(self.context.ptr_type(AddressSpace::default()).into())
                 }
             }
-            TypeKind::Reference(_inner) => {
+            TypeKind::Reference(_) => {
                 Ok(self.context.ptr_type(AddressSpace::default()).into())
             }
             TypeKind::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
@@ -6070,43 +5996,6 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
-    fn is_string_value(&mut self, val: BasicValueEnum<'a>) -> Result<bool, String> {
-        if val.is_pointer_value() {
-            let ptr = val.into_pointer_value();
-            let get_type_fn = self.module.get_function("mux_value_get_type_tag")
-                .ok_or("mux_value_get_type_tag not found")?;
-            let type_tag = self.builder.build_call(get_type_fn, &[ptr.into()], "get_type")
-                .map_err(|e| e.to_string())?
-                .try_as_basic_value()
-                .left()
-                .ok_or("Call returned no value")?
-                .into_int_value();
-            
-            // Check if type tag is 3 (String)
-            let is_string = self.builder.build_int_compare(
-                inkwell::IntPredicate::EQ,
-                type_tag,
-                self.context.i32_type().const_int(3, false), // String type tag = 3
-                "is_string"
-            ).map_err(|e| e.to_string())?;
-            
-            Ok(is_string.get_zero_extended_constant() != Some(0))
-        } else {
-            Ok(false)
-        }
-    }
-
-    fn cleanup_value(&mut self, val: BasicValueEnum<'a>) -> Result<(), String> {
-        if val.is_pointer_value() {
-            let ptr = val.into_pointer_value();
-            let free_fn = self.module.get_function("mux_free_value")
-                .ok_or("mux_free_value not found")?;
-            self.builder.build_call(free_fn, &[ptr.into()], "free_value")
-                .map_err(|e| e.to_string())?;
-        }
-        Ok(())
-    }
-
     fn extract_c_string_from_value(&mut self, value_ptr: PointerValue<'a>) -> Result<PointerValue<'a>, String> {
         // Call mux_value_get_string to extract C string from Value
         let get_string_fn = self.module.get_function("mux_value_get_string")
@@ -6265,7 +6154,6 @@ impl<'a> CodeGenerator<'a> {
         // Create generic context for this instantiation
         let context = GenericContext {
             type_params: self.build_type_param_map(class_name, type_args)?,
-            class_name: class_name.to_string(),
         };
 
         // Push context for recursive constructor calls
@@ -6323,9 +6211,8 @@ impl<'a> CodeGenerator<'a> {
         println!("DEBUG: Constructor has {} arguments", args.len());
 
         // Get the class type from our type map
-        let class_type = self.type_map.get(class_name)
-            .ok_or(format!("Class '{}' not found in type map", class_name))?
-            .clone();
+        let class_type = *self.type_map.get(class_name)
+            .ok_or(format!("Class '{}' not found in type map", class_name))? ;
         
         // Register the object type if not already registered
         let type_name = format!("type_name_{}", class_name);
@@ -6857,6 +6744,8 @@ impl<'a> CodeGenerator<'a> {
 
 
 
+    // idk if it is ok to have this or what but idk why i shouldn't use this?
+    #[allow(clippy::only_used_in_recursion)]
     fn type_to_string(&self, type_: &Type) -> String {
         match type_ {
             Type::Primitive(PrimitiveType::Int) => "int".to_string(),
@@ -6866,10 +6755,6 @@ impl<'a> CodeGenerator<'a> {
             Type::List(inner) => format!("list_{}", self.type_to_string(inner)),
             _ => "unknown".to_string(),
         }
-    }
-
-    pub fn print_ir(&self) {
-        self.module.print_to_stderr();
     }
 
     pub fn emit_ir_to_file(&self, filename: &str) -> Result<(), String> {

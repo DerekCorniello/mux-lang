@@ -1126,7 +1126,7 @@ world"
             tokens.into_iter().map(|t| t.token_type).collect::<Vec<_>>(),
             vec![
                 TokenType::Id("Some".to_string()),
-                TokenType::Id("None".to_string()),
+                TokenType::None,
                 TokenType::Id("Ok".to_string()),
                 TokenType::Id("Err".to_string()),
             ]
@@ -1206,7 +1206,7 @@ world"
                 TokenType::Id(opt),
                 TokenType::Id(res),
                 TokenType::Id(some),
-                TokenType::Id(none),
+                TokenType::None,
                 TokenType::Id(ok),
                 TokenType::Id(err),
                 TokenType::Bool(true),
@@ -1222,7 +1222,7 @@ world"
                 assert_eq!(opt, "Optional");
                 assert_eq!(res, "Result");
                 assert_eq!(some, "Some");
-                assert_eq!(none, "None");
+                // none is TokenType::None, not Id
                 assert_eq!(ok, "Ok");
                 assert_eq!(err, "Err");
             }

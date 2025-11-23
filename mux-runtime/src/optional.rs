@@ -28,6 +28,7 @@ impl fmt::Display for Optional {
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_discriminant(opt: *mut Optional) -> i32 {
     if opt.is_null() {
@@ -41,6 +42,7 @@ pub extern "C" fn mux_optional_discriminant(opt: *mut Optional) -> i32 {
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_data(opt: *mut Optional) -> *mut Value {
     if opt.is_null() {
@@ -64,6 +66,7 @@ pub extern "C" fn mux_optional_none() -> *mut Optional {
     Box::into_raw(Box::new(Optional::none()))
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_to_string(opt: *const Optional) -> *mut std::ffi::c_char {
     use std::ffi::CString;
@@ -76,6 +79,7 @@ pub extern "C" fn mux_optional_to_string(opt: *const Optional) -> *mut std::ffi:
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Value {
     if opt.is_null() {

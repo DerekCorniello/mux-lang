@@ -1,7 +1,7 @@
 use crate::Value;
 use std::collections::BTreeSet;
 use std::fmt;
-use std::ffi::{CString, CStr};
+use std::ffi::CString;
 
 #[derive(Clone, Debug)]
 pub struct Set(pub BTreeSet<Value>);

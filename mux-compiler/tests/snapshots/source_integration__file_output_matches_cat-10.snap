@@ -2,4 +2,4 @@
 source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Functions and lambdas\nfunc add(int a, int b) returns int {\n    return a + b\n}\n\nfunc greet(string name, int times = 1) returns void {\n    for int i in range(0, times) { println(\"Hello \" + name) }\n}\n\n// Lambda examples\nauto square = func (int n) returns int { return n * n }\nauto doubled = func (float x) returns float { return x * 2.0 }\n\nprintln(\"add(3,4): \" + add(3,4).to_string())\ngreet(\"World\", 2)\nprintln(\"square(5): \" + square(5).to_string())\nprintln(\"doubled(3.5): \" + doubled(3.5).to_string())\n"
+"// Functions and lambdas\nfunc add(int a, int b) returns int {\n    return a + b\n}\n\nfunc greet(string name, int times = 1) returns void {\n    for int i in range(0, times) { println(\"Hello \" + name) }\n    return\n}\n\n// Lambda examples\nauto square = func (int n) returns int { return n * n }\nauto doubled = func (float x) returns float { return x * 2.0 }\n\nprintln(\"add(3,4): \" + add(3,4).to_string())\ngreet(\"World\", 2)\nprintln(\"square(5): \" + square(5).to_string())\nprintln(\"doubled(3.5): \" + doubled(3.5).to_string())\n"

@@ -201,7 +201,7 @@ impl<'a> Parser<'a> {
         } else if let TokenType::Id(_) = &self.peek().token_type {
             let start = self.current;
             // Try to parse a type
-            if let Ok(_) = self.parse_type() {
+            if self.parse_type().is_ok() {
                 if let TokenType::Id(_) = &self.peek().token_type {
                     let next = self.current + 1;
                     if next < self.tokens.len() && self.tokens[next].token_type == TokenType::Eq {
@@ -810,6 +810,7 @@ impl<'a> Parser<'a> {
                 let param_type = self.parse_type()?;
                 let param_name = self.consume_identifier("Expected parameter name")?;
                 // optional default value, parsed but currently ignored in ast.
+                // TODO: this is not implemented and needs to be
                 if self.matches(&[TokenType::Eq]) {
                     let _default_expr = self.parse_expression()?;
                 }
@@ -1604,17 +1605,6 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
-    fn check_next_line(&self) -> bool {
-        if self.is_at_end() || self.current == 0 {
-            return false;
-        }
-
-        let current_token = &self.tokens[self.current - 1];
-        let next_token = &self.tokens[self.current];
-
-        next_token.span.row_start > current_token.span.row_start
-    }
-
     fn synchronize(&mut self) {
         while !self.is_at_end() {
             match self.peek().token_type {
@@ -1935,7 +1925,7 @@ impl<'a> Parser<'a> {
 
                 self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
 
-                let _return_type = if self.matches(&[TokenType::Returns]) {
+                if self.matches(&[TokenType::Returns]) {
                     self.parse_type()?
                 } else {
                     return Err(ParserError::new(
@@ -3093,7 +3083,7 @@ mod tests {
                     nodes
                 );
             }
-            Err((_nodes, errors)) => {
+            Err((_, errors)) => {
                 assert!(!errors.is_empty(), "Expected errors but got none");
                 let has_newline_error = errors.iter().any(|e| {
                     e.message.contains("expected newline after statement")

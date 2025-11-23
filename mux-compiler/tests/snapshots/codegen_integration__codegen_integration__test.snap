@@ -1,6 +1,5 @@
 ---
 source: mux-compiler/tests/codegen_integration.rs
-assertion_line: 91
 expression: ll_content
 ---
 ; ModuleID = 'mux_module'

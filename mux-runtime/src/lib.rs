@@ -1,12 +1,11 @@
 use ::std::collections::{BTreeMap, BTreeSet};
-use ::std::ffi::{c_void, CStr, c_char};
+use ::std::ffi::c_void;
 use ::std::fmt;
 use ::std::hash;
 use ::std::mem;
 use ::std::cmp;
 use ::std::sync::Arc;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
-use libc::{malloc, free};
 
 pub type TypeId = u32;
 

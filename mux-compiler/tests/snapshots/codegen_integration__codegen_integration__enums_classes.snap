@@ -452,7 +452,7 @@ entry:
 for_header_1:                                     ; preds = %for_body_1, %entry
   %index_load = load i64, ptr %index, align 4
   %cmp = icmp slt i64 %index_load, %list_len
-  br i1 %cmp, label %for_body_1, label %temp_for_exit_1
+  br i1 %cmp, label %for_body_1, label %for_exit_1
 
 for_body_1:                                       ; preds = %for_header_1
   %index_load2 = load i64, ptr %index, align 4
@@ -464,10 +464,10 @@ for_body_1:                                       ; preds = %for_header_1
   store i64 %inc, ptr %index, align 4
   br label %for_header_1
 
-temp_for_exit_1:                                  ; preds = %for_header_1
-  br label %for_exit_1
+for_exit_1:                                       ; preds = %for_header_1
+  br label %for_continue_1
 
-for_exit_1:                                       ; preds = %temp_for_exit_1
+for_continue_1:                                   ; preds = %for_exit_1
   %Pair.from_call = call ptr @Pair.from(i64 1, i64 9)
   %homogenous_pair = alloca ptr, align 8
   store ptr %Pair.from_call, ptr %homogenous_pair, align 8

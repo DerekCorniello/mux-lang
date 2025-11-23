@@ -73,9 +73,6 @@ pub unsafe extern "C" fn mux_int_from_value(v: *mut crate::Value) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-
-
-#[unsafe(no_mangle)]
 pub extern "C" fn mux_int_add(a: i64, b: i64) -> i64 {
     Int(a).add(&Int(b)).0
 }

@@ -1,6 +1,0 @@
----
-source: mux-compiler/tests/source_integration.rs
-assertion_line: 28
-expression: "format!(\"{:#?}\", expected)"
----
-"// References\nint val = 10\nauto r = &val\n\nprintln(\"ref value: \" + (*r).to_string())\n\n*r = 20\nprintln(\"val after ref update: \" + (*r).to_string())\n\n// References to list elements\nprintln(\"abt to make list\")\nauto numbers = [1, 2, 3, 4, 5]\nprintln(\"list made\")\n\nauto first = &numbers[0]\nprintln(\"first element: \" + (*first).to_string())\n\n// Function taking a reference\nfunc update(&int ref) returns void {\n    *ref = *ref + 1\n}\n\nupdate(&val)\nprintln(\"val after update: \" + val.to_string())\n"

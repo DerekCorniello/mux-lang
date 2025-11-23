@@ -2,8 +2,6 @@ use crate::{TypeId, Value, ObjectRef};
 use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::Mutex;
-use std::sync::atomic::Ordering;
-use std::alloc;
 
 lazy_static::lazy_static! {
     static ref TYPE_REGISTRY: Mutex<HashMap<TypeId, ObjectType>> = Mutex::new(HashMap::new());
@@ -65,7 +63,10 @@ pub fn alloc_object(type_id: TypeId) -> *mut Value {
     Box::into_raw(Box::new(value))
 }
 
-pub fn free_object(obj: *mut Value) {
+/// # Safety
+/// The `obj` pointer must be valid and obtained from `alloc_object` or similar.
+/// After calling this function, the pointer becomes invalid.
+pub unsafe fn free_object(obj: *mut Value) {
     if obj.is_null() {
         return;
     }
@@ -93,7 +94,9 @@ pub fn free_object(obj: *mut Value) {
     // value is dropped here
 }
 
-pub fn get_object_ptr(obj: *const Value) -> *mut c_void {
+/// # Safety
+/// The `obj` pointer must be valid and point to a `Value::Object`.
+pub unsafe fn get_object_ptr(obj: *const Value) -> *mut c_void {
     if obj.is_null() {
         return std::ptr::null_mut();
     }
@@ -106,7 +109,9 @@ pub fn get_object_ptr(obj: *const Value) -> *mut c_void {
     }
 }
 
-pub fn get_object_type_id(obj: *const Value) -> TypeId {
+/// # Safety
+/// The `obj` pointer must be valid and point to a `Value::Object`.
+pub unsafe fn get_object_type_id(obj: *const Value) -> TypeId {
     if obj.is_null() {
         return 0;
     }
@@ -136,17 +141,17 @@ pub extern "C" fn mux_alloc_object(type_id: TypeId) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_free_object(obj: *mut Value) {
-    free_object(obj)
+    unsafe { free_object(obj) }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_get_object_ptr(obj: *const Value) -> *mut c_void {
-    get_object_ptr(obj)
+    unsafe { get_object_ptr(obj) }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_get_object_type_id(obj: *const Value) -> TypeId {
-    get_object_type_id(obj)
+    unsafe { get_object_type_id(obj) }
 }

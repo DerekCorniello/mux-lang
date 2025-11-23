@@ -241,7 +241,7 @@ entry:
 for_header_1:                                     ; preds = %if_merge_2, %entry
   %index_load = load i64, ptr %index, align 4
   %cmp = icmp slt i64 %index_load, %list_len
-  br i1 %cmp, label %for_body_1, label %temp_for_exit_1
+  br i1 %cmp, label %for_body_1, label %for_exit_1
 
 for_body_1:                                       ; preds = %for_header_1
   %index_load2 = load i64, ptr %index, align 4
@@ -253,8 +253,8 @@ for_body_1:                                       ; preds = %for_header_1
   %eq = icmp eq i64 %mod, 0
   br i1 %eq, label %if_then_2, label %if_else_2
 
-temp_for_exit_1:                                  ; preds = %for_header_1
-  br label %for_exit_1
+for_exit_1:                                       ; preds = %for_header_1
+  br label %for_continue_1
 
 if_then_2:                                        ; preds = %for_body_1
   %n3 = load ptr, ptr %n, align 8
@@ -270,9 +270,10 @@ if_merge_2:                                       ; preds = %if_else_2
   store i64 %inc, ptr %index, align 4
   br label %for_header_1
 
-for_exit_1:                                       ; preds = %temp_for_exit_1
-  %none_default = call ptr @mux_optional_none()
-  ret ptr %none_default
+for_continue_1:                                   ; preds = %for_exit_1
+  %none_literal = call ptr @mux_optional_none()
+  %none_value = call ptr @mux_value_from_optional(ptr %none_literal)
+  ret ptr %none_value
 }
 
 define void @main() {
