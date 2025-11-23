@@ -5,11 +5,11 @@ func my_map<T, U>(list<T> items, func(T) returns U transform) returns list<U> {
         println("transformed ok")
         out.push_back(transformed)
         println("pushed")
-        }
+    }
     return out
 }
 
-func int_map<int, int>(list<int> items, func(int) returns int transform) returns list<int> {
+func int_map(list<int> items, func(int) returns int transform) returns list<int> {
     list<int> out = []
     for int item in items { out.push_back(transform(item)) }
     return out
@@ -24,3 +24,4 @@ auto doubles = func(int x) returns int { return x * 2 }
 auto my_list = [1, 2, 3]
 auto doubled = my_map(my_list, doubles)
 println("res: " + doubled.to_string())
+println("done!")

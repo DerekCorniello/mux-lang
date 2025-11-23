@@ -6,6 +6,7 @@ use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue,
 };
 use inkwell::{AddressSpace, Either};
+use crate::semantics::SymbolKind;
 use std::collections::HashMap;
 
 use crate::lexer::Span;
@@ -32,6 +33,7 @@ pub struct CodeGenerator<'a> {
     label_counter: usize,
     variables: HashMap<String, (PointerValue<'a>, BasicTypeEnum<'a>, ResolvedType)>,
     functions: HashMap<String, FunctionValue<'a>>,
+    function_nodes: HashMap<String, FunctionNode>,
     current_function_name: Option<String>,
     current_function_return_type: Option<ResolvedType>,
     generic_context: Option<GenericContext>,
@@ -573,6 +575,7 @@ impl<'a> CodeGenerator<'a> {
             label_counter: 0,
             variables: HashMap::new(),
             functions: HashMap::new(),
+            function_nodes: HashMap::new(),
             current_function_name: None,
             current_function_return_type: None,
             generic_context: None,
@@ -1456,6 +1459,7 @@ impl<'a> CodeGenerator<'a> {
 
         let function = self.module.add_function(&func.name, fn_type, None);
         self.functions.insert(func.name.clone(), function);
+        self.function_nodes.insert(func.name.clone(), func.clone());
 
         Ok(())
     }
@@ -2622,25 +2626,59 @@ impl<'a> CodeGenerator<'a> {
                                         Err(format!("Undefined function: {}", name))
                                     }
                                 }
-                            } else {
-                                // Not a variable, try global function lookup
-                                if let Some(func) = self.module.get_function(name) {
-                                    let mut call_args = vec![];
-                                    for arg in args {
-                                        call_args.push(self.generate_expression(arg)?.into());
-                                    }
-                                    let call = self
-                                        .builder
-                                        .build_call(func, &call_args, "user_func_call")
-                                        .map_err(|e| e.to_string())?;
-                                    match call.try_as_basic_value().left() {
-                                        Some(val) => Ok(val),
-                                        None => Ok(self.context.i32_type().const_int(0, false).into()),
+                        } else {
+                            // Check if this is a generic function that needs instantiation
+                            eprintln!("DEBUG: Checking if '{}' is a generic function", name);
+                            if let Some(func_symbol) = self.analyzer.symbol_table().lookup(name) {
+                                eprintln!("DEBUG: Found symbol for '{}': {:?}", name, func_symbol.kind);
+                                if let SymbolKind::Function = func_symbol.kind {
+                                    if let Some(func_node) = self.function_nodes.get(name) {
+                                        eprintln!("DEBUG: Found func_node for '{}', type_params: {}", name, func_node.type_params.len());
+                                        // Check if this function has truly generic type parameters (not concrete types)
+                                        let has_generic_params = !func_node.type_params.is_empty() &&
+                                            func_node.type_params.iter().any(|(param_name, _)| {
+                                                // A parameter is generic if it's not a concrete type name
+                                                // Generic parameters are typically single uppercase letters or descriptive names
+                                                // Concrete types are lowercase like "int", "string", etc.
+                                                param_name.chars().next().unwrap_or(' ').is_uppercase() ||
+                                                param_name.len() > 3 // Heuristic: generic names are usually short
+                                            });
+
+                                        if has_generic_params {
+                                            eprintln!("DEBUG: '{}' has generic parameters, instantiating", name);
+                                            // This is a generic function call - instantiate it
+                                            return self.generate_generic_function_call(name, args);
+                                        } else {
+                                            eprintln!("DEBUG: '{}' has concrete type parameters, treating as regular function", name);
+                                        }
+                                    } else {
+                                        eprintln!("DEBUG: No func_node found for '{}'", name);
                                     }
                                 } else {
-                                    Err(format!("Undefined function: {}", name))
+                                    eprintln!("DEBUG: '{}' is not a function symbol", name);
                                 }
+                            } else {
+                                eprintln!("DEBUG: No symbol found for '{}'", name);
                             }
+
+                            // Not a generic function, try global function lookup
+                            if let Some(func) = self.module.get_function(name) {
+                                let mut call_args = vec![];
+                                for arg in args {
+                                    call_args.push(self.generate_expression(arg)?.into());
+                                }
+                                let call = self
+                                    .builder
+                                    .build_call(func, &call_args, "user_func_call")
+                                    .map_err(|e| e.to_string())?;
+                                match call.try_as_basic_value().left() {
+                                    Some(val) => Ok(val),
+                                    None => Ok(self.context.i32_type().const_int(0, false).into()),
+                                }
+                            } else {
+                                Err(format!("Undefined function: {}", name))
+                            }
+                        }
                         }
                     }
                 } else {
@@ -6431,8 +6469,403 @@ impl<'a> CodeGenerator<'a> {
         Ok(call.try_as_basic_value().left().unwrap())
     }
 
+    fn generate_generic_function_call(&mut self, func_name: &str, args: &[ExpressionNode]) -> Result<BasicValueEnum<'a>, String> {
+
+
+        // Get the generic function AST node
+        let func_node = self.function_nodes.get(func_name)
+            .ok_or(format!("Generic function {} not found", func_name))?;
+
+        // Infer concrete types by matching function signature against arguments
+        let mut type_map = std::collections::HashMap::new();
+
+        // For each parameter in the function signature, match against the corresponding argument
+        for (param_idx, param) in func_node.params.iter().enumerate() {
+            if param_idx >= args.len() {
+                break;
+            }
+
+            let arg_type = self.analyzer.get_expression_type(&args[param_idx])
+                .map_err(|e| format!("Failed to get argument type: {}", e))?;
+
+            // Recursively match the parameter type against the argument type to infer generic parameters
+            self.infer_types_from_signature(&param.type_, &arg_type, &mut type_map)?;
+        }
+
+        eprintln!("DEBUG: Inferred type map: {:?}", type_map);
+
+        // Convert to concrete types list in the order of type parameters
+        let mut concrete_types = Vec::new();
+        for (type_param_name, _) in &func_node.type_params {
+            if let Some(concrete_type) = type_map.get(type_param_name) {
+                concrete_types.push(concrete_type.clone());
+            } else {
+                return Err(format!("Could not infer concrete type for generic parameter {}", type_param_name));
+            }
+        }
+
+        eprintln!("DEBUG: Concrete types: {:?}", concrete_types);
+
+        // Create instantiation key
+        let type_names: Vec<String> = concrete_types.iter()
+            .map(|t| self.type_to_string(t))
+            .collect();
+        let instance_name = format!("{}_{}", func_name, type_names.join("_"));
+        eprintln!("DEBUG: Instance name: {}", instance_name);
+
+        // Check if already instantiated
+        if self.module.get_function(&instance_name).is_none() {
+            eprintln!("DEBUG: Instantiating generic function");
+            // Instantiate the generic function
+            self.instantiate_generic_function(func_name, &concrete_types, &instance_name)?;
+        } else {
+            eprintln!("DEBUG: Function already instantiated");
+        }
+
+        // Call the instantiated function
+        let func = self.module.get_function(&instance_name)
+            .ok_or(format!("Instantiated function {} not found", instance_name))?;
+        eprintln!("DEBUG: Calling instantiated function");
+
+        let mut call_args = vec![];
+        for arg in args {
+            call_args.push(self.generate_expression(arg)?.into());
+        }
+
+        let call = self.builder
+            .build_call(func, &call_args, "generic_func_call")
+            .map_err(|e| e.to_string())?;
+
+        eprintln!("DEBUG: Generic function call completed");
+        match call.try_as_basic_value().left() {
+            Some(val) => Ok(val),
+            None => Ok(self.context.i32_type().const_int(0, false).into()),
+        }
+    }
+
+    fn instantiate_generic_function(&mut self, func_name: &str, concrete_types: &[Type], instance_name: &str) -> Result<(), String> {
+        eprintln!("DEBUG: Instantiating '{}' to '{}'", func_name, instance_name);
+
+        let func_node = self.function_nodes.get(func_name)
+            .ok_or(format!("Generic function {} not found", func_name))?;
+
+        // Create type substitution map
+        let mut type_map = std::collections::HashMap::new();
+        for (i, type_param) in func_node.type_params.iter().enumerate() {
+            if i < concrete_types.len() {
+                eprintln!("DEBUG: Mapping {} -> {:?}", type_param.0, concrete_types[i]);
+                type_map.insert(type_param.0.clone(), concrete_types[i].clone());
+            }
+        }
+
+        // Clone and substitute the function
+        let mut substituted_func = func_node.clone();
+        substituted_func.name = instance_name.to_string();
+        substituted_func.type_params.clear(); // No longer generic
+        eprintln!("DEBUG: Created substituted function with {} params", substituted_func.params.len());
+
+        // Substitute types in parameters and return type
+        for param in &mut substituted_func.params {
+            let old_type = param.type_.clone();
+            param.type_ = self.substitute_types_in_type_node(&param.type_, &type_map);
+            eprintln!("DEBUG: Param '{}' type: {:?} -> {:?}", param.name, old_type, param.type_);
+        }
+        let old_return = substituted_func.return_type.clone();
+        substituted_func.return_type = self.substitute_types_in_type_node(&substituted_func.return_type, &type_map);
+        eprintln!("DEBUG: Return type: {:?} -> {:?}", old_return, substituted_func.return_type);
+
+        // Substitute types in the function body
+        let mut substituted_body = Vec::new();
+        for stmt in &substituted_func.body {
+            substituted_body.push(self.substitute_types_in_statement(stmt, &type_map));
+        }
+        substituted_func.body = substituted_body;
+
+        // Save current context (from calling context)
+        let saved_variables = self.variables.clone();
+        let saved_current_function_name = self.current_function_name.take();
+        let saved_current_function_return_type = self.current_function_return_type.take();
+        let saved_builder_position = self.builder.get_insert_block();
+
+        // Declare the instantiated function
+        eprintln!("DEBUG: Declaring instantiated function");
+        self.declare_function(&substituted_func)?;
+
+        // Generate the instantiated function
+        eprintln!("DEBUG: Generating instantiated function");
+        self.generate_function(&substituted_func)?;
+        eprintln!("DEBUG: Instantiation completed");
+
+        // Restore context (back to calling context)
+        self.variables = saved_variables;
+        self.current_function_name = saved_current_function_name;
+        self.current_function_return_type = saved_current_function_return_type;
+        if let Some(block) = saved_builder_position {
+            self.builder.position_at_end(block);
+        }
+
+        Ok(())
+    }
+
+    fn substitute_types_in_type_node(&self, type_node: &TypeNode, type_map: &std::collections::HashMap<String, Type>) -> TypeNode {
+        match &type_node.kind {
+            TypeKind::Named(name, args) => {
+                if type_map.contains_key(name) {
+                    // This is a generic type parameter - substitute it
+                    let concrete_type = &type_map[name];
+                    self.type_to_type_node(concrete_type)
+                } else {
+                    // Not a generic parameter, substitute arguments recursively
+                    let substituted_args = args.iter()
+                        .map(|arg| self.substitute_types_in_type_node(arg, type_map))
+                        .collect();
+                    TypeNode {
+                        kind: TypeKind::Named(name.clone(), substituted_args),
+                        span: type_node.span,
+                    }
+                }
+            }
+            TypeKind::List(inner) => TypeNode {
+                kind: TypeKind::List(Box::new(self.substitute_types_in_type_node(inner, type_map))),
+                span: Span::new(0, 0),
+            },
+            TypeKind::Function { params, returns } => {
+                let substituted_params = params.iter()
+                    .map(|p| self.substitute_types_in_type_node(p, type_map))
+                    .collect();
+                let substituted_returns = self.substitute_types_in_type_node(returns, type_map);
+                TypeNode {
+                    kind: TypeKind::Function {
+                        params: substituted_params,
+                        returns: Box::new(substituted_returns),
+                    },
+                    span: Span::new(0, 0),
+                }
+            },
+            // For other types, return as-is (they don't contain generic parameters)
+            _ => type_node.clone(),
+        }
+    }
+
+    fn substitute_types_in_statement(&self, stmt: &StatementNode, type_map: &std::collections::HashMap<String, Type>) -> StatementNode {
+        match &stmt.kind {
+            StatementKind::TypedDecl(name, type_node, expr) => {
+                let substituted_type = self.substitute_types_in_type_node(type_node, type_map);
+                let substituted_expr = self.substitute_types_in_expression(expr, type_map);
+                StatementNode {
+                    kind: StatementKind::TypedDecl(name.clone(), substituted_type, substituted_expr),
+                    span: stmt.span,
+                }
+            }
+            StatementKind::AutoDecl(name, type_node, expr) => {
+                let substituted_type = self.substitute_types_in_type_node(type_node, type_map);
+                let substituted_expr = self.substitute_types_in_expression(expr, type_map);
+                StatementNode {
+                    kind: StatementKind::AutoDecl(name.clone(), substituted_type, substituted_expr),
+                    span: stmt.span,
+                }
+            }
+            StatementKind::For { var, var_type, iter, body } => {
+                let substituted_var_type = self.substitute_types_in_type_node(var_type, type_map);
+                let substituted_iter = self.substitute_types_in_expression(iter, type_map);
+                let substituted_body = body.iter()
+                    .map(|s| self.substitute_types_in_statement(s, type_map))
+                    .collect();
+                StatementNode {
+                    kind: StatementKind::For {
+                        var: var.clone(),
+                        var_type: substituted_var_type,
+                        iter: substituted_iter,
+                        body: substituted_body,
+                    },
+                    span: stmt.span,
+                }
+            }
+            StatementKind::Return(expr) => {
+                let substituted_expr = expr.as_ref()
+                    .map(|e| self.substitute_types_in_expression(e, type_map));
+                StatementNode {
+                    kind: StatementKind::Return(substituted_expr),
+                    span: stmt.span,
+                }
+            }
+            StatementKind::Expression(expr) => {
+                let substituted_expr = self.substitute_types_in_expression(expr, type_map);
+                StatementNode {
+                    kind: StatementKind::Expression(substituted_expr),
+                    span: stmt.span,
+                }
+            }
+            StatementKind::If { cond, then_block, else_block } => {
+                let substituted_cond = self.substitute_types_in_expression(cond, type_map);
+                let substituted_then = then_block.iter()
+                    .map(|s| self.substitute_types_in_statement(s, type_map))
+                    .collect();
+                let substituted_else = else_block.as_ref()
+                    .map(|b| b.iter()
+                        .map(|s| self.substitute_types_in_statement(s, type_map))
+                        .collect());
+                StatementNode {
+                    kind: StatementKind::If {
+                        cond: substituted_cond,
+                        then_block: substituted_then,
+                        else_block: substituted_else,
+                    },
+                    span: stmt.span,
+                }
+            }
+            // For other statement types, return unchanged for now
+            _ => stmt.clone(),
+        }
+    }
+
+    fn substitute_types_in_expression(&self, expr: &ExpressionNode, type_map: &std::collections::HashMap<String, Type>) -> ExpressionNode {
+        match &expr.kind {
+            ExpressionKind::Call { func, args } => {
+                let substituted_func = self.substitute_types_in_expression(func, type_map);
+                let substituted_args = args.iter()
+                    .map(|a| self.substitute_types_in_expression(a, type_map))
+                    .collect();
+                ExpressionNode {
+                    kind: ExpressionKind::Call {
+                        func: Box::new(substituted_func),
+                        args: substituted_args,
+                    },
+                    span: expr.span,
+                }
+            }
+            ExpressionKind::FieldAccess { expr: inner_expr, field } => {
+                let substituted_expr = self.substitute_types_in_expression(inner_expr, type_map);
+                ExpressionNode {
+                    kind: ExpressionKind::FieldAccess {
+                        expr: Box::new(substituted_expr),
+                        field: field.clone(),
+                    },
+                    span: expr.span,
+                }
+            }
+            ExpressionKind::Lambda { params, body } => {
+                // For lambda parameters, substitute their types
+                let substituted_params = params.iter().map(|p| Param {
+                    name: p.name.clone(),
+                    type_: self.substitute_types_in_type_node(&p.type_, type_map),
+                }).collect();
+                // For lambda body, substitute statements
+                let substituted_body = body.iter()
+                    .map(|s| self.substitute_types_in_statement(s, type_map))
+                    .collect();
+                ExpressionNode {
+                    kind: ExpressionKind::Lambda {
+                        params: substituted_params,
+                        body: substituted_body,
+                    },
+                    span: expr.span,
+                }
+            }
+            // For other expression types, return unchanged for now
+            _ => expr.clone(),
+        }
+    }
+
+    /// Recursively match a parameter type pattern against a concrete argument type to infer generic parameters
+    fn infer_types_from_signature(&self, param_type: &TypeNode, arg_type: &Type, type_map: &mut std::collections::HashMap<String, Type>) -> Result<(), String> {
+        eprintln!("DEBUG: infer_types_from_signature: param_type={:?}, arg_type={:?}", param_type, arg_type);
+        match &param_type.kind {
+            TypeKind::Named(name, type_args) => {
+                if type_args.is_empty() {
+                    // This is a potential generic parameter or concrete type
+                    if name.chars().next().unwrap_or(' ').is_uppercase() || name.len() <= 3 {
+                        // Likely a generic parameter - infer it from the argument type
+                        eprintln!("DEBUG: Inferring generic param {} -> {:?}", name, arg_type);
+                        if let Some(existing) = type_map.get(name) {
+                            if existing != arg_type {
+                                return Err(format!("Type mismatch for generic parameter {}: expected {:?}, got {:?}", name, existing, arg_type));
+                            }
+                        } else {
+                            type_map.insert(name.clone(), arg_type.clone());
+                        }
+                    } else {
+                        // Concrete type - should match exactly
+                        let expected_concrete = self.type_node_to_type(param_type);
+                        if expected_concrete != *arg_type {
+                            return Err(format!("Type mismatch: expected {:?}, got {:?}", expected_concrete, arg_type));
+                        }
+                    }
+                } else {
+                    // Generic type with arguments (like list<T>)
+                    match arg_type {
+                        Type::Named(arg_name, arg_type_args) => {
+                            if name != arg_name {
+                                return Err(format!("Type name mismatch: expected {}, got {}", name, arg_name));
+                            }
+                            if type_args.len() != arg_type_args.len() {
+                                return Err(format!("Type argument count mismatch for {}: expected {}, got {}", name, type_args.len(), arg_type_args.len()));
+                            }
+                            // Recursively match type arguments
+                            for (param_arg, arg_arg) in type_args.iter().zip(arg_type_args.iter()) {
+                                self.infer_types_from_signature(param_arg, arg_arg, type_map)?;
+                            }
+                        }
+                        _ => return Err(format!("Expected named type with args, got {:?}", arg_type)),
+                    }
+                }
+            }
+            TypeKind::List(inner_param_type) => {
+                match arg_type {
+                    Type::List(inner_arg_type) => {
+                        self.infer_types_from_signature(inner_param_type, inner_arg_type, type_map)?;
+                    }
+                    _ => return Err(format!("Expected list type, got {:?}", arg_type)),
+                }
+            }
+            TypeKind::Function { params: param_params, returns: param_returns } => {
+                match arg_type {
+                    Type::Function { params: arg_params, returns: arg_returns } => {
+                        if param_params.len() != arg_params.len() {
+                            return Err(format!("Function parameter count mismatch: expected {}, got {}", param_params.len(), arg_params.len()));
+                        }
+                        // Match parameter types
+                        for (param_param, arg_param) in param_params.iter().zip(arg_params.iter()) {
+                            self.infer_types_from_signature(param_param, arg_param, type_map)?;
+                        }
+                        // Match return type
+                        self.infer_types_from_signature(param_returns, arg_returns, type_map)?;
+                    }
+                    _ => return Err(format!("Expected function type, got {:?}", arg_type)),
+                }
+            }
+            TypeKind::Primitive(primitive) => {
+                let expected = match primitive {
+                    PrimitiveType::Int => Type::Primitive(PrimitiveType::Int),
+                    PrimitiveType::Float => Type::Primitive(PrimitiveType::Float),
+                    PrimitiveType::Bool => Type::Primitive(PrimitiveType::Bool),
+                    PrimitiveType::Str => Type::Primitive(PrimitiveType::Str),
+                    _ => return Err(format!("Unsupported primitive type {:?}", primitive)),
+                };
+                if expected != *arg_type {
+                    return Err(format!("Primitive type mismatch: expected {:?}, got {:?}", expected, arg_type));
+                }
+            }
+            _ => return Err(format!("Unsupported type kind in signature matching: {:?}", param_type.kind)),
+        }
+        Ok(())
+    }
+
+
+
+    fn type_to_string(&self, type_: &Type) -> String {
+        match type_ {
+            Type::Primitive(PrimitiveType::Int) => "int".to_string(),
+            Type::Primitive(PrimitiveType::Float) => "float".to_string(),
+            Type::Primitive(PrimitiveType::Bool) => "bool".to_string(),
+            Type::Primitive(PrimitiveType::Str) => "str".to_string(),
+            Type::List(inner) => format!("list_{}", self.type_to_string(inner)),
+            _ => "unknown".to_string(),
+        }
+    }
+
     pub fn print_ir(&self) {
-        println!("IR printed");
+        self.module.print_to_stderr();
     }
 
     pub fn emit_ir_to_file(&self, filename: &str) -> Result<(), String> {

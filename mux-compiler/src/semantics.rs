@@ -15,6 +15,7 @@ pub enum SymbolKind {
     Enum,
     Constant,
     Import,
+    Type,  // For generic type parameters
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1826,6 +1827,22 @@ impl SemanticAnalyzer {
 
         // create new scope for function parameters and body.
         self.symbol_table.push_scope()?;
+
+        // add generic type parameters to symbol table
+        for (param_name, _bounds) in &func.type_params {
+            self.symbol_table.add_symbol(
+                param_name,
+                Symbol {
+                    kind: SymbolKind::Type,
+                    span: func.span, // Use function span since we don't have param spans
+                    type_: Some(Type::Generic(param_name.clone())),
+                    interfaces: std::collections::HashMap::new(),
+                    methods: std::collections::HashMap::new(),
+                    fields: std::collections::HashMap::new(),
+                    type_params: Vec::new(),
+                },
+            )?;
+        }
 
         // add self if provided
         if let Some(self_type) = self_type {
