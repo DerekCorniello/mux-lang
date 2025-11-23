@@ -1,0 +1,6 @@
+---
+source: mux-compiler/tests/source_integration.rs
+assertion_line: 28
+expression: "format!(\"{:#?}\", expected)"
+---
+"class MyInt {\n    int val\n    func to_string() returns string {\n        return \"MyInt of \" + self.val.to_string()\n    }\n}\n\nauto test = MyInt.new()\ntest.val = 1\nprintln(\"test.val: \" + test.val.to_string())\nprintln(test.to_string())\n"

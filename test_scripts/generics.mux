@@ -10,8 +10,8 @@ class Stack<T> {
     list<T> items
     func push(T item) returns void { items.push_back(item) }
     func pop() returns Optional<T> {
-        //if items.is_empty() { return None }
-        return items.pop_back()
+        if items.is_empty() { return None }
+        return self.items.pop_back()
     }
     common func who_am_i() returns string {
         return "im a stack!"
