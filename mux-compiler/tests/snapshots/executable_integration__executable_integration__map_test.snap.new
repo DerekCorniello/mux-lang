@@ -1,0 +1,19 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+assertion_line: 123
+expression: full_output
+---
+STDOUT:
+res: [2, 4, 6]
+transformed ok
+pushed
+transformed ok
+pushed
+transformed ok
+pushed
+res: [2, 4, 6]
+done!
+
+STDERR:
+Concat: 'res: ' + '[2, 4, 6]' = 'res: [2, 4, 6]'
+Concat: 'res: ' + '[2, 4, 6]' = 'res: [2, 4, 6]'

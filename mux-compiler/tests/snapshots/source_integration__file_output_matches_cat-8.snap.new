@@ -1,0 +1,6 @@
+---
+source: mux-compiler/tests/source_integration.rs
+assertion_line: 28
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Variable declarations and type inference\nconst int MAX = 100\nint explicit = 42\nauto inferred = 4.89\nauto name = \"Mux\"\n\nauto flag = true\nauto otherflag = false\n\nprintln(\"MAX: 100\")\nprintln(\"explicit: 42\")\nprintln(\"inferred: 4.89\")\nprintln(\"name: Mux\")\nprintln(\"flag: true\")\nprintln(\"otherflag: false\")\n"

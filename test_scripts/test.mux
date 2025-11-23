@@ -1,11 +1,11 @@
 class MyInt {
     int val
     func to_string() returns string {
-        return "MyInt of " + val.to_string()
+        return "MyInt of " + self.val.to_string()
     }
 }
 
 auto test = MyInt.new()
 test.val = 1
-println(test.val)
+println("test.val: " + test.val.to_string())
 println(test.to_string())

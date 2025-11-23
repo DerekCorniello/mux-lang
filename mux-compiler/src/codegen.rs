@@ -1833,16 +1833,17 @@ impl<'a> CodeGenerator<'a> {
                                                 .build_struct_gep(*struct_type, data_ptr, *field_index as u32, &format!("{}_ptr", name))
                                                 .map_err(|e| e.to_string())?;
 
-                                            // Load the field value
-                                            let field_types = self.field_types_map.get(class_name).unwrap();
-                                            let field_type = field_types[*field_index];
-                                            let loaded = self
-                                                .builder
-                                                .build_load(field_type, field_ptr, name)
-                                                .map_err(|e| e.to_string())?;
+                                             // Load the field value
+                                             let field_types = self.field_types_map.get(class_name).unwrap();
+                                             let field_type = field_types[*field_index];
+                                             let loaded = self
+                                                 .builder
+                                                 .build_load(field_type, field_ptr, name)
+                                                 .map_err(|e| e.to_string())?;
 
-                                            // Return raw primitive values directly (consistent with constructor storage)
-                                            return Ok(loaded);
+                                             println!("DEBUG: Self field access loaded: {:?}", loaded);
+                                             // Return the boxed value directly (all fields are stored as Value*)
+                                             return Ok(loaded);
                                         }
                                     }
                                 }
@@ -2951,35 +2952,38 @@ impl<'a> CodeGenerator<'a> {
                                                  .map_err(|e| e.to_string())?;
                                              println!("DEBUG: Loaded generic field '{}' as pointer: {:?}", field, loaded);
                                              return Ok(loaded);
-                                          } else {
-                                               // Regular non-enum field
-                                               println!("DEBUG: Loading regular field '{}' with type {:?}", field, field_type_node);
-                                               
-                                               // Regular non-enum field
-                                               println!("DEBUG: Loading regular field '{}' with type {:?}", field, field_type_node);
-                                               let loaded = self
-                                                   .builder
-                                                   .build_load(*field_type_node, field_ptr, field)
-                                                   .map_err(|e| e.to_string())?;
-                                               println!("DEBUG: Loaded regular field '{}' as: {:?}", field, loaded);
-                                               
-                                               // Check if this is a primitive field that needs boxing
-                                               let class_fields = self.classes.get(class_name).unwrap();
-                                               let field_def = class_fields.iter().find(|f| f.name == *field).unwrap();
+                                           } else {
+                                                // Regular non-enum field
+                                                 // Get the field's mux type to determine if it needs unboxing
+                                                 let class_fields = self.classes.get(class_name.as_str()).ok_or("Class fields not found")?;
+                                                 let field_def = class_fields.iter().find(|f| f.name == *field).ok_or("Field not found")?;
+                                                 let resolved_field_type = self.analyzer.resolve_type(&field_def.type_).map_err(|e| e.to_string())?;
 
-                                               let result = match &field_def.type_.kind {
-                                                   TypeKind::Primitive(_) => {
-                                                       // Box primitive values
-                                                       self.box_value(loaded).into()
-                                                   }
-                                                   _ => {
-                                                       // Non-primitives (classes, enums) are already in correct format
-                                                       loaded
-                                                   }
-                                               };
+                                                 // Load the field value (all fields stored as Value*)
+                                                 let loaded = self
+                                                     .builder
+                                                     .build_load(*field_type_node, field_ptr, field)
+                                                     .map_err(|e| e.to_string())?;
 
-                                               return Ok(result);
-                                          }
+                                                 // Handle unboxing for primitive fields
+                                                 match &resolved_field_type {
+                                                     Type::Primitive(PrimitiveType::Int) => {
+                                                         let raw_int = self.get_raw_int_value(loaded)?;
+                                                         return Ok(raw_int.into());
+                                                     }
+                                                     Type::Primitive(PrimitiveType::Float) => {
+                                                         let raw_float = self.get_raw_float_value(loaded)?;
+                                                         return Ok(raw_float.into());
+                                                     }
+                                                     Type::Primitive(PrimitiveType::Bool) => {
+                                                         let raw_bool = self.get_raw_bool_value(loaded)?;
+                                                         return Ok(raw_bool.into());
+                                                     }
+                                                     _ => {} // for non-primitives, return the loaded pointer
+                                                 }
+
+                                                 return Ok(loaded);
+                                           }
                                     }
                                 }
                             }
