@@ -3,11 +3,13 @@ mod parser;
 mod semantics;
 mod source;
 mod codegen;
+mod monomorphize;
 
 use lexer::Lexer;
 use parser::Parser;
 use semantics::{SemanticAnalyzer, SymbolTable};
 use source::Source;
+use monomorphize::monomorphize;
 use std::env;
 use std::process;
 

@@ -5,8 +5,8 @@ edition = "2024"
 
 [lib]
 name = "mux_runtime"
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["rlib"]
 
 [dependencies]
-gc = "0.4"
-ordered-float = "4.0"
+gc = { version = "0.4", default-features = false }
+ordered-float = { version = "4.0", default-features = false }
