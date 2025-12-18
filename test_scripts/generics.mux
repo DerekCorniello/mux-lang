@@ -1,5 +1,5 @@
-// Generics
-func max<T is comparable>(T a, T b) returns T { 
+// Generics func
+func max<T>(T a, T b) returns T { 
     if a > b { 
         return a
     }
@@ -11,9 +11,66 @@ class Stack<T> {
     func push(T item) returns void { items.push_back(item) }
     func pop() returns Optional<T> {
         if items.is_empty() { return None }
-        return Some(items.pop_back())
+        return self.items.pop_back()
+    }
+    common func who_am_i() returns string {
+        return "im a stack!"
+    }
+
+    common func from<T>(list<T> init_list) returns Stack<T> {
+        auto new_stack = Stack<T>.new()
+        println("init new obj")
+        new_stack.items = init_list
+        println("init items")
+        return new_stack
+    }
+    func to_string() returns string {
+        return "Stack with: " + self.items.to_string()
     }
 }
 
-auto s = Stack<int>.new([])
+auto s = Stack<int>.new()
 s.push(42)
+match s.pop() {
+    Some(v) { println("Popped: " + v.to_string()) }
+    None { println("Empty stack") }
+}
+println(Stack.who_am_i())
+println("trying to instantiate stack")
+auto test = Stack<int>.from([1,2,3])
+println("instantiated stack")
+println("stack has: " + test.items.to_string())
+println(test.to_string())
+
+// Test with strings
+auto str_stack = Stack<string>.new()
+str_stack.push("hello")
+str_stack.push("world")
+match str_stack.pop() {
+    Some(v) { println("Popped string: " + v) }
+    None { println("Empty stack") }
+}
+println("String stack: " + str_stack.to_string())
+
+auto str_test = Stack<string>.from(["apple", "banana", "cherry"])
+println("String stack from list: " + str_test.to_string())
+
+// Test with floats
+auto float_stack = Stack<float>.new()
+float_stack.push(3.14)
+float_stack.push(2.71)
+match float_stack.pop() {
+    Some(v) { println("Popped float: " + v.to_string()) }
+    None { println("Empty stack") }
+}
+println("Float stack: " + float_stack.to_string())
+
+// Test with bools
+auto bool_stack = Stack<bool>.new()
+bool_stack.push(true)
+bool_stack.push(false)
+match bool_stack.pop() {
+    Some(v) { println("Popped bool: " + v.to_string()) }
+    None { println("Empty stack") }
+}
+println("Bool stack: " + bool_stack.to_string())
