@@ -10,16 +10,16 @@ This checklist guides the complete rewrite of the Mux compiler to use concrete L
 ### ✅ COMPLETED
 - **Phase 1.1: Type System Design** - Full implementation of type_to_llvm() mapping
 - **Phase 1.2: Primitive Types** - All primitive types (int, float, bool, char) with LLVM operations
-- **Phase 1.3: String Type** - String literals and concatenation
-- **Phase 2.1: Expression Evaluation** - All expression types compiled
-- **Phase 2.2: Statement Compilation** - Variable declarations, control flow, loops
+- **Phase 1.3: String Type** - String literals, concatenation, and comparison operations
+- **Phase 2.1: Expression Evaluation** - All expression types compiled (including increment/decrement)
+- **Phase 2.2: Statement Compilation** - Variable declarations, control flow, loops, break/continue
+- **Phase 2.3: Pattern Matching** - Full match statement with switch/if-chain, guards, and variable binding
 - **Phase 3.1-3.2: Struct/Class System** - Basic class support with constructors and methods
+- **Phase 3.3: Enum System** - Tagged unions with discriminants and pattern matching
 - **Phase 5.1-5.2: Collections** - List, Map, Set construction and basic operations
 
 ### 🚧 IN PROGRESS
 - **Phase 1.4: Reference Types** - Basic pointer representation done
-- **Phase 2.3: Pattern Matching** - Placeholder implemented
-- **Phase 3.3: Enum System** - Parser support exists, codegen pending
 
 ### ⏳ PENDING
 - **Phase 4: Generic Types & Functions** - Monomorphization engine needed
@@ -28,7 +28,7 @@ This checklist guides the complete rewrite of the Mux compiler to use concrete L
 - **Phase 8: Testing** - Unit and integration tests
 
 ### 📁 Key Files Created/Modified
-- `mux-compiler/src/codegen.rs` - **NEW** (~1500 lines) - Complete code generation module
+- `mux-compiler/src/codegen.rs` - **UPDATED** (~2500 lines) - Complete code generation module with enums and pattern matching
 - `mux-compiler/src/lib.rs` - Updated to export codegen module
 - `mux-compiler/src/main.rs` - Already integrated with codegen
 
@@ -56,7 +56,7 @@ This checklist guides the complete rewrite of the Mux compiler to use concrete L
 - [x] `str` type: `*mut c_char` representation ✅ **COMPLETED** - Uses pointer type
 - [x] UTF-8 string operations (concat, substring, etc.) ✅ **COMPLETED** - compile_string_binary_op() for concat
 - [x] String literal generation from source code ✅ **COMPLETED** - compile_string_literal()
-- [ ] String comparison and searching operations - **IN PROGRESS**
+- [x] String comparison and searching operations ✅ **COMPLETED** - compile_string_binary_op() handles Equal/NotEqual via mux_string_equals
 - [ ] Memory allocation and deallocation for strings - **PENDING** (uses runtime)
 - [x] String-to-string, string-to-primitive conversions ✅ **COMPLETED** - to_string methods
 
@@ -90,14 +90,14 @@ This checklist guides the complete rewrite of the Mux compiler to use concrete L
 - [x] Control flow (if/else, switch) statements ✅ **COMPLETED** - compile_if_statement()
 - [x] Loop statements (for, while) with iterator support ✅ **COMPLETED** - compile_while_statement(), compile_for_statement()
 - [x] Return statements with type checking ✅ **COMPLETED** - compile_statement() handles Return variant
-- [x] Break/continue statement handling ✅ **PARTIAL** - Placeholder in compile_statement()
+- [x] Break/continue statement handling ✅ **COMPLETED** - Uses loop_stack for proper branch targets
 - [x] Expression statements and side effects ✅ **COMPLETED** - compile_statement() handles Expression variant
 
 ### 2.3 Pattern Matching System
-- [x] Match expressions with exhaustive checking ✅ **PARTIAL** - compile_match_statement() placeholder
-- [ ] Pattern destructuring for all types - **PENDING**
-- [ ] Guards in pattern matching - **PENDING**
-- [ ] Wildcard patterns and placeholders - **PENDING**
+- [x] Match expressions with exhaustive checking ✅ **COMPLETED** - compile_match_statement() with switch and if-chain
+- [x] Pattern destructuring for all types ✅ **COMPLETED** - bind_pattern_variables() handles tuples and enums
+- [x] Guards in pattern matching ✅ **COMPLETED** - compile_match_if_chain() checks guard conditions
+- [x] Wildcard patterns and placeholders ✅ **COMPLETED** - PatternNode::Wildcard handled
 - [ ] Or-patterns and multiple match arms - **PENDING**
 
 ## Phase 3: User-Defined Types (Weeks 9-12)
@@ -118,10 +118,10 @@ This checklist guides the complete rewrite of the Mux compiler to use concrete L
 - [ ] Inheritance hierarchies with base class layout - **PENDING**
 
 ### 3.3 Enum System Implementation
-- [ ] Parse enum definitions with variants - **PENDING** (parser supports it)
-- [ ] Generate tagged union LLVM types - **PENDING**
-- [ ] Enum constructor functions - **PENDING**
-- [ ] Pattern matching for enums - **PENDING**
+- [x] Parse enum definitions with variants ✅ **COMPLETED** - Parser supports enum declarations
+- [x] Generate tagged union LLVM types ✅ **COMPLETED** - declare_enum() creates {i32, [N x i8]} struct
+- [x] Enum constructor functions ✅ **COMPLETED** - compile_enum_constructors() generates variant constructors
+- [x] Pattern matching for enums ✅ **COMPLETED** - compile_pattern_check() handles EnumVariant patterns
 - [ ] Exhaustive checking for all variants - **PENDING**
 
 ## Phase 4: Generic Types & Functions (Weeks 13-17)

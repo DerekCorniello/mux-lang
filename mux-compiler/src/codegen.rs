@@ -12,8 +12,8 @@
 //! 4. Performance: Concrete types eliminate boxing overhead
 
 use crate::parser::{
-    AstNode, BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param,
-    PrimitiveType, StatementKind, StatementNode, TypeKind, TypeNode, UnaryOp,
+    AstNode, BinaryOp, EnumVariant, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode,
+    Param, PrimitiveType, StatementKind, StatementNode, TypeKind, TypeNode, UnaryOp,
 };
 use crate::semantics::{SemanticAnalyzer, Symbol, SymbolKind, Type};
 use inkwell::builder::Builder;
@@ -89,11 +89,28 @@ pub struct CodeGenerator<'a, 'ctx> {
     /// Struct type cache for user-defined types
     struct_types: HashMap<String, StructType<'ctx>>,
 
+    /// Enum type cache - stores (struct_type, variant_info)
+    /// where variant_info maps variant name to (discriminant, field_types)
+    enum_types: HashMap<String, EnumTypeInfo<'ctx>>,
+
     /// String constant cache
     string_constants: HashMap<String, PointerValue<'ctx>>,
 
     /// Counter for generating unique names
     unique_counter: usize,
+
+    /// Loop context stack for break/continue statements
+    /// Each entry contains (continue_block, break_block)
+    loop_stack: Vec<(inkwell::basic_block::BasicBlock<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)>,
+}
+
+/// Information about a compiled enum type
+#[derive(Clone)]
+struct EnumTypeInfo<'ctx> {
+    /// The LLVM struct type representing this enum (discriminant + max-size payload)
+    struct_type: StructType<'ctx>,
+    /// Map from variant name to (discriminant_value, optional field types)
+    variants: HashMap<String, (u32, Vec<Type>)>,
 }
 
 impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
@@ -112,8 +129,10 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
             runtime_functions: HashMap::new(),
             current_function: None,
             struct_types: HashMap::new(),
+            enum_types: HashMap::new(),
             string_constants: HashMap::new(),
             unique_counter: 0,
+            loop_stack: Vec::new(),
         };
 
         codegen.declare_runtime_functions();
@@ -275,6 +294,7 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         self.declare_runtime_fn("mux_string_length", &["ptr"], "i64");
         self.declare_runtime_fn("mux_string_from_cstr", &["ptr"], "ptr");
         self.declare_runtime_fn("mux_string_to_cstr", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_string_equals", &["ptr", "ptr"], "i1");
 
         // Type conversion functions
         self.declare_runtime_fn("mux_int_to_string", &["i64"], "ptr");
@@ -347,7 +367,7 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
 
     /// Generate LLVM IR for the entire program
     pub fn generate(&mut self, ast: &[AstNode]) -> CodeGenResult<()> {
-        // First pass: collect all function and class declarations
+        // First pass: collect all function, class, and enum declarations
         for node in ast {
             match node {
                 AstNode::Function(func) => {
@@ -355,6 +375,9 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
                 }
                 AstNode::Class { name, fields, .. } => {
                     self.declare_class(name, fields)?;
+                }
+                AstNode::Enum { name, variants, .. } => {
+                    self.declare_enum(name, variants)?;
                 }
                 _ => {}
             }
@@ -372,11 +395,14 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
                 AstNode::Class { methods, name, .. } => {
                     self.compile_class_methods(name, methods)?;
                 }
+                AstNode::Enum { name, variants, .. } => {
+                    self.compile_enum_constructors(name, variants)?;
+                }
                 AstNode::Statement(stmt) => {
                     main_statements.push(stmt.clone());
                 }
-                AstNode::Enum { .. } | AstNode::Interface { .. } => {
-                    // Enums and interfaces are handled at the type level
+                AstNode::Interface { .. } => {
+                    // Interfaces are handled at the type level
                 }
             }
         }
@@ -737,6 +763,301 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
     }
 
     // ========================================================================
+    // Phase 3.3: Enum System
+    // ========================================================================
+
+    /// Declare an enum type (create the tagged union struct)
+    fn declare_enum(
+        &mut self,
+        name: &str,
+        variants: &[EnumVariant],
+    ) -> CodeGenResult<StructType<'ctx>> {
+        // Calculate the maximum size needed for any variant's payload
+        let mut max_payload_size = 0u64;
+        let mut variant_info: HashMap<String, (u32, Vec<Type>)> = HashMap::new();
+
+        for (i, variant) in variants.iter().enumerate() {
+            let field_types: Vec<Type> = if let Some(data) = &variant.data {
+                data.iter()
+                    .map(|t| self.resolve_type_node(t))
+                    .collect::<CodeGenResult<Vec<_>>>()?
+            } else {
+                vec![]
+            };
+
+            // Calculate payload size for this variant
+            let mut variant_size = 0u64;
+            for field_type in &field_types {
+                let llvm_type = self.type_to_llvm(field_type)?;
+                variant_size += self.get_type_size(llvm_type);
+            }
+
+            if variant_size > max_payload_size {
+                max_payload_size = variant_size;
+            }
+
+            variant_info.insert(variant.name.clone(), (i as u32, field_types));
+        }
+
+        // Create the enum struct type: { i32 discriminant, [N x i8] payload }
+        // Use i8 array for the payload to ensure proper alignment
+        let discriminant_type = self.context.i32_type();
+        let payload_type = if max_payload_size > 0 {
+            self.context.i8_type().array_type(max_payload_size as u32)
+        } else {
+            self.context.i8_type().array_type(1) // Minimum 1 byte payload
+        };
+
+        let struct_type = self.context.opaque_struct_type(name);
+        struct_type.set_body(&[discriminant_type.into(), payload_type.into()], false);
+
+        // Store enum type info
+        self.enum_types.insert(
+            name.to_string(),
+            EnumTypeInfo {
+                struct_type,
+                variants: variant_info,
+            },
+        );
+
+        // Also register in struct_types for type resolution
+        self.struct_types.insert(name.to_string(), struct_type);
+
+        Ok(struct_type)
+    }
+
+    /// Get the size of a type in bytes (approximate)
+    fn get_type_size(&self, llvm_type: BasicTypeEnum<'ctx>) -> u64 {
+        match llvm_type {
+            BasicTypeEnum::IntType(t) => (t.get_bit_width() as u64 + 7) / 8,
+            BasicTypeEnum::FloatType(_) => 8, // f64
+            BasicTypeEnum::PointerType(_) => 8, // 64-bit pointer
+            BasicTypeEnum::StructType(t) => {
+                // Sum of field sizes (not accounting for padding)
+                let mut size = 0u64;
+                for i in 0..t.count_fields() {
+                    if let Some(field) = t.get_field_type_at_index(i) {
+                        size += self.get_type_size(field);
+                    }
+                }
+                size
+            }
+            BasicTypeEnum::ArrayType(t) => {
+                let elem_size = self.get_type_size(t.get_element_type());
+                elem_size * t.len() as u64
+            }
+            _ => 8, // Default to 8 bytes
+        }
+    }
+
+    /// Compile enum variant constructor functions
+    fn compile_enum_constructors(
+        &mut self,
+        enum_name: &str,
+        variants: &[EnumVariant],
+    ) -> CodeGenResult<()> {
+        let enum_info = self
+            .enum_types
+            .get(enum_name)
+            .cloned()
+            .ok_or_else(|| CodeGenError::new(format!("Enum {} not declared", enum_name)))?;
+
+        for variant in variants {
+            let (discriminant, field_types) = enum_info
+                .variants
+                .get(&variant.name)
+                .ok_or_else(|| {
+                    CodeGenError::new(format!("Variant {} not found in enum {}", variant.name, enum_name))
+                })?;
+
+            // Create constructor function: EnumName::VariantName(args...) -> EnumName
+            let constructor_name = format!("{}::{}", enum_name, variant.name);
+
+            // Build parameter types
+            let param_types: Vec<BasicMetadataTypeEnum> = field_types
+                .iter()
+                .map(|t| self.type_to_llvm(t).map(|ty| ty.into()))
+                .collect::<CodeGenResult<Vec<_>>>()?;
+
+            // Return type is a pointer to the enum struct
+            let return_type = self.context.ptr_type(AddressSpace::default());
+            let fn_type = return_type.fn_type(&param_types, false);
+
+            let function = self.module.add_function(&constructor_name, fn_type, None);
+
+            // Store in functions table
+            self.functions.insert(
+                constructor_name.clone(),
+                CompiledFunction {
+                    function,
+                    return_type: Type::Named(enum_name.to_string(), vec![]),
+                },
+            );
+
+            // Also store variant name alone for pattern matching
+            self.functions.insert(
+                variant.name.clone(),
+                CompiledFunction {
+                    function,
+                    return_type: Type::Named(enum_name.to_string(), vec![]),
+                },
+            );
+
+            // Generate constructor body
+            let entry = self.context.append_basic_block(function, "entry");
+            self.builder.position_at_end(entry);
+
+            // Allocate the enum struct
+            let alloc_fn = self
+                .runtime_functions
+                .get("mux_alloc_object")
+                .ok_or_else(|| CodeGenError::new("mux_alloc_object not declared"))?;
+
+            let struct_size = enum_info.struct_type.size_of().unwrap();
+            let enum_ptr = self
+                .builder
+                .build_call(*alloc_fn, &[struct_size.into()], "enum_ptr")
+                .map_err(|e| CodeGenError::new(format!("Failed to build call: {}", e)))?
+                .try_as_basic_value()
+                .left()
+                .ok_or_else(|| CodeGenError::new("Expected return value from mux_alloc_object"))?
+                .into_pointer_value();
+
+            // Set the discriminant
+            let disc_ptr = self
+                .builder
+                .build_struct_gep(enum_info.struct_type, enum_ptr, 0, "disc_ptr")
+                .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+            let disc_val = self.context.i32_type().const_int(*discriminant as u64, false);
+            self.builder
+                .build_store(disc_ptr, disc_val)
+                .map_err(|e| CodeGenError::new(format!("Failed to build store: {}", e)))?;
+
+            // Store the payload fields
+            if !field_types.is_empty() {
+                let payload_ptr = self
+                    .builder
+                    .build_struct_gep(enum_info.struct_type, enum_ptr, 1, "payload_ptr")
+                    .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+                // Create a struct type for the payload
+                let payload_field_types: Vec<BasicTypeEnum> = field_types
+                    .iter()
+                    .map(|t| self.type_to_llvm(t))
+                    .collect::<CodeGenResult<Vec<_>>>()?;
+
+                let payload_struct = self.context.struct_type(&payload_field_types, false);
+
+                // Store each argument
+                for (i, _field_type) in field_types.iter().enumerate() {
+                    let arg = function.get_nth_param(i as u32).ok_or_else(|| {
+                        CodeGenError::new(format!("Could not get parameter {}", i))
+                    })?;
+
+                    let field_ptr = self
+                        .builder
+                        .build_struct_gep(payload_struct, payload_ptr, i as u32, &format!("field_{}", i))
+                        .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+                    self.builder
+                        .build_store(field_ptr, arg)
+                        .map_err(|e| CodeGenError::new(format!("Failed to build store: {}", e)))?;
+                }
+            }
+
+            // Return the enum pointer
+            self.builder
+                .build_return(Some(&enum_ptr))
+                .map_err(|e| CodeGenError::new(format!("Failed to build return: {}", e)))?;
+        }
+
+        Ok(())
+    }
+
+    /// Get the discriminant value from an enum instance
+    fn compile_enum_discriminant(
+        &mut self,
+        enum_ptr: PointerValue<'ctx>,
+        enum_name: &str,
+    ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
+        let enum_info = self
+            .enum_types
+            .get(enum_name)
+            .ok_or_else(|| CodeGenError::new(format!("Enum {} not declared", enum_name)))?;
+
+        let disc_ptr = self
+            .builder
+            .build_struct_gep(enum_info.struct_type, enum_ptr, 0, "disc_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+        let disc_val = self
+            .builder
+            .build_load(self.context.i32_type(), disc_ptr, "disc_val")
+            .map_err(|e| CodeGenError::new(format!("Failed to build load: {}", e)))?
+            .into_int_value();
+
+        Ok(disc_val)
+    }
+
+    /// Extract a payload field from an enum instance
+    fn compile_enum_payload_field(
+        &mut self,
+        enum_ptr: PointerValue<'ctx>,
+        enum_name: &str,
+        variant_name: &str,
+        field_index: u32,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let enum_info = self
+            .enum_types
+            .get(enum_name)
+            .cloned()
+            .ok_or_else(|| CodeGenError::new(format!("Enum {} not declared", enum_name)))?;
+
+        let (_disc, field_types) = enum_info
+            .variants
+            .get(variant_name)
+            .ok_or_else(|| {
+                CodeGenError::new(format!("Variant {} not found in enum {}", variant_name, enum_name))
+            })?;
+
+        if field_index as usize >= field_types.len() {
+            return Err(CodeGenError::new(format!(
+                "Field index {} out of bounds for variant {}",
+                field_index, variant_name
+            )));
+        }
+
+        let field_type = &field_types[field_index as usize];
+        let llvm_field_type = self.type_to_llvm(field_type)?;
+
+        let payload_ptr = self
+            .builder
+            .build_struct_gep(enum_info.struct_type, enum_ptr, 1, "payload_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+        // Create a struct type for the payload
+        let payload_field_types: Vec<BasicTypeEnum> = field_types
+            .iter()
+            .map(|t| self.type_to_llvm(t))
+            .collect::<CodeGenResult<Vec<_>>>()?;
+
+        let payload_struct = self.context.struct_type(&payload_field_types, false);
+
+        let field_ptr = self
+            .builder
+            .build_struct_gep(payload_struct, payload_ptr, field_index, &format!("field_{}", field_index))
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+        let field_val = self
+            .builder
+            .build_load(llvm_field_type, field_ptr, "field_val")
+            .map_err(|e| CodeGenError::new(format!("Failed to build load: {}", e)))?;
+
+        Ok(field_val)
+    }
+
+    // ========================================================================
     // Phase 2.4: Statement Compilation
     // ========================================================================
 
@@ -782,10 +1103,20 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
                 }
             }
             StatementKind::Break => {
-                // Break is handled in loop compilation
+                if let Some((_, break_bb)) = self.loop_stack.last() {
+                    self.builder.build_unconditional_branch(*break_bb)
+                        .map_err(|e| CodeGenError::new(format!("Failed to build break branch: {}", e)))?;
+                } else {
+                    return Err(CodeGenError::new("Break statement outside of loop"));
+                }
             }
             StatementKind::Continue => {
-                // Continue is handled in loop compilation
+                if let Some((continue_bb, _)) = self.loop_stack.last() {
+                    self.builder.build_unconditional_branch(*continue_bb)
+                        .map_err(|e| CodeGenError::new(format!("Failed to build continue branch: {}", e)))?;
+                } else {
+                    return Err(CodeGenError::new("Continue statement outside of loop"));
+                }
             }
             StatementKind::Match { expr, arms } => {
                 self.compile_match_statement(expr, arms)?;
@@ -890,6 +1221,10 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         let body_bb = self.context.append_basic_block(function, "while.body");
         let end_bb = self.context.append_basic_block(function, "while.end");
 
+        // Push loop context for break/continue
+        // continue jumps to condition, break jumps to end
+        self.loop_stack.push((cond_bb, end_bb));
+
         // Jump to condition block
         self.builder.build_unconditional_branch(cond_bb)
             .map_err(|e| CodeGenError::new(format!("Failed to build unconditional branch: {}", e)))?;
@@ -910,6 +1245,9 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
             self.builder.build_unconditional_branch(cond_bb)
                 .map_err(|e| CodeGenError::new(format!("Failed to build unconditional branch: {}", e)))?;
         }
+
+        // Pop loop context
+        self.loop_stack.pop();
 
         // Continue at end block
         self.builder.position_at_end(end_bb);
@@ -956,6 +1294,10 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         let body_bb = self.context.append_basic_block(function, "for.body");
         let inc_bb = self.context.append_basic_block(function, "for.inc");
         let end_bb = self.context.append_basic_block(function, "for.end");
+
+        // Push loop context for break/continue
+        // continue jumps to increment, break jumps to end
+        self.loop_stack.push((inc_bb, end_bb));
 
         self.builder.build_unconditional_branch(cond_bb)
             .map_err(|e| CodeGenError::new(format!("Failed to build unconditional branch: {}", e)))?;
@@ -1033,6 +1375,9 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         self.builder.build_unconditional_branch(cond_bb)
             .map_err(|e| CodeGenError::new(format!("Failed to build unconditional branch: {}", e)))?;
 
+        // Pop loop context
+        self.loop_stack.pop();
+
         self.builder.position_at_end(end_bb);
 
         Ok(())
@@ -1041,12 +1386,436 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
     /// Compile a match statement
     fn compile_match_statement(
         &mut self,
-        _expr: &ExpressionNode,
-        _arms: &[crate::parser::MatchArm],
+        expr: &ExpressionNode,
+        arms: &[crate::parser::MatchArm],
     ) -> CodeGenResult<()> {
-        // Match compilation is complex, placeholder for now
-        // TODO: Implement pattern matching
+        let function = self.current_function.ok_or_else(|| {
+            CodeGenError::new("Cannot compile match statement outside of a function")
+        })?;
+
+        // Compile the match expression
+        let match_value = self.compile_expression(expr)?;
+        let match_type = self.infer_expression_type(expr)?;
+
+        // Create blocks for each arm and the merge block
+        let mut arm_blocks: Vec<inkwell::basic_block::BasicBlock<'ctx>> = Vec::new();
+        for i in 0..arms.len() {
+            arm_blocks.push(self.context.append_basic_block(function, &format!("match.arm{}", i)));
+        }
+        let merge_bb = self.context.append_basic_block(function, "match.merge");
+        let default_bb = self.context.append_basic_block(function, "match.default");
+
+        // For simple integer/bool matches, we can use a switch instruction
+        // For more complex patterns, we fall back to if-else chains
+        if self.can_use_switch(&arms) && matches!(match_type, Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Bool) | Type::Primitive(PrimitiveType::Char)) {
+            // Use switch instruction for simple patterns
+            self.compile_match_switch(match_value, &match_type, arms, &arm_blocks, default_bb, merge_bb)?;
+        } else {
+            // Use if-else chain for complex patterns
+            self.compile_match_if_chain(match_value, &match_type, arms, &arm_blocks, default_bb, merge_bb)?;
+        }
+
+        // Position at merge block for continuation
+        self.builder.position_at_end(merge_bb);
+
         Ok(())
+    }
+
+    /// Check if we can use a switch instruction for the match
+    fn can_use_switch(&self, arms: &[crate::parser::MatchArm]) -> bool {
+        arms.iter().all(|arm| {
+            matches!(
+                &arm.pattern,
+                crate::parser::PatternNode::Literal(crate::parser::LiteralNode::Integer(_))
+                    | crate::parser::PatternNode::Literal(crate::parser::LiteralNode::Boolean(_))
+                    | crate::parser::PatternNode::Literal(crate::parser::LiteralNode::Char(_))
+                    | crate::parser::PatternNode::Wildcard
+                    | crate::parser::PatternNode::Identifier(_)
+            ) && arm.guard.is_none()
+        })
+    }
+
+    /// Compile match using LLVM switch instruction
+    fn compile_match_switch(
+        &mut self,
+        match_value: BasicValueEnum<'ctx>,
+        _match_type: &Type,
+        arms: &[crate::parser::MatchArm],
+        arm_blocks: &[inkwell::basic_block::BasicBlock<'ctx>],
+        default_bb: inkwell::basic_block::BasicBlock<'ctx>,
+        merge_bb: inkwell::basic_block::BasicBlock<'ctx>,
+    ) -> CodeGenResult<()> {
+        let int_value = match_value.into_int_value();
+
+        // Find the default arm (wildcard or identifier pattern)
+        let mut default_arm_idx: Option<usize> = None;
+        let mut cases: Vec<(inkwell::values::IntValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
+
+        for (i, arm) in arms.iter().enumerate() {
+            match &arm.pattern {
+                crate::parser::PatternNode::Wildcard | crate::parser::PatternNode::Identifier(_) => {
+                    if default_arm_idx.is_none() {
+                        default_arm_idx = Some(i);
+                    }
+                }
+                crate::parser::PatternNode::Literal(lit) => {
+                    let case_value = match lit {
+                        crate::parser::LiteralNode::Integer(n) => {
+                            self.context.i64_type().const_int(*n as u64, true)
+                        }
+                        crate::parser::LiteralNode::Boolean(b) => {
+                            self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)
+                        }
+                        crate::parser::LiteralNode::Char(c) => {
+                            self.context.i32_type().const_int(*c as u64, false)
+                        }
+                        _ => continue, // Skip non-integer literals
+                    };
+                    cases.push((case_value, arm_blocks[i]));
+                }
+                _ => {}
+            }
+        }
+
+        // Build the switch instruction
+        let actual_default = if let Some(idx) = default_arm_idx {
+            arm_blocks[idx]
+        } else {
+            default_bb
+        };
+
+        let _switch = self.builder.build_switch(int_value, actual_default, &cases)
+            .map_err(|e| CodeGenError::new(format!("Failed to build switch: {}", e)))?;
+
+        // Compile each arm's body
+        for (i, arm) in arms.iter().enumerate() {
+            self.builder.position_at_end(arm_blocks[i]);
+
+            // Bind identifier patterns to the match value
+            if let crate::parser::PatternNode::Identifier(name) = &arm.pattern {
+                let llvm_type = match_value.get_type();
+                let alloca = self.builder.build_alloca(llvm_type, name)
+                    .map_err(|e| CodeGenError::new(format!("Failed to build alloca: {}", e)))?;
+                self.builder.build_store(alloca, match_value)
+                    .map_err(|e| CodeGenError::new(format!("Failed to build store: {}", e)))?;
+
+                // Save previous binding
+                let prev_var = self.variables.remove(name);
+                self.variables.insert(
+                    name.clone(),
+                    Variable {
+                        ptr: alloca,
+                        type_: self.infer_expression_type_from_value(match_value)?,
+                    },
+                );
+
+                // Compile body
+                for stmt in &arm.body {
+                    self.compile_statement(stmt)?;
+                }
+
+                // Restore previous binding
+                if let Some(prev) = prev_var {
+                    self.variables.insert(name.clone(), prev);
+                } else {
+                    self.variables.remove(name);
+                }
+            } else {
+                // Compile body without binding
+                for stmt in &arm.body {
+                    self.compile_statement(stmt)?;
+                }
+            }
+
+            // Branch to merge if no terminator
+            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                self.builder.build_unconditional_branch(merge_bb)
+                    .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+            }
+        }
+
+        // Default block just branches to merge
+        self.builder.position_at_end(default_bb);
+        self.builder.build_unconditional_branch(merge_bb)
+            .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Compile match using if-else chain for complex patterns
+    fn compile_match_if_chain(
+        &mut self,
+        match_value: BasicValueEnum<'ctx>,
+        match_type: &Type,
+        arms: &[crate::parser::MatchArm],
+        arm_blocks: &[inkwell::basic_block::BasicBlock<'ctx>],
+        default_bb: inkwell::basic_block::BasicBlock<'ctx>,
+        merge_bb: inkwell::basic_block::BasicBlock<'ctx>,
+    ) -> CodeGenResult<()> {
+        let function = self.current_function.unwrap();
+
+        // Create condition blocks for each arm
+        let mut cond_blocks: Vec<inkwell::basic_block::BasicBlock<'ctx>> = Vec::new();
+        for i in 0..arms.len() {
+            cond_blocks.push(self.context.append_basic_block(function, &format!("match.cond{}", i)));
+        }
+
+        // Jump to first condition
+        self.builder.build_unconditional_branch(cond_blocks[0])
+            .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+
+        for (i, arm) in arms.iter().enumerate() {
+            self.builder.position_at_end(cond_blocks[i]);
+
+            // Check if pattern matches
+            let matches = self.compile_pattern_check(&arm.pattern, match_value, match_type)?;
+
+            // If there's a guard, check it too
+            let condition = if let Some(guard) = &arm.guard {
+                let guard_val = self.compile_expression(guard)?;
+                self.builder.build_and(matches, guard_val.into_int_value(), "match.guard")
+                    .map_err(|e| CodeGenError::new(format!("Failed to build and: {}", e)))?
+            } else {
+                matches
+            };
+
+            // Branch based on condition
+            let next_cond = if i + 1 < cond_blocks.len() {
+                cond_blocks[i + 1]
+            } else {
+                default_bb
+            };
+
+            self.builder.build_conditional_branch(condition, arm_blocks[i], next_cond)
+                .map_err(|e| CodeGenError::new(format!("Failed to build conditional branch: {}", e)))?;
+
+            // Compile arm body
+            self.builder.position_at_end(arm_blocks[i]);
+
+            // Bind pattern variables
+            self.bind_pattern_variables(&arm.pattern, match_value, match_type)?;
+
+            for stmt in &arm.body {
+                self.compile_statement(stmt)?;
+            }
+
+            // Branch to merge if no terminator
+            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                self.builder.build_unconditional_branch(merge_bb)
+                    .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+            }
+        }
+
+        // Default block just branches to merge (unreachable if patterns are exhaustive)
+        self.builder.position_at_end(default_bb);
+        self.builder.build_unconditional_branch(merge_bb)
+            .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Compile a pattern check - returns bool indicating if pattern matches
+    fn compile_pattern_check(
+        &mut self,
+        pattern: &crate::parser::PatternNode,
+        value: BasicValueEnum<'ctx>,
+        value_type: &Type,
+    ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
+        match pattern {
+            crate::parser::PatternNode::Wildcard | crate::parser::PatternNode::Identifier(_) => {
+                // Always matches
+                Ok(self.context.bool_type().const_int(1, false))
+            }
+            crate::parser::PatternNode::Literal(lit) => {
+                let lit_value = self.compile_literal(lit)?;
+                match value_type {
+                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) | Type::Primitive(PrimitiveType::Bool) => {
+                        self.builder.build_int_compare(
+                            IntPredicate::EQ,
+                            value.into_int_value(),
+                            lit_value.into_int_value(),
+                            "pattern.eq",
+                        ).map_err(|e| CodeGenError::new(format!("Failed to build compare: {}", e)))
+                    }
+                    Type::Primitive(PrimitiveType::Float) => {
+                        self.builder.build_float_compare(
+                            FloatPredicate::OEQ,
+                            value.into_float_value(),
+                            lit_value.into_float_value(),
+                            "pattern.feq",
+                        ).map_err(|e| CodeGenError::new(format!("Failed to build compare: {}", e)))
+                    }
+                    Type::Primitive(PrimitiveType::Str) => {
+                        let equals_fn = self.runtime_functions.get("mux_string_equals")
+                            .ok_or_else(|| CodeGenError::new("mux_string_equals not declared"))?;
+                        let result = self.builder
+                            .build_call(*equals_fn, &[value.into(), lit_value.into()], "pattern.str_eq")
+                            .map_err(|e| CodeGenError::new(format!("Failed to build call: {}", e)))?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                        Ok(result.into_int_value())
+                    }
+                    _ => Err(CodeGenError::new(format!(
+                        "Cannot pattern match literal against type {:?}",
+                        value_type
+                    ))),
+                }
+            }
+            crate::parser::PatternNode::Tuple(patterns) => {
+                // For tuples, check each element
+                if let Type::Tuple(elem_types) = value_type {
+                    let mut result = self.context.bool_type().const_int(1, false);
+                    for (i, (pat, elem_type)) in patterns.iter().zip(elem_types.iter()).enumerate() {
+                        let elem_val = self.builder.build_extract_value(
+                            value.into_struct_value(),
+                            i as u32,
+                            &format!("tuple.{}", i),
+                        ).map_err(|e| CodeGenError::new(format!("Failed to extract value: {}", e)))?;
+                        let elem_matches = self.compile_pattern_check(pat, elem_val.into(), elem_type)?;
+                        result = self.builder.build_and(result, elem_matches, "pattern.and")
+                            .map_err(|e| CodeGenError::new(format!("Failed to build and: {}", e)))?;
+                    }
+                    Ok(result)
+                } else {
+                    Err(CodeGenError::new("Expected tuple type for tuple pattern"))
+                }
+            }
+            crate::parser::PatternNode::EnumVariant { name, args: _ } => {
+                // For enums, check the discriminant
+                if name == "None" {
+                    // Check for null pointer (for Optional types)
+                    let null = self.context.ptr_type(AddressSpace::default()).const_null();
+                    self.builder.build_int_compare(
+                        IntPredicate::EQ,
+                        value.into_pointer_value(),
+                        null,
+                        "is_none",
+                    ).map_err(|e| CodeGenError::new(format!("Failed to build compare: {}", e)))
+                } else if name == "Some" {
+                    // Check for non-null pointer (for Optional types)
+                    let null = self.context.ptr_type(AddressSpace::default()).const_null();
+                    self.builder.build_int_compare(
+                        IntPredicate::NE,
+                        value.into_pointer_value(),
+                        null,
+                        "is_some",
+                    ).map_err(|e| CodeGenError::new(format!("Failed to build compare: {}", e)))
+                } else {
+                    // Check if this is a declared enum type
+                    if let Type::Named(enum_name, _) = value_type {
+                        if let Some(enum_info) = self.enum_types.get(enum_name).cloned() {
+                            if let Some((discriminant, _)) = enum_info.variants.get(name) {
+                                // Get the discriminant from the enum value
+                                let disc_ptr = self
+                                    .builder
+                                    .build_struct_gep(enum_info.struct_type, value.into_pointer_value(), 0, "disc_ptr")
+                                    .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+                                let disc_val = self
+                                    .builder
+                                    .build_load(self.context.i32_type(), disc_ptr, "disc_val")
+                                    .map_err(|e| CodeGenError::new(format!("Failed to build load: {}", e)))?
+                                    .into_int_value();
+
+                                let expected_disc = self.context.i32_type().const_int(*discriminant as u64, false);
+
+                                return self.builder.build_int_compare(
+                                    IntPredicate::EQ,
+                                    disc_val,
+                                    expected_disc,
+                                    &format!("is_{}", name),
+                                ).map_err(|e| CodeGenError::new(format!("Failed to build compare: {}", e)));
+                            }
+                        }
+                    }
+                    // Fallback: assume it always matches (for forward compatibility)
+                    Ok(self.context.bool_type().const_int(1, false))
+                }
+            }
+        }
+    }
+
+    /// Bind pattern variables to the matched value
+    fn bind_pattern_variables(
+        &mut self,
+        pattern: &crate::parser::PatternNode,
+        value: BasicValueEnum<'ctx>,
+        value_type: &Type,
+    ) -> CodeGenResult<()> {
+        match pattern {
+            crate::parser::PatternNode::Identifier(name) => {
+                let llvm_type = self.type_to_llvm(value_type)?;
+                let alloca = self.builder.build_alloca(llvm_type, name)
+                    .map_err(|e| CodeGenError::new(format!("Failed to build alloca: {}", e)))?;
+                self.builder.build_store(alloca, value)
+                    .map_err(|e| CodeGenError::new(format!("Failed to build store: {}", e)))?;
+                self.variables.insert(
+                    name.clone(),
+                    Variable {
+                        ptr: alloca,
+                        type_: value_type.clone(),
+                    },
+                );
+            }
+            crate::parser::PatternNode::Tuple(patterns) => {
+                if let Type::Tuple(elem_types) = value_type {
+                    for (i, (pat, elem_type)) in patterns.iter().zip(elem_types.iter()).enumerate() {
+                        let elem_val = self.builder.build_extract_value(
+                            value.into_struct_value(),
+                            i as u32,
+                            &format!("tuple.{}", i),
+                        ).map_err(|e| CodeGenError::new(format!("Failed to extract value: {}", e)))?;
+                        self.bind_pattern_variables(pat, elem_val.into(), elem_type)?;
+                    }
+                }
+            }
+            crate::parser::PatternNode::EnumVariant { name, args } => {
+                if name == "Some" && !args.is_empty() {
+                    // Bind the inner value of Some(x) for Optional types
+                    self.bind_pattern_variables(&args[0], value, value_type)?;
+                } else if !args.is_empty() {
+                    // Handle declared enum variants with payload
+                    if let Type::Named(enum_name, _) = value_type {
+                        if let Some(enum_info) = self.enum_types.get(enum_name).cloned() {
+                            if let Some((_, field_types)) = enum_info.variants.get(name) {
+                                // Extract each payload field and bind to pattern variables
+                                for (i, (arg_pat, field_type)) in args.iter().zip(field_types.iter()).enumerate() {
+                                    let field_val = self.compile_enum_payload_field(
+                                        value.into_pointer_value(),
+                                        enum_name,
+                                        name,
+                                        i as u32,
+                                    )?;
+                                    self.bind_pattern_variables(arg_pat, field_val, field_type)?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {} // Wildcard and Literal don't bind variables
+        }
+        Ok(())
+    }
+
+    /// Helper to infer type from LLVM value (best effort)
+    fn infer_expression_type_from_value(&self, value: BasicValueEnum<'ctx>) -> CodeGenResult<Type> {
+        match value {
+            BasicValueEnum::IntValue(iv) => {
+                let bit_width = iv.get_type().get_bit_width();
+                match bit_width {
+                    1 => Ok(Type::Primitive(PrimitiveType::Bool)),
+                    32 => Ok(Type::Primitive(PrimitiveType::Char)),
+                    64 => Ok(Type::Primitive(PrimitiveType::Int)),
+                    _ => Ok(Type::Primitive(PrimitiveType::Int)),
+                }
+            }
+            BasicValueEnum::FloatValue(_) => Ok(Type::Primitive(PrimitiveType::Float)),
+            BasicValueEnum::PointerValue(_) => Ok(Type::Primitive(PrimitiveType::Str)),
+            BasicValueEnum::StructValue(_) => Ok(Type::Tuple(vec![])),
+            _ => Ok(Type::Primitive(PrimitiveType::Int)),
+        }
     }
 
     // ========================================================================
@@ -1405,6 +2174,46 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
 
                 Ok(result)
             }
+            BinaryOp::Equal => {
+                // String equality comparison
+                let equals_fn = self
+                    .runtime_functions
+                    .get("mux_string_equals")
+                    .ok_or_else(|| CodeGenError::new("mux_string_equals not declared"))?;
+
+                let result = self
+                    .builder
+                    .build_call(*equals_fn, &[left.into(), right.into()], "str_eq")
+                    .map_err(|e| CodeGenError::new(format!("Failed to build call: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value from mux_string_equals"))?;
+
+                Ok(result)
+            }
+            BinaryOp::NotEqual => {
+                // String inequality comparison (negate the equality result)
+                let equals_fn = self
+                    .runtime_functions
+                    .get("mux_string_equals")
+                    .ok_or_else(|| CodeGenError::new("mux_string_equals not declared"))?;
+
+                let eq_result = self
+                    .builder
+                    .build_call(*equals_fn, &[left.into(), right.into()], "str_eq")
+                    .map_err(|e| CodeGenError::new(format!("Failed to build call: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value from mux_string_equals"))?;
+
+                // Negate the result for inequality
+                let negated = self
+                    .builder
+                    .build_not(eq_result.into_int_value(), "str_ne")
+                    .map_err(|e| CodeGenError::new(format!("Failed to build not: {}", e)))?;
+
+                Ok(negated.into())
+            }
             _ => Err(CodeGenError::new(format!(
                 "Unsupported binary operator for strings: {:?}",
                 op
@@ -1417,46 +2226,142 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         &mut self,
         op: &UnaryOp,
         expr: &ExpressionNode,
-        _postfix: bool,
+        postfix: bool,
     ) -> CodeGenResult<BasicValueEnum<'ctx>> {
-        let value = self.compile_expression(expr)?;
         let expr_type = self.infer_expression_type(expr)?;
 
         match op {
-            UnaryOp::Neg => match expr_type {
-                Type::Primitive(PrimitiveType::Int) => {
-                    Ok(self.builder.build_int_neg(value.into_int_value(), "neg")
-                        .map_err(|e| CodeGenError::new(format!("Failed to build int neg: {}", e)))?.into())
+            UnaryOp::Neg => {
+                let value = self.compile_expression(expr)?;
+                match expr_type {
+                    Type::Primitive(PrimitiveType::Int) => {
+                        Ok(self.builder.build_int_neg(value.into_int_value(), "neg")
+                            .map_err(|e| CodeGenError::new(format!("Failed to build int neg: {}", e)))?.into())
+                    }
+                    Type::Primitive(PrimitiveType::Float) => {
+                        Ok(self.builder.build_float_neg(value.into_float_value(), "fneg")
+                            .map_err(|e| CodeGenError::new(format!("Failed to build float neg: {}", e)))?.into())
+                    }
+                    _ => Err(CodeGenError::new(format!(
+                        "Cannot negate type {:?}",
+                        expr_type
+                    ))),
                 }
-                Type::Primitive(PrimitiveType::Float) => {
-                    Ok(self.builder.build_float_neg(value.into_float_value(), "fneg")
-                        .map_err(|e| CodeGenError::new(format!("Failed to build float neg: {}", e)))?.into())
-                }
-                _ => Err(CodeGenError::new(format!(
-                    "Cannot negate type {:?}",
-                    expr_type
-                ))),
-            },
+            }
             UnaryOp::Not => {
+                let value = self.compile_expression(expr)?;
                 Ok(self.builder.build_not(value.into_int_value(), "not")
                     .map_err(|e| CodeGenError::new(format!("Failed to build not: {}", e)))?.into())
             }
             UnaryOp::Ref => {
+                let value = self.compile_expression(expr)?;
                 // For references, we need to get the address
                 // This is a placeholder - proper implementation depends on context
                 Ok(value)
             }
             UnaryOp::Deref => {
+                let value = self.compile_expression(expr)?;
                 // Dereference a pointer
                 // This is a placeholder - proper implementation depends on context
                 Ok(value)
             }
-            UnaryOp::Incr | UnaryOp::Decr => {
-                // Increment/decrement - not yet implemented
-                Err(CodeGenError::new(
-                    "Increment/decrement operators not yet implemented",
-                ))
+            UnaryOp::Incr => {
+                // Increment operator (++x or x++)
+                self.compile_incr_decr(expr, &expr_type, true, postfix)
             }
+            UnaryOp::Decr => {
+                // Decrement operator (--x or x--)
+                self.compile_incr_decr(expr, &expr_type, false, postfix)
+            }
+        }
+    }
+
+    /// Compile increment/decrement operations
+    fn compile_incr_decr(
+        &mut self,
+        expr: &ExpressionNode,
+        expr_type: &Type,
+        is_incr: bool,
+        postfix: bool,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        // Get the variable pointer
+        let var_ptr = match &expr.kind {
+            ExpressionKind::Identifier(name) => {
+                let var = self.variables.get(name).ok_or_else(|| {
+                    CodeGenError::new(format!("Cannot increment/decrement undefined variable: {}", name))
+                })?;
+                var.ptr
+            }
+            _ => {
+                return Err(CodeGenError::new(
+                    "Increment/decrement requires a variable as operand",
+                ));
+            }
+        };
+
+        match expr_type {
+            Type::Primitive(PrimitiveType::Int) => {
+                // Load current value
+                let current_val = self
+                    .builder
+                    .build_load(self.context.i64_type(), var_ptr, "curr")
+                    .map_err(|e| CodeGenError::new(format!("Failed to build load: {}", e)))?
+                    .into_int_value();
+
+                // Compute new value
+                let one = self.context.i64_type().const_int(1, false);
+                let new_val = if is_incr {
+                    self.builder.build_int_add(current_val, one, "incr")
+                        .map_err(|e| CodeGenError::new(format!("Failed to build int add: {}", e)))?
+                } else {
+                    self.builder.build_int_sub(current_val, one, "decr")
+                        .map_err(|e| CodeGenError::new(format!("Failed to build int sub: {}", e)))?
+                };
+
+                // Store new value
+                self.builder.build_store(var_ptr, new_val)
+                    .map_err(|e| CodeGenError::new(format!("Failed to build store: {}", e)))?;
+
+                // Return old or new value depending on prefix/postfix
+                if postfix {
+                    Ok(current_val.into())
+                } else {
+                    Ok(new_val.into())
+                }
+            }
+            Type::Primitive(PrimitiveType::Float) => {
+                // Load current value
+                let current_val = self
+                    .builder
+                    .build_load(self.context.f64_type(), var_ptr, "curr")
+                    .map_err(|e| CodeGenError::new(format!("Failed to build load: {}", e)))?
+                    .into_float_value();
+
+                // Compute new value
+                let one = self.context.f64_type().const_float(1.0);
+                let new_val = if is_incr {
+                    self.builder.build_float_add(current_val, one, "fincr")
+                        .map_err(|e| CodeGenError::new(format!("Failed to build float add: {}", e)))?
+                } else {
+                    self.builder.build_float_sub(current_val, one, "fdecr")
+                        .map_err(|e| CodeGenError::new(format!("Failed to build float sub: {}", e)))?
+                };
+
+                // Store new value
+                self.builder.build_store(var_ptr, new_val)
+                    .map_err(|e| CodeGenError::new(format!("Failed to build store: {}", e)))?;
+
+                // Return old or new value depending on prefix/postfix
+                if postfix {
+                    Ok(current_val.into())
+                } else {
+                    Ok(new_val.into())
+                }
+            }
+            _ => Err(CodeGenError::new(format!(
+                "Cannot increment/decrement type {:?}",
+                expr_type
+            ))),
         }
     }
 
