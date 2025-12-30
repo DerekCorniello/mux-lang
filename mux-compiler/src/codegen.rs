@@ -93,6 +93,16 @@ pub struct CodeGenerator<'a, 'ctx> {
     /// where variant_info maps variant name to (discriminant, field_types)
     enum_types: HashMap<String, EnumTypeInfo<'ctx>>,
 
+    /// Result type cache - stores instantiated Result<T, E> types
+    result_types: HashMap<String, ResultTypeInfo<'ctx>>,
+
+    /// Monomorphized generic functions cache
+    /// Maps "func_name$type1$type2" to the monomorphized function info
+    monomorphized_functions: HashMap<String, MonomorphizedFunction<'ctx>>,
+
+    /// Generic function definitions waiting for monomorphization
+    generic_functions: HashMap<String, FunctionNode>,
+
     /// String constant cache
     string_constants: HashMap<String, PointerValue<'ctx>>,
 
@@ -102,6 +112,10 @@ pub struct CodeGenerator<'a, 'ctx> {
     /// Loop context stack for break/continue statements
     /// Each entry contains (continue_block, break_block)
     loop_stack: Vec<(inkwell::basic_block::BasicBlock<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)>,
+
+    /// Mutable reference tracking for borrow checking
+    /// Maps variable name to (is_borrowed, is_mutably_borrowed)
+    borrow_state: HashMap<String, (bool, bool)>,
 }
 
 /// Information about a compiled enum type
@@ -111,6 +125,31 @@ struct EnumTypeInfo<'ctx> {
     struct_type: StructType<'ctx>,
     /// Map from variant name to (discriminant_value, optional field types)
     variants: HashMap<String, (u32, Vec<Type>)>,
+}
+
+/// Information about a Result type
+/// Result<T, E> is represented as { i1 is_ok, union { T ok_value, E err_value } }
+#[derive(Clone)]
+struct ResultTypeInfo<'ctx> {
+    /// The LLVM struct type representing this Result
+    struct_type: StructType<'ctx>,
+    /// The Ok type
+    ok_type: Type,
+    /// The Err type
+    err_type: Type,
+}
+
+/// Information about monomorphized generic functions
+#[derive(Clone)]
+struct MonomorphizedFunction<'ctx> {
+    /// The original generic function name
+    base_name: String,
+    /// The concrete type arguments
+    type_args: Vec<Type>,
+    /// The compiled LLVM function
+    function: FunctionValue<'ctx>,
+    /// The return type
+    return_type: Type,
 }
 
 impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
@@ -130,9 +169,13 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
             current_function: None,
             struct_types: HashMap::new(),
             enum_types: HashMap::new(),
+            result_types: HashMap::new(),
+            monomorphized_functions: HashMap::new(),
+            generic_functions: HashMap::new(),
             string_constants: HashMap::new(),
             unique_counter: 0,
             loop_stack: Vec::new(),
+            borrow_state: HashMap::new(),
         };
 
         codegen.declare_runtime_functions();
@@ -371,6 +414,10 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         for node in ast {
             match node {
                 AstNode::Function(func) => {
+                    // Store generic functions for later monomorphization
+                    if !func.type_params.is_empty() {
+                        self.store_generic_function(func);
+                    }
                     self.declare_function(func)?;
                 }
                 AstNode::Class { name, fields, .. } => {
@@ -3049,6 +3096,740 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
                 "Type inference failed: {}",
                 e.message
             ))),
+        }
+    }
+
+    // ========================================================================
+    // Phase 1.4: Mutable Reference Types Implementation
+    // ========================================================================
+
+    /// Create a mutable reference to a variable
+    fn compile_mutable_ref(
+        &mut self,
+        expr: &ExpressionNode,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        match &expr.kind {
+            ExpressionKind::Identifier(name) => {
+                // Check if the variable exists
+                let var = self.variables.get(name).ok_or_else(|| {
+                    CodeGenError::new(format!("Cannot create mutable reference to undefined variable: {}", name))
+                })?;
+
+                // Check borrow state
+                if let Some((is_borrowed, is_mut_borrowed)) = self.borrow_state.get(name) {
+                    if *is_mut_borrowed {
+                        return Err(CodeGenError::new(format!(
+                            "Cannot create mutable reference: {} is already mutably borrowed",
+                            name
+                        )));
+                    }
+                    if *is_borrowed {
+                        return Err(CodeGenError::new(format!(
+                            "Cannot create mutable reference: {} is already borrowed",
+                            name
+                        )));
+                    }
+                }
+
+                // Mark as mutably borrowed
+                self.borrow_state.insert(name.clone(), (false, true));
+
+                // Return the pointer directly (mutable reference is just a pointer)
+                Ok(var.ptr.into())
+            }
+            _ => Err(CodeGenError::new(
+                "Cannot create mutable reference to non-lvalue expression",
+            )),
+        }
+    }
+
+    /// Release a mutable borrow
+    fn release_mutable_borrow(&mut self, name: &str) {
+        self.borrow_state.remove(name);
+    }
+
+    /// Dereference a mutable reference and assign a new value
+    fn compile_deref_assign(
+        &mut self,
+        ref_expr: &ExpressionNode,
+        value_expr: &ExpressionNode,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        // Get the pointer from the reference expression
+        let ptr_val = self.compile_expression(ref_expr)?;
+        let ptr = ptr_val.into_pointer_value();
+
+        // Compile the value to assign
+        let value = self.compile_expression(value_expr)?;
+
+        // Store the value through the pointer
+        self.builder.build_store(ptr, value)
+            .map_err(|e| CodeGenError::new(format!("Failed to store through reference: {}", e)))?;
+
+        Ok(value)
+    }
+
+    // ========================================================================
+    // Phase 1.5: Result<T, E> Type Implementation
+    // ========================================================================
+
+    /// Create or retrieve a Result<T, E> type
+    fn get_or_create_result_type(
+        &mut self,
+        ok_type: &Type,
+        err_type: &Type,
+    ) -> CodeGenResult<StructType<'ctx>> {
+        let type_key = format!("Result<{:?},{:?}>", ok_type, err_type);
+
+        if let Some(info) = self.result_types.get(&type_key) {
+            return Ok(info.struct_type);
+        }
+
+        // Result is represented as: { i1 is_ok, [max_size x i8] payload }
+        let ok_llvm = self.type_to_llvm(ok_type)?;
+        let err_llvm = self.type_to_llvm(err_type)?;
+
+        let ok_size = self.get_type_size(ok_llvm);
+        let err_size = self.get_type_size(err_llvm);
+        let max_size = std::cmp::max(ok_size, err_size);
+
+        let discriminant_type = self.context.bool_type();
+        let payload_type = self.context.i8_type().array_type(max_size as u32);
+
+        let struct_type = self.context.opaque_struct_type(&type_key);
+        struct_type.set_body(&[discriminant_type.into(), payload_type.into()], false);
+
+        self.result_types.insert(
+            type_key.clone(),
+            ResultTypeInfo {
+                struct_type,
+                ok_type: ok_type.clone(),
+                err_type: err_type.clone(),
+            },
+        );
+
+        // Also register in struct_types
+        self.struct_types.insert(type_key, struct_type);
+
+        Ok(struct_type)
+    }
+
+    /// Create an Ok(value) result
+    fn compile_result_ok(
+        &mut self,
+        value: BasicValueEnum<'ctx>,
+        ok_type: &Type,
+        err_type: &Type,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let result_struct = self.get_or_create_result_type(ok_type, err_type)?;
+
+        // Allocate the result
+        let alloc_fn = self.runtime_functions.get("mux_alloc_object")
+            .ok_or_else(|| CodeGenError::new("mux_alloc_object not declared"))?;
+
+        let struct_size = result_struct.size_of().unwrap();
+        let result_ptr = self.builder
+            .build_call(*alloc_fn, &[struct_size.into()], "result_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to allocate result: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value"))?
+            .into_pointer_value();
+
+        // Set is_ok = true
+        let is_ok_ptr = self.builder
+            .build_struct_gep(result_struct, result_ptr, 0, "is_ok_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+        self.builder
+            .build_store(is_ok_ptr, self.context.bool_type().const_int(1, false))
+            .map_err(|e| CodeGenError::new(format!("Failed to store is_ok: {}", e)))?;
+
+        // Store the ok value in the payload
+        let payload_ptr = self.builder
+            .build_struct_gep(result_struct, result_ptr, 1, "payload_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+        // Cast payload to the ok type and store
+        let ok_llvm = self.type_to_llvm(ok_type)?;
+        let typed_payload = self.builder
+            .build_pointer_cast(payload_ptr, self.context.ptr_type(AddressSpace::default()), "typed_payload")
+            .map_err(|e| CodeGenError::new(format!("Failed to cast pointer: {}", e)))?;
+
+        // For simple types, store directly; for pointer types, handle appropriately
+        match ok_llvm {
+            BasicTypeEnum::PointerType(_) => {
+                self.builder.build_store(typed_payload, value)
+                    .map_err(|e| CodeGenError::new(format!("Failed to store ok value: {}", e)))?;
+            }
+            _ => {
+                let value_alloca = self.builder.build_alloca(ok_llvm, "ok_tmp")
+                    .map_err(|e| CodeGenError::new(format!("Failed to build alloca: {}", e)))?;
+                self.builder.build_store(value_alloca, value)
+                    .map_err(|e| CodeGenError::new(format!("Failed to store value: {}", e)))?;
+                // Copy the bytes
+                self.builder.build_store(typed_payload, value)
+                    .map_err(|e| CodeGenError::new(format!("Failed to store ok value: {}", e)))?;
+            }
+        }
+
+        Ok(result_ptr.into())
+    }
+
+    /// Create an Err(value) result
+    fn compile_result_err(
+        &mut self,
+        value: BasicValueEnum<'ctx>,
+        ok_type: &Type,
+        err_type: &Type,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let result_struct = self.get_or_create_result_type(ok_type, err_type)?;
+
+        // Allocate the result
+        let alloc_fn = self.runtime_functions.get("mux_alloc_object")
+            .ok_or_else(|| CodeGenError::new("mux_alloc_object not declared"))?;
+
+        let struct_size = result_struct.size_of().unwrap();
+        let result_ptr = self.builder
+            .build_call(*alloc_fn, &[struct_size.into()], "result_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to allocate result: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value"))?
+            .into_pointer_value();
+
+        // Set is_ok = false
+        let is_ok_ptr = self.builder
+            .build_struct_gep(result_struct, result_ptr, 0, "is_ok_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+        self.builder
+            .build_store(is_ok_ptr, self.context.bool_type().const_int(0, false))
+            .map_err(|e| CodeGenError::new(format!("Failed to store is_ok: {}", e)))?;
+
+        // Store the err value in the payload
+        let payload_ptr = self.builder
+            .build_struct_gep(result_struct, result_ptr, 1, "payload_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+        let typed_payload = self.builder
+            .build_pointer_cast(payload_ptr, self.context.ptr_type(AddressSpace::default()), "typed_payload")
+            .map_err(|e| CodeGenError::new(format!("Failed to cast pointer: {}", e)))?;
+
+        self.builder.build_store(typed_payload, value)
+            .map_err(|e| CodeGenError::new(format!("Failed to store err value: {}", e)))?;
+
+        Ok(result_ptr.into())
+    }
+
+    /// Check if a Result is Ok
+    fn compile_result_is_ok(
+        &mut self,
+        result_ptr: PointerValue<'ctx>,
+        result_type_key: &str,
+    ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
+        let result_info = self.result_types.get(result_type_key)
+            .ok_or_else(|| CodeGenError::new(format!("Result type {} not found", result_type_key)))?;
+
+        let is_ok_ptr = self.builder
+            .build_struct_gep(result_info.struct_type, result_ptr, 0, "is_ok_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+        let is_ok = self.builder
+            .build_load(self.context.bool_type(), is_ok_ptr, "is_ok")
+            .map_err(|e| CodeGenError::new(format!("Failed to load is_ok: {}", e)))?
+            .into_int_value();
+
+        Ok(is_ok)
+    }
+
+    /// Unwrap the Ok value from a Result (assumes is_ok is true)
+    fn compile_result_unwrap_ok(
+        &mut self,
+        result_ptr: PointerValue<'ctx>,
+        result_type_key: &str,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let result_info = self.result_types.get(result_type_key).cloned()
+            .ok_or_else(|| CodeGenError::new(format!("Result type {} not found", result_type_key)))?;
+
+        let payload_ptr = self.builder
+            .build_struct_gep(result_info.struct_type, result_ptr, 1, "payload_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+        let ok_llvm = self.type_to_llvm(&result_info.ok_type)?;
+        let typed_payload = self.builder
+            .build_pointer_cast(payload_ptr, self.context.ptr_type(AddressSpace::default()), "typed_payload")
+            .map_err(|e| CodeGenError::new(format!("Failed to cast pointer: {}", e)))?;
+
+        let value = self.builder
+            .build_load(ok_llvm, typed_payload, "ok_value")
+            .map_err(|e| CodeGenError::new(format!("Failed to load ok value: {}", e)))?;
+
+        Ok(value)
+    }
+
+    /// Unwrap the Err value from a Result (assumes is_ok is false)
+    fn compile_result_unwrap_err(
+        &mut self,
+        result_ptr: PointerValue<'ctx>,
+        result_type_key: &str,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let result_info = self.result_types.get(result_type_key).cloned()
+            .ok_or_else(|| CodeGenError::new(format!("Result type {} not found", result_type_key)))?;
+
+        let payload_ptr = self.builder
+            .build_struct_gep(result_info.struct_type, result_ptr, 1, "payload_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+        let err_llvm = self.type_to_llvm(&result_info.err_type)?;
+        let typed_payload = self.builder
+            .build_pointer_cast(payload_ptr, self.context.ptr_type(AddressSpace::default()), "typed_payload")
+            .map_err(|e| CodeGenError::new(format!("Failed to cast pointer: {}", e)))?;
+
+        let value = self.builder
+            .build_load(err_llvm, typed_payload, "err_value")
+            .map_err(|e| CodeGenError::new(format!("Failed to load err value: {}", e)))?;
+
+        Ok(value)
+    }
+
+    // ========================================================================
+    // Phase 2.3: Or-Patterns for Pattern Matching
+    // ========================================================================
+
+    /// Compile a pattern check with support for or-patterns
+    /// Or-patterns allow matching multiple patterns: `1 | 2 | 3 => ...`
+    fn compile_or_pattern_check(
+        &mut self,
+        patterns: &[crate::parser::PatternNode],
+        value: BasicValueEnum<'ctx>,
+        value_type: &Type,
+    ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
+        if patterns.is_empty() {
+            return Ok(self.context.bool_type().const_int(0, false));
+        }
+
+        // Check first pattern
+        let mut result = self.compile_pattern_check(&patterns[0], value, value_type)?;
+
+        // OR with remaining patterns
+        for pattern in &patterns[1..] {
+            let pattern_matches = self.compile_pattern_check(pattern, value, value_type)?;
+            result = self.builder.build_or(result, pattern_matches, "or_pattern")
+                .map_err(|e| CodeGenError::new(format!("Failed to build or: {}", e)))?;
+        }
+
+        Ok(result)
+    }
+
+    // ========================================================================
+    // Phase 3.1: Struct Copy and Comparison Operations
+    // ========================================================================
+
+    /// Deep copy a struct value
+    fn compile_struct_copy(
+        &mut self,
+        source_ptr: PointerValue<'ctx>,
+        struct_name: &str,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let struct_type = self.struct_types.get(struct_name)
+            .ok_or_else(|| CodeGenError::new(format!("Struct {} not found", struct_name)))?
+            .clone();
+
+        // Allocate new struct
+        let alloc_fn = self.runtime_functions.get("mux_alloc_object")
+            .ok_or_else(|| CodeGenError::new("mux_alloc_object not declared"))?;
+
+        let struct_size = struct_type.size_of().unwrap();
+        let dest_ptr = self.builder
+            .build_call(*alloc_fn, &[struct_size.into()], "copy_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to allocate copy: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value"))?
+            .into_pointer_value();
+
+        // Copy each field
+        let num_fields = struct_type.count_fields();
+        for i in 0..num_fields {
+            let field_type = struct_type.get_field_type_at_index(i)
+                .ok_or_else(|| CodeGenError::new(format!("Field {} not found", i)))?;
+
+            let src_field_ptr = self.builder
+                .build_struct_gep(struct_type, source_ptr, i, &format!("src_field_{}", i))
+                .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+            let dest_field_ptr = self.builder
+                .build_struct_gep(struct_type, dest_ptr, i, &format!("dest_field_{}", i))
+                .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+            let field_value = self.builder
+                .build_load(field_type, src_field_ptr, &format!("field_{}", i))
+                .map_err(|e| CodeGenError::new(format!("Failed to load field: {}", e)))?;
+
+            self.builder.build_store(dest_field_ptr, field_value)
+                .map_err(|e| CodeGenError::new(format!("Failed to store field: {}", e)))?;
+        }
+
+        Ok(dest_ptr.into())
+    }
+
+    /// Compare two structs for equality
+    fn compile_struct_equals(
+        &mut self,
+        left_ptr: PointerValue<'ctx>,
+        right_ptr: PointerValue<'ctx>,
+        struct_name: &str,
+    ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
+        let struct_type = self.struct_types.get(struct_name)
+            .ok_or_else(|| CodeGenError::new(format!("Struct {} not found", struct_name)))?
+            .clone();
+
+        // Start with true
+        let mut result = self.context.bool_type().const_int(1, false);
+
+        let num_fields = struct_type.count_fields();
+        for i in 0..num_fields {
+            let field_type = struct_type.get_field_type_at_index(i)
+                .ok_or_else(|| CodeGenError::new(format!("Field {} not found", i)))?;
+
+            let left_field_ptr = self.builder
+                .build_struct_gep(struct_type, left_ptr, i, &format!("left_field_{}", i))
+                .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+            let right_field_ptr = self.builder
+                .build_struct_gep(struct_type, right_ptr, i, &format!("right_field_{}", i))
+                .map_err(|e| CodeGenError::new(format!("Failed to build struct gep: {}", e)))?;
+
+            let left_val = self.builder
+                .build_load(field_type, left_field_ptr, &format!("left_{}", i))
+                .map_err(|e| CodeGenError::new(format!("Failed to load field: {}", e)))?;
+
+            let right_val = self.builder
+                .build_load(field_type, right_field_ptr, &format!("right_{}", i))
+                .map_err(|e| CodeGenError::new(format!("Failed to load field: {}", e)))?;
+
+            // Compare based on type
+            let field_eq = match field_type {
+                BasicTypeEnum::IntType(_) => {
+                    self.builder.build_int_compare(
+                        IntPredicate::EQ,
+                        left_val.into_int_value(),
+                        right_val.into_int_value(),
+                        &format!("eq_{}", i),
+                    ).map_err(|e| CodeGenError::new(format!("Failed to compare: {}", e)))?
+                }
+                BasicTypeEnum::FloatType(_) => {
+                    self.builder.build_float_compare(
+                        FloatPredicate::OEQ,
+                        left_val.into_float_value(),
+                        right_val.into_float_value(),
+                        &format!("eq_{}", i),
+                    ).map_err(|e| CodeGenError::new(format!("Failed to compare: {}", e)))?
+                }
+                BasicTypeEnum::PointerType(_) => {
+                    // For pointers, compare addresses (shallow comparison)
+                    self.builder.build_int_compare(
+                        IntPredicate::EQ,
+                        self.builder.build_ptr_to_int(left_val.into_pointer_value(), self.context.i64_type(), "ptr_l")
+                            .map_err(|e| CodeGenError::new(format!("Failed to convert pointer: {}", e)))?,
+                        self.builder.build_ptr_to_int(right_val.into_pointer_value(), self.context.i64_type(), "ptr_r")
+                            .map_err(|e| CodeGenError::new(format!("Failed to convert pointer: {}", e)))?,
+                        &format!("eq_{}", i),
+                    ).map_err(|e| CodeGenError::new(format!("Failed to compare: {}", e)))?
+                }
+                _ => {
+                    // For other types, default to true (skip comparison)
+                    self.context.bool_type().const_int(1, false)
+                }
+            };
+
+            // AND with running result
+            result = self.builder.build_and(result, field_eq, &format!("and_{}", i))
+                .map_err(|e| CodeGenError::new(format!("Failed to build and: {}", e)))?;
+        }
+
+        Ok(result)
+    }
+
+    // ========================================================================
+    // Phase 3.3: Exhaustive Enum Checking
+    // ========================================================================
+
+    /// Check if all enum variants are covered in a match statement
+    fn check_enum_exhaustiveness(
+        &self,
+        enum_name: &str,
+        arms: &[crate::parser::MatchArm],
+    ) -> CodeGenResult<()> {
+        let enum_info = self.enum_types.get(enum_name)
+            .ok_or_else(|| CodeGenError::new(format!("Enum {} not found", enum_name)))?;
+
+        let mut covered_variants: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut has_wildcard = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                crate::parser::PatternNode::Wildcard => {
+                    has_wildcard = true;
+                }
+                crate::parser::PatternNode::Identifier(_) => {
+                    has_wildcard = true; // Identifier patterns also catch-all
+                }
+                crate::parser::PatternNode::EnumVariant { name, .. } => {
+                    covered_variants.insert(name.clone());
+                }
+                _ => {}
+            }
+        }
+
+        if has_wildcard {
+            return Ok(()); // Wildcard covers everything
+        }
+
+        // Check if all variants are covered
+        let all_variants: std::collections::HashSet<String> = enum_info.variants.keys().cloned().collect();
+        let missing: Vec<&String> = all_variants.difference(&covered_variants).collect();
+
+        if !missing.is_empty() {
+            return Err(CodeGenError::new(format!(
+                "Non-exhaustive match for enum {}: missing variants {:?}",
+                enum_name, missing
+            )));
+        }
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Phase 4: Generic Monomorphization
+    // ========================================================================
+
+    /// Generate a unique monomorphized function name
+    fn monomorphized_name(&self, base_name: &str, type_args: &[Type]) -> String {
+        let type_suffix: Vec<String> = type_args.iter()
+            .map(|t| format!("{:?}", t).replace(" ", "_").replace(",", "_"))
+            .collect();
+        format!("{}${}", base_name, type_suffix.join("$"))
+    }
+
+    /// Store a generic function for later monomorphization
+    fn store_generic_function(&mut self, func: &FunctionNode) {
+        if !func.type_params.is_empty() {
+            self.generic_functions.insert(func.name.clone(), func.clone());
+        }
+    }
+
+    /// Get or create a monomorphized version of a generic function
+    fn get_or_monomorphize_function(
+        &mut self,
+        base_name: &str,
+        type_args: &[Type],
+    ) -> CodeGenResult<FunctionValue<'ctx>> {
+        let mono_name = self.monomorphized_name(base_name, type_args);
+
+        // Check if already monomorphized
+        if let Some(mono) = self.monomorphized_functions.get(&mono_name) {
+            return Ok(mono.function);
+        }
+
+        // Get the generic function definition
+        let generic_func = self.generic_functions.get(base_name)
+            .ok_or_else(|| CodeGenError::new(format!("Generic function {} not found", base_name)))?
+            .clone();
+
+        // Create type substitution map
+        let mut type_subs: HashMap<String, Type> = HashMap::new();
+        for (i, (param_name, _bounds)) in generic_func.type_params.iter().enumerate() {
+            if i < type_args.len() {
+                type_subs.insert(param_name.clone(), type_args[i].clone());
+            }
+        }
+
+        // Create a specialized version of the function with substituted types
+        let specialized_params: Vec<Param> = generic_func.params.iter()
+            .map(|p| {
+                let specialized_type = self.substitute_type(&self.resolve_type_node(&p.type_).unwrap_or(Type::Void), &type_subs);
+                Param {
+                    name: p.name.clone(),
+                    type_: self.type_to_type_node(&specialized_type),
+                    default_value: p.default_value.clone(),
+                }
+            })
+            .collect();
+
+        let specialized_return = self.substitute_type(
+            &self.resolve_type_node(&generic_func.return_type).unwrap_or(Type::Void),
+            &type_subs
+        );
+
+        // Create the monomorphized function
+        let return_type = specialized_return.clone();
+        let param_types: Vec<BasicMetadataTypeEnum> = specialized_params.iter()
+            .map(|p| {
+                let t = self.resolve_type_node(&p.type_).unwrap_or(Type::Void);
+                self.type_to_llvm(&t).map(|ty| ty.into())
+            })
+            .collect::<CodeGenResult<Vec<_>>>()?;
+
+        let fn_type = match &return_type {
+            Type::Void => self.context.void_type().fn_type(&param_types, false),
+            _ => {
+                let ret_llvm = self.type_to_llvm(&return_type)?;
+                ret_llvm.fn_type(&param_types, false)
+            }
+        };
+
+        let function = self.module.add_function(&mono_name, fn_type, None);
+
+        // Store in monomorphized functions
+        self.monomorphized_functions.insert(
+            mono_name.clone(),
+            MonomorphizedFunction {
+                base_name: base_name.to_string(),
+                type_args: type_args.to_vec(),
+                function,
+                return_type: return_type.clone(),
+            },
+        );
+
+        // Also register in functions table
+        self.functions.insert(
+            mono_name.clone(),
+            CompiledFunction {
+                function,
+                return_type: return_type.clone(),
+            },
+        );
+
+        // Compile the function body with substituted types
+        let entry = self.context.append_basic_block(function, "entry");
+        self.builder.position_at_end(entry);
+
+        let prev_function = self.current_function;
+        self.current_function = Some(function);
+        let prev_variables = self.variables.clone();
+        self.variables.clear();
+
+        // Add parameters to scope
+        for (i, param) in specialized_params.iter().enumerate() {
+            let param_type = self.resolve_type_node(&param.type_)?;
+            let llvm_type = self.type_to_llvm(&param_type)?;
+            let alloca = self.builder.build_alloca(llvm_type, &param.name)
+                .map_err(|e| CodeGenError::new(format!("Failed to build alloca: {}", e)))?;
+
+            let param_value = function.get_nth_param(i as u32).ok_or_else(|| {
+                CodeGenError::new(format!("Could not get parameter {}", i))
+            })?;
+
+            self.builder.build_store(alloca, param_value)
+                .map_err(|e| CodeGenError::new(format!("Failed to build store: {}", e)))?;
+
+            self.variables.insert(
+                param.name.clone(),
+                Variable {
+                    ptr: alloca,
+                    type_: param_type,
+                },
+            );
+        }
+
+        // Compile the body
+        let mut has_terminator = false;
+        for stmt in &generic_func.body {
+            self.compile_statement(stmt)?;
+            if self.builder.get_insert_block().unwrap().get_terminator().is_some() {
+                has_terminator = true;
+                break;
+            }
+        }
+
+        if !has_terminator {
+            match return_type {
+                Type::Void => {
+                    self.builder.build_return(None)
+                        .map_err(|e| CodeGenError::new(format!("Failed to build return: {}", e)))?;
+                }
+                _ => {
+                    let default_val = self.default_value(&return_type)?;
+                    self.builder.build_return(Some(&default_val))
+                        .map_err(|e| CodeGenError::new(format!("Failed to build return: {}", e)))?;
+                }
+            }
+        }
+
+        self.variables = prev_variables;
+        self.current_function = prev_function;
+
+        Ok(function)
+    }
+
+    /// Substitute generic types with concrete types
+    fn substitute_type(&self, type_: &Type, subs: &HashMap<String, Type>) -> Type {
+        match type_ {
+            Type::Generic(name) | Type::Variable(name) => {
+                subs.get(name).cloned().unwrap_or_else(|| type_.clone())
+            }
+            Type::Named(name, args) => {
+                if args.is_empty() {
+                    // Check if this name is a type parameter
+                    if let Some(concrete) = subs.get(name) {
+                        return concrete.clone();
+                    }
+                }
+                Type::Named(
+                    name.clone(),
+                    args.iter().map(|a| self.substitute_type(a, subs)).collect(),
+                )
+            }
+            Type::List(inner) => Type::List(Box::new(self.substitute_type(inner, subs))),
+            Type::Map(k, v) => Type::Map(
+                Box::new(self.substitute_type(k, subs)),
+                Box::new(self.substitute_type(v, subs)),
+            ),
+            Type::Set(inner) => Type::Set(Box::new(self.substitute_type(inner, subs))),
+            Type::Optional(inner) => Type::Optional(Box::new(self.substitute_type(inner, subs))),
+            Type::Reference(inner) => Type::Reference(Box::new(self.substitute_type(inner, subs))),
+            Type::Tuple(elems) => Type::Tuple(
+                elems.iter().map(|e| self.substitute_type(e, subs)).collect(),
+            ),
+            Type::Function { params, returns } => Type::Function {
+                params: params.iter().map(|p| self.substitute_type(p, subs)).collect(),
+                returns: Box::new(self.substitute_type(returns, subs)),
+            },
+            _ => type_.clone(),
+        }
+    }
+
+    /// Convert a Type back to a TypeNode (for monomorphization)
+    fn type_to_type_node(&self, type_: &Type) -> TypeNode {
+        let kind = match type_ {
+            Type::Primitive(prim) => TypeKind::Primitive(prim.clone()),
+            Type::List(inner) => TypeKind::List(Box::new(self.type_to_type_node(inner))),
+            Type::Map(k, v) => TypeKind::Map(
+                Box::new(self.type_to_type_node(k)),
+                Box::new(self.type_to_type_node(v)),
+            ),
+            Type::Set(inner) => TypeKind::Set(Box::new(self.type_to_type_node(inner))),
+            Type::Optional(inner) => TypeKind::Named(
+                "Optional".to_string(),
+                vec![self.type_to_type_node(inner)],
+            ),
+            Type::Reference(inner) => TypeKind::Reference(Box::new(self.type_to_type_node(inner))),
+            Type::Tuple(elems) => TypeKind::Tuple(
+                elems.iter().map(|e| self.type_to_type_node(e)).collect(),
+            ),
+            Type::Named(name, args) => TypeKind::Named(
+                name.clone(),
+                args.iter().map(|a| self.type_to_type_node(a)).collect(),
+            ),
+            Type::Void => TypeKind::Primitive(PrimitiveType::Void),
+            Type::Function { params, returns } => TypeKind::Function {
+                params: params.iter().map(|p| self.type_to_type_node(p)).collect(),
+                returns: Box::new(self.type_to_type_node(returns)),
+            },
+            _ => TypeKind::Primitive(PrimitiveType::Auto),
+        };
+        TypeNode {
+            kind,
+            span: crate::lexer::Span::new(0, 0),
         }
     }
 }
