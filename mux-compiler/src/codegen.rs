@@ -3832,4 +3832,1048 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
             span: crate::lexer::Span::new(0, 0),
         }
     }
+
+    // ========================================================================
+    // Phase 4.1: Generic Type Constraints and Bounds Checking
+    // ========================================================================
+
+    /// Check if a concrete type satisfies a constraint bound
+    fn check_type_satisfies_bound(
+        &self,
+        concrete_type: &Type,
+        bound: &str,
+    ) -> CodeGenResult<bool> {
+        // Built-in bounds that certain types automatically satisfy
+        match bound {
+            "Comparable" => {
+                // Primitives and strings are comparable
+                match concrete_type {
+                    Type::Primitive(PrimitiveType::Int)
+                    | Type::Primitive(PrimitiveType::Float)
+                    | Type::Primitive(PrimitiveType::Bool)
+                    | Type::Primitive(PrimitiveType::Char)
+                    | Type::Primitive(PrimitiveType::Str) => Ok(true),
+                    _ => Ok(false),
+                }
+            }
+            "Hashable" => {
+                // Types that can be used as map keys
+                match concrete_type {
+                    Type::Primitive(PrimitiveType::Int)
+                    | Type::Primitive(PrimitiveType::Str)
+                    | Type::Primitive(PrimitiveType::Char)
+                    | Type::Primitive(PrimitiveType::Bool) => Ok(true),
+                    _ => Ok(false),
+                }
+            }
+            "Numeric" => {
+                // Numeric types for arithmetic operations
+                match concrete_type {
+                    Type::Primitive(PrimitiveType::Int)
+                    | Type::Primitive(PrimitiveType::Float) => Ok(true),
+                    _ => Ok(false),
+                }
+            }
+            "Stringable" | "ToString" => {
+                // Types that can be converted to string
+                match concrete_type {
+                    Type::Primitive(_) => Ok(true),
+                    _ => Ok(false), // TODO: Check for to_string method
+                }
+            }
+            "Default" => {
+                // Types that have a default value
+                match concrete_type {
+                    Type::Primitive(_) | Type::Optional(_) => Ok(true),
+                    _ => Ok(false),
+                }
+            }
+            "Copy" | "Clone" => {
+                // Types that can be copied
+                match concrete_type {
+                    Type::Primitive(_) => Ok(true),
+                    Type::Named(name, _) => {
+                        // Check if the named type has a copy implementation
+                        Ok(self.struct_types.contains_key(name))
+                    }
+                    _ => Ok(false),
+                }
+            }
+            "Iterable" => {
+                // Types that can be iterated
+                match concrete_type {
+                    Type::List(_) | Type::Set(_) | Type::Map(_, _) => Ok(true),
+                    _ => Ok(false),
+                }
+            }
+            _ => {
+                // Check if it's a user-defined interface
+                // For now, assume unknown bounds are satisfied
+                Ok(true)
+            }
+        }
+    }
+
+    /// Verify that type arguments satisfy all constraints for a generic function
+    fn verify_generic_constraints(
+        &self,
+        func_name: &str,
+        type_params: &[(String, Vec<String>)],
+        type_args: &[Type],
+    ) -> CodeGenResult<()> {
+        if type_params.len() != type_args.len() {
+            return Err(CodeGenError::new(format!(
+                "Function {} expects {} type arguments, got {}",
+                func_name,
+                type_params.len(),
+                type_args.len()
+            )));
+        }
+
+        for (i, ((param_name, bounds), concrete_type)) in type_params.iter().zip(type_args.iter()).enumerate() {
+            for bound in bounds {
+                if !self.check_type_satisfies_bound(concrete_type, bound)? {
+                    return Err(CodeGenError::new(format!(
+                        "Type argument {} ({:?}) for parameter '{}' in function {} does not satisfy bound '{}'",
+                        i, concrete_type, param_name, func_name, bound
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Infer type arguments from call arguments when not explicitly provided
+    fn infer_type_arguments(
+        &mut self,
+        func_name: &str,
+        call_args: &[ExpressionNode],
+    ) -> CodeGenResult<Vec<Type>> {
+        let generic_func = self.generic_functions.get(func_name)
+            .ok_or_else(|| CodeGenError::new(format!("Generic function {} not found", func_name)))?
+            .clone();
+
+        let mut inferred: HashMap<String, Type> = HashMap::new();
+
+        // Try to infer type from each argument
+        for (param, arg) in generic_func.params.iter().zip(call_args.iter()) {
+            let arg_type = self.infer_expression_type(arg)?;
+            let param_type = self.resolve_type_node(&param.type_)?;
+            self.unify_types(&param_type, &arg_type, &mut inferred)?;
+        }
+
+        // Build the result vector in order of type parameters
+        let mut result = Vec::new();
+        for (param_name, _bounds) in &generic_func.type_params {
+            if let Some(inferred_type) = inferred.get(param_name) {
+                result.push(inferred_type.clone());
+            } else {
+                return Err(CodeGenError::new(format!(
+                    "Could not infer type for parameter '{}' in function {}",
+                    param_name, func_name
+                )));
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Unify a parameter type with an argument type, recording inferences
+    fn unify_types(
+        &self,
+        param_type: &Type,
+        arg_type: &Type,
+        inferred: &mut HashMap<String, Type>,
+    ) -> CodeGenResult<()> {
+        match param_type {
+            Type::Generic(name) | Type::Variable(name) | Type::Named(name, _) if self.is_type_param(name) => {
+                // This is a type parameter, record the inference
+                if let Some(existing) = inferred.get(name) {
+                    // Check consistency
+                    if existing != arg_type {
+                        return Err(CodeGenError::new(format!(
+                            "Conflicting type inference for '{}': {:?} vs {:?}",
+                            name, existing, arg_type
+                        )));
+                    }
+                } else {
+                    inferred.insert(name.clone(), arg_type.clone());
+                }
+            }
+            Type::List(inner_param) => {
+                if let Type::List(inner_arg) = arg_type {
+                    self.unify_types(inner_param, inner_arg, inferred)?;
+                }
+            }
+            Type::Map(k_param, v_param) => {
+                if let Type::Map(k_arg, v_arg) = arg_type {
+                    self.unify_types(k_param, k_arg, inferred)?;
+                    self.unify_types(v_param, v_arg, inferred)?;
+                }
+            }
+            Type::Set(inner_param) => {
+                if let Type::Set(inner_arg) = arg_type {
+                    self.unify_types(inner_param, inner_arg, inferred)?;
+                }
+            }
+            Type::Optional(inner_param) => {
+                if let Type::Optional(inner_arg) = arg_type {
+                    self.unify_types(inner_param, inner_arg, inferred)?;
+                }
+            }
+            Type::Tuple(elems_param) => {
+                if let Type::Tuple(elems_arg) = arg_type {
+                    for (p, a) in elems_param.iter().zip(elems_arg.iter()) {
+                        self.unify_types(p, a, inferred)?;
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Check if a name is a type parameter in the current context
+    fn is_type_param(&self, name: &str) -> bool {
+        // Check if this name appears as a type parameter in any generic function
+        for func in self.generic_functions.values() {
+            for (param_name, _) in &func.type_params {
+                if param_name == name {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    // ========================================================================
+    // Phase 1.5: Exhaustive Checking for Optional/Result Types
+    // ========================================================================
+
+    /// Check if all Optional variants (Some/None) are covered in a match
+    fn check_optional_exhaustiveness(
+        &self,
+        arms: &[crate::parser::MatchArm],
+    ) -> CodeGenResult<()> {
+        let mut has_some = false;
+        let mut has_none = false;
+        let mut has_wildcard = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                crate::parser::PatternNode::Wildcard => has_wildcard = true,
+                crate::parser::PatternNode::Identifier(_) => has_wildcard = true,
+                crate::parser::PatternNode::EnumVariant { name, .. } => {
+                    match name.as_str() {
+                        "Some" => has_some = true,
+                        "None" => has_none = true,
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if has_wildcard {
+            return Ok(());
+        }
+
+        if !has_some || !has_none {
+            let missing = if !has_some && !has_none {
+                "Some and None"
+            } else if !has_some {
+                "Some"
+            } else {
+                "None"
+            };
+            return Err(CodeGenError::new(format!(
+                "Non-exhaustive match for Optional: missing {}",
+                missing
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Check if all Result variants (Ok/Err) are covered in a match
+    fn check_result_exhaustiveness(
+        &self,
+        arms: &[crate::parser::MatchArm],
+    ) -> CodeGenResult<()> {
+        let mut has_ok = false;
+        let mut has_err = false;
+        let mut has_wildcard = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                crate::parser::PatternNode::Wildcard => has_wildcard = true,
+                crate::parser::PatternNode::Identifier(_) => has_wildcard = true,
+                crate::parser::PatternNode::EnumVariant { name, .. } => {
+                    match name.as_str() {
+                        "Ok" => has_ok = true,
+                        "Err" => has_err = true,
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if has_wildcard {
+            return Ok(());
+        }
+
+        if !has_ok || !has_err {
+            let missing = if !has_ok && !has_err {
+                "Ok and Err"
+            } else if !has_ok {
+                "Ok"
+            } else {
+                "Err"
+            };
+            return Err(CodeGenError::new(format!(
+                "Non-exhaustive match for Result: missing {}",
+                missing
+            )));
+        }
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Phase 5.1: Iterator Protocols for Collections
+    // ========================================================================
+
+    /// Declare iterator runtime functions
+    fn declare_iterator_runtime_functions(&mut self) {
+        // List iterator functions
+        self.declare_runtime_fn("mux_list_iter_new", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_list_iter_has_next", &["ptr"], "i1");
+        self.declare_runtime_fn("mux_list_iter_next", &["ptr"], "ptr");
+
+        // Map iterator functions
+        self.declare_runtime_fn("mux_map_iter_new", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_map_iter_has_next", &["ptr"], "i1");
+        self.declare_runtime_fn("mux_map_iter_next_key", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_map_iter_next_value", &["ptr"], "ptr");
+
+        // Set iterator functions
+        self.declare_runtime_fn("mux_set_iter_new", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_set_iter_has_next", &["ptr"], "i1");
+        self.declare_runtime_fn("mux_set_iter_next", &["ptr"], "ptr");
+    }
+
+    /// Create an iterator for a collection
+    fn compile_iter_new(
+        &mut self,
+        collection_ptr: PointerValue<'ctx>,
+        collection_type: &Type,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let iter_fn_name = match collection_type {
+            Type::List(_) => "mux_list_iter_new",
+            Type::Map(_, _) => "mux_map_iter_new",
+            Type::Set(_) => "mux_set_iter_new",
+            _ => return Err(CodeGenError::new(format!(
+                "Cannot create iterator for type {:?}",
+                collection_type
+            ))),
+        };
+
+        let iter_fn = self.runtime_functions.get(iter_fn_name)
+            .ok_or_else(|| CodeGenError::new(format!("{} not declared", iter_fn_name)))?;
+
+        let iter_ptr = self.builder
+            .build_call(*iter_fn, &[collection_ptr.into()], "iter")
+            .map_err(|e| CodeGenError::new(format!("Failed to create iterator: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from iter_new"))?;
+
+        Ok(iter_ptr)
+    }
+
+    /// Check if an iterator has more elements
+    fn compile_iter_has_next(
+        &mut self,
+        iter_ptr: PointerValue<'ctx>,
+        collection_type: &Type,
+    ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
+        let has_next_fn_name = match collection_type {
+            Type::List(_) => "mux_list_iter_has_next",
+            Type::Map(_, _) => "mux_map_iter_has_next",
+            Type::Set(_) => "mux_set_iter_has_next",
+            _ => return Err(CodeGenError::new(format!(
+                "Cannot check iterator for type {:?}",
+                collection_type
+            ))),
+        };
+
+        let has_next_fn = self.runtime_functions.get(has_next_fn_name)
+            .ok_or_else(|| CodeGenError::new(format!("{} not declared", has_next_fn_name)))?;
+
+        let has_next = self.builder
+            .build_call(*has_next_fn, &[iter_ptr.into()], "has_next")
+            .map_err(|e| CodeGenError::new(format!("Failed to check has_next: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from has_next"))?
+            .into_int_value();
+
+        Ok(has_next)
+    }
+
+    /// Get the next element from an iterator
+    fn compile_iter_next(
+        &mut self,
+        iter_ptr: PointerValue<'ctx>,
+        collection_type: &Type,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let next_fn_name = match collection_type {
+            Type::List(_) => "mux_list_iter_next",
+            Type::Map(_, _) => "mux_map_iter_next_key", // For maps, returns key-value pair
+            Type::Set(_) => "mux_set_iter_next",
+            _ => return Err(CodeGenError::new(format!(
+                "Cannot iterate over type {:?}",
+                collection_type
+            ))),
+        };
+
+        let next_fn = self.runtime_functions.get(next_fn_name)
+            .ok_or_else(|| CodeGenError::new(format!("{} not declared", next_fn_name)))?;
+
+        let next_val = self.builder
+            .build_call(*next_fn, &[iter_ptr.into()], "next")
+            .map_err(|e| CodeGenError::new(format!("Failed to get next: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from iter_next"))?;
+
+        Ok(next_val)
+    }
+
+    // ========================================================================
+    // Phase 5.2: Collection Searching and Filtering Operations
+    // ========================================================================
+
+    /// Declare additional collection runtime functions
+    fn declare_collection_search_functions(&mut self) {
+        // List searching functions
+        self.declare_runtime_fn("mux_list_find", &["ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_list_index_of", &["ptr", "ptr"], "i64");
+        self.declare_runtime_fn("mux_list_contains", &["ptr", "ptr"], "i1");
+        self.declare_runtime_fn("mux_list_filter", &["ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_list_map", &["ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_list_reduce", &["ptr", "ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_list_first", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_list_last", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_list_reverse", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_list_slice", &["ptr", "i64", "i64"], "ptr");
+        self.declare_runtime_fn("mux_list_sort", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_list_remove", &["ptr", "i64"], "ptr");
+        self.declare_runtime_fn("mux_list_clear", &["ptr"], "void");
+        self.declare_runtime_fn("mux_list_is_empty", &["ptr"], "i1");
+
+        // Map searching functions
+        self.declare_runtime_fn("mux_map_contains_key", &["ptr", "ptr"], "i1");
+        self.declare_runtime_fn("mux_map_contains_value", &["ptr", "ptr"], "i1");
+        self.declare_runtime_fn("mux_map_keys", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_map_values", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_map_entries", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_map_remove", &["ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_map_clear", &["ptr"], "void");
+        self.declare_runtime_fn("mux_map_length", &["ptr"], "i64");
+        self.declare_runtime_fn("mux_map_is_empty", &["ptr"], "i1");
+
+        // Set searching functions
+        self.declare_runtime_fn("mux_set_remove", &["ptr", "ptr"], "i1");
+        self.declare_runtime_fn("mux_set_clear", &["ptr"], "void");
+        self.declare_runtime_fn("mux_set_length", &["ptr"], "i64");
+        self.declare_runtime_fn("mux_set_is_empty", &["ptr"], "i1");
+        self.declare_runtime_fn("mux_set_union", &["ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_set_intersection", &["ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_set_difference", &["ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_set_to_list", &["ptr"], "ptr");
+    }
+
+    /// Compile additional list methods
+    fn compile_extended_list_method(
+        &mut self,
+        list_ptr: PointerValue<'ctx>,
+        method: &str,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        match method {
+            "find" => {
+                let find_fn = self.runtime_functions.get("mux_list_find")
+                    .ok_or_else(|| CodeGenError::new("mux_list_find not declared"))?;
+                let mut all_args = vec![list_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*find_fn, &all_args, "find")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call find: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "index_of" | "indexOf" => {
+                let index_of_fn = self.runtime_functions.get("mux_list_index_of")
+                    .ok_or_else(|| CodeGenError::new("mux_list_index_of not declared"))?;
+                let mut all_args = vec![list_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*index_of_fn, &all_args, "index_of")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call index_of: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "contains" => {
+                let contains_fn = self.runtime_functions.get("mux_list_contains")
+                    .ok_or_else(|| CodeGenError::new("mux_list_contains not declared"))?;
+                let mut all_args = vec![list_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*contains_fn, &all_args, "contains")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call contains: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "filter" => {
+                let filter_fn = self.runtime_functions.get("mux_list_filter")
+                    .ok_or_else(|| CodeGenError::new("mux_list_filter not declared"))?;
+                let mut all_args = vec![list_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*filter_fn, &all_args, "filter")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call filter: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "map" => {
+                let map_fn = self.runtime_functions.get("mux_list_map")
+                    .ok_or_else(|| CodeGenError::new("mux_list_map not declared"))?;
+                let mut all_args = vec![list_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*map_fn, &all_args, "map")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call map: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "reduce" | "fold" => {
+                let reduce_fn = self.runtime_functions.get("mux_list_reduce")
+                    .ok_or_else(|| CodeGenError::new("mux_list_reduce not declared"))?;
+                let mut all_args = vec![list_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*reduce_fn, &all_args, "reduce")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call reduce: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "first" => {
+                let first_fn = self.runtime_functions.get("mux_list_first")
+                    .ok_or_else(|| CodeGenError::new("mux_list_first not declared"))?;
+                let result = self.builder
+                    .build_call(*first_fn, &[list_ptr.into()], "first")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call first: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "last" => {
+                let last_fn = self.runtime_functions.get("mux_list_last")
+                    .ok_or_else(|| CodeGenError::new("mux_list_last not declared"))?;
+                let result = self.builder
+                    .build_call(*last_fn, &[list_ptr.into()], "last")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call last: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "reverse" => {
+                let reverse_fn = self.runtime_functions.get("mux_list_reverse")
+                    .ok_or_else(|| CodeGenError::new("mux_list_reverse not declared"))?;
+                let result = self.builder
+                    .build_call(*reverse_fn, &[list_ptr.into()], "reverse")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call reverse: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "slice" => {
+                let slice_fn = self.runtime_functions.get("mux_list_slice")
+                    .ok_or_else(|| CodeGenError::new("mux_list_slice not declared"))?;
+                let mut all_args = vec![list_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*slice_fn, &all_args, "slice")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call slice: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "sort" => {
+                let sort_fn = self.runtime_functions.get("mux_list_sort")
+                    .ok_or_else(|| CodeGenError::new("mux_list_sort not declared"))?;
+                let result = self.builder
+                    .build_call(*sort_fn, &[list_ptr.into()], "sort")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call sort: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "remove" => {
+                let remove_fn = self.runtime_functions.get("mux_list_remove")
+                    .ok_or_else(|| CodeGenError::new("mux_list_remove not declared"))?;
+                let mut all_args = vec![list_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*remove_fn, &all_args, "remove")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call remove: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "clear" => {
+                let clear_fn = self.runtime_functions.get("mux_list_clear")
+                    .ok_or_else(|| CodeGenError::new("mux_list_clear not declared"))?;
+                self.builder
+                    .build_call(*clear_fn, &[list_ptr.into()], "clear")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call clear: {}", e)))?;
+                Ok(self.context.i64_type().const_int(0, false).into())
+            }
+            "is_empty" | "isEmpty" => {
+                let is_empty_fn = self.runtime_functions.get("mux_list_is_empty")
+                    .ok_or_else(|| CodeGenError::new("mux_list_is_empty not declared"))?;
+                let result = self.builder
+                    .build_call(*is_empty_fn, &[list_ptr.into()], "is_empty")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call is_empty: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "length" | "len" | "size" => {
+                let length_fn = self.runtime_functions.get("mux_list_length")
+                    .ok_or_else(|| CodeGenError::new("mux_list_length not declared"))?;
+                let result = self.builder
+                    .build_call(*length_fn, &[list_ptr.into()], "length")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call length: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            _ => Err(CodeGenError::new(format!("Unknown list method: {}", method))),
+        }
+    }
+
+    /// Compile map methods
+    fn compile_map_method(
+        &mut self,
+        map_ptr: PointerValue<'ctx>,
+        method: &str,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        match method {
+            "get" => {
+                let get_fn = self.runtime_functions.get("mux_map_get")
+                    .ok_or_else(|| CodeGenError::new("mux_map_get not declared"))?;
+                let mut all_args = vec![map_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*get_fn, &all_args, "get")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call get: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "put" | "set" | "insert" => {
+                let put_fn = self.runtime_functions.get("mux_map_put")
+                    .ok_or_else(|| CodeGenError::new("mux_map_put not declared"))?;
+                let mut all_args = vec![map_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                self.builder
+                    .build_call(*put_fn, &all_args, "put")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call put: {}", e)))?;
+                Ok(self.context.i64_type().const_int(0, false).into())
+            }
+            "contains_key" | "containsKey" | "has" => {
+                let contains_fn = self.runtime_functions.get("mux_map_contains_key")
+                    .ok_or_else(|| CodeGenError::new("mux_map_contains_key not declared"))?;
+                let mut all_args = vec![map_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*contains_fn, &all_args, "contains_key")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call contains_key: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "contains_value" | "containsValue" => {
+                let contains_fn = self.runtime_functions.get("mux_map_contains_value")
+                    .ok_or_else(|| CodeGenError::new("mux_map_contains_value not declared"))?;
+                let mut all_args = vec![map_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*contains_fn, &all_args, "contains_value")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call contains_value: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "keys" => {
+                let keys_fn = self.runtime_functions.get("mux_map_keys")
+                    .ok_or_else(|| CodeGenError::new("mux_map_keys not declared"))?;
+                let result = self.builder
+                    .build_call(*keys_fn, &[map_ptr.into()], "keys")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call keys: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "values" => {
+                let values_fn = self.runtime_functions.get("mux_map_values")
+                    .ok_or_else(|| CodeGenError::new("mux_map_values not declared"))?;
+                let result = self.builder
+                    .build_call(*values_fn, &[map_ptr.into()], "values")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call values: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "entries" => {
+                let entries_fn = self.runtime_functions.get("mux_map_entries")
+                    .ok_or_else(|| CodeGenError::new("mux_map_entries not declared"))?;
+                let result = self.builder
+                    .build_call(*entries_fn, &[map_ptr.into()], "entries")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call entries: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "remove" | "delete" => {
+                let remove_fn = self.runtime_functions.get("mux_map_remove")
+                    .ok_or_else(|| CodeGenError::new("mux_map_remove not declared"))?;
+                let mut all_args = vec![map_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*remove_fn, &all_args, "remove")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call remove: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "clear" => {
+                let clear_fn = self.runtime_functions.get("mux_map_clear")
+                    .ok_or_else(|| CodeGenError::new("mux_map_clear not declared"))?;
+                self.builder
+                    .build_call(*clear_fn, &[map_ptr.into()], "clear")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call clear: {}", e)))?;
+                Ok(self.context.i64_type().const_int(0, false).into())
+            }
+            "length" | "len" | "size" => {
+                let length_fn = self.runtime_functions.get("mux_map_length")
+                    .ok_or_else(|| CodeGenError::new("mux_map_length not declared"))?;
+                let result = self.builder
+                    .build_call(*length_fn, &[map_ptr.into()], "length")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call length: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "is_empty" | "isEmpty" => {
+                let is_empty_fn = self.runtime_functions.get("mux_map_is_empty")
+                    .ok_or_else(|| CodeGenError::new("mux_map_is_empty not declared"))?;
+                let result = self.builder
+                    .build_call(*is_empty_fn, &[map_ptr.into()], "is_empty")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call is_empty: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            _ => Err(CodeGenError::new(format!("Unknown map method: {}", method))),
+        }
+    }
+
+    /// Compile set methods
+    fn compile_set_method(
+        &mut self,
+        set_ptr: PointerValue<'ctx>,
+        method: &str,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        match method {
+            "add" | "insert" => {
+                let add_fn = self.runtime_functions.get("mux_set_add")
+                    .ok_or_else(|| CodeGenError::new("mux_set_add not declared"))?;
+                let mut all_args = vec![set_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                self.builder
+                    .build_call(*add_fn, &all_args, "add")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call add: {}", e)))?;
+                Ok(self.context.i64_type().const_int(0, false).into())
+            }
+            "contains" | "has" => {
+                let contains_fn = self.runtime_functions.get("mux_set_contains")
+                    .ok_or_else(|| CodeGenError::new("mux_set_contains not declared"))?;
+                let mut all_args = vec![set_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*contains_fn, &all_args, "contains")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call contains: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "remove" | "delete" => {
+                let remove_fn = self.runtime_functions.get("mux_set_remove")
+                    .ok_or_else(|| CodeGenError::new("mux_set_remove not declared"))?;
+                let mut all_args = vec![set_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*remove_fn, &all_args, "remove")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call remove: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "clear" => {
+                let clear_fn = self.runtime_functions.get("mux_set_clear")
+                    .ok_or_else(|| CodeGenError::new("mux_set_clear not declared"))?;
+                self.builder
+                    .build_call(*clear_fn, &[set_ptr.into()], "clear")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call clear: {}", e)))?;
+                Ok(self.context.i64_type().const_int(0, false).into())
+            }
+            "length" | "len" | "size" => {
+                let length_fn = self.runtime_functions.get("mux_set_length")
+                    .ok_or_else(|| CodeGenError::new("mux_set_length not declared"))?;
+                let result = self.builder
+                    .build_call(*length_fn, &[set_ptr.into()], "length")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call length: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "is_empty" | "isEmpty" => {
+                let is_empty_fn = self.runtime_functions.get("mux_set_is_empty")
+                    .ok_or_else(|| CodeGenError::new("mux_set_is_empty not declared"))?;
+                let result = self.builder
+                    .build_call(*is_empty_fn, &[set_ptr.into()], "is_empty")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call is_empty: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "union" => {
+                let union_fn = self.runtime_functions.get("mux_set_union")
+                    .ok_or_else(|| CodeGenError::new("mux_set_union not declared"))?;
+                let mut all_args = vec![set_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*union_fn, &all_args, "union")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call union: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "intersection" => {
+                let intersect_fn = self.runtime_functions.get("mux_set_intersection")
+                    .ok_or_else(|| CodeGenError::new("mux_set_intersection not declared"))?;
+                let mut all_args = vec![set_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*intersect_fn, &all_args, "intersection")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call intersection: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "difference" => {
+                let diff_fn = self.runtime_functions.get("mux_set_difference")
+                    .ok_or_else(|| CodeGenError::new("mux_set_difference not declared"))?;
+                let mut all_args = vec![set_ptr.into()];
+                all_args.extend(args.iter().cloned());
+                let result = self.builder
+                    .build_call(*diff_fn, &all_args, "difference")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call difference: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            "to_list" | "toList" => {
+                let to_list_fn = self.runtime_functions.get("mux_set_to_list")
+                    .ok_or_else(|| CodeGenError::new("mux_set_to_list not declared"))?;
+                let result = self.builder
+                    .build_call(*to_list_fn, &[set_ptr.into()], "to_list")
+                    .map_err(|e| CodeGenError::new(format!("Failed to call to_list: {}", e)))?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodeGenError::new("Expected return value"))?;
+                Ok(result)
+            }
+            _ => Err(CodeGenError::new(format!("Unknown set method: {}", method))),
+        }
+    }
+
+    // ========================================================================
+    // Phase 1.4: Null Safety for Optional References
+    // ========================================================================
+
+    /// Compile a null check for an optional value
+    fn compile_null_check(
+        &mut self,
+        ptr: PointerValue<'ctx>,
+        name: &str,
+    ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
+        let null = self.context.ptr_type(AddressSpace::default()).const_null();
+        let is_null = self.builder
+            .build_int_compare(IntPredicate::EQ, ptr, null, &format!("{}_is_null", name))
+            .map_err(|e| CodeGenError::new(format!("Failed to build null check: {}", e)))?;
+        Ok(is_null)
+    }
+
+    /// Compile a safe unwrap with null check
+    fn compile_safe_unwrap(
+        &mut self,
+        opt_ptr: PointerValue<'ctx>,
+        inner_type: &Type,
+        error_msg: &str,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let function = self.current_function.ok_or_else(|| {
+            CodeGenError::new("Cannot compile safe unwrap outside of a function")
+        })?;
+
+        let is_null = self.compile_null_check(opt_ptr, "opt")?;
+
+        let then_bb = self.context.append_basic_block(function, "unwrap.null");
+        let else_bb = self.context.append_basic_block(function, "unwrap.valid");
+        let merge_bb = self.context.append_basic_block(function, "unwrap.merge");
+
+        self.builder.build_conditional_branch(is_null, then_bb, else_bb)
+            .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+
+        // Null case - panic or return default
+        self.builder.position_at_end(then_bb);
+        // For now, just return a default value (could call a panic function)
+        let default_val = self.default_value(inner_type)?;
+        self.builder.build_unconditional_branch(merge_bb)
+            .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+
+        // Valid case - return the value
+        self.builder.position_at_end(else_bb);
+        let llvm_type = self.type_to_llvm(inner_type)?;
+        let value = self.builder
+            .build_load(llvm_type, opt_ptr, "unwrapped")
+            .map_err(|e| CodeGenError::new(format!("Failed to load value: {}", e)))?;
+        self.builder.build_unconditional_branch(merge_bb)
+            .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+
+        // Merge
+        self.builder.position_at_end(merge_bb);
+        let phi = self.builder.build_phi(llvm_type, "unwrap.result")
+            .map_err(|e| CodeGenError::new(format!("Failed to build phi: {}", e)))?;
+        phi.add_incoming(&[(&default_val, then_bb), (&value, else_bb)]);
+
+        Ok(phi.as_basic_value())
+    }
+
+    /// Compile an unwrap_or operation (returns default if None)
+    fn compile_unwrap_or(
+        &mut self,
+        opt_ptr: PointerValue<'ctx>,
+        default_val: BasicValueEnum<'ctx>,
+        inner_type: &Type,
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let function = self.current_function.ok_or_else(|| {
+            CodeGenError::new("Cannot compile unwrap_or outside of a function")
+        })?;
+
+        let is_null = self.compile_null_check(opt_ptr, "opt")?;
+
+        let then_bb = self.context.append_basic_block(function, "unwrap_or.null");
+        let else_bb = self.context.append_basic_block(function, "unwrap_or.valid");
+        let merge_bb = self.context.append_basic_block(function, "unwrap_or.merge");
+
+        self.builder.build_conditional_branch(is_null, then_bb, else_bb)
+            .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+
+        // Null case - use default
+        self.builder.position_at_end(then_bb);
+        self.builder.build_unconditional_branch(merge_bb)
+            .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+
+        // Valid case - use the value
+        self.builder.position_at_end(else_bb);
+        let llvm_type = self.type_to_llvm(inner_type)?;
+        let value = self.builder
+            .build_load(llvm_type, opt_ptr, "unwrapped")
+            .map_err(|e| CodeGenError::new(format!("Failed to load value: {}", e)))?;
+        self.builder.build_unconditional_branch(merge_bb)
+            .map_err(|e| CodeGenError::new(format!("Failed to build branch: {}", e)))?;
+
+        // Merge
+        self.builder.position_at_end(merge_bb);
+        let phi = self.builder.build_phi(llvm_type, "unwrap_or.result")
+            .map_err(|e| CodeGenError::new(format!("Failed to build phi: {}", e)))?;
+        phi.add_incoming(&[(&default_val, then_bb), (&value, else_bb)]);
+
+        Ok(phi.as_basic_value())
+    }
+
+    /// Compile an is_some check for Optional
+    fn compile_is_some(
+        &mut self,
+        opt_ptr: PointerValue<'ctx>,
+    ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
+        let is_null = self.compile_null_check(opt_ptr, "opt")?;
+        // is_some = NOT is_null
+        let is_some = self.builder
+            .build_not(is_null, "is_some")
+            .map_err(|e| CodeGenError::new(format!("Failed to build not: {}", e)))?;
+        Ok(is_some)
+    }
+
+    /// Compile an is_none check for Optional
+    fn compile_is_none(
+        &mut self,
+        opt_ptr: PointerValue<'ctx>,
+    ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
+        self.compile_null_check(opt_ptr, "opt")
+    }
 }
