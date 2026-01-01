@@ -116,6 +116,18 @@ pub struct CodeGenerator<'a, 'ctx> {
     /// Mutable reference tracking for borrow checking
     /// Maps variable name to (is_borrowed, is_mutably_borrowed)
     borrow_state: HashMap<String, (bool, bool)>,
+
+    /// Interface/trait method tables
+    /// Maps interface name to its definition and implementations
+    interface_methods: HashMap<String, InterfaceInfo<'ctx>>,
+
+    /// Trait bounds for type parameters
+    /// Maps type parameter name to list of required trait bounds
+    trait_bounds: HashMap<String, Vec<String>>,
+
+    /// Associated types for trait implementations
+    /// Maps "Interface::Type::AssocName" to concrete type
+    associated_types: HashMap<String, Type>,
 }
 
 /// Information about a compiled enum type
@@ -152,6 +164,30 @@ struct MonomorphizedFunction<'ctx> {
     return_type: Type,
 }
 
+/// Information about an interface method signature
+#[derive(Clone)]
+struct InterfaceMethod {
+    /// Method name
+    name: String,
+    /// Parameter types (excluding self)
+    param_types: Vec<Type>,
+    /// Return type
+    return_type: Type,
+    /// Whether this method has a default implementation
+    has_default: bool,
+}
+
+/// Information about an interface definition
+#[derive(Clone)]
+struct InterfaceInfo<'ctx> {
+    /// Interface name
+    name: String,
+    /// Method signatures (name -> signature)
+    methods: HashMap<String, InterfaceMethod>,
+    /// Implementations: type_name -> (method_name -> function)
+    implementations: HashMap<String, HashMap<String, FunctionValue<'ctx>>>,
+}
+
 impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
     /// Create a new CodeGenerator
     pub fn new(context: &'ctx Context, analyzer: &'a mut SemanticAnalyzer) -> Self {
@@ -176,6 +212,9 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
             unique_counter: 0,
             loop_stack: Vec::new(),
             borrow_state: HashMap::new(),
+            interface_methods: HashMap::new(),
+            trait_bounds: HashMap::new(),
+            associated_types: HashMap::new(),
         };
 
         codegen.declare_runtime_functions();
@@ -4875,5 +4914,447 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         opt_ptr: PointerValue<'ctx>,
     ) -> CodeGenResult<inkwell::values::IntValue<'ctx>> {
         self.compile_null_check(opt_ptr, "opt")
+    }
+
+    // ========================================================================
+    // Phase 6: Interface/Trait System Implementation
+    // ========================================================================
+
+    /// Interface method table entry
+    /// Maps method names to their implementations for a given type
+    fn get_interface_method_table(&self) -> &HashMap<String, InterfaceInfo<'ctx>> {
+        &self.interface_methods
+    }
+
+    /// Register an interface definition
+    fn register_interface(
+        &mut self,
+        name: &str,
+        methods: Vec<InterfaceMethod>,
+    ) -> CodeGenResult<()> {
+        let info = InterfaceInfo {
+            name: name.to_string(),
+            methods: methods.into_iter()
+                .map(|m| (m.name.clone(), m))
+                .collect(),
+            implementations: HashMap::new(),
+        };
+        self.interface_methods.insert(name.to_string(), info);
+        Ok(())
+    }
+
+    /// Register an interface implementation for a type
+    fn register_interface_impl(
+        &mut self,
+        interface_name: &str,
+        type_name: &str,
+        method_impls: HashMap<String, FunctionValue<'ctx>>,
+    ) -> CodeGenResult<()> {
+        if let Some(interface) = self.interface_methods.get_mut(interface_name) {
+            interface.implementations.insert(type_name.to_string(), method_impls);
+            Ok(())
+        } else {
+            Err(CodeGenError::new(format!(
+                "Interface {} not found",
+                interface_name
+            )))
+        }
+    }
+
+    /// Look up an interface method implementation for a concrete type
+    fn lookup_interface_method(
+        &self,
+        interface_name: &str,
+        type_name: &str,
+        method_name: &str,
+    ) -> CodeGenResult<FunctionValue<'ctx>> {
+        let interface = self.interface_methods.get(interface_name)
+            .ok_or_else(|| CodeGenError::new(format!(
+                "Interface {} not found",
+                interface_name
+            )))?;
+
+        let impls = interface.implementations.get(type_name)
+            .ok_or_else(|| CodeGenError::new(format!(
+                "Type {} does not implement interface {}",
+                type_name, interface_name
+            )))?;
+
+        impls.get(method_name)
+            .copied()
+            .ok_or_else(|| CodeGenError::new(format!(
+                "Method {} not found in {} implementation of {}",
+                method_name, type_name, interface_name
+            )))
+    }
+
+    /// Check if a type implements an interface
+    fn type_implements_interface(
+        &self,
+        type_name: &str,
+        interface_name: &str,
+    ) -> bool {
+        if let Some(interface) = self.interface_methods.get(interface_name) {
+            interface.implementations.contains_key(type_name)
+        } else {
+            false
+        }
+    }
+
+    /// Compile a static dispatch interface method call
+    /// Unlike virtual dispatch, this resolves the method at compile time
+    fn compile_static_dispatch_call(
+        &mut self,
+        receiver: BasicValueEnum<'ctx>,
+        interface_name: &str,
+        type_name: &str,
+        method_name: &str,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) -> CodeGenResult<BasicValueEnum<'ctx>> {
+        let method_fn = self.lookup_interface_method(interface_name, type_name, method_name)?;
+
+        // Build the call with receiver as first argument
+        let mut all_args = vec![receiver.into()];
+        all_args.extend(args.iter().cloned());
+
+        let call = self.builder
+            .build_call(method_fn, &all_args, &format!("{}.{}", type_name, method_name))
+            .map_err(|e| CodeGenError::new(format!("Failed to build call: {}", e)))?;
+
+        // Get return value if any
+        call.try_as_basic_value()
+            .left()
+            .ok_or_else(|| Ok(self.context.i64_type().const_int(0, false).into()))
+            .unwrap_or_else(|e: CodeGenResult<BasicValueEnum<'ctx>>| e.unwrap())
+    }
+
+    /// Generate default implementations for common interfaces
+    fn generate_default_interface_impls(&mut self, type_name: &str) -> CodeGenResult<()> {
+        // Generate ToString implementation if the type has primitive fields
+        if let Some(_struct_type) = self.struct_types.get(type_name) {
+            // Generate a simple to_string implementation
+            self.generate_to_string_impl(type_name)?;
+        }
+        Ok(())
+    }
+
+    /// Generate a to_string implementation for a struct type
+    fn generate_to_string_impl(&mut self, type_name: &str) -> CodeGenResult<FunctionValue<'ctx>> {
+        let fn_name = format!("{}.to_string", type_name);
+
+        // Check if already exists
+        if let Some(compiled) = self.functions.get(&fn_name) {
+            return Ok(compiled.function);
+        }
+
+        // Create function: fn to_string(self: *TypeName) -> *str
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let fn_type = ptr_type.fn_type(&[ptr_type.into()], false);
+        let function = self.module.add_function(&fn_name, fn_type, None);
+
+        // Store in functions table
+        self.functions.insert(
+            fn_name.clone(),
+            CompiledFunction {
+                function,
+                return_type: Type::Primitive(PrimitiveType::Str),
+            },
+        );
+
+        // Generate body that returns type name as placeholder
+        let entry = self.context.append_basic_block(function, "entry");
+        self.builder.position_at_end(entry);
+
+        let type_str = self.compile_string_literal(&format!("<{}>", type_name))?;
+        self.builder.build_return(Some(&type_str))
+            .map_err(|e| CodeGenError::new(format!("Failed to build return: {}", e)))?;
+
+        Ok(function)
+    }
+
+    // ========================================================================
+    // Phase 7: Memory Management Integration
+    // ========================================================================
+
+    /// Declare garbage collection runtime functions
+    fn declare_gc_runtime_functions(&mut self) {
+        // GC allocation and tracking
+        self.declare_runtime_fn("mux_gc_alloc", &["i64"], "ptr");
+        self.declare_runtime_fn("mux_gc_alloc_array", &["i64", "i64"], "ptr");
+        self.declare_runtime_fn("mux_gc_register_root", &["ptr"], "void");
+        self.declare_runtime_fn("mux_gc_unregister_root", &["ptr"], "void");
+        self.declare_runtime_fn("mux_gc_collect", &[], "void");
+
+        // Reference counting (for deterministic cleanup)
+        self.declare_runtime_fn("mux_rc_incref", &["ptr"], "void");
+        self.declare_runtime_fn("mux_rc_decref", &["ptr"], "void");
+        self.declare_runtime_fn("mux_rc_get_count", &["ptr"], "i64");
+
+        // Memory safety functions
+        self.declare_runtime_fn("mux_check_null", &["ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_check_bounds", &["i64", "i64", "ptr"], "void");
+        self.declare_runtime_fn("mux_panic", &["ptr"], "void");
+    }
+
+    /// Allocate memory through the GC
+    fn compile_gc_alloc(
+        &mut self,
+        size: inkwell::values::IntValue<'ctx>,
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let alloc_fn = self.runtime_functions.get("mux_gc_alloc")
+            .ok_or_else(|| CodeGenError::new("mux_gc_alloc not declared"))?;
+
+        let ptr = self.builder
+            .build_call(*alloc_fn, &[size.into()], "gc_alloc")
+            .map_err(|e| CodeGenError::new(format!("Failed to call gc_alloc: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from gc_alloc"))?
+            .into_pointer_value();
+
+        Ok(ptr)
+    }
+
+    /// Allocate an array through the GC
+    fn compile_gc_alloc_array(
+        &mut self,
+        elem_size: inkwell::values::IntValue<'ctx>,
+        count: inkwell::values::IntValue<'ctx>,
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let alloc_fn = self.runtime_functions.get("mux_gc_alloc_array")
+            .ok_or_else(|| CodeGenError::new("mux_gc_alloc_array not declared"))?;
+
+        let ptr = self.builder
+            .build_call(*alloc_fn, &[elem_size.into(), count.into()], "gc_alloc_array")
+            .map_err(|e| CodeGenError::new(format!("Failed to call gc_alloc_array: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from gc_alloc_array"))?
+            .into_pointer_value();
+
+        Ok(ptr)
+    }
+
+    /// Register a pointer as a GC root (prevents collection)
+    fn compile_gc_register_root(
+        &mut self,
+        ptr: PointerValue<'ctx>,
+    ) -> CodeGenResult<()> {
+        let register_fn = self.runtime_functions.get("mux_gc_register_root")
+            .ok_or_else(|| CodeGenError::new("mux_gc_register_root not declared"))?;
+
+        self.builder
+            .build_call(*register_fn, &[ptr.into()], "")
+            .map_err(|e| CodeGenError::new(format!("Failed to call gc_register_root: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Unregister a GC root
+    fn compile_gc_unregister_root(
+        &mut self,
+        ptr: PointerValue<'ctx>,
+    ) -> CodeGenResult<()> {
+        let unregister_fn = self.runtime_functions.get("mux_gc_unregister_root")
+            .ok_or_else(|| CodeGenError::new("mux_gc_unregister_root not declared"))?;
+
+        self.builder
+            .build_call(*unregister_fn, &[ptr.into()], "")
+            .map_err(|e| CodeGenError::new(format!("Failed to call gc_unregister_root: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Increment reference count
+    fn compile_rc_incref(
+        &mut self,
+        ptr: PointerValue<'ctx>,
+    ) -> CodeGenResult<()> {
+        let incref_fn = self.runtime_functions.get("mux_rc_incref")
+            .ok_or_else(|| CodeGenError::new("mux_rc_incref not declared"))?;
+
+        self.builder
+            .build_call(*incref_fn, &[ptr.into()], "")
+            .map_err(|e| CodeGenError::new(format!("Failed to call rc_incref: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Decrement reference count
+    fn compile_rc_decref(
+        &mut self,
+        ptr: PointerValue<'ctx>,
+    ) -> CodeGenResult<()> {
+        let decref_fn = self.runtime_functions.get("mux_rc_decref")
+            .ok_or_else(|| CodeGenError::new("mux_rc_decref not declared"))?;
+
+        self.builder
+            .build_call(*decref_fn, &[ptr.into()], "")
+            .map_err(|e| CodeGenError::new(format!("Failed to call rc_decref: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Compile a bounds check for array access
+    fn compile_bounds_check(
+        &mut self,
+        index: inkwell::values::IntValue<'ctx>,
+        length: inkwell::values::IntValue<'ctx>,
+        error_msg: &str,
+    ) -> CodeGenResult<()> {
+        let check_fn = self.runtime_functions.get("mux_check_bounds")
+            .ok_or_else(|| CodeGenError::new("mux_check_bounds not declared"))?;
+
+        let msg_ptr = self.compile_string_literal(error_msg)?;
+
+        self.builder
+            .build_call(*check_fn, &[index.into(), length.into(), msg_ptr.into()], "")
+            .map_err(|e| CodeGenError::new(format!("Failed to call check_bounds: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Compile a null check with error message
+    fn compile_null_check_with_panic(
+        &mut self,
+        ptr: PointerValue<'ctx>,
+        error_msg: &str,
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let check_fn = self.runtime_functions.get("mux_check_null")
+            .ok_or_else(|| CodeGenError::new("mux_check_null not declared"))?;
+
+        let msg_ptr = self.compile_string_literal(error_msg)?;
+
+        let result = self.builder
+            .build_call(*check_fn, &[ptr.into(), msg_ptr.into()], "checked_ptr")
+            .map_err(|e| CodeGenError::new(format!("Failed to call check_null: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from check_null"))?
+            .into_pointer_value();
+
+        Ok(result)
+    }
+
+    /// Compile a panic call
+    fn compile_panic(
+        &mut self,
+        error_msg: &str,
+    ) -> CodeGenResult<()> {
+        let panic_fn = self.runtime_functions.get("mux_panic")
+            .ok_or_else(|| CodeGenError::new("mux_panic not declared"))?;
+
+        let msg_ptr = self.compile_string_literal(error_msg)?;
+
+        self.builder
+            .build_call(*panic_fn, &[msg_ptr.into()], "")
+            .map_err(|e| CodeGenError::new(format!("Failed to call panic: {}", e)))?;
+
+        // Panic doesn't return, so add unreachable
+        self.builder.build_unreachable()
+            .map_err(|e| CodeGenError::new(format!("Failed to build unreachable: {}", e)))?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Phase 6.2: Static Method Dispatch Optimization
+    // ========================================================================
+
+    /// Optimize interface calls by inlining when possible
+    fn try_inline_interface_call(
+        &mut self,
+        receiver: BasicValueEnum<'ctx>,
+        interface_name: &str,
+        type_name: &str,
+        method_name: &str,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) -> CodeGenResult<Option<BasicValueEnum<'ctx>>> {
+        // For small methods, inline directly
+        let method_fn = self.lookup_interface_method(interface_name, type_name, method_name)?;
+
+        // Check if function is small enough to inline (< 5 basic blocks)
+        if method_fn.count_basic_blocks() > 5 {
+            return Ok(None);
+        }
+
+        // For now, just do normal dispatch (actual inlining requires LLVM optimization)
+        let result = self.compile_static_dispatch_call(receiver, interface_name, type_name, method_name, args)?;
+        Ok(Some(result))
+    }
+
+    /// Check interface constraints at compile time
+    fn verify_interface_constraint(
+        &self,
+        type_name: &str,
+        interface_name: &str,
+    ) -> CodeGenResult<()> {
+        if !self.type_implements_interface(type_name, interface_name) {
+            return Err(CodeGenError::new(format!(
+                "Type {} does not implement required interface {}",
+                type_name, interface_name
+            )));
+        }
+        Ok(())
+    }
+
+    // ========================================================================
+    // Phase 6.3: Trait Implementation System
+    // ========================================================================
+
+    /// Register a trait bound on a generic type parameter
+    fn register_trait_bound(
+        &mut self,
+        type_param: &str,
+        trait_name: &str,
+    ) {
+        self.trait_bounds
+            .entry(type_param.to_string())
+            .or_insert_with(Vec::new)
+            .push(trait_name.to_string());
+    }
+
+    /// Get trait bounds for a type parameter
+    fn get_trait_bounds(&self, type_param: &str) -> Vec<String> {
+        self.trait_bounds
+            .get(type_param)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Check if a concrete type satisfies all trait bounds for a type parameter
+    fn check_trait_bounds(
+        &self,
+        concrete_type: &str,
+        type_param: &str,
+    ) -> CodeGenResult<()> {
+        let bounds = self.get_trait_bounds(type_param);
+        for bound in bounds {
+            self.verify_interface_constraint(concrete_type, &bound)?;
+        }
+        Ok(())
+    }
+
+    /// Register an associated type for a trait implementation
+    fn register_associated_type(
+        &mut self,
+        interface_name: &str,
+        implementing_type: &str,
+        assoc_name: &str,
+        assoc_type: Type,
+    ) {
+        let key = format!("{}::{}::{}", interface_name, implementing_type, assoc_name);
+        self.associated_types.insert(key, assoc_type);
+    }
+
+    /// Look up an associated type
+    fn lookup_associated_type(
+        &self,
+        interface_name: &str,
+        implementing_type: &str,
+        assoc_name: &str,
+    ) -> Option<&Type> {
+        let key = format!("{}::{}::{}", interface_name, implementing_type, assoc_name);
+        self.associated_types.get(&key)
     }
 }
