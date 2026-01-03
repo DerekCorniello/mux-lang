@@ -5357,4 +5357,712 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         let key = format!("{}::{}::{}", interface_name, implementing_type, assoc_name);
         self.associated_types.get(&key)
     }
+
+    // ========================================================================
+    // Phase 7.3: Memory Optimization - Escape Analysis
+    // ========================================================================
+
+    /// Escape analysis result for a variable
+    #[derive(Clone, Debug, PartialEq)]
+    enum EscapeState {
+        /// Value does not escape the current function - safe for stack allocation
+        NoEscape,
+        /// Value may escape through return - needs heap allocation
+        ReturnEscape,
+        /// Value escapes through closure capture - needs heap allocation
+        ClosureEscape,
+        /// Value escapes through global reference - needs heap allocation
+        GlobalEscape,
+        /// Unknown escape state - conservative, use heap
+        Unknown,
+    }
+
+    /// Analyze whether a value escapes its defining scope
+    fn analyze_escape(&self, var_name: &str, func_body: &[StatementNode]) -> EscapeState {
+        let mut state = EscapeState::NoEscape;
+
+        for stmt in func_body {
+            state = self.analyze_statement_escape(var_name, stmt, state.clone());
+            // If we've determined it definitely escapes, no need to continue
+            if matches!(state, EscapeState::GlobalEscape) {
+                return state;
+            }
+        }
+
+        state
+    }
+
+    /// Analyze escape through a statement
+    fn analyze_statement_escape(
+        &self,
+        var_name: &str,
+        stmt: &StatementNode,
+        current_state: EscapeState,
+    ) -> EscapeState {
+        match &stmt.kind {
+            StatementKind::Return(Some(expr)) => {
+                if self.expr_references_var(var_name, expr) {
+                    // Value escapes through return
+                    match current_state {
+                        EscapeState::NoEscape => EscapeState::ReturnEscape,
+                        _ => current_state,
+                    }
+                } else {
+                    current_state
+                }
+            }
+            StatementKind::Expression(expr) => {
+                self.analyze_expression_escape(var_name, expr, current_state)
+            }
+            StatementKind::If { then_block, else_block, .. } => {
+                let mut state = current_state;
+                for inner_stmt in then_block {
+                    state = self.analyze_statement_escape(var_name, inner_stmt, state);
+                }
+                if let Some(else_stmts) = else_block {
+                    for inner_stmt in else_stmts {
+                        state = self.analyze_statement_escape(var_name, inner_stmt, state);
+                    }
+                }
+                state
+            }
+            StatementKind::While { body, .. } | StatementKind::For { body, .. } => {
+                let mut state = current_state;
+                for inner_stmt in body {
+                    state = self.analyze_statement_escape(var_name, inner_stmt, state);
+                }
+                state
+            }
+            StatementKind::Block(stmts) => {
+                let mut state = current_state;
+                for inner_stmt in stmts {
+                    state = self.analyze_statement_escape(var_name, inner_stmt, state);
+                }
+                state
+            }
+            _ => current_state,
+        }
+    }
+
+    /// Analyze escape through an expression
+    fn analyze_expression_escape(
+        &self,
+        var_name: &str,
+        expr: &ExpressionNode,
+        current_state: EscapeState,
+    ) -> EscapeState {
+        match &expr.kind {
+            ExpressionKind::Lambda { body, .. } => {
+                // If the variable is referenced in a lambda, it escapes through closure
+                for stmt in body {
+                    if self.stmt_references_var(var_name, stmt) {
+                        return EscapeState::ClosureEscape;
+                    }
+                }
+                current_state
+            }
+            ExpressionKind::Call { args, .. } => {
+                // If variable is passed to a function, conservatively assume it might escape
+                for arg in args {
+                    if self.expr_references_var(var_name, arg) {
+                        return EscapeState::Unknown;
+                    }
+                }
+                current_state
+            }
+            _ => current_state,
+        }
+    }
+
+    /// Check if an expression references a variable
+    fn expr_references_var(&self, var_name: &str, expr: &ExpressionNode) -> bool {
+        match &expr.kind {
+            ExpressionKind::Identifier(name) => name == var_name,
+            ExpressionKind::Binary { left, right, .. } => {
+                self.expr_references_var(var_name, left) || self.expr_references_var(var_name, right)
+            }
+            ExpressionKind::Unary { expr: inner, .. } => {
+                self.expr_references_var(var_name, inner)
+            }
+            ExpressionKind::Call { func, args } => {
+                self.expr_references_var(var_name, func) ||
+                args.iter().any(|a| self.expr_references_var(var_name, a))
+            }
+            ExpressionKind::FieldAccess { expr: inner, .. } => {
+                self.expr_references_var(var_name, inner)
+            }
+            ExpressionKind::ListAccess { expr: inner, index } => {
+                self.expr_references_var(var_name, inner) || self.expr_references_var(var_name, index)
+            }
+            ExpressionKind::ListLiteral(elems) => {
+                elems.iter().any(|e| self.expr_references_var(var_name, e))
+            }
+            ExpressionKind::MapLiteral { entries, .. } => {
+                entries.iter().any(|(k, v)| {
+                    self.expr_references_var(var_name, k) || self.expr_references_var(var_name, v)
+                })
+            }
+            ExpressionKind::SetLiteral(elems) => {
+                elems.iter().any(|e| self.expr_references_var(var_name, e))
+            }
+            ExpressionKind::If { cond, then_expr, else_expr } => {
+                self.expr_references_var(var_name, cond) ||
+                self.expr_references_var(var_name, then_expr) ||
+                self.expr_references_var(var_name, else_expr)
+            }
+            ExpressionKind::Lambda { body, .. } => {
+                body.iter().any(|s| self.stmt_references_var(var_name, s))
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if a statement references a variable
+    fn stmt_references_var(&self, var_name: &str, stmt: &StatementNode) -> bool {
+        match &stmt.kind {
+            StatementKind::Expression(expr) => self.expr_references_var(var_name, expr),
+            StatementKind::Return(Some(expr)) => self.expr_references_var(var_name, expr),
+            StatementKind::AutoDecl(_, _, expr) | StatementKind::TypedDecl(_, _, expr) |
+            StatementKind::ConstDecl(_, _, expr) => self.expr_references_var(var_name, expr),
+            StatementKind::If { cond, then_block, else_block } => {
+                self.expr_references_var(var_name, cond) ||
+                then_block.iter().any(|s| self.stmt_references_var(var_name, s)) ||
+                else_block.as_ref().map(|stmts| stmts.iter().any(|s| self.stmt_references_var(var_name, s))).unwrap_or(false)
+            }
+            StatementKind::While { cond, body } => {
+                self.expr_references_var(var_name, cond) ||
+                body.iter().any(|s| self.stmt_references_var(var_name, s))
+            }
+            StatementKind::For { iter, body, .. } => {
+                self.expr_references_var(var_name, iter) ||
+                body.iter().any(|s| self.stmt_references_var(var_name, s))
+            }
+            StatementKind::Block(stmts) => {
+                stmts.iter().any(|s| self.stmt_references_var(var_name, s))
+            }
+            StatementKind::Match { expr, arms } => {
+                self.expr_references_var(var_name, expr) ||
+                arms.iter().any(|arm| arm.body.iter().any(|s| self.stmt_references_var(var_name, s)))
+            }
+            _ => false,
+        }
+    }
+
+    /// Determine optimal allocation strategy based on escape analysis
+    fn get_allocation_strategy(&self, var_name: &str, type_: &Type, func_body: &[StatementNode]) -> AllocationStrategy {
+        let escape_state = self.analyze_escape(var_name, func_body);
+        let type_size = self.estimate_type_size(type_);
+
+        match escape_state {
+            EscapeState::NoEscape => {
+                // Value doesn't escape - check if it's small enough for stack
+                if type_size <= 256 {
+                    AllocationStrategy::Stack
+                } else {
+                    AllocationStrategy::HeapWithAutoFree
+                }
+            }
+            EscapeState::ReturnEscape => {
+                // Value is returned - must be on heap
+                AllocationStrategy::Heap
+            }
+            EscapeState::ClosureEscape => {
+                // Captured by closure - needs reference counting
+                AllocationStrategy::HeapRefCounted
+            }
+            EscapeState::GlobalEscape | EscapeState::Unknown => {
+                // Conservative - use GC-managed heap
+                AllocationStrategy::HeapGCManaged
+            }
+        }
+    }
+
+    /// Estimate the size of a type in bytes
+    fn estimate_type_size(&self, type_: &Type) -> usize {
+        match type_ {
+            Type::Primitive(PrimitiveType::Int) => 8,
+            Type::Primitive(PrimitiveType::Float) => 8,
+            Type::Primitive(PrimitiveType::Bool) => 1,
+            Type::Primitive(PrimitiveType::Char) => 4,
+            Type::Primitive(PrimitiveType::Str) => 8, // pointer
+            Type::Reference(_) => 8, // pointer
+            Type::Optional(_) => 16, // tag + value
+            Type::List(_) | Type::Map(_, _) | Type::Set(_) => 8, // pointer to runtime struct
+            Type::Named(name, _) => {
+                // Look up struct size
+                if let Some(struct_type) = self.struct_types.get(name) {
+                    struct_type.count_fields() as usize * 8 // rough estimate
+                } else {
+                    8 // pointer
+                }
+            }
+            Type::Tuple(elems) => {
+                elems.iter().map(|e| self.estimate_type_size(e)).sum()
+            }
+            _ => 8,
+        }
+    }
+
+    // ========================================================================
+    // Phase 7.3: Memory Pooling for Frequent Allocations
+    // ========================================================================
+
+    /// Declare memory pooling runtime functions
+    fn declare_memory_pool_functions(&mut self) {
+        // Pool creation and management
+        self.declare_runtime_fn("mux_pool_create", &["i64", "i64"], "ptr");
+        self.declare_runtime_fn("mux_pool_destroy", &["ptr"], "void");
+        self.declare_runtime_fn("mux_pool_alloc", &["ptr"], "ptr");
+        self.declare_runtime_fn("mux_pool_free", &["ptr", "ptr"], "void");
+        self.declare_runtime_fn("mux_pool_reset", &["ptr"], "void");
+
+        // Arena allocation (for batch allocations)
+        self.declare_runtime_fn("mux_arena_create", &["i64"], "ptr");
+        self.declare_runtime_fn("mux_arena_destroy", &["ptr"], "void");
+        self.declare_runtime_fn("mux_arena_alloc", &["ptr", "i64"], "ptr");
+        self.declare_runtime_fn("mux_arena_reset", &["ptr"], "void");
+    }
+
+    /// Create a memory pool for objects of a specific size
+    fn compile_pool_create(
+        &mut self,
+        object_size: inkwell::values::IntValue<'ctx>,
+        initial_capacity: inkwell::values::IntValue<'ctx>,
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let pool_create_fn = self.runtime_functions.get("mux_pool_create")
+            .ok_or_else(|| CodeGenError::new("mux_pool_create not declared"))?;
+
+        let pool_ptr = self.builder
+            .build_call(*pool_create_fn, &[object_size.into(), initial_capacity.into()], "pool")
+            .map_err(|e| CodeGenError::new(format!("Failed to create pool: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from pool_create"))?
+            .into_pointer_value();
+
+        Ok(pool_ptr)
+    }
+
+    /// Allocate from a memory pool
+    fn compile_pool_alloc(
+        &mut self,
+        pool_ptr: PointerValue<'ctx>,
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let pool_alloc_fn = self.runtime_functions.get("mux_pool_alloc")
+            .ok_or_else(|| CodeGenError::new("mux_pool_alloc not declared"))?;
+
+        let obj_ptr = self.builder
+            .build_call(*pool_alloc_fn, &[pool_ptr.into()], "pooled_obj")
+            .map_err(|e| CodeGenError::new(format!("Failed to allocate from pool: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from pool_alloc"))?
+            .into_pointer_value();
+
+        Ok(obj_ptr)
+    }
+
+    /// Free an object back to a memory pool
+    fn compile_pool_free(
+        &mut self,
+        pool_ptr: PointerValue<'ctx>,
+        obj_ptr: PointerValue<'ctx>,
+    ) -> CodeGenResult<()> {
+        let pool_free_fn = self.runtime_functions.get("mux_pool_free")
+            .ok_or_else(|| CodeGenError::new("mux_pool_free not declared"))?;
+
+        self.builder
+            .build_call(*pool_free_fn, &[pool_ptr.into(), obj_ptr.into()], "")
+            .map_err(|e| CodeGenError::new(format!("Failed to free to pool: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Create an arena allocator for batch allocations
+    fn compile_arena_create(
+        &mut self,
+        initial_size: inkwell::values::IntValue<'ctx>,
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let arena_create_fn = self.runtime_functions.get("mux_arena_create")
+            .ok_or_else(|| CodeGenError::new("mux_arena_create not declared"))?;
+
+        let arena_ptr = self.builder
+            .build_call(*arena_create_fn, &[initial_size.into()], "arena")
+            .map_err(|e| CodeGenError::new(format!("Failed to create arena: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from arena_create"))?
+            .into_pointer_value();
+
+        Ok(arena_ptr)
+    }
+
+    /// Allocate from an arena
+    fn compile_arena_alloc(
+        &mut self,
+        arena_ptr: PointerValue<'ctx>,
+        size: inkwell::values::IntValue<'ctx>,
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let arena_alloc_fn = self.runtime_functions.get("mux_arena_alloc")
+            .ok_or_else(|| CodeGenError::new("mux_arena_alloc not declared"))?;
+
+        let obj_ptr = self.builder
+            .build_call(*arena_alloc_fn, &[arena_ptr.into(), size.into()], "arena_obj")
+            .map_err(|e| CodeGenError::new(format!("Failed to allocate from arena: {}", e)))?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| CodeGenError::new("Expected return value from arena_alloc"))?
+            .into_pointer_value();
+
+        Ok(obj_ptr)
+    }
+
+    /// Reset an arena (free all allocations at once)
+    fn compile_arena_reset(
+        &mut self,
+        arena_ptr: PointerValue<'ctx>,
+    ) -> CodeGenResult<()> {
+        let arena_reset_fn = self.runtime_functions.get("mux_arena_reset")
+            .ok_or_else(|| CodeGenError::new("mux_arena_reset not declared"))?;
+
+        self.builder
+            .build_call(*arena_reset_fn, &[arena_ptr.into()], "")
+            .map_err(|e| CodeGenError::new(format!("Failed to reset arena: {}", e)))?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Phase 7.3: Stack Allocation for Small/Short-Lived Objects
+    // ========================================================================
+
+    /// Allocate a value on the stack if it doesn't escape
+    fn compile_stack_alloc(
+        &mut self,
+        type_: &Type,
+        name: &str,
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let llvm_type = self.type_to_llvm(type_)?;
+        let alloca = self.builder.build_alloca(llvm_type, name)
+            .map_err(|e| CodeGenError::new(format!("Failed to allocate on stack: {}", e)))?;
+        Ok(alloca)
+    }
+
+    /// Allocate an array on the stack
+    fn compile_stack_array_alloc(
+        &mut self,
+        elem_type: &Type,
+        count: inkwell::values::IntValue<'ctx>,
+        name: &str,
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let llvm_elem_type = self.type_to_llvm(elem_type)?;
+        let alloca = self.builder.build_array_alloca(llvm_elem_type, count, name)
+            .map_err(|e| CodeGenError::new(format!("Failed to allocate array on stack: {}", e)))?;
+        Ok(alloca)
+    }
+
+    /// Compile optimized allocation based on escape analysis
+    fn compile_optimized_alloc(
+        &mut self,
+        var_name: &str,
+        type_: &Type,
+        func_body: &[StatementNode],
+    ) -> CodeGenResult<PointerValue<'ctx>> {
+        let strategy = self.get_allocation_strategy(var_name, type_, func_body);
+
+        match strategy {
+            AllocationStrategy::Stack => {
+                self.compile_stack_alloc(type_, var_name)
+            }
+            AllocationStrategy::Heap | AllocationStrategy::HeapWithAutoFree => {
+                let llvm_type = self.type_to_llvm(type_)?;
+                let size = self.get_type_size(llvm_type);
+                let size_val = self.context.i64_type().const_int(size, false);
+                self.compile_gc_alloc(size_val)
+            }
+            AllocationStrategy::HeapRefCounted => {
+                let llvm_type = self.type_to_llvm(type_)?;
+                let size = self.get_type_size(llvm_type);
+                let size_val = self.context.i64_type().const_int(size, false);
+                let ptr = self.compile_gc_alloc(size_val)?;
+                // Initialize reference count
+                self.compile_rc_incref(ptr)?;
+                Ok(ptr)
+            }
+            AllocationStrategy::HeapGCManaged => {
+                let llvm_type = self.type_to_llvm(type_)?;
+                let size = self.get_type_size(llvm_type);
+                let size_val = self.context.i64_type().const_int(size, false);
+                let ptr = self.compile_gc_alloc(size_val)?;
+                // Register as GC root
+                self.compile_gc_register_root(ptr)?;
+                Ok(ptr)
+            }
+        }
+    }
+
+    // ========================================================================
+    // Phase 7.3: Cache-Friendly Data Layout Optimization
+    // ========================================================================
+
+    /// Analyze struct field access patterns for optimal layout
+    fn analyze_field_access_patterns(
+        &self,
+        struct_name: &str,
+        func_body: &[StatementNode],
+    ) -> HashMap<String, usize> {
+        let mut access_counts: HashMap<String, usize> = HashMap::new();
+
+        for stmt in func_body {
+            self.count_field_accesses(struct_name, stmt, &mut access_counts);
+        }
+
+        access_counts
+    }
+
+    /// Count field accesses in a statement
+    fn count_field_accesses(
+        &self,
+        struct_name: &str,
+        stmt: &StatementNode,
+        counts: &mut HashMap<String, usize>,
+    ) {
+        match &stmt.kind {
+            StatementKind::Expression(expr) => {
+                self.count_field_accesses_expr(struct_name, expr, counts);
+            }
+            StatementKind::If { cond, then_block, else_block } => {
+                self.count_field_accesses_expr(struct_name, cond, counts);
+                for inner in then_block {
+                    self.count_field_accesses(struct_name, inner, counts);
+                }
+                if let Some(else_stmts) = else_block {
+                    for inner in else_stmts {
+                        self.count_field_accesses(struct_name, inner, counts);
+                    }
+                }
+            }
+            StatementKind::While { cond, body } => {
+                self.count_field_accesses_expr(struct_name, cond, counts);
+                for inner in body {
+                    self.count_field_accesses(struct_name, inner, counts);
+                }
+            }
+            StatementKind::For { iter, body, .. } => {
+                self.count_field_accesses_expr(struct_name, iter, counts);
+                for inner in body {
+                    self.count_field_accesses(struct_name, inner, counts);
+                }
+            }
+            StatementKind::Block(stmts) => {
+                for inner in stmts {
+                    self.count_field_accesses(struct_name, inner, counts);
+                }
+            }
+            StatementKind::Return(Some(expr)) => {
+                self.count_field_accesses_expr(struct_name, expr, counts);
+            }
+            _ => {}
+        }
+    }
+
+    /// Count field accesses in an expression
+    fn count_field_accesses_expr(
+        &self,
+        struct_name: &str,
+        expr: &ExpressionNode,
+        counts: &mut HashMap<String, usize>,
+    ) {
+        match &expr.kind {
+            ExpressionKind::FieldAccess { expr: inner, field } => {
+                // Check if this is accessing our target struct
+                if let ExpressionKind::Identifier(name) = &inner.kind {
+                    if let Some(var) = self.variables.get(name) {
+                        if let Type::Named(type_name, _) = &var.type_ {
+                            if type_name == struct_name {
+                                *counts.entry(field.clone()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+                self.count_field_accesses_expr(struct_name, inner, counts);
+            }
+            ExpressionKind::Binary { left, right, .. } => {
+                self.count_field_accesses_expr(struct_name, left, counts);
+                self.count_field_accesses_expr(struct_name, right, counts);
+            }
+            ExpressionKind::Unary { expr: inner, .. } => {
+                self.count_field_accesses_expr(struct_name, inner, counts);
+            }
+            ExpressionKind::Call { func, args } => {
+                self.count_field_accesses_expr(struct_name, func, counts);
+                for arg in args {
+                    self.count_field_accesses_expr(struct_name, arg, counts);
+                }
+            }
+            ExpressionKind::ListAccess { expr: inner, index } => {
+                self.count_field_accesses_expr(struct_name, inner, counts);
+                self.count_field_accesses_expr(struct_name, index, counts);
+            }
+            ExpressionKind::If { cond, then_expr, else_expr } => {
+                self.count_field_accesses_expr(struct_name, cond, counts);
+                self.count_field_accesses_expr(struct_name, then_expr, counts);
+                self.count_field_accesses_expr(struct_name, else_expr, counts);
+            }
+            _ => {}
+        }
+    }
+
+    /// Get recommended field ordering based on access patterns
+    fn get_optimized_field_order(
+        &self,
+        access_counts: &HashMap<String, usize>,
+        field_names: &[String],
+    ) -> Vec<String> {
+        let mut fields_with_counts: Vec<(&String, usize)> = field_names
+            .iter()
+            .map(|f| (f, *access_counts.get(f).unwrap_or(&0)))
+            .collect();
+
+        // Sort by access frequency (most accessed first for cache locality)
+        fields_with_counts.sort_by(|a, b| b.1.cmp(&a.1));
+
+        fields_with_counts.into_iter().map(|(f, _)| f.clone()).collect()
+    }
+
+    // ========================================================================
+    // Phase 4.4: Higher-Kinded Types Support
+    // ========================================================================
+
+    /// Higher-kinded type representation
+    /// e.g., Functor<F> where F: * -> *
+    fn resolve_higher_kinded_type(
+        &self,
+        hkt_name: &str,
+        inner_type: &Type,
+    ) -> CodeGenResult<Type> {
+        match hkt_name {
+            "Functor" | "Monad" | "Applicative" => {
+                // These are type constructors that take a type and return a type
+                // e.g., List is a Functor because List<T> for any T
+                Ok(Type::Named(hkt_name.to_string(), vec![inner_type.clone()]))
+            }
+            _ => Err(CodeGenError::new(format!(
+                "Unknown higher-kinded type: {}",
+                hkt_name
+            ))),
+        }
+    }
+
+    /// Check if a type constructor satisfies a higher-kinded type bound
+    fn check_hkt_bound(
+        &self,
+        type_constructor: &str,
+        hkt_bound: &str,
+    ) -> CodeGenResult<bool> {
+        // Built-in type constructors and their HKT implementations
+        match (type_constructor, hkt_bound) {
+            ("List", "Functor") | ("List", "Monad") | ("List", "Applicative") => Ok(true),
+            ("Optional", "Functor") | ("Optional", "Monad") | ("Optional", "Applicative") => Ok(true),
+            ("Result", "Functor") | ("Result", "Monad") => Ok(true),
+            ("Set", "Functor") => Ok(true),
+            _ => {
+                // Check if it's a user-defined implementation
+                let interface_name = format!("{}_{}", type_constructor, hkt_bound);
+                Ok(self.interface_methods.contains_key(&interface_name))
+            }
+        }
+    }
+
+    // ========================================================================
+    // Phase 4.4: Generic Collections with Concrete Element Types
+    // ========================================================================
+
+    /// Create a specialized list type for a concrete element type
+    fn get_or_create_typed_list(
+        &mut self,
+        elem_type: &Type,
+    ) -> CodeGenResult<StructType<'ctx>> {
+        let type_key = format!("List<{:?}>", elem_type);
+
+        if let Some(struct_type) = self.struct_types.get(&type_key) {
+            return Ok(*struct_type);
+        }
+
+        // Create a struct type for the typed list
+        // { i64 length, i64 capacity, ptr data }
+        let struct_type = self.context.opaque_struct_type(&type_key);
+        struct_type.set_body(&[
+            self.context.i64_type().into(),  // length
+            self.context.i64_type().into(),  // capacity
+            self.context.ptr_type(AddressSpace::default()).into(),  // data pointer
+        ], false);
+
+        self.struct_types.insert(type_key, struct_type);
+        Ok(struct_type)
+    }
+
+    /// Create a specialized map type for concrete key/value types
+    fn get_or_create_typed_map(
+        &mut self,
+        key_type: &Type,
+        value_type: &Type,
+    ) -> CodeGenResult<StructType<'ctx>> {
+        let type_key = format!("Map<{:?},{:?}>", key_type, value_type);
+
+        if let Some(struct_type) = self.struct_types.get(&type_key) {
+            return Ok(*struct_type);
+        }
+
+        // Create a struct type for the typed map
+        // { i64 size, i64 capacity, ptr buckets }
+        let struct_type = self.context.opaque_struct_type(&type_key);
+        struct_type.set_body(&[
+            self.context.i64_type().into(),  // size
+            self.context.i64_type().into(),  // capacity
+            self.context.ptr_type(AddressSpace::default()).into(),  // buckets pointer
+        ], false);
+
+        self.struct_types.insert(type_key, struct_type);
+        Ok(struct_type)
+    }
+
+    /// Create a specialized set type for a concrete element type
+    fn get_or_create_typed_set(
+        &mut self,
+        elem_type: &Type,
+    ) -> CodeGenResult<StructType<'ctx>> {
+        let type_key = format!("Set<{:?}>", elem_type);
+
+        if let Some(struct_type) = self.struct_types.get(&type_key) {
+            return Ok(*struct_type);
+        }
+
+        // Create a struct type for the typed set
+        // { i64 size, i64 capacity, ptr data }
+        let struct_type = self.context.opaque_struct_type(&type_key);
+        struct_type.set_body(&[
+            self.context.i64_type().into(),  // size
+            self.context.i64_type().into(),  // capacity
+            self.context.ptr_type(AddressSpace::default()).into(),  // data pointer
+        ], false);
+
+        self.struct_types.insert(type_key, struct_type);
+        Ok(struct_type)
+    }
+}
+
+/// Allocation strategy determined by escape analysis
+#[derive(Clone, Debug, PartialEq)]
+enum AllocationStrategy {
+    /// Allocate on stack - value doesn't escape
+    Stack,
+    /// Allocate on heap - value escapes
+    Heap,
+    /// Heap allocation with automatic free on scope exit
+    HeapWithAutoFree,
+    /// Heap allocation with reference counting
+    HeapRefCounted,
+    /// Heap allocation managed by garbage collector
+    HeapGCManaged,
 }
