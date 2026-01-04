@@ -1,0 +1,14 @@
+---
+source: src/codegen.rs
+expression: results
+---
+- - "List: Functor"
+  - "true"
+- - "List: Monad"
+  - "true"
+- - "Optional: Functor"
+  - "true"
+- - "Result: Monad"
+  - "true"
+- - "Set: Functor"
+  - "true"

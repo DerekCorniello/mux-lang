@@ -1,0 +1,16 @@
+---
+source: src/codegen.rs
+expression: results
+---
+- - "Reference<Int>"
+  - pointer
+- - "List<Int>"
+  - pointer
+- - "Map<Str, Int>"
+  - pointer
+- - "Set<Int>"
+  - pointer
+- - "Tuple<Int, Str>"
+  - struct
+- - "Generic<T>"
+  - "error: CodeGen Error: Generic types should be monomorphized before code generation"

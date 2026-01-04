@@ -1,0 +1,8 @@
+---
+source: src/codegen.rs
+expression: errors
+---
+- - display
+  - "CodeGen Error: Test error message"
+- - debug
+  - "CodeGenError { message: \"Debug test\" }"

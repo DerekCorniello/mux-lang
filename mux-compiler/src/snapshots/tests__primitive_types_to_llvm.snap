@@ -1,0 +1,16 @@
+---
+source: src/codegen.rs
+expression: results
+---
+- - Int
+  - "int(64)"
+- - Float
+  - "float(64)"
+- - Bool
+  - "int(1)"
+- - Char
+  - "int(32)"
+- - Str
+  - pointer
+- - Auto
+  - "error: CodeGen Error: Cannot use Auto type directly, must be inferred"

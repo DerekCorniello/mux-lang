@@ -1,0 +1,16 @@
+---
+source: src/codegen.rs
+expression: state
+---
+- - module_name
+  - mux_program
+- - runtime_functions_count
+  - "21"
+- - variables_empty
+  - "true"
+- - struct_types_empty
+  - "true"
+- - enum_types_empty
+  - "true"
+- - loop_stack_empty
+  - "true"

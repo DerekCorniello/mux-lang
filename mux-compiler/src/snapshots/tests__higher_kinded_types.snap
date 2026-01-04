@@ -1,0 +1,12 @@
+---
+source: src/codegen.rs
+expression: results
+---
+- - "Functor<Int>"
+  - "Named(\"Functor\", [Primitive(Int)])"
+- - "Monad<Int>"
+  - "Named(\"Monad\", [Primitive(Int)])"
+- - "Applicative<Int>"
+  - "Named(\"Applicative\", [Primitive(Int)])"
+- - "UnknownHKT<Int>"
+  - "error: CodeGen Error: Unknown higher-kinded type: UnknownHKT"

@@ -1,0 +1,25 @@
+---
+source: src/codegen.rs
+expression: function_names
+---
+- mux_bool_to_string
+- mux_char_to_string
+- mux_float_to_string
+- mux_int_to_string
+- mux_list_get
+- mux_list_length
+- mux_list_push
+- mux_map_contains_key
+- mux_map_get
+- mux_map_put
+- mux_new_list
+- mux_new_map
+- mux_new_set
+- mux_print
+- mux_println
+- mux_set_add
+- mux_set_contains
+- mux_set_remove
+- mux_string_concat
+- mux_string_equals
+- mux_string_length

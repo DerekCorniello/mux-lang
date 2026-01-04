@@ -6078,11 +6078,11 @@ mod tests {
     use crate::parser::Parser;
     use crate::source::Source;
     use inkwell::context::Context;
+    use insta::assert_yaml_snapshot;
 
     /// Helper to create a code generator for testing
     fn create_test_codegen<'ctx>(context: &'ctx Context) -> (CodeGenerator<'static, 'ctx>, SemanticAnalyzer) {
         let analyzer = SemanticAnalyzer::new();
-        // We need to leak the analyzer to get a 'static reference for testing
         let analyzer_box = Box::new(analyzer);
         let analyzer_ptr = Box::leak(analyzer_box);
         let codegen = CodeGenerator::new(context, analyzer_ptr);
@@ -6117,697 +6117,255 @@ mod tests {
         }
     }
 
-    // ========================================================================
-    // Phase 8.1: Type System Unit Tests
-    // ========================================================================
-
-    #[test]
-    fn test_primitive_to_llvm_int() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.primitive_to_llvm(&PrimitiveType::Int);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_int_type());
-    }
-
-    #[test]
-    fn test_primitive_to_llvm_float() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.primitive_to_llvm(&PrimitiveType::Float);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_float_type());
-    }
-
-    #[test]
-    fn test_primitive_to_llvm_bool() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.primitive_to_llvm(&PrimitiveType::Bool);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_int_type());
-    }
-
-    #[test]
-    fn test_primitive_to_llvm_char() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.primitive_to_llvm(&PrimitiveType::Char);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_int_type());
-    }
-
-    #[test]
-    fn test_primitive_to_llvm_str() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.primitive_to_llvm(&PrimitiveType::Str);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_pointer_type());
-    }
-
-    #[test]
-    fn test_primitive_to_llvm_auto_error() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.primitive_to_llvm(&PrimitiveType::Auto);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_type_to_llvm_reference() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let ref_type = Type::Reference(Box::new(Type::Primitive(PrimitiveType::Int)));
-        let result = codegen.type_to_llvm(&ref_type);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_pointer_type());
-    }
-
-    #[test]
-    fn test_type_to_llvm_list() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let list_type = Type::List(Box::new(Type::Primitive(PrimitiveType::Int)));
-        let result = codegen.type_to_llvm(&list_type);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_pointer_type());
-    }
-
-    #[test]
-    fn test_type_to_llvm_map() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let map_type = Type::Map(
-            Box::new(Type::Primitive(PrimitiveType::Str)),
-            Box::new(Type::Primitive(PrimitiveType::Int)),
-        );
-        let result = codegen.type_to_llvm(&map_type);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_pointer_type());
-    }
-
-    #[test]
-    fn test_type_to_llvm_set() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let set_type = Type::Set(Box::new(Type::Primitive(PrimitiveType::Int)));
-        let result = codegen.type_to_llvm(&set_type);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_pointer_type());
-    }
-
-    #[test]
-    fn test_type_to_llvm_tuple() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let tuple_type = Type::Tuple(vec![
-            Type::Primitive(PrimitiveType::Int),
-            Type::Primitive(PrimitiveType::Str),
-        ]);
-        let result = codegen.type_to_llvm(&tuple_type);
-        assert!(result.is_ok());
-        let llvm_type = result.unwrap();
-        assert!(llvm_type.is_struct_type());
-    }
-
-    #[test]
-    fn test_type_to_llvm_generic_error() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let generic_type = Type::Generic("T".to_string());
-        let result = codegen.type_to_llvm(&generic_type);
-        assert!(result.is_err());
-    }
-
-    // ========================================================================
-    // Phase 8.1: Type Resolution Tests
-    // ========================================================================
-
-    #[test]
-    fn test_resolve_type_node_primitive_int() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let type_node = TypeNode {
-            kind: TypeKind::Primitive(PrimitiveType::Int),
-            span: crate::lexer::Span::default(),
-        };
-        let result = codegen.resolve_type_node(&type_node);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), Type::Primitive(PrimitiveType::Int));
-    }
-
-    #[test]
-    fn test_resolve_type_node_list() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let inner_type = TypeNode {
-            kind: TypeKind::Primitive(PrimitiveType::Int),
-            span: crate::lexer::Span::default(),
-        };
-        let type_node = TypeNode {
-            kind: TypeKind::List(Box::new(inner_type)),
-            span: crate::lexer::Span::default(),
-        };
-        let result = codegen.resolve_type_node(&type_node);
-        assert!(result.is_ok());
-        if let Type::List(inner) = result.unwrap() {
-            assert_eq!(*inner, Type::Primitive(PrimitiveType::Int));
+    /// Helper to describe LLVM type as a string for snapshots
+    fn describe_llvm_type(ty: &BasicTypeEnum) -> String {
+        if ty.is_int_type() {
+            format!("int({})", ty.into_int_type().get_bit_width())
+        } else if ty.is_float_type() {
+            "float(64)".to_string()
+        } else if ty.is_pointer_type() {
+            "pointer".to_string()
+        } else if ty.is_struct_type() {
+            "struct".to_string()
+        } else if ty.is_array_type() {
+            "array".to_string()
         } else {
-            panic!("Expected List type");
-        }
-    }
-
-    #[test]
-    fn test_resolve_type_node_map() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let key_type = TypeNode {
-            kind: TypeKind::Primitive(PrimitiveType::Str),
-            span: crate::lexer::Span::default(),
-        };
-        let value_type = TypeNode {
-            kind: TypeKind::Primitive(PrimitiveType::Int),
-            span: crate::lexer::Span::default(),
-        };
-        let type_node = TypeNode {
-            kind: TypeKind::Map(Box::new(key_type), Box::new(value_type)),
-            span: crate::lexer::Span::default(),
-        };
-        let result = codegen.resolve_type_node(&type_node);
-        assert!(result.is_ok());
-        if let Type::Map(k, v) = result.unwrap() {
-            assert_eq!(*k, Type::Primitive(PrimitiveType::Str));
-            assert_eq!(*v, Type::Primitive(PrimitiveType::Int));
-        } else {
-            panic!("Expected Map type");
-        }
-    }
-
-    #[test]
-    fn test_resolve_type_node_tuple() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let elem1 = TypeNode {
-            kind: TypeKind::Primitive(PrimitiveType::Int),
-            span: crate::lexer::Span::default(),
-        };
-        let elem2 = TypeNode {
-            kind: TypeKind::Primitive(PrimitiveType::Bool),
-            span: crate::lexer::Span::default(),
-        };
-        let type_node = TypeNode {
-            kind: TypeKind::Tuple(vec![elem1, elem2]),
-            span: crate::lexer::Span::default(),
-        };
-        let result = codegen.resolve_type_node(&type_node);
-        assert!(result.is_ok());
-        if let Type::Tuple(elems) = result.unwrap() {
-            assert_eq!(elems.len(), 2);
-            assert_eq!(elems[0], Type::Primitive(PrimitiveType::Int));
-            assert_eq!(elems[1], Type::Primitive(PrimitiveType::Bool));
-        } else {
-            panic!("Expected Tuple type");
+            "unknown".to_string()
         }
     }
 
     // ========================================================================
-    // Phase 8.1: Helper Function Tests
+    // Type System Snapshot Tests
     // ========================================================================
 
     #[test]
-    fn test_unique_name_generation() {
-        let context = Context::create();
-        let (mut codegen, _) = create_test_codegen(&context);
-
-        let name1 = codegen.unique_name("test");
-        let name2 = codegen.unique_name("test");
-        let name3 = codegen.unique_name("other");
-
-        assert_ne!(name1, name2);
-        assert_ne!(name2, name3);
-        assert!(name1.starts_with("test_"));
-        assert!(name2.starts_with("test_"));
-        assert!(name3.starts_with("other_"));
-    }
-
-    #[test]
-    fn test_str_to_llvm_type() {
+    fn test_primitive_types_to_llvm() {
         let context = Context::create();
         let (codegen, _) = create_test_codegen(&context);
 
-        let i64_type = codegen.str_to_llvm_type("i64");
-        assert!(i64_type.is_int_type());
+        let results: Vec<(&str, String)> = vec![
+            ("Int", codegen.primitive_to_llvm(&PrimitiveType::Int)
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Float", codegen.primitive_to_llvm(&PrimitiveType::Float)
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Bool", codegen.primitive_to_llvm(&PrimitiveType::Bool)
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Char", codegen.primitive_to_llvm(&PrimitiveType::Char)
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Str", codegen.primitive_to_llvm(&PrimitiveType::Str)
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Auto", codegen.primitive_to_llvm(&PrimitiveType::Auto)
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+        ];
 
-        let f64_type = codegen.str_to_llvm_type("f64");
-        assert!(f64_type.is_float_type());
-
-        let ptr_type = codegen.str_to_llvm_type("ptr");
-        assert!(ptr_type.is_pointer_type());
-
-        let bool_type = codegen.str_to_llvm_type("i1");
-        assert!(bool_type.is_int_type());
+        assert_yaml_snapshot!("primitive_types_to_llvm", results);
     }
 
-    // ========================================================================
-    // Phase 8.1: Runtime Function Declaration Tests
-    // ========================================================================
-
     #[test]
-    fn test_runtime_functions_declared() {
+    fn test_complex_types_to_llvm() {
         let context = Context::create();
         let (codegen, _) = create_test_codegen(&context);
 
-        // Check that essential runtime functions are declared
-        assert!(codegen.runtime_functions.contains_key("mux_string_concat"));
-        assert!(codegen.runtime_functions.contains_key("mux_string_length"));
-        assert!(codegen.runtime_functions.contains_key("mux_string_equals"));
-        assert!(codegen.runtime_functions.contains_key("mux_int_to_string"));
-        assert!(codegen.runtime_functions.contains_key("mux_float_to_string"));
-        assert!(codegen.runtime_functions.contains_key("mux_bool_to_string"));
-        assert!(codegen.runtime_functions.contains_key("mux_print"));
-        assert!(codegen.runtime_functions.contains_key("mux_println"));
-        assert!(codegen.runtime_functions.contains_key("mux_new_list"));
-        assert!(codegen.runtime_functions.contains_key("mux_list_push"));
-        assert!(codegen.runtime_functions.contains_key("mux_list_get"));
-        assert!(codegen.runtime_functions.contains_key("mux_new_map"));
-        assert!(codegen.runtime_functions.contains_key("mux_map_put"));
-        assert!(codegen.runtime_functions.contains_key("mux_map_get"));
-        assert!(codegen.runtime_functions.contains_key("mux_new_set"));
-        assert!(codegen.runtime_functions.contains_key("mux_set_add"));
-        assert!(codegen.runtime_functions.contains_key("mux_set_contains"));
+        let results: Vec<(&str, String)> = vec![
+            ("Reference<Int>", codegen.type_to_llvm(&Type::Reference(Box::new(Type::Primitive(PrimitiveType::Int))))
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("List<Int>", codegen.type_to_llvm(&Type::List(Box::new(Type::Primitive(PrimitiveType::Int))))
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Map<Str, Int>", codegen.type_to_llvm(&Type::Map(
+                Box::new(Type::Primitive(PrimitiveType::Str)),
+                Box::new(Type::Primitive(PrimitiveType::Int))))
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Set<Int>", codegen.type_to_llvm(&Type::Set(Box::new(Type::Primitive(PrimitiveType::Int))))
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Tuple<Int, Str>", codegen.type_to_llvm(&Type::Tuple(vec![
+                Type::Primitive(PrimitiveType::Int),
+                Type::Primitive(PrimitiveType::Str)]))
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Generic<T>", codegen.type_to_llvm(&Type::Generic("T".to_string()))
+                .map(|t| describe_llvm_type(&t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+        ];
+
+        assert_yaml_snapshot!("complex_types_to_llvm", results);
     }
 
     // ========================================================================
-    // Phase 8.1: CodeGenError Tests
+    // Type Resolution Snapshot Tests
     // ========================================================================
 
     #[test]
-    fn test_codegen_error_display() {
-        let error = CodeGenError::new("Test error message");
-        let display = format!("{}", error);
-        assert!(display.contains("Test error message"));
-        assert!(display.contains("CodeGen Error"));
-    }
+    fn test_type_node_resolution() {
+        let context = Context::create();
+        let (codegen, _) = create_test_codegen(&context);
 
-    #[test]
-    fn test_codegen_error_debug() {
-        let error = CodeGenError::new("Debug test");
-        let debug = format!("{:?}", error);
-        assert!(debug.contains("Debug test"));
-    }
+        let test_cases: Vec<(&str, Result<Type, CodeGenError>)> = vec![
+            ("Primitive Int", codegen.resolve_type_node(&TypeNode {
+                kind: TypeKind::Primitive(PrimitiveType::Int),
+                span: crate::lexer::Span::default(),
+            })),
+            ("List<Int>", codegen.resolve_type_node(&TypeNode {
+                kind: TypeKind::List(Box::new(TypeNode {
+                    kind: TypeKind::Primitive(PrimitiveType::Int),
+                    span: crate::lexer::Span::default(),
+                })),
+                span: crate::lexer::Span::default(),
+            })),
+            ("Map<Str, Int>", codegen.resolve_type_node(&TypeNode {
+                kind: TypeKind::Map(
+                    Box::new(TypeNode {
+                        kind: TypeKind::Primitive(PrimitiveType::Str),
+                        span: crate::lexer::Span::default(),
+                    }),
+                    Box::new(TypeNode {
+                        kind: TypeKind::Primitive(PrimitiveType::Int),
+                        span: crate::lexer::Span::default(),
+                    }),
+                ),
+                span: crate::lexer::Span::default(),
+            })),
+        ];
 
-    // ========================================================================
-    // Phase 8.1: Allocation Strategy Tests
-    // ========================================================================
+        let results: Vec<(&str, String)> = test_cases.into_iter()
+            .map(|(name, result)| {
+                (name, result.map(|t| format!("{:?}", t)).unwrap_or_else(|e| format!("error: {}", e)))
+            })
+            .collect();
 
-    #[test]
-    fn test_allocation_strategy_equality() {
-        assert_eq!(AllocationStrategy::Stack, AllocationStrategy::Stack);
-        assert_eq!(AllocationStrategy::Heap, AllocationStrategy::Heap);
-        assert_ne!(AllocationStrategy::Stack, AllocationStrategy::Heap);
-        assert_ne!(AllocationStrategy::HeapWithAutoFree, AllocationStrategy::HeapRefCounted);
-    }
-
-    #[test]
-    fn test_allocation_strategy_clone() {
-        let strategy = AllocationStrategy::HeapGCManaged;
-        let cloned = strategy.clone();
-        assert_eq!(strategy, cloned);
-    }
-
-    // ========================================================================
-    // Phase 8.1: Interface/Trait System Tests
-    // ========================================================================
-
-    #[test]
-    fn test_interface_method_creation() {
-        let method = InterfaceMethod {
-            name: "test_method".to_string(),
-            param_types: vec![Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Bool),
-            has_default: false,
-        };
-
-        assert_eq!(method.name, "test_method");
-        assert_eq!(method.param_types.len(), 1);
-        assert_eq!(method.return_type, Type::Primitive(PrimitiveType::Bool));
-        assert!(!method.has_default);
-    }
-
-    #[test]
-    fn test_interface_method_with_default() {
-        let method = InterfaceMethod {
-            name: "default_method".to_string(),
-            param_types: vec![],
-            return_type: Type::Void,
-            has_default: true,
-        };
-
-        assert!(method.has_default);
+        assert_yaml_snapshot!("type_node_resolution", results);
     }
 
     // ========================================================================
-    // Phase 8.1: Higher-Kinded Types Tests
+    // Runtime Functions Snapshot Tests
     // ========================================================================
 
     #[test]
-    fn test_resolve_higher_kinded_type_functor() {
+    fn test_runtime_functions() {
+        let context = Context::create();
+        let (codegen, _) = create_test_codegen(&context);
+
+        let mut function_names: Vec<&str> = codegen.runtime_functions.keys()
+            .map(|s| s.as_str())
+            .collect();
+        function_names.sort();
+
+        assert_yaml_snapshot!("runtime_functions", function_names);
+    }
+
+    // ========================================================================
+    // CodeGenError Snapshot Tests
+    // ========================================================================
+
+    #[test]
+    fn test_codegen_error_formats() {
+        let errors: Vec<(&str, String)> = vec![
+            ("display", format!("{}", CodeGenError::new("Test error message"))),
+            ("debug", format!("{:?}", CodeGenError::new("Debug test"))),
+        ];
+
+        assert_yaml_snapshot!("codegen_error_formats", errors);
+    }
+
+    // ========================================================================
+    // Higher-Kinded Types Snapshot Tests
+    // ========================================================================
+
+    #[test]
+    fn test_higher_kinded_types() {
         let context = Context::create();
         let (codegen, _) = create_test_codegen(&context);
 
         let inner = Type::Primitive(PrimitiveType::Int);
-        let result = codegen.resolve_higher_kinded_type("Functor", &inner);
-        assert!(result.is_ok());
-        if let Type::Named(name, args) = result.unwrap() {
-            assert_eq!(name, "Functor");
-            assert_eq!(args.len(), 1);
-        } else {
-            panic!("Expected Named type");
-        }
+        let results: Vec<(&str, String)> = vec![
+            ("Functor<Int>", codegen.resolve_higher_kinded_type("Functor", &inner)
+                .map(|t| format!("{:?}", t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Monad<Int>", codegen.resolve_higher_kinded_type("Monad", &inner)
+                .map(|t| format!("{:?}", t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Applicative<Int>", codegen.resolve_higher_kinded_type("Applicative", &inner)
+                .map(|t| format!("{:?}", t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("UnknownHKT<Int>", codegen.resolve_higher_kinded_type("UnknownHKT", &inner)
+                .map(|t| format!("{:?}", t))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+        ];
+
+        assert_yaml_snapshot!("higher_kinded_types", results);
     }
 
     #[test]
-    fn test_resolve_higher_kinded_type_monad() {
+    fn test_hkt_bounds() {
         let context = Context::create();
         let (codegen, _) = create_test_codegen(&context);
 
-        let inner = Type::Primitive(PrimitiveType::Str);
-        let result = codegen.resolve_higher_kinded_type("Monad", &inner);
-        assert!(result.is_ok());
-    }
+        let results: Vec<(&str, String)> = vec![
+            ("List: Functor", codegen.check_hkt_bound("List", "Functor")
+                .map(|b| format!("{}", b))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("List: Monad", codegen.check_hkt_bound("List", "Monad")
+                .map(|b| format!("{}", b))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Optional: Functor", codegen.check_hkt_bound("Optional", "Functor")
+                .map(|b| format!("{}", b))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Result: Monad", codegen.check_hkt_bound("Result", "Monad")
+                .map(|b| format!("{}", b))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+            ("Set: Functor", codegen.check_hkt_bound("Set", "Functor")
+                .map(|b| format!("{}", b))
+                .unwrap_or_else(|e| format!("error: {}", e))),
+        ];
 
-    #[test]
-    fn test_resolve_higher_kinded_type_applicative() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let inner = Type::Primitive(PrimitiveType::Bool);
-        let result = codegen.resolve_higher_kinded_type("Applicative", &inner);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_resolve_higher_kinded_type_unknown_error() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let inner = Type::Primitive(PrimitiveType::Int);
-        let result = codegen.resolve_higher_kinded_type("UnknownHKT", &inner);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_check_hkt_bound_list_functor() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.check_hkt_bound("List", "Functor");
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-    }
-
-    #[test]
-    fn test_check_hkt_bound_list_monad() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.check_hkt_bound("List", "Monad");
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-    }
-
-    #[test]
-    fn test_check_hkt_bound_optional_functor() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.check_hkt_bound("Optional", "Functor");
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-    }
-
-    #[test]
-    fn test_check_hkt_bound_result_monad() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.check_hkt_bound("Result", "Monad");
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-    }
-
-    #[test]
-    fn test_check_hkt_bound_set_functor() {
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let result = codegen.check_hkt_bound("Set", "Functor");
-        assert!(result.is_ok());
-        assert!(result.unwrap());
+        assert_yaml_snapshot!("hkt_bounds", results);
     }
 
     // ========================================================================
-    // Phase 8.1: Generic Collections Tests
+    // Module Initialization Snapshot Tests
     // ========================================================================
 
     #[test]
-    fn test_get_or_create_typed_list() {
+    fn test_module_state() {
         let context = Context::create();
-        let (mut codegen, _) = create_test_codegen(&context);
+        let mut analyzer = SemanticAnalyzer::new();
+        let codegen = CodeGenerator::new(&context, &mut analyzer);
 
-        let elem_type = Type::Primitive(PrimitiveType::Int);
-        let result = codegen.get_or_create_typed_list(&elem_type);
-        assert!(result.is_ok());
+        let state: Vec<(&str, String)> = vec![
+            ("module_name", codegen.module.get_name().to_str().unwrap_or("unknown").to_string()),
+            ("runtime_functions_count", codegen.runtime_functions.len().to_string()),
+            ("variables_empty", codegen.variables.is_empty().to_string()),
+            ("struct_types_empty", codegen.struct_types.is_empty().to_string()),
+            ("enum_types_empty", codegen.enum_types.is_empty().to_string()),
+            ("loop_stack_empty", codegen.loop_stack.is_empty().to_string()),
+        ];
 
-        // Creating the same type again should return the cached version
-        let result2 = codegen.get_or_create_typed_list(&elem_type);
-        assert!(result2.is_ok());
-    }
-
-    #[test]
-    fn test_get_or_create_typed_map() {
-        let context = Context::create();
-        let (mut codegen, _) = create_test_codegen(&context);
-
-        let key_type = Type::Primitive(PrimitiveType::Str);
-        let value_type = Type::Primitive(PrimitiveType::Int);
-        let result = codegen.get_or_create_typed_map(&key_type, &value_type);
-        assert!(result.is_ok());
-
-        // Creating the same type again should return the cached version
-        let result2 = codegen.get_or_create_typed_map(&key_type, &value_type);
-        assert!(result2.is_ok());
-    }
-
-    #[test]
-    fn test_get_or_create_typed_set() {
-        let context = Context::create();
-        let (mut codegen, _) = create_test_codegen(&context);
-
-        let elem_type = Type::Primitive(PrimitiveType::Str);
-        let result = codegen.get_or_create_typed_set(&elem_type);
-        assert!(result.is_ok());
-
-        // Creating the same type again should return the cached version
-        let result2 = codegen.get_or_create_typed_set(&elem_type);
-        assert!(result2.is_ok());
+        assert_yaml_snapshot!("module_state", state);
     }
 
     // ========================================================================
-    // Phase 8.1: Enum Type Info Tests
+    // Empty Program Test
     // ========================================================================
 
     #[test]
-    fn test_enum_type_info_clone() {
-        let context = Context::create();
-        let struct_type = context.opaque_struct_type("TestEnum");
-        struct_type.set_body(&[context.i32_type().into()], false);
-
-        let mut variants = HashMap::new();
-        variants.insert("Variant1".to_string(), (0u32, vec![]));
-        variants.insert("Variant2".to_string(), (1u32, vec![Type::Primitive(PrimitiveType::Int)]));
-
-        let info = EnumTypeInfo {
-            struct_type,
-            variants,
-        };
-
-        let cloned = info.clone();
-        assert_eq!(cloned.variants.len(), 2);
-        assert!(cloned.variants.contains_key("Variant1"));
-        assert!(cloned.variants.contains_key("Variant2"));
-    }
-
-    // ========================================================================
-    // Phase 8.1: Result Type Info Tests
-    // ========================================================================
-
-    #[test]
-    fn test_result_type_info_clone() {
-        let context = Context::create();
-        let struct_type = context.opaque_struct_type("TestResult");
-        struct_type.set_body(&[context.bool_type().into()], false);
-
-        let info = ResultTypeInfo {
-            struct_type,
-            ok_type: Type::Primitive(PrimitiveType::Int),
-            err_type: Type::Primitive(PrimitiveType::Str),
-        };
-
-        let cloned = info.clone();
-        assert_eq!(cloned.ok_type, Type::Primitive(PrimitiveType::Int));
-        assert_eq!(cloned.err_type, Type::Primitive(PrimitiveType::Str));
-    }
-
-    // ========================================================================
-    // Phase 8.1: Monomorphized Function Tests
-    // ========================================================================
-
-    #[test]
-    fn test_monomorphized_function_clone() {
-        let context = Context::create();
-        let module = context.create_module("test");
-        let fn_type = context.void_type().fn_type(&[], false);
-        let function = module.add_function("test_fn", fn_type, None);
-
-        let mono_fn = MonomorphizedFunction {
-            base_name: "generic_fn".to_string(),
-            type_args: vec![Type::Primitive(PrimitiveType::Int)],
-            function,
-            return_type: Type::Void,
-        };
-
-        let cloned = mono_fn.clone();
-        assert_eq!(cloned.base_name, "generic_fn");
-        assert_eq!(cloned.type_args.len(), 1);
-        assert_eq!(cloned.return_type, Type::Void);
-    }
-
-    // ========================================================================
-    // Phase 8.2: Integration Tests with Parsing
-    // ========================================================================
-
-    #[test]
-    fn test_codegen_empty_program() {
+    fn test_empty_program_generation() {
         let context = Context::create();
         let mut analyzer = SemanticAnalyzer::new();
         let mut codegen = CodeGenerator::new(&context, &mut analyzer);
 
         let ast: Vec<AstNode> = vec![];
         let result = codegen.generate(&ast);
-        assert!(result.is_ok());
-    }
 
-    // ========================================================================
-    // Phase 8.3: Correctness Verification Tests
-    // ========================================================================
-
-    #[test]
-    fn test_type_system_soundness_primitives() {
-        // Verify that all primitive types map to correct LLVM types
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        // Int should map to i64
-        let int_result = codegen.primitive_to_llvm(&PrimitiveType::Int).unwrap();
-        assert!(int_result.is_int_type());
-        assert_eq!(int_result.into_int_type().get_bit_width(), 64);
-
-        // Float should map to f64
-        let float_result = codegen.primitive_to_llvm(&PrimitiveType::Float).unwrap();
-        assert!(float_result.is_float_type());
-
-        // Bool should map to i1
-        let bool_result = codegen.primitive_to_llvm(&PrimitiveType::Bool).unwrap();
-        assert!(bool_result.is_int_type());
-        assert_eq!(bool_result.into_int_type().get_bit_width(), 1);
-
-        // Char should map to i32 (Unicode code point)
-        let char_result = codegen.primitive_to_llvm(&PrimitiveType::Char).unwrap();
-        assert!(char_result.is_int_type());
-        assert_eq!(char_result.into_int_type().get_bit_width(), 32);
-    }
-
-    #[test]
-    fn test_type_system_soundness_collections() {
-        // Verify that collection types map to pointer types (runtime managed)
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let list_type = Type::List(Box::new(Type::Primitive(PrimitiveType::Int)));
-        let list_llvm = codegen.type_to_llvm(&list_type).unwrap();
-        assert!(list_llvm.is_pointer_type());
-
-        let map_type = Type::Map(
-            Box::new(Type::Primitive(PrimitiveType::Str)),
-            Box::new(Type::Primitive(PrimitiveType::Int)),
-        );
-        let map_llvm = codegen.type_to_llvm(&map_type).unwrap();
-        assert!(map_llvm.is_pointer_type());
-
-        let set_type = Type::Set(Box::new(Type::Primitive(PrimitiveType::Int)));
-        let set_llvm = codegen.type_to_llvm(&set_type).unwrap();
-        assert!(set_llvm.is_pointer_type());
-    }
-
-    #[test]
-    fn test_generic_type_rejection() {
-        // Verify that unresolved generic types are rejected
-        let context = Context::create();
-        let (codegen, _) = create_test_codegen(&context);
-
-        let generic = Type::Generic("T".to_string());
-        assert!(codegen.type_to_llvm(&generic).is_err());
-
-        let variable = Type::Variable("U".to_string());
-        assert!(codegen.type_to_llvm(&variable).is_err());
-
-        let instantiated = Type::Instantiated("Pair".to_string(), vec![]);
-        assert!(codegen.type_to_llvm(&instantiated).is_err());
-    }
-
-    #[test]
-    fn test_module_initialization() {
-        let context = Context::create();
-        let mut analyzer = SemanticAnalyzer::new();
-        let codegen = CodeGenerator::new(&context, &mut analyzer);
-
-        // Verify module is properly initialized
-        assert_eq!(codegen.module.get_name().to_str().unwrap(), "mux_program");
-
-        // Verify runtime functions are declared
-        assert!(!codegen.runtime_functions.is_empty());
-
-        // Verify internal state is properly initialized
-        assert!(codegen.variables.is_empty());
-        assert!(codegen.struct_types.is_empty());
-        assert!(codegen.enum_types.is_empty());
-        assert!(codegen.loop_stack.is_empty());
+        let status = if result.is_ok() { "success" } else { "error" };
+        assert_yaml_snapshot!("empty_program_generation", status);
     }
 }

@@ -1,0 +1,10 @@
+---
+source: src/codegen.rs
+expression: results
+---
+- - Primitive Int
+  - "Primitive(Int)"
+- - "List<Int>"
+  - "List(Primitive(Int))"
+- - "Map<Str, Int>"
+  - "Map(Primitive(Str), Primitive(Int))"
