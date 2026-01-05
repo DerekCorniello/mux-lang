@@ -138,6 +138,27 @@ pub extern "C" fn mux_alloc_object(type_id: TypeId) -> *mut Value {
     alloc_object(type_id)
 }
 
+/// Allocate raw memory by size (used by codegen for struct allocation)
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_alloc_by_size(size: i64) -> *mut c_void {
+    if size <= 0 {
+        return std::ptr::null_mut();
+    }
+    let layout = std::alloc::Layout::from_size_align(size as usize, std::mem::align_of::<u8>()).unwrap();
+    let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+    ptr as *mut c_void
+}
+
+/// Free raw memory (used by codegen for struct deallocation)
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_free_by_size(ptr: *mut c_void, size: i64) {
+    if ptr.is_null() || size <= 0 {
+        return;
+    }
+    let layout = std::alloc::Layout::from_size_align(size as usize, std::mem::align_of::<u8>()).unwrap();
+    unsafe { std::alloc::dealloc(ptr as *mut u8, layout) };
+}
+
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_free_object(obj: *mut Value) {

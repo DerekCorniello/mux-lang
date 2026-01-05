@@ -117,3 +117,15 @@ pub extern "C" fn mux_new_string_from_cstr(s: *const c_char) -> *mut Value {
     let value = Value::String(rust_str);
     Box::into_raw(Box::new(value))
 }
+
+/// Compare two strings for equality
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_string_equals(a: *const c_char, b: *const c_char) -> bool {
+    if a.is_null() || b.is_null() {
+        return a.is_null() && b.is_null();
+    }
+    let a_str = unsafe { CStr::from_ptr(a).to_string_lossy() };
+    let b_str = unsafe { CStr::from_ptr(b).to_string_lossy() };
+    a_str == b_str
+}

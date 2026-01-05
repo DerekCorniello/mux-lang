@@ -136,3 +136,15 @@ pub extern "C" fn mux_float_eq(a: f64, b: f64) -> bool {
 pub extern "C" fn mux_float_lt(a: f64, b: f64) -> bool {
     Float(ordered_float::OrderedFloat(a)) < Float(ordered_float::OrderedFloat(b))
 }
+
+/// Convert a raw i64 to f64 (used by codegen for primitive type conversions)
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_i64_to_f64(i: i64) -> f64 {
+    i as f64
+}
+
+/// Convert a raw f64 to i64 (used by codegen for primitive type conversions)
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_f64_to_i64(f: f64) -> i64 {
+    f as i64
+}

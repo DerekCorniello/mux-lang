@@ -27,6 +27,13 @@ This checklist guides the complete rewrite of the Mux compiler to use concrete L
 - **Phase 7.1-7.2: Memory Management** - GC integration with mux_gc_alloc/free, reference counting, bounds checks, null safety
 - **Phase 7.3: Memory Optimization** - Escape analysis, stack allocation, memory pooling, arena allocation, cache-friendly data layout
 
+### 🔧 RECENT BUG FIXES (January 2025)
+1. **For-loop index reload bug** - Fixed stale index value in increment block by reloading from alloca
+2. **List element access** - Updated to use `mux_list_get_value` for direct value access in for-loops
+3. **Runtime function alignment** - Added missing `mux_string_equals` to runtime
+4. **Type conversion functions** - Renamed to `mux_i64_to_f64` and `mux_f64_to_i64` for correct signatures
+5. **Object allocation** - Updated to use `mux_alloc_by_size` for size-based memory allocation
+
 ### ⏳ PENDING
 - **Phase 8: Testing** - Unit and integration tests (PARTIAL - unit tests implemented, integration tests pending build environment)
 

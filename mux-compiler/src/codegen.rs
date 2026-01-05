@@ -382,8 +382,8 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         self.declare_runtime_fn("mux_int_to_string", &["i64"], "ptr");
         self.declare_runtime_fn("mux_float_to_string", &["f64"], "ptr");
         self.declare_runtime_fn("mux_bool_to_string", &["i1"], "ptr");
-        self.declare_runtime_fn("mux_float_to_int", &["f64"], "i64");
-        self.declare_runtime_fn("mux_int_to_float", &["i64"], "f64");
+        self.declare_runtime_fn("mux_f64_to_i64", &["f64"], "i64");
+        self.declare_runtime_fn("mux_i64_to_f64", &["i64"], "f64");
 
         // I/O functions
         self.declare_runtime_fn("mux_print", &["ptr"], "void");
@@ -394,6 +394,7 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         self.declare_runtime_fn("mux_new_list", &[], "ptr");
         self.declare_runtime_fn("mux_list_push", &["ptr", "ptr"], "void");
         self.declare_runtime_fn("mux_list_get", &["ptr", "i64"], "ptr");
+        self.declare_runtime_fn("mux_list_get_value", &["ptr", "i64"], "ptr");
         self.declare_runtime_fn("mux_list_length", &["ptr"], "i64");
 
         // Map functions
@@ -407,7 +408,7 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         self.declare_runtime_fn("mux_set_contains", &["ptr", "ptr"], "i1");
 
         // Object/class functions
-        self.declare_runtime_fn("mux_alloc_object", &["i64"], "ptr");
+        self.declare_runtime_fn("mux_alloc_by_size", &["i64"], "ptr");
         self.declare_runtime_fn("mux_free_object", &["ptr"], "void");
 
         // Range function
@@ -732,8 +733,8 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
             let size = struct_type.size_of().unwrap();
             let alloc_fn = self
                 .runtime_functions
-                .get("mux_alloc_object")
-                .ok_or_else(|| CodeGenError::new("mux_alloc_object not declared"))?;
+                .get("mux_alloc_by_size")
+                .ok_or_else(|| CodeGenError::new("mux_alloc_by_size not declared"))?;
 
             let ptr = self
                 .builder
@@ -741,7 +742,7 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
                 .map_err(|e| CodeGenError::new(format!("Failed to build call: {}", e)))?
                 .try_as_basic_value()
                 .left()
-                .ok_or_else(|| CodeGenError::new("Expected return value from mux_alloc_object"))?;
+                .ok_or_else(|| CodeGenError::new("Expected return value from mux_alloc_by_size"))?;
 
             self.builder.build_return(Some(&ptr))
                 .map_err(|e| CodeGenError::new(format!("Failed to build return: {}", e)))?;
@@ -996,8 +997,8 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
             // Allocate the enum struct
             let alloc_fn = self
                 .runtime_functions
-                .get("mux_alloc_object")
-                .ok_or_else(|| CodeGenError::new("mux_alloc_object not declared"))?;
+                .get("mux_alloc_by_size")
+                .ok_or_else(|| CodeGenError::new("mux_alloc_by_size not declared"))?;
 
             let struct_size = enum_info.struct_type.size_of().unwrap();
             let enum_ptr = self
@@ -1006,7 +1007,7 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
                 .map_err(|e| CodeGenError::new(format!("Failed to build call: {}", e)))?
                 .try_as_basic_value()
                 .left()
-                .ok_or_else(|| CodeGenError::new("Expected return value from mux_alloc_object"))?
+                .ok_or_else(|| CodeGenError::new("Expected return value from mux_alloc_by_size"))?
                 .into_pointer_value();
 
             // Set the discriminant
@@ -1401,18 +1402,24 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         // Body: get element and bind to variable
         self.builder.position_at_end(body_bb);
 
+        // Reload the index value in the body block (was loaded in cond_bb)
+        let body_idx = self.builder.build_load(self.context.i64_type(), index_alloca, "body_idx")
+            .map_err(|e| CodeGenError::new(format!("Failed to build load: {}", e)))?
+            .into_int_value();
+
+        // Use mux_list_get_value to get the element directly (not wrapped in Optional)
         let get_fn = self
             .runtime_functions
-            .get("mux_list_get")
-            .ok_or_else(|| CodeGenError::new("mux_list_get not declared"))?;
+            .get("mux_list_get_value")
+            .ok_or_else(|| CodeGenError::new("mux_list_get_value not declared"))?;
 
         let element = self
             .builder
-            .build_call(*get_fn, &[list_ptr.into(), current_idx.into()], "element")
+            .build_call(*get_fn, &[list_ptr.into(), body_idx.into()], "element")
             .map_err(|e| CodeGenError::new(format!("Failed to build call: {}", e)))?
             .try_as_basic_value()
             .left()
-            .ok_or_else(|| CodeGenError::new("Expected return value from mux_list_get"))?;
+            .ok_or_else(|| CodeGenError::new("Expected return value from mux_list_get_value"))?;
 
         // Create the loop variable
         let var_alloca = self.builder.build_alloca(
@@ -1451,8 +1458,12 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
 
         // Increment
         self.builder.position_at_end(inc_bb);
+        // Reload the index value in the increment block (was stale from cond_bb)
+        let inc_idx = self.builder.build_load(self.context.i64_type(), index_alloca, "inc_idx")
+            .map_err(|e| CodeGenError::new(format!("Failed to build load: {}", e)))?
+            .into_int_value();
         let new_idx = self.builder.build_int_add(
-            current_idx,
+            inc_idx,
             self.context.i64_type().const_int(1, false),
             "next.idx",
         ).map_err(|e| CodeGenError::new(format!("Failed to build int add: {}", e)))?;
@@ -3262,8 +3273,8 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         let result_struct = self.get_or_create_result_type(ok_type, err_type)?;
 
         // Allocate the result
-        let alloc_fn = self.runtime_functions.get("mux_alloc_object")
-            .ok_or_else(|| CodeGenError::new("mux_alloc_object not declared"))?;
+        let alloc_fn = self.runtime_functions.get("mux_alloc_by_size")
+            .ok_or_else(|| CodeGenError::new("mux_alloc_by_size not declared"))?;
 
         let struct_size = result_struct.size_of().unwrap();
         let result_ptr = self.builder
@@ -3323,8 +3334,8 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         let result_struct = self.get_or_create_result_type(ok_type, err_type)?;
 
         // Allocate the result
-        let alloc_fn = self.runtime_functions.get("mux_alloc_object")
-            .ok_or_else(|| CodeGenError::new("mux_alloc_object not declared"))?;
+        let alloc_fn = self.runtime_functions.get("mux_alloc_by_size")
+            .ok_or_else(|| CodeGenError::new("mux_alloc_by_size not declared"))?;
 
         let struct_size = result_struct.size_of().unwrap();
         let result_ptr = self.builder
@@ -3473,8 +3484,8 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
             .clone();
 
         // Allocate new struct
-        let alloc_fn = self.runtime_functions.get("mux_alloc_object")
-            .ok_or_else(|| CodeGenError::new("mux_alloc_object not declared"))?;
+        let alloc_fn = self.runtime_functions.get("mux_alloc_by_size")
+            .ok_or_else(|| CodeGenError::new("mux_alloc_by_size not declared"))?;
 
         let struct_size = struct_type.size_of().unwrap();
         let dest_ptr = self.builder
