@@ -89,3 +89,10 @@ pub extern "C" fn mux_map_to_string(map: *const Map) -> *mut c_char {
     let c_str = CString::new(s).unwrap();
     c_str.into_raw()
 }
+
+/// Check if a map contains a key (used by codegen)
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_contains_key(map: *const Map, key: *const Value) -> bool {
+    unsafe { (*map).contains(&*key) }
+}

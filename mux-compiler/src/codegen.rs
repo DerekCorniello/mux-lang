@@ -381,7 +381,8 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         // Type conversion functions
         self.declare_runtime_fn("mux_int_to_string", &["i64"], "ptr");
         self.declare_runtime_fn("mux_float_to_string", &["f64"], "ptr");
-        self.declare_runtime_fn("mux_bool_to_string", &["i1"], "ptr");
+        self.declare_runtime_fn("mux_bool_to_string", &["i32"], "ptr");
+        self.declare_runtime_fn("mux_char_to_string", &["i32"], "ptr");
         self.declare_runtime_fn("mux_f64_to_i64", &["f64"], "i64");
         self.declare_runtime_fn("mux_i64_to_f64", &["i64"], "f64");
 
@@ -401,11 +402,13 @@ impl<'a, 'ctx> CodeGenerator<'a, 'ctx> {
         self.declare_runtime_fn("mux_new_map", &[], "ptr");
         self.declare_runtime_fn("mux_map_put", &["ptr", "ptr", "ptr"], "void");
         self.declare_runtime_fn("mux_map_get", &["ptr", "ptr"], "ptr");
+        self.declare_runtime_fn("mux_map_contains_key", &["ptr", "ptr"], "i1");
 
         // Set functions
         self.declare_runtime_fn("mux_new_set", &[], "ptr");
         self.declare_runtime_fn("mux_set_add", &["ptr", "ptr"], "void");
         self.declare_runtime_fn("mux_set_contains", &["ptr", "ptr"], "i1");
+        self.declare_runtime_fn("mux_set_remove", &["ptr", "ptr"], "i1");
 
         // Object/class functions
         self.declare_runtime_fn("mux_alloc_by_size", &["i64"], "ptr");

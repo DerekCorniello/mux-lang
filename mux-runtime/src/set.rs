@@ -75,3 +75,10 @@ pub extern "C" fn mux_set_to_string(set: *const Set) -> *mut std::ffi::c_char {
     let c_str = CString::new(s).unwrap();
     c_str.into_raw()
 }
+
+/// Remove a value from a set (used by codegen)
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_remove(set: *mut Set, val: *const Value) -> bool {
+    unsafe { (*set).remove(&*val) }
+}
