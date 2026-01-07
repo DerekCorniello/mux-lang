@@ -255,7 +255,7 @@ pub extern "C" fn mux_list_get(list: *const List, index: i64) -> *mut crate::opt
     if index < 0 || index >= len {
         Box::into_raw(Box::new(crate::optional::Optional::none()))
     } else {
-        let val = unsafe { (*list).0[index as usize].clone() };
+        let val = unsafe { (&(*list).0)[index as usize].clone() };
         Box::into_raw(Box::new(crate::optional::Optional::some(val)))
     }
 }
@@ -270,7 +270,7 @@ pub extern "C" fn mux_list_get_value(list: *const List, index: i64) -> *mut Valu
     if index < 0 || index >= len {
         std::ptr::null_mut()
     } else {
-        let val = unsafe { (*list).0[index as usize].clone() };
+        let val = unsafe { (&(*list).0)[index as usize].clone() };
         Box::into_raw(Box::new(val))
     }
 }
@@ -282,7 +282,7 @@ pub extern "C" fn mux_list_set(list: *mut List, index: i64, val: *mut Value) {
     let len = unsafe { (*list).length() };
     if index >= 0 && index < len {
         unsafe {
-            (*list).0[index as usize] = value;
+            (&mut (*list).0)[index as usize] = value;
         }
     }
     // else do nothing
