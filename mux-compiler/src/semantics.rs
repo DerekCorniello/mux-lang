@@ -46,6 +46,9 @@ pub enum Type {
     Function {
         params: Vec<Type>,
         returns: Box<Type>,
+        /// Number of required parameters (parameters without default values).
+        /// If None, all parameters are required (backwards compatibility).
+        required_params: Option<usize>,
     },
     Named(String, Vec<Type>),
     Variable(String),
@@ -113,10 +116,12 @@ impl Unifier {
                 Type::Function {
                     params: p1,
                     returns: r1,
+                    ..
                 },
                 Type::Function {
                     params: p2,
                     returns: r2,
+                    ..
                 },
             ) if p1.len() == p2.len() => {
                 for (a1, a2) in p1.iter().zip(p2) {
@@ -162,7 +167,7 @@ impl Unifier {
         match t {
             Type::Variable(v) if v == var => true,
             Type::Named(_, args) => args.iter().any(|arg| self.occurs(var, arg)),
-            Type::Function { params, returns } => {
+            Type::Function { params, returns, .. } => {
                 params.iter().any(|p| self.occurs(var, p)) || self.occurs(var, returns)
             }
             Type::Reference(inner)
@@ -186,9 +191,10 @@ impl Unifier {
                 name.clone(),
                 args.iter().map(|arg| self.apply(arg)).collect(),
             ),
-            Type::Function { params, returns } => Type::Function {
+            Type::Function { params, returns, required_params } => Type::Function {
                 params: params.iter().map(|p| self.apply(p)).collect(),
                 returns: Box::new(self.apply(returns)),
+                required_params: *required_params,
             },
             Type::Reference(inner) => Type::Reference(Box::new(self.apply(inner))),
             Type::List(inner) => Type::List(Box::new(self.apply(inner))),
@@ -526,9 +532,11 @@ impl SemanticAnalyzer {
             ),
         ];
         for (name, params, ret) in builtins {
+            let num_params = params.len();
             let func_type = Type::Function {
                 params,
                 returns: Box::new(ret),
+                required_params: Some(num_params), // all built-in params are required
             };
                 self.symbol_table
                     .add_symbol(
@@ -598,9 +606,11 @@ impl SemanticAnalyzer {
                     .map(|p| self.resolve_type(p))
                     .collect::<Result<Vec<_>, _>>()?;
                 let resolved_return = self.resolve_type(returns)?;
+                let num_params = resolved_params.len();
                 Ok(Type::Function {
                     params: resolved_params,
                     returns: Box::new(resolved_return),
+                    required_params: Some(num_params), // type annotations don't have default info
                 })
             }
             TypeKind::Reference(inner) => {
@@ -673,9 +683,11 @@ impl SemanticAnalyzer {
                         // Return the actual type of the variable (including Reference types)
                         Ok(type_)
                     } else if let Some(sig) = self.get_builtin_sig(name) {
+                        let num_params = sig.params.len();
                         Ok(Type::Function {
                             params: sig.params.clone(),
                             returns: Box::new(sig.return_type.clone()),
+                            required_params: Some(num_params),
                         })
                     } else {
                         Err(SemanticError {
@@ -771,18 +783,28 @@ impl SemanticAnalyzer {
                     _ => self.get_expression_type(func)?,
                 };
                 match func_type {
-                    Type::Function { params, returns } => {
-                        if args.len() != params.len() {
+                    Type::Function { params, returns, required_params } => {
+                        // Determine minimum required arguments
+                        let min_args = required_params.unwrap_or(params.len());
+                        let max_args = params.len();
+
+                        if args.len() < min_args || args.len() > max_args {
+                            let expected_msg = if min_args == max_args {
+                                format!("{}", max_args)
+                            } else {
+                                format!("{} to {}", min_args, max_args)
+                            };
                             return Err(SemanticError {
                                 message: format!(
                                     "Function expects {} arguments, got {}",
-                                    params.len(),
+                                    expected_msg,
                                     args.len()
                                 ),
                                 span: expr.span,
                             });
                         }
                         let mut unifier = Unifier::new();
+                        // Only type-check the arguments that were provided
                         for (param, arg) in params.iter().zip(args) {
                             let arg_type = self.get_expression_type(arg)?;
                             unifier.unify(param, &arg_type, expr.span)?;
@@ -799,9 +821,11 @@ impl SemanticAnalyzer {
             ExpressionKind::FieldAccess { expr, field } => {
                 let expr_type = self.get_expression_type(expr)?;
                 if let Some(method_sig) = self.get_method_sig(&expr_type, field) {
+                    let num_params = method_sig.params.len();
                     Ok(Type::Function {
                         params: method_sig.params,
                         returns: Box::new(method_sig.return_type),
+                        required_params: Some(num_params), // methods don't have default args yet
                     })
                 } else if let Type::Named(name, args) = &expr_type {
                     if let Some(symbol) = self.symbol_table.lookup(name) {
@@ -922,9 +946,12 @@ impl SemanticAnalyzer {
                         _ => Type::Void,
                     }
                 };
+                // Calculate required params for lambda (params without defaults)
+                let required = params.iter().filter(|p| p.default_value.is_none()).count();
                 Ok(Type::Function {
                     params: param_types,
                     returns: Box::new(return_type),
+                    required_params: Some(required),
                 })
             }
             ExpressionKind::SetLiteral(elements) => {
@@ -998,12 +1025,13 @@ impl SemanticAnalyzer {
                 param,
                 replacement,
             ))),
-            Type::Function { params, returns } => Type::Function {
+            Type::Function { params, returns, required_params } => Type::Function {
                 params: params
                     .iter()
                     .map(|p| self.substitute_type_param(p, param, replacement))
                     .collect(),
                 returns: Box::new(self.substitute_type_param(returns, param, replacement)),
+                required_params: *required_params,
             },
             Type::Reference(inner) => Type::Reference(Box::new(self.substitute_type_param(
                 inner,
@@ -1104,16 +1132,18 @@ impl SemanticAnalyzer {
             message: format!("Class '{}' has no constructor", name),
             span,
         })?;
-        let substituted_params = new_sig
+        let substituted_params: Vec<Type> = new_sig
             .params
             .iter()
             .map(|p| self.substitute_type_params(p, &symbol.type_params, &resolved_args))
             .collect();
         let substituted_returns =
             self.substitute_type_params(&new_sig.return_type, &symbol.type_params, &resolved_args);
+        let num_params = substituted_params.len();
         Ok(Type::Function {
             params: substituted_params,
             returns: Box::new(substituted_returns),
+            required_params: Some(num_params), // constructors require all params for now
         })
     }
 
@@ -1490,9 +1520,12 @@ impl SemanticAnalyzer {
                         .map(|p| self.resolve_type(&p.type_))
                         .collect::<Result<Vec<_>, _>>()?;
                     let return_type = self.resolve_type(&func.return_type)?;
+                    // Count required parameters (those without default values)
+                    let required_params = func.params.iter().filter(|p| p.default_value.is_none()).count();
                     let mut func_type = Type::Function {
                         params: param_types,
                         returns: Box::new(return_type),
+                        required_params: Some(required_params),
                     };
 
                     // substitute type params with variables
@@ -1589,9 +1622,11 @@ impl SemanticAnalyzer {
                     if field_types.is_empty() {
                         None
                     } else {
+                        let num_params = field_types.len();
                         Some(Type::Function {
                             params: field_types.clone(),
                             returns: Box::new(Type::Named(name.clone(), vec![])),
+                            required_params: Some(num_params),
                         })
                     };
 
@@ -1783,6 +1818,22 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_function(&mut self, func: &FunctionNode, self_type: Option<Type>) -> Result<(), SemanticError> {
+        // Validate that required parameters come before optional ones
+        let mut seen_optional = false;
+        for param in &func.params {
+            if param.default_value.is_some() {
+                seen_optional = true;
+            } else if seen_optional {
+                return Err(SemanticError {
+                    message: format!(
+                        "Required parameter '{}' cannot appear after optional parameters",
+                        param.name
+                    ),
+                    span: param.type_.span,
+                });
+            }
+        }
+
         let was_static = self.is_in_static_method;
         let old_self_type = self.current_self_type.clone();
         self.is_in_static_method = func.is_common;
@@ -1834,6 +1885,22 @@ impl SemanticAnalyzer {
         // add parameters to function scope.
         for param in &func.params {
             let param_type = self.resolve_type(&param.type_)?;
+
+            // Type-check default value if present
+            if let Some(default_expr) = &param.default_value {
+                let default_type = self.get_expression_type(default_expr)?;
+                let mut unifier = Unifier::new();
+                unifier.unify(&param_type, &default_type, default_expr.span).map_err(|_| {
+                    SemanticError {
+                        message: format!(
+                            "Default value type '{:?}' doesn't match parameter type '{:?}'",
+                            default_type, param_type
+                        ),
+                        span: default_expr.span,
+                    }
+                })?;
+            }
+
             self.symbol_table.add_symbol(
                 &param.name,
                 Symbol {
@@ -1895,9 +1962,12 @@ impl SemanticAnalyzer {
                 .map(|p| self.resolve_type(&p.type_))
                 .collect::<Result<Vec<_>, _>>()?;
             let return_type = self.resolve_type(&method.return_type)?;
+            // Count required parameters (those without default values)
+            let required_params = method.params.iter().filter(|p| p.default_value.is_none()).count();
             let method_type = Type::Function {
                 params: param_types,
                 returns: Box::new(return_type),
+                required_params: Some(required_params),
             };
 
             self.symbol_table.add_symbol(
@@ -2107,11 +2177,13 @@ impl SemanticAnalyzer {
                 // fake stdlib: if importing from std, treat as predefined symbol.
                 let (kind, type_) = if module_path.starts_with("std.") {
                     if let Some(sig) = self.get_builtin_sig(symbol_name) {
+                        let num_params = sig.params.len();
                         (
                             SymbolKind::Function,
                             Some(Type::Function {
                                 params: sig.params.clone(),
                                 returns: Box::new(sig.return_type.clone()),
+                                required_params: Some(num_params),
                             }),
                         )
                     } else if symbol_name == "None" {

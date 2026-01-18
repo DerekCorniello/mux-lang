@@ -559,9 +559,11 @@ impl<'a> Parser<'a> {
                     loop {
                         let param_type = self.parse_type()?;
                         let param_name = self.consume_identifier("Expected parameter name")?;
+                        // interface methods don't support default values
                         params.push(Param {
                             name: param_name,
                             type_: param_type,
+                            default_value: None,
                         });
                         if !self.matches(&[TokenType::Comma]) {
                             break;
@@ -809,14 +811,16 @@ impl<'a> Parser<'a> {
                 // parse param as: type name.
                 let param_type = self.parse_type()?;
                 let param_name = self.consume_identifier("Expected parameter name")?;
-                // optional default value, parsed but currently ignored in ast.
-                // TODO: this is not implemented and needs to be
-                if self.matches(&[TokenType::Eq]) {
-                    let _default_expr = self.parse_expression()?;
-                }
+                // optional default value
+                let default_value = if self.matches(&[TokenType::Eq]) {
+                    Some(self.parse_expression()?)
+                } else {
+                    None
+                };
                 params.push(Param {
                     name: param_name,
                     type_: param_type,
+                    default_value,
                 });
                 if !self.matches(&[TokenType::Comma]) {
                     break;
@@ -1912,9 +1916,16 @@ impl<'a> Parser<'a> {
                     loop {
                         let param_type = self.parse_type()?;
                         let param_name = self.consume_identifier("Expected parameter name")?;
+                        // optional default value for lambda parameters
+                        let default_value = if self.matches(&[TokenType::Eq]) {
+                            Some(self.parse_expression()?)
+                        } else {
+                            None
+                        };
                         params.push(Param {
                             name: param_name,
                             type_: param_type,
+                            default_value,
                         });
 
                         if !self.matches(&[TokenType::Comma]) {
@@ -2708,6 +2719,7 @@ pub enum LiteralNode {
 pub struct Param {
     pub name: String,
     pub type_: TypeNode,
+    pub default_value: Option<ExpressionNode>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

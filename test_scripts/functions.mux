@@ -14,5 +14,6 @@ auto doubled = func (float x) returns float { return x * 2.0 }
 
 println("add(3,4): " + add(3,4).to_string())
 greet("World", 2)
+greet("Claude")  // Uses default value times=1
 println("square(5): " + square(5).to_string())
 println("doubled(3.5): " + doubled(3.5).to_string())
