@@ -352,8 +352,7 @@ entry:
   %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
   %left = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 0
   %left1 = load ptr, ptr %left, align 8
-  %get_int = call i64 @mux_value_get_int(ptr %left1)
-  ret i64 %get_int
+  ret ptr %left1
 }
 
 define ptr @Pair.get_right(ptr %0) {

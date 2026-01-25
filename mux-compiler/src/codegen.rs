@@ -3668,21 +3668,6 @@ impl<'a> CodeGenerator<'a> {
                 // Check if we need to return raw primitive or boxed value
                 if let Some(return_type) = &self.current_function_return_type {
                     match return_type {
-                        ResolvedType::Named(name, _) if name == "T" => {
-                            // Special case for generic T - try to unbox as primitive
-                            if value.is_pointer_value() {
-                                // Try to unbox as int (common case for generic functions)
-                                let raw_int = self.get_raw_int_value(value)?;
-                                self.builder
-                                    .build_return(Some(&raw_int))
-                                    .map_err(|e| e.to_string())?;
-                            } else {
-                                return Err(format!(
-                                    "Unexpected value type for generic return: {:?}",
-                                    value
-                                ));
-                            }
-                        }
                         ResolvedType::Primitive(PrimitiveType::Int) => {
                             // For int, unbox if necessary
                             let raw_int = self.get_raw_int_value(value)?;
