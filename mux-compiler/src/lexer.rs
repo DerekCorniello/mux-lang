@@ -324,6 +324,10 @@ impl<'a> Lexer<'a> {
                     start_span.complete(self.source.line, self.source.col);
                     Ok(Token::new(TokenType::MinusEq, start_span))
                 }
+                Some(c) if c.is_ascii_digit() => {
+                    // Negative number: include the minus sign and parse as number
+                    self.read_number(first_char, start_span)
+                }
                 _ => Ok(Token::new(TokenType::Minus, start_span)),
             },
             '<' => {
@@ -615,12 +619,13 @@ impl<'a> Lexer<'a> {
         let mut num = String::new();
         let mut is_float = false;
 
+        // Handle leading minus sign for negative numbers
+        // Note: if first_char is '-', it was already added to num in the caller
         if first_char == '.' {
             // handle numbers starting with decimal point
             is_float = true;
             num.push('0');
             num.push('.');
-
             // require at least one digit after the decimal point
             let mut has_digit = false;
             while let Some(c) = self.source.peek() {
@@ -641,8 +646,10 @@ impl<'a> Lexer<'a> {
                 ));
             }
         } else {
-            // handle numbers starting with a digit
-            num.push(first_char);
+            // handle numbers starting with a digit (or we already have the minus sign)
+            if first_char != '-' {
+                num.push(first_char);
+            }
 
             // read digits before decimal point
             while let Some(c) = self.source.peek() {

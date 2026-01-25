@@ -1361,10 +1361,22 @@ impl<'a> CodeGenerator<'a> {
         // Zero pass: generate LLVM types for user-defined types
         self.generate_user_defined_types(nodes)?;
 
-        // First pass: declare all functions
+        // First pass: declare all non-generic functions
         for node in nodes {
             if let AstNode::Function(func) = node {
-                self.declare_function(func)?;
+                // Store function nodes for both generic and non-generic functions
+                self.function_nodes.insert(func.name.clone(), func.clone());
+
+                // Only declare non-generic functions in first pass
+                // Generic functions will be declared when instantiated
+                if func.type_params.is_empty() {
+                    self.declare_function(func)?;
+                } else {
+                    eprintln!(
+                        "DEBUG: Skipping declaration of generic function '{}'",
+                        func.name
+                    );
+                }
             }
         }
 
@@ -1405,12 +1417,21 @@ impl<'a> CodeGenerator<'a> {
             }
         }
 
-        // Second pass: generate code
+        // Second pass: generate code for non-generic functions
         let mut top_level_statements = vec![];
         for node in nodes {
             match node {
                 AstNode::Function(func) => {
-                    self.generate_function(func)?;
+                    // Only generate non-generic functions
+                    // Generic functions will be generated when instantiated
+                    if func.type_params.is_empty() {
+                        self.generate_function(func)?;
+                    } else {
+                        eprintln!(
+                            "DEBUG: Skipping generation of generic function '{}'",
+                            func.name
+                        );
+                    }
                 }
                 AstNode::Statement(stmt) => {
                     top_level_statements.push(stmt.clone());
@@ -2360,7 +2381,24 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             ExpressionKind::Call { func, args } => {
+                if let ExpressionKind::Identifier(name) = &func.kind {
+                    eprintln!(
+                        "DEBUG: Function call to '{}' with {} args",
+                        name,
+                        args.len()
+                    );
+                }
                 if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
+                    eprintln!(
+                        "DEBUG: Method call to '{}.{}' with {} args",
+                        if let ExpressionKind::Identifier(id) = &expr.kind {
+                            id
+                        } else {
+                            "other"
+                        },
+                        field,
+                        args.len()
+                    );
                     // Special case: method calls on 'self' (keep existing logic)
                     if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                         if obj_name == "self" {
@@ -2832,7 +2870,15 @@ impl<'a> CodeGenerator<'a> {
                                     };
                                 } else {
                                     // Not a function pointer, try global function lookup
+                                    eprintln!("DEBUG: Looking up function '{}' in module", name);
                                     if let Some(func) = self.module.get_function(name) {
+                                        eprintln!("DEBUG: Found function '{}' in module, treating as regular function", name);
+                                        // Print some info about the found function
+                                        eprintln!(
+                                            "DEBUG: Function '{}' param count: {}",
+                                            name,
+                                            func.get_params().len()
+                                        );
                                         let mut call_args = vec![];
                                         for arg in args {
                                             call_args.push(self.generate_expression(arg)?.into());
@@ -3467,7 +3513,7 @@ impl<'a> CodeGenerator<'a> {
                             Ok(boxed_ptr)
                         }
                     }
-                    _ => Err("Unary op not implemented".to_string()),
+                    _ => Err(format!("Unary op not implemented: {:?}", expr)),
                 }
             }
             _ => Err("Expression type not implemented".to_string()),
@@ -4666,6 +4712,17 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             StatementKind::Expression(expr) => {
+                if let ExpressionKind::Identifier(name) = &expr.kind {
+                    eprintln!("DEBUG: Expression statement for identifier: {}", name);
+                } else if let ExpressionKind::Call { func, args } = &expr.kind {
+                    if let ExpressionKind::Identifier(name) = &func.kind {
+                        eprintln!(
+                            "DEBUG: Expression statement function call: '{}' with {} args",
+                            name,
+                            args.len()
+                        );
+                    }
+                }
                 self.generate_expression(expr)?;
             }
             _ => {} // Skip other statement types for now
@@ -6874,6 +6931,11 @@ impl<'a> CodeGenerator<'a> {
         func_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
+        eprintln!(
+            "DEBUG: generate_generic_function_call called for '{}' with {} args",
+            func_name,
+            args.len()
+        );
         // Get the generic function AST node
         let func_node = self
             .function_nodes
