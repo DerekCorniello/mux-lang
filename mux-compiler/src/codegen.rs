@@ -4706,7 +4706,8 @@ impl<'a> CodeGenerator<'a> {
                         // Generate instance method call
                         let mut call_args = vec![obj_value.into()]; // self
                         for arg in args {
-                            call_args.push(self.generate_expression(arg)?.into());
+                            let arg_val = self.generate_expression(arg)?;
+                            call_args.push(self.box_value(arg_val).into());
                         }
                         let call = self
                             .builder
