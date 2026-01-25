@@ -2,14 +2,13 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::result::MuxResult;
 use crate::Value;
+use crate::result::MuxResult;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Float(pub ordered_float::OrderedFloat<f64>);
 
 impl Float {
-
     pub fn to_int(&self) -> i64 {
         self.0.into_inner() as i64
     }
@@ -53,8 +52,6 @@ impl Float {
     pub fn lt(&self, other: &Float) -> bool {
         self.0 < other.0
     }
-
-
 }
 
 impl fmt::Display for Float {
@@ -106,17 +103,26 @@ pub unsafe extern "C" fn mux_float_to_int(v: *mut Value) -> *mut Value {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_add(a: f64, b: f64) -> f64 {
-    Float(ordered_float::OrderedFloat(a)).add(&Float(ordered_float::OrderedFloat(b))).0.into_inner()
+    Float(ordered_float::OrderedFloat(a))
+        .add(&Float(ordered_float::OrderedFloat(b)))
+        .0
+        .into_inner()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_sub(a: f64, b: f64) -> f64 {
-    Float(ordered_float::OrderedFloat(a)).sub(&Float(ordered_float::OrderedFloat(b))).0.into_inner()
+    Float(ordered_float::OrderedFloat(a))
+        .sub(&Float(ordered_float::OrderedFloat(b)))
+        .0
+        .into_inner()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_mul(a: f64, b: f64) -> f64 {
-    Float(ordered_float::OrderedFloat(a)).mul(&Float(ordered_float::OrderedFloat(b))).0.into_inner()
+    Float(ordered_float::OrderedFloat(a))
+        .mul(&Float(ordered_float::OrderedFloat(b)))
+        .0
+        .into_inner()
 }
 
 #[unsafe(no_mangle)]

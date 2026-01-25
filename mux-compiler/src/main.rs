@@ -39,7 +39,7 @@ fn main() {
 
                     let context = inkwell::context::Context::create();
                     let mut codegen = codegen::CodeGenerator::new(&context, &mut analyzer);
-                    if let Err(e) = codegen.generate(&nodes) {
+                    if let Err(e) = codegen.generate(&nodes, file_path) {
                         println!("Codegen error: {}", e);
                         process::exit(1);
                     }
@@ -52,7 +52,15 @@ fn main() {
                     // Try to compile and link directly with clang
                     let exe_file = file_path.trim_end_matches(".mux");
                     let exe_path = std::env::current_exe().unwrap();
-                    let lib_path = exe_path.parent().unwrap().parent().unwrap().parent().unwrap().join("target").join("debug");
+                    let lib_path = exe_path
+                        .parent()
+                        .unwrap()
+                        .parent()
+                        .unwrap()
+                        .parent()
+                        .unwrap()
+                        .join("target")
+                        .join("debug");
                     let lib_path_str = lib_path.to_str().unwrap();
                     let clang_output = Command::new("clang")
                         .args([

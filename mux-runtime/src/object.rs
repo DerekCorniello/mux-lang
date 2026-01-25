@@ -1,4 +1,4 @@
-use crate::{TypeId, Value, ObjectRef};
+use crate::{ObjectRef, TypeId, Value};
 use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::Mutex;
@@ -46,7 +46,8 @@ pub fn alloc_object(type_id: TypeId) -> *mut Value {
     let obj_type = registry.get(&type_id).expect("Invalid type ID");
 
     // Allocate memory for the object
-    let layout = std::alloc::Layout::from_size_align(obj_type.size, std::mem::align_of::<u8>()).unwrap();
+    let layout =
+        std::alloc::Layout::from_size_align(obj_type.size, std::mem::align_of::<u8>()).unwrap();
     let ptr = unsafe { std::alloc::alloc(layout) };
 
     if ptr.is_null() {
@@ -75,9 +76,7 @@ pub unsafe fn free_object(obj: *mut Value) {
     if let Value::Object(obj_ref) = *value {
         // Decrement ref count
         let ref_count = obj_ref.dec_ref();
-        println!("Freeing object at {:p}, new ref_count: {}", obj_ref.ptr, ref_count);
         if ref_count == 0 {
-            println!("Deallocating object at {:p}", obj_ref.ptr);
             // Get object type for cleanup
             if let Some(obj_type) = TYPE_REGISTRY.lock().unwrap().get(&obj_ref.type_id) {
                 // Call destructor if present
@@ -86,7 +85,9 @@ pub unsafe fn free_object(obj: *mut Value) {
                 }
 
                 // Free the object memory
-                let layout = std::alloc::Layout::from_size_align(obj_type.size, std::mem::align_of::<u8>()).unwrap();
+                let layout =
+                    std::alloc::Layout::from_size_align(obj_type.size, std::mem::align_of::<u8>())
+                        .unwrap();
                 unsafe { std::alloc::dealloc(obj_ref.ptr as *mut u8, layout) };
             }
         }

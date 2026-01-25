@@ -4,8 +4,8 @@ use std::os::raw::c_char;
 
 use ordered_float;
 
-use crate::result::MuxResult;
 use crate::Value;
+use crate::result::MuxResult;
 
 #[derive(Clone, Debug)]
 pub struct MuxString(pub String);
@@ -26,8 +26,6 @@ impl MuxString {
     pub fn length(&self) -> i64 {
         self.0.len() as i64
     }
-
-
 }
 
 impl fmt::Display for MuxString {
@@ -75,7 +73,9 @@ pub extern "C" fn mux_string_to_float(s: *const c_char) -> *mut MuxResult {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     match MuxString(rust_str.to_string()).to_float() {
-        Ok(f) => Box::into_raw(Box::new(MuxResult::ok(Value::Float(ordered_float::OrderedFloat(f))))),
+        Ok(f) => Box::into_raw(Box::new(MuxResult::ok(Value::Float(
+            ordered_float::OrderedFloat(f),
+        )))),
         Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
     }
 }
@@ -103,7 +103,9 @@ pub extern "C" fn mux_string_length(s: *const c_char) -> i64 {
 pub extern "C" fn mux_string_to_string(s: *const c_char) -> *mut c_char {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
-    std::ffi::CString::new(rust_str.as_ref()).unwrap().into_raw()
+    std::ffi::CString::new(rust_str.as_ref())
+        .unwrap()
+        .into_raw()
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

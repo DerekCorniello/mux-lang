@@ -142,7 +142,7 @@ pub extern "C" fn mux_list_push_value(list_val: *mut Value, val: *mut Value) {
         // Extract list, modify it, and update the original Value
         if let Value::List(list_data) = &*list_val {
             let mut new_list = list_data.clone();
-            new_list.insert(0, value);  // Add to front
+            new_list.insert(0, value); // Add to front
             *list_val = Value::List(new_list);
         }
     }
@@ -203,7 +203,7 @@ pub extern "C" fn mux_list_pop_value(list_val: *mut Value) -> *mut crate::option
             let popped = if list_data.is_empty() {
                 None
             } else {
-                Some(list_data.remove(0))  // Remove from front
+                Some(list_data.remove(0)) // Remove from front
             };
             // Update the original Value
             *list_val = Value::List(list_data);
@@ -313,4 +313,3 @@ pub extern "C" fn mux_list_to_string(list: *const List) -> *mut std::ffi::c_char
     let c_str = CString::new(s).unwrap();
     c_str.into_raw()
 }
-

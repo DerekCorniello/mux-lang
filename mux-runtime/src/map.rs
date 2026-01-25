@@ -1,7 +1,7 @@
 use crate::Value;
 use std::collections::BTreeMap;
-use std::fmt;
 use std::ffi::CString;
+use std::fmt;
 use std::os::raw::c_char;
 
 #[derive(Clone, Debug)]
@@ -23,13 +23,15 @@ impl Map {
     pub fn contains(&self, key: &Value) -> bool {
         self.0.contains_key(key)
     }
-
-
 }
 
 impl fmt::Display for Map {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let pairs: Vec<String> = self.0.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
+        let pairs: Vec<String> = self
+            .0
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v))
+            .collect();
         write!(f, "{{{}}}", pairs.join(", "))
     }
 }
@@ -44,9 +46,15 @@ pub extern "C" fn mux_map_value(map: *mut Map) -> *mut Value {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_map_get(map: *const Map, key: *const Value) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_map_get(
+    map: *const Map,
+    key: *const Value,
+) -> *mut crate::optional::Optional {
     let opt = unsafe { (*map).get(&*key).cloned() };
-    Box::into_raw(Box::new(opt.map(crate::optional::Optional::some).unwrap_or(crate::optional::Optional::none())))
+    Box::into_raw(Box::new(
+        opt.map(crate::optional::Optional::some)
+            .unwrap_or(crate::optional::Optional::none()),
+    ))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -60,9 +68,15 @@ pub extern "C" fn mux_map_put(map: *mut Map, key: *mut Value, val: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_map_remove(map: *mut Map, key: *const Value) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_map_remove(
+    map: *mut Map,
+    key: *const Value,
+) -> *mut crate::optional::Optional {
     let opt = unsafe { (*map).remove(&*key) };
-    Box::into_raw(Box::new(opt.map(crate::optional::Optional::some).unwrap_or(crate::optional::Optional::none())))
+    Box::into_raw(Box::new(
+        opt.map(crate::optional::Optional::some)
+            .unwrap_or(crate::optional::Optional::none()),
+    ))
 }
 
 /// # Safety

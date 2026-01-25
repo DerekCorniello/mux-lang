@@ -15,8 +15,6 @@ impl Optional {
     pub fn none() -> Optional {
         Optional::None
     }
-
-
 }
 
 impl fmt::Display for Optional {
@@ -88,12 +86,8 @@ pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Val
     unsafe {
         let optional = Box::from_raw(opt);
         match *optional {
-            Optional::Some(value) => {
-                Box::into_raw(Box::new(crate::Value::Optional(Some(value))))
-            }
-            Optional::None => {
-                Box::into_raw(Box::new(crate::Value::Optional(None)))
-            }
+            Optional::Some(value) => Box::into_raw(Box::new(crate::Value::Optional(Some(value)))),
+            Optional::None => Box::into_raw(Box::new(crate::Value::Optional(None))),
         }
     }
 }

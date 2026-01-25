@@ -1,4 +1,4 @@
-use crate::{list::List, map::Map, optional::Optional, result::MuxResult, set::Set, Value};
+use crate::{Value, list::List, map::Map, optional::Optional, result::MuxResult, set::Set};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -24,8 +24,6 @@ pub extern "C" fn mux_some(val: *mut Value) -> *mut Optional {
 pub extern "C" fn mux_int_value(i: i64) -> *mut Value {
     Box::into_raw(Box::new(Value::Int(i)))
 }
-
-
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_bool_value(b: i32) -> *mut Value {
@@ -104,8 +102,6 @@ pub extern "C" fn mux_list_value(list: *mut List) -> *mut Value {
     Box::into_raw(Box::new(Value::List(list_ref.0.clone())))
 }
 
-
-
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_get_list(val: *mut Value) -> *mut List {
@@ -132,9 +128,7 @@ pub extern "C" fn mux_value_get_map(val: *mut Value) -> *mut Map {
     }
     unsafe {
         match &*val {
-            Value::Map(map_data) => {
-                Box::into_raw(Box::new(Map(map_data.clone())))
-            }
+            Value::Map(map_data) => Box::into_raw(Box::new(Map(map_data.clone()))),
             _ => std::ptr::null_mut(),
         }
     }
@@ -274,7 +268,13 @@ pub extern "C" fn mux_value_get_float(val: *const Value) -> f64 {
 pub extern "C" fn mux_value_get_bool(val: *const Value) -> i32 {
     unsafe {
         match &*val {
-            Value::Bool(b) => if *b { 1 } else { 0 },
+            Value::Bool(b) => {
+                if *b {
+                    1
+                } else {
+                    0
+                }
+            }
             _ => 0, // Return default value instead of panicking
         }
     }
@@ -300,4 +300,3 @@ pub extern "C" fn mux_value_get_type_tag(val: *const Value) -> i32 {
 }
 
 // Proper Value cleanup function
-

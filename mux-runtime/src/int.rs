@@ -2,14 +2,13 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::result::MuxResult;
 use crate::Value;
+use crate::result::MuxResult;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Int(pub i64);
 
 impl Int {
-
     pub fn to_float(&self) -> f64 {
         self.0 as f64
     }
@@ -45,8 +44,6 @@ impl Int {
     pub fn lt(&self, other: &Int) -> bool {
         self.0 < other.0
     }
-
-
 }
 
 impl fmt::Display for Int {

@@ -15,7 +15,7 @@ pub enum SymbolKind {
     Enum,
     Constant,
     Import,
-    Type,  // For generic type parameters
+    Type, // For generic type parameters
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,16 +49,16 @@ pub enum Type {
     },
     Named(String, Vec<Type>),
     Variable(String),
-    Generic(String),  // Generic parameter like "T", "U"
+    Generic(String), // Generic parameter like "T", "U"
     // not sure why this is needed to be allowed,
     // i am using it in codegen
     #[allow(dead_code)]
-    Instantiated(String, Vec<Type>),  // Concrete instantiation like "Pair<string, bool>"
+    Instantiated(String, Vec<Type>), // Concrete instantiation like "Pair<string, bool>"
 }
 
 #[derive(Debug, Clone)]
 pub struct GenericContext {
-    pub type_params: HashMap<String, Type>,  // T -> string, U -> bool
+    pub type_params: HashMap<String, Type>, // T -> string, U -> bool
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -348,7 +348,10 @@ impl Default for SymbolTable {
 impl SymbolTable {
     pub fn new() -> Self {
         let root = Rc::new(RefCell::new(Scope::default()));
-        SymbolTable { scopes: vec![root], all_symbols: std::collections::HashMap::new() }
+        SymbolTable {
+            scopes: vec![root],
+            all_symbols: std::collections::HashMap::new(),
+        }
     }
 
     pub fn push_scope(&mut self) -> Result<(), SemanticError> {
@@ -396,7 +399,9 @@ impl SymbolTable {
             });
         }
 
-        current_borrow.symbols.insert(name.to_string(), symbol.clone());
+        current_borrow
+            .symbols
+            .insert(name.to_string(), symbol.clone());
         // Don't add 'self' to global symbol table - it should only exist in local scope
         if name != "self" {
             self.all_symbols.insert(name.to_string(), symbol);
@@ -463,7 +468,6 @@ impl SemanticAnalyzer {
     }
 
     pub fn analyze(&mut self, ast: &[AstNode]) -> Vec<SemanticError> {
-
         self.add_builtin_functions();
         if let Err(e) = self.collect_hoistable_declarations(ast) {
             self.errors.push(e);
@@ -471,8 +475,6 @@ impl SemanticAnalyzer {
         self.analyze_nodes(ast);
         std::mem::take(&mut self.errors)
     }
-
-
 
     fn add_builtin_functions(&mut self) {
         // add built-in functions
@@ -530,20 +532,20 @@ impl SemanticAnalyzer {
                 params,
                 returns: Box::new(ret),
             };
-                self.symbol_table
-                    .add_symbol(
-                        name,
-                        Symbol {
-                            kind: SymbolKind::Function,
-                            span: Span::new(0, 0), // built-in function, no source span
-                            type_: Some(func_type),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                        },
-                    )
-                    .unwrap();
+            self.symbol_table
+                .add_symbol(
+                    name,
+                    Symbol {
+                        kind: SymbolKind::Function,
+                        span: Span::new(0, 0), // built-in function, no source span
+                        type_: Some(func_type),
+                        interfaces: std::collections::HashMap::new(),
+                        methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
+                        type_params: Vec::new(),
+                    },
+                )
+                .unwrap();
         }
     }
 
@@ -581,9 +583,12 @@ impl SemanticAnalyzer {
                 } else if name == "Result" && type_args.len() == 2 {
                     let resolved_ok = self.resolve_type(&type_args[0])?;
                     let resolved_err = self.resolve_type(&type_args[1])?;
-                    return Ok(Type::Named("Result".to_string(), vec![resolved_ok, resolved_err]));
+                    return Ok(Type::Named(
+                        "Result".to_string(),
+                        vec![resolved_ok, resolved_err],
+                    ));
                 }
-                
+
                 // for now, assume named types are classes/enums/interfaces
                 // todo, implement full type definition resolution for enums/interfaces (currently only handles generics).
                 let resolved_args = type_args
@@ -653,16 +658,16 @@ impl SemanticAnalyzer {
                 if name == "self" {
                     // For 'self', use the current self type if available
                     if let Some(self_type) = &self.current_self_type {
-                        println!("DEBUG: get_expression_type: Found self type: {:?} at {:?}", self_type, expr.span);
                         Ok(self_type.clone())
                     } else {
-                        println!("DEBUG: get_expression_type: No current self type available at {:?}, is_in_static_method: {}", expr.span, self.is_in_static_method);
                         // For now, return a placeholder type to allow analysis to continue
                         Ok(Type::Named("Unknown".to_string(), vec![]))
                     }
                 } else {
                     // For other identifiers, check current scope first, then global symbols
-                    let symbol = self.symbol_table.get_cloned(name)
+                    let symbol = self
+                        .symbol_table
+                        .get_cloned(name)
                         .or_else(|| self.symbol_table.lookup(name));
 
                     if let Some(symbol) = symbol {
@@ -806,11 +811,15 @@ impl SemanticAnalyzer {
                 } else if let Type::Named(name, args) = &expr_type {
                     if let Some(symbol) = self.symbol_table.lookup(name) {
                         if let Some(field_type) = symbol.fields.get(field) {
-                            let substituted = self.substitute_type_params(field_type, &symbol.type_params, args);
+                            let substituted =
+                                self.substitute_type_params(field_type, &symbol.type_params, args);
                             Ok(substituted)
                         } else {
                             Err(SemanticError {
-                                message: format!("Unknown field '{}' on type {:?}", field, expr_type),
+                                message: format!(
+                                    "Unknown field '{}' on type {:?}",
+                                    field, expr_type
+                                ),
                                 span: expr.span,
                             })
                         }
@@ -845,11 +854,14 @@ impl SemanticAnalyzer {
                 } else {
                     // Check that all elements have the same type
                     let first_type = self.get_expression_type(&elements[0])?;
-                    
+
                     // Validate ALL elements match the first element's type
                     for (index, element) in elements.iter().enumerate() {
                         let element_type = self.get_expression_type(element)?;
-                        if self.check_type_compatibility(&first_type, &element_type, element.span).is_err() {
+                        if self
+                            .check_type_compatibility(&first_type, &element_type, element.span)
+                            .is_err()
+                        {
                             return Err(SemanticError {
                                 message: format!(
                                     "Heterogeneous list: expected all elements to be of type {:?}, but element at index {} has type {:?}",
@@ -859,7 +871,7 @@ impl SemanticAnalyzer {
                             });
                         }
                     }
-                    
+
                     Ok(Type::List(Box::new(first_type)))
                 }
             }
@@ -907,8 +919,7 @@ impl SemanticAnalyzer {
                     )?;
                 }
                 self.analyze_block(body)?;
-                self.symbol_table.pop_scope()?;
-                
+
                 let param_types = params
                     .iter()
                     .map(|p| self.resolve_type(&p.type_))
@@ -922,6 +933,7 @@ impl SemanticAnalyzer {
                         _ => Type::Void,
                     }
                 };
+                self.symbol_table.pop_scope()?;
                 Ok(Type::Function {
                     params: param_types,
                     returns: Box::new(return_type),
@@ -1038,7 +1050,10 @@ impl SemanticAnalyzer {
         unifier
             .unify(&interface_sig.return_type, &class_sig.return_type, span)
             .map_err(|e| SemanticError {
-                message: format!("Return type mismatch in interface implementation: {}", e.message),
+                message: format!(
+                    "Return type mismatch in interface implementation: {}",
+                    e.message
+                ),
                 span,
             })?;
         // Unify params
@@ -1058,10 +1073,15 @@ impl SemanticAnalyzer {
             .zip(&class_sig.params)
             .enumerate()
         {
-            unifier.unify(int_param, class_param, span).map_err(|e| SemanticError {
-                message: format!("Parameter {} type mismatch in interface implementation: {}", i, e.message),
-                span,
-            })?;
+            unifier
+                .unify(int_param, class_param, span)
+                .map_err(|e| SemanticError {
+                    message: format!(
+                        "Parameter {} type mismatch in interface implementation: {}",
+                        i, e.message
+                    ),
+                    span,
+                })?;
         }
         Ok(())
     }
@@ -1194,6 +1214,14 @@ impl SemanticAnalyzer {
                             }
                         }
                     }
+                }
+                // Unbounded type variables still support a universal `to_string()`.
+                if method_name == "to_string" {
+                    return Some(MethodSig {
+                        params: vec![],
+                        return_type: Type::Primitive(PrimitiveType::Str),
+                        is_static: false,
+                    });
                 }
                 None
             }
@@ -1345,6 +1373,11 @@ impl SemanticAnalyzer {
                     return_type: Type::Primitive(PrimitiveType::Bool),
                     is_static: false,
                 }),
+                "to_string" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
                 _ => None,
             },
             Type::Set(elem_type) => match method_name {
@@ -1371,6 +1404,19 @@ impl SemanticAnalyzer {
                 "is_empty" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "to_string" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            Type::Optional(_) => match method_name {
+                "to_string" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
                     is_static: false,
                 }),
                 _ => None,
@@ -1406,7 +1452,10 @@ impl SemanticAnalyzer {
                 }
                 Type::Primitive(PrimitiveType::Str) => {
                     // For string, left operand should be a character or string
-                    if matches!(left_type, Type::Primitive(PrimitiveType::Char | PrimitiveType::Str)) {
+                    if matches!(
+                        left_type,
+                        Type::Primitive(PrimitiveType::Char | PrimitiveType::Str)
+                    ) {
                         Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
                     } else {
                         None
@@ -1415,59 +1464,78 @@ impl SemanticAnalyzer {
                 _ => None,
             }
         } else {
-            // For all other operators, types must be compatible
-            if left_type != right_type {
-                return None;
-            }
+            // For most operators, types must be compatible. For numeric ops, allow promotion.
+            let (left_promoted, right_promoted, promoted_type) = match (left_type, right_type) {
+                (Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Float))
+                | (Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Int)) => (
+                    Type::Primitive(PrimitiveType::Float),
+                    Type::Primitive(PrimitiveType::Float),
+                    Some(Type::Primitive(PrimitiveType::Float)),
+                ),
+                _ if left_type == right_type => (
+                    left_type.clone(),
+                    right_type.clone(),
+                    Some(left_type.clone()),
+                ),
+                _ => (left_type.clone(), right_type.clone(), None),
+            };
 
             match op {
-            BinaryOp::Add => {
-                // built-in support for primitives, or interface support for custom types
-                if matches!(
-                    left_type,
-                    Type::Primitive(PrimitiveType::Str | PrimitiveType::Int | PrimitiveType::Float)
-                ) || self.type_implements_interface(left_type, "Add")
-                {
-                    Some(left_type.clone())
-                } else {
-                    None
+                BinaryOp::Add => {
+                    // built-in support for primitives, or interface support for custom types
+                    if matches!(
+                        &left_promoted,
+                        Type::Primitive(
+                            PrimitiveType::Str | PrimitiveType::Int | PrimitiveType::Float
+                        )
+                    ) || self.type_implements_interface(&left_promoted, "Add")
+                    {
+                        promoted_type
+                    } else {
+                        None
+                    }
                 }
-            }
-            BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => {
-                // built-in support for numeric primitives, or interface support for custom types
-                if matches!(
-                    left_type,
-                    Type::Primitive(PrimitiveType::Int | PrimitiveType::Float)
-                ) || self.type_implements_interface(left_type, "Arithmetic")
-                {
-                    Some(left_type.clone())
-                } else {
-                    None
+                BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => {
+                    // built-in support for numeric primitives, or interface support for custom types
+                    if matches!(
+                        &left_promoted,
+                        Type::Primitive(PrimitiveType::Int | PrimitiveType::Float)
+                    ) || self.type_implements_interface(&left_promoted, "Arithmetic")
+                    {
+                        promoted_type
+                    } else {
+                        None
+                    }
                 }
-            }
-            BinaryOp::Equal | BinaryOp::NotEqual => {
-                // equality is supported for all types
-                Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
-            }
-            BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
-                // comparison operators for ordered types
-                if matches!(
-                    left_type,
-                    Type::Primitive(PrimitiveType::Int | PrimitiveType::Float | PrimitiveType::Str)
-                ) {
+                BinaryOp::Equal | BinaryOp::NotEqual => {
+                    // equality is supported for all types
                     Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
-                } else {
-                    None
                 }
-            }
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
-                if matches!(left_type, Type::Primitive(PrimitiveType::Bool)) {
-                    Some(Type::Primitive(PrimitiveType::Bool))
-                } else {
-                    None
+                BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual => {
+                    // comparison operators for ordered types
+                    if matches!(
+                        &left_promoted,
+                        Type::Primitive(
+                            PrimitiveType::Int | PrimitiveType::Float | PrimitiveType::Str
+                        )
+                    ) && promoted_type.is_some()
+                    {
+                        Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                    } else {
+                        None
+                    }
                 }
-            }
-            _ => None,
+                BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
+                    if matches!(left_type, Type::Primitive(PrimitiveType::Bool)) {
+                        Some(Type::Primitive(PrimitiveType::Bool))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
             }
         }
     }
@@ -1549,7 +1617,13 @@ impl SemanticAnalyzer {
                                     let sub_params = method_sig
                                         .params
                                         .iter()
-                                        .map(|p| self.substitute_type_params(p, interface_type_params, &resolved_args))
+                                        .map(|p| {
+                                            self.substitute_type_params(
+                                                p,
+                                                interface_type_params,
+                                                &resolved_args,
+                                            )
+                                        })
                                         .collect();
                                     let sub_return = self.substitute_type_params(
                                         &method_sig.return_type,
@@ -1565,7 +1639,8 @@ impl SemanticAnalyzer {
                                         },
                                     );
                                 }
-                                implemented_interfaces.insert(trait_ref.name.clone(), substituted_methods);
+                                implemented_interfaces
+                                    .insert(trait_ref.name.clone(), substituted_methods);
                             }
                         }
                     }
@@ -1621,7 +1696,7 @@ impl SemanticAnalyzer {
                     }
                     // add "new" as static method for constructor
                     let new_sig = MethodSig {
-                        params: vec![],  // Default constructor takes no args
+                        params: vec![], // Default constructor takes no args
                         return_type: Type::Named(
                             name.clone(),
                             type_param_bounds
@@ -1674,10 +1749,22 @@ impl SemanticAnalyzer {
                 AstNode::Enum { name, variants, .. } => {
                     let mut methods = std::collections::HashMap::new();
                     for variant in variants {
-                        let params = variant.data.clone().unwrap_or_default().into_iter().map(|t| self.resolve_type(&t).unwrap_or(Type::Void)).collect();
+                        let params = variant
+                            .data
+                            .clone()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|t| self.resolve_type(&t).unwrap_or(Type::Void))
+                            .collect();
                         let return_type = Type::Named(name.clone(), vec![]);
-                        methods.insert(variant.name.clone(), MethodSig { params, return_type, is_static: true });
-                        println!("Added method {} to {}", variant.name, name);
+                        methods.insert(
+                            variant.name.clone(),
+                            MethodSig {
+                                params,
+                                return_type,
+                                is_static: true,
+                            },
+                        );
                     }
                     if let Err(e) = self.symbol_table.add_symbol(
                         name,
@@ -1762,7 +1849,7 @@ impl SemanticAnalyzer {
                     });
                 }
                 self.analyze_function(func, None)
-            },
+            }
             AstNode::Class {
                 name,
                 fields,
@@ -1775,19 +1862,22 @@ impl SemanticAnalyzer {
                     .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
                     .collect();
                 self.analyze_class(name, fields, methods, &type_param_bounds)
-            },
+            }
             AstNode::Enum { .. } => Ok(()), // enums don't need further analysis.
             AstNode::Interface { .. } => Ok(()), // interfaces don't need further analysis.
             AstNode::Statement(stmt) => self.analyze_statement(stmt),
         }
     }
 
-    fn analyze_function(&mut self, func: &FunctionNode, self_type: Option<Type>) -> Result<(), SemanticError> {
+    fn analyze_function(
+        &mut self,
+        func: &FunctionNode,
+        self_type: Option<Type>,
+    ) -> Result<(), SemanticError> {
         let was_static = self.is_in_static_method;
         let old_self_type = self.current_self_type.clone();
         self.is_in_static_method = func.is_common;
         self.current_self_type = self_type.clone();
-        println!("DEBUG: analyze_function {} with self_type: {:?}, current_self_type set to: {:?}", func.name, self_type, self.current_self_type);
 
         // set current bounds
         self.current_bounds.clear();
@@ -1915,7 +2005,13 @@ impl SemanticAnalyzer {
             let self_type = if method.is_common {
                 None
             } else {
-                Some(Type::Named(name_.to_string(), type_params.iter().map(|(p, _)| Type::Variable(p.clone())).collect()))
+                Some(Type::Named(
+                    name_.to_string(),
+                    type_params
+                        .iter()
+                        .map(|(p, _)| Type::Variable(p.clone()))
+                        .collect(),
+                ))
             };
             // Set current_self_type for method body analysis
             let old_self_type = self.current_self_type.clone();
@@ -2059,7 +2155,7 @@ impl SemanticAnalyzer {
                     var,
                     Symbol {
                         kind: SymbolKind::Variable,
-                    span: stmt.span,
+                        span: stmt.span,
                         type_: Some(var_type),
                         interfaces: std::collections::HashMap::new(),
                         methods: std::collections::HashMap::new(),
@@ -2210,7 +2306,9 @@ impl SemanticAnalyzer {
                                     return Err(SemanticError {
                                         message: format!(
                                             "Pattern {} has {} args, expected {}",
-                                            name, args.len(), sig.params.len()
+                                            name,
+                                            args.len(),
+                                            sig.params.len()
                                         ),
                                         span,
                                     });
@@ -2319,7 +2417,7 @@ impl SemanticAnalyzer {
                 Ok(())
             }
             ExpressionKind::Literal(_) => Ok(()), // literals are fine
-            ExpressionKind::None => Ok(()), // None is fine
+            ExpressionKind::None => Ok(()),       // None is fine
             ExpressionKind::Binary { left, right, op: _ } => {
                 self.analyze_expression(left)?;
                 self.analyze_expression(right)?;

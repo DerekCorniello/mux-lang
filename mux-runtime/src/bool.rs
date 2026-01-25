@@ -8,7 +8,6 @@ use crate::Value;
 pub struct Bool(pub bool);
 
 impl Bool {
-
     pub fn to_int(&self) -> i64 {
         if self.0 { 1 } else { 0 }
     }
@@ -54,7 +53,9 @@ pub unsafe extern "C" fn mux_bool_to_int(v: *mut Value) -> *mut Value {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_bool_to_float(v: *mut Value) -> *mut Value {
     if let Value::Bool(b) = unsafe { &*v } {
-        Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(Bool(*b).to_int() as f64))))
+        Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(
+            Bool(*b).to_int() as f64,
+        ))))
     } else {
         panic!("Expected Bool value");
     }

@@ -1,7 +1,7 @@
 use crate::Value;
 use std::collections::BTreeSet;
-use std::fmt;
 use std::ffi::CString;
+use std::fmt;
 
 #[derive(Clone, Debug)]
 pub struct Set(pub BTreeSet<Value>);
@@ -18,8 +18,6 @@ impl Set {
     pub fn contains(&self, val: &Value) -> bool {
         self.0.contains(val)
     }
-
-
 }
 
 impl fmt::Display for Set {

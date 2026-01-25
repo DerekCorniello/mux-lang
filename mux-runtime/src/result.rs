@@ -16,8 +16,6 @@ impl MuxResult {
     pub fn err(msg: String) -> MuxResult {
         MuxResult::Err(msg)
     }
-
-
 }
 
 #[unsafe(no_mangle)]

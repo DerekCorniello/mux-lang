@@ -113,7 +113,8 @@ impl<'a> Parser<'a> {
         // check if next token starts a new statement
         if self.current + 1 < self.tokens.len() {
             let next_token = &self.tokens[self.current + 1];
-            if self.is_statement_starter(&next_token.token_type) && !matches!(token.token_type, TokenType::NewLine)
+            if self.is_statement_starter(&next_token.token_type)
+                && !matches!(token.token_type, TokenType::NewLine)
             {
                 // skip error if at eof
                 if next_token.token_type != TokenType::Eof {
@@ -571,7 +572,9 @@ impl<'a> Parser<'a> {
                 self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
 
                 // parse return type.
-                let return_type = if self.matches(&[TokenType::Minus, TokenType::Gt]) || self.matches(&[TokenType::Returns]) {
+                let return_type = if self.matches(&[TokenType::Minus, TokenType::Gt])
+                    || self.matches(&[TokenType::Returns])
+                {
                     self.parse_type()?
                 } else {
                     TypeNode {
@@ -892,13 +895,15 @@ impl<'a> Parser<'a> {
         }?;
 
         // only do newline-based termination at top level, skip for control-flow statements.
-        if !self.is_in_block() && !matches!(
+        if !self.is_in_block()
+            && !matches!(
                 &result,
                 AstNode::Statement(stmt) if matches!(
                     stmt.kind,
                     StatementKind::If { .. } | StatementKind::While { .. } | StatementKind::For { .. } | StatementKind::Match { .. } | StatementKind::Function { .. }
                 )
-            ) {
+            )
+        {
             if let Err(e) = self.check_statement_termination() {
                 self.errors.push(e);
             }
@@ -1293,7 +1298,10 @@ impl<'a> Parser<'a> {
         let start_span = self.tokens[self.current].span;
 
         // Check if there's an expression after return
-        let value = if self.is_at_end() || self.check(TokenType::NewLine) || self.check(TokenType::CloseBrace) {
+        let value = if self.is_at_end()
+            || self.check(TokenType::NewLine)
+            || self.check(TokenType::CloseBrace)
+        {
             // return at end of input, or followed by newline/closing brace - void return
             None
         } else {
@@ -1989,14 +1997,13 @@ impl<'a> Parser<'a> {
                 self.parse_postfix_operators(expr)
             }
 
-            _ => {
-                Err(ParserError::from_token(
+            _ => Err(ParserError::from_token(
                 format!("Expected expression, got {:?}", token_type),
                 &Token {
                     token_type,
                     span: token_span,
                 },
-            ))},
+            )),
         }
     }
 

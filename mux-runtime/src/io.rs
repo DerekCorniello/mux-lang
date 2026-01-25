@@ -19,7 +19,9 @@ pub fn println(s: &str) {
 
 pub fn read_line() -> Result<String, String> {
     let mut input = String::new();
-    io::stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| e.to_string())?;
     Ok(input.trim().to_string())
 }
 
@@ -29,12 +31,14 @@ pub fn open_file(path: &str) -> Result<File, String> {
 
 pub fn read_file(mut file: File) -> Result<String, String> {
     let mut contents = String::new();
-    file.read_to_string(&mut contents).map_err(|e| e.to_string())?;
+    file.read_to_string(&mut contents)
+        .map_err(|e| e.to_string())?;
     Ok(contents)
 }
 
 pub fn write_file(mut file: File, content: &str) -> Result<(), String> {
-    file.write_all(content.as_bytes()).map_err(|e| e.to_string())
+    file.write_all(content.as_bytes())
+        .map_err(|e| e.to_string())
 }
 
 pub fn close_file(_file: File) {
@@ -146,21 +150,8 @@ pub extern "C" fn mux_write_file(file: *mut MuxFile, content: *const c_char) -> 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_close_file(file: *mut MuxFile) {
     if !file.is_null() {
-        unsafe { drop(Box::from_raw(file)); }
+        unsafe {
+            drop(Box::from_raw(file));
+        }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
