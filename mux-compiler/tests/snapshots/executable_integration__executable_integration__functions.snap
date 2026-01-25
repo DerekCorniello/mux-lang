@@ -2,16 +2,8 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
-STDOUT:
 add(3,4): 7
 Hello World
 Hello World
 square(5): 25
 doubled(3.5): 7.0
-
-STDERR:
-Concat: 'add(3,4): ' + '7' = 'add(3,4): 7'
-Concat: 'Hello ' + 'World' = 'Hello World'
-Concat: 'Hello ' + 'World' = 'Hello World'
-Concat: 'square(5): ' + '25' = 'square(5): 25'
-Concat: 'doubled(3.5): ' + '7.0' = 'doubled(3.5): 7.0'

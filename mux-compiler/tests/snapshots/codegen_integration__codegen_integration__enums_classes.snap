@@ -214,11 +214,11 @@ entry:
   call void @mux_println_val(ptr %call)
   %load_self_for_field_access = load ptr, ptr %self, align 8
   %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %shape = getelementptr inbounds { ptr, { i32, double, double } }, ptr %self_data_ptr, i32 0, i32 1
+  %shape = getelementptr inbounds nuw { ptr, { i32, double, double } }, ptr %self_data_ptr, i32 0, i32 1
   %shape1 = load { i32, double, double }, ptr %shape, align 8
   %temp_enum = alloca { i32, double, double }, align 8
   store { i32, double, double } %shape1, ptr %temp_enum, align 8
-  %discriminant_ptr = getelementptr inbounds { i32, double, double }, ptr %temp_enum, i32 0, i32 0
+  %discriminant_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_enum, i32 0, i32 0
   %discriminant = load i32, ptr %discriminant_ptr, align 4
   %temp_enum_struct = alloca { i32, double, double }, align 8
   store { i32, double, double } %shape1, ptr %temp_enum_struct, align 8
@@ -229,7 +229,7 @@ match_end_0:                                      ; preds = %match_arm_0_2, %mat
   ret void
 
 match_arm_0_0:                                    ; preds = %entry
-  %data_ptr = getelementptr inbounds { i32, double, double }, ptr %temp_enum_struct, i32 0, i32 1
+  %data_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_enum_struct, i32 0, i32 1
   %data = load double, ptr %data_ptr, align 8
   %call2 = call ptr @mux_float_value(double %data)
   %r = alloca ptr, align 8
@@ -253,12 +253,12 @@ match_next_0_0:                                   ; preds = %entry
   br i1 %match_cmp7, label %match_arm_0_1, label %match_next_0_1
 
 match_arm_0_1:                                    ; preds = %match_next_0_0
-  %data_ptr8 = getelementptr inbounds { i32, double, double }, ptr %temp_enum_struct, i32 0, i32 1
+  %data_ptr8 = getelementptr inbounds nuw { i32, double, double }, ptr %temp_enum_struct, i32 0, i32 1
   %data9 = load double, ptr %data_ptr8, align 8
   %call10 = call ptr @mux_float_value(double %data9)
   %w = alloca ptr, align 8
   store ptr %call10, ptr %w, align 8
-  %data_ptr11 = getelementptr inbounds { i32, double, double }, ptr %temp_enum_struct, i32 0, i32 2
+  %data_ptr11 = getelementptr inbounds nuw { i32, double, double }, ptr %temp_enum_struct, i32 0, i32 2
   %data12 = load double, ptr %data_ptr11, align 8
   %call13 = call ptr @mux_float_value(double %data12)
   %h = alloca ptr, align 8
@@ -309,49 +309,48 @@ entry:
   %load_init_shape = load { i32, double, double }, ptr %init_shape, align 8
   %new_shape1 = load ptr, ptr %new_shape, align 8
   %data_ptr_assign = call ptr @mux_get_object_ptr(ptr %new_shape1)
-  %shape = getelementptr inbounds { ptr, { i32, double, double } }, ptr %data_ptr_assign, i32 0, i32 1
+  %shape = getelementptr inbounds nuw { ptr, { i32, double, double } }, ptr %data_ptr_assign, i32 0, i32 1
   store { i32, double, double } %load_init_shape, ptr %shape, align 8
   %new_shape2 = load ptr, ptr %new_shape, align 8
   ret ptr %new_shape2
 }
 
-define ptr @Pair.from(i64 %0, ptr %1) {
+define ptr @Pair.from(ptr %0, ptr %1) {
 entry:
-  %call = call ptr @mux_int_value(i64 %0)
   %left = alloca ptr, align 8
-  store ptr %call, ptr %left, align 8
+  store ptr %0, ptr %left, align 8
   %right = alloca ptr, align 8
   store ptr %1, ptr %right, align 8
   %type_id = call i32 @mux_register_object_type(ptr @type_name_Pair.8, i64 ptrtoint (ptr getelementptr ({ ptr, ptr }, ptr null, i32 1) to i64))
   %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
   %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
-  %field_0 = getelementptr inbounds { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
+  %field_0 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
   store ptr null, ptr %field_0, align 8
-  %field_1 = getelementptr inbounds { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
+  %field_1 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
   store i1 false, ptr %field_1, align 1
   %new_pair = alloca ptr, align 8
   store ptr %obj_ptr, ptr %new_pair, align 8
   %left1 = load ptr, ptr %left, align 8
   %new_pair2 = load ptr, ptr %new_pair, align 8
   %data_ptr_assign = call ptr @mux_get_object_ptr(ptr %new_pair2)
-  %left3 = getelementptr inbounds { ptr, ptr }, ptr %data_ptr_assign, i32 0, i32 0
+  %left3 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign, i32 0, i32 0
   store ptr %left1, ptr %left3, align 8
   %right4 = load ptr, ptr %right, align 8
   %new_pair5 = load ptr, ptr %new_pair, align 8
   %data_ptr_assign6 = call ptr @mux_get_object_ptr(ptr %new_pair5)
-  %right7 = getelementptr inbounds { ptr, ptr }, ptr %data_ptr_assign6, i32 0, i32 1
+  %right7 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign6, i32 0, i32 1
   store ptr %right4, ptr %right7, align 8
   %new_pair8 = load ptr, ptr %new_pair, align 8
   ret ptr %new_pair8
 }
 
-define i64 @Pair.get_left(ptr %0) {
+define ptr @Pair.get_left(ptr %0) {
 entry:
   %self = alloca ptr, align 8
   store ptr %0, ptr %self, align 8
   %load_self_for_field_access = load ptr, ptr %self, align 8
   %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %left = getelementptr inbounds { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %left = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 0
   %left1 = load ptr, ptr %left, align 8
   %get_int = call i64 @mux_value_get_int(ptr %left1)
   ret i64 %get_int
@@ -363,7 +362,7 @@ entry:
   store ptr %0, ptr %self, align 8
   %load_self_for_field_access = load ptr, ptr %self, align 8
   %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %right = getelementptr inbounds { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
+  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
   %right1 = load ptr, ptr %right, align 8
   ret ptr %right1
 }
@@ -372,9 +371,9 @@ define { i32, double, double } @Shape_Circ(double %0) {
 entry:
   %temp_struct = alloca { i32, double, double }, align 8
   store { i32, double, double } zeroinitializer, ptr %temp_struct, align 8
-  %tag_ptr = getelementptr inbounds { i32, double, double }, ptr %temp_struct, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 0
   store i32 0, ptr %tag_ptr, align 4
-  %data_ptr = getelementptr inbounds { i32, double, double }, ptr %temp_struct, i32 0, i32 1
+  %data_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 1
   store double %0, ptr %data_ptr, align 8
   %struct = load { i32, double, double }, ptr %temp_struct, align 8
   ret { i32, double, double } %struct
@@ -384,11 +383,11 @@ define { i32, double, double } @Shape_Rect(double %0, double %1) {
 entry:
   %temp_struct = alloca { i32, double, double }, align 8
   store { i32, double, double } zeroinitializer, ptr %temp_struct, align 8
-  %tag_ptr = getelementptr inbounds { i32, double, double }, ptr %temp_struct, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 0
   store i32 1, ptr %tag_ptr, align 4
-  %data_ptr = getelementptr inbounds { i32, double, double }, ptr %temp_struct, i32 0, i32 1
+  %data_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 1
   store double %0, ptr %data_ptr, align 8
-  %data_ptr1 = getelementptr inbounds { i32, double, double }, ptr %temp_struct, i32 0, i32 2
+  %data_ptr1 = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 2
   store double %1, ptr %data_ptr1, align 8
   %struct = load { i32, double, double }, ptr %temp_struct, align 8
   ret { i32, double, double } %struct
@@ -399,21 +398,21 @@ entry:
   %type_id = call i32 @mux_register_object_type(ptr @type_name_GenericShape, i64 ptrtoint (ptr getelementptr ({ ptr, { i32, double, double } }, ptr null, i32 1) to i64))
   %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
   %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
-  %shape = getelementptr inbounds { ptr, { i32, double, double } }, ptr %data_ptr, i32 0, i32 1
+  %shape = getelementptr inbounds nuw { ptr, { i32, double, double } }, ptr %data_ptr, i32 0, i32 1
   store { i32, double, double } %0, ptr %shape, align 8
-  %vtable_DrawableShape = getelementptr inbounds { ptr, { i32, double, double } }, ptr %data_ptr, i32 0, i32 0
+  %vtable_DrawableShape = getelementptr inbounds nuw { ptr, { i32, double, double } }, ptr %data_ptr, i32 0, i32 0
   store ptr @GenericShape_DrawableShape_vtable, ptr %vtable_DrawableShape, align 8
   ret ptr %obj_ptr
 }
 
-define ptr @Pair.new(i64 %0, ptr %1) {
+define ptr @Pair.new(ptr %0, ptr %1) {
 entry:
   %type_id = call i32 @mux_register_object_type(ptr @type_name_Pair, i64 ptrtoint (ptr getelementptr ({ ptr, ptr }, ptr null, i32 1) to i64))
   %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
   %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
-  %left = getelementptr inbounds { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
-  store i64 %0, ptr %left, align 4
-  %right = getelementptr inbounds { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
+  %left = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
+  store ptr %0, ptr %left, align 8
+  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
   store ptr %1, ptr %right, align 8
   ret ptr %obj_ptr
 }
@@ -482,8 +481,8 @@ for_continue_1:                                   ; preds = %for_exit_1
   %heterogenous_pair_2 = alloca ptr, align 8
   store ptr %Pair.from_call12, ptr %heterogenous_pair_2, align 8
   %homogenous_pair13 = load ptr, ptr %homogenous_pair, align 8
-  %Pair.get_left_call = call i64 @Pair.get_left(ptr %homogenous_pair13)
-  %int_to_str = call ptr @mux_int_to_string(i64 %Pair.get_left_call)
+  %Pair.get_left_call = call ptr @Pair.get_left(ptr %homogenous_pair13)
+  %int_to_str = call ptr @mux_int_to_string(ptr %Pair.get_left_call)
   %new_str = call ptr @mux_new_string_from_cstr(ptr %int_to_str)
   call void @mux_println_val(ptr %new_str)
   %homogenous_pair14 = load ptr, ptr %homogenous_pair, align 8
@@ -492,8 +491,8 @@ for_continue_1:                                   ; preds = %for_exit_1
   %new_str16 = call ptr @mux_new_string_from_cstr(ptr %int_to_str15)
   call void @mux_println_val(ptr %new_str16)
   %heterogenous_pair17 = load ptr, ptr %heterogenous_pair, align 8
-  %Pair.get_left_call18 = call i64 @Pair.get_left(ptr %heterogenous_pair17)
-  %value_to_str = call ptr @mux_value_to_string(i64 %Pair.get_left_call18)
+  %Pair.get_left_call18 = call ptr @Pair.get_left(ptr %heterogenous_pair17)
+  %value_to_str = call ptr @mux_value_to_string(ptr %Pair.get_left_call18)
   %new_str19 = call ptr @mux_new_string_from_cstr(ptr %value_to_str)
   call void @mux_println_val(ptr %new_str19)
   %heterogenous_pair20 = load ptr, ptr %heterogenous_pair, align 8
@@ -503,8 +502,8 @@ for_continue_1:                                   ; preds = %for_exit_1
   %new_str22 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str)
   call void @mux_println_val(ptr %new_str22)
   %heterogenous_pair_223 = load ptr, ptr %heterogenous_pair_2, align 8
-  %Pair.get_left_call24 = call i64 @Pair.get_left(ptr %heterogenous_pair_223)
-  %value_to_str25 = call ptr @mux_value_to_string(i64 %Pair.get_left_call24)
+  %Pair.get_left_call24 = call ptr @Pair.get_left(ptr %heterogenous_pair_223)
+  %value_to_str25 = call ptr @mux_value_to_string(ptr %Pair.get_left_call24)
   %new_str26 = call ptr @mux_new_string_from_cstr(ptr %value_to_str25)
   call void @mux_println_val(ptr %new_str26)
   %heterogenous_pair_227 = load ptr, ptr %heterogenous_pair_2, align 8

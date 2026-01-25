@@ -2,14 +2,7 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
-STDOUT:
 true
 true
 false
 false
-
-STDERR:
-mux_bool_to_string called with b: 1
-mux_bool_to_string called with b: 1
-mux_bool_to_string called with b: 0
-mux_bool_to_string called with b: 0

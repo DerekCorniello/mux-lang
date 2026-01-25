@@ -2,10 +2,5 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
-STDOUT:
 Result: 5
 Error: Division by zero
-
-STDERR:
-Concat: 'Result: ' + '5' = 'Result: 5'
-Concat: 'Error: ' + 'Division by zero' = 'Error: Division by zero'
