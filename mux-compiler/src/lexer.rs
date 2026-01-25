@@ -984,28 +984,22 @@ auto y = 42"#;
 
         // Check the tokens
         match &tokens[..] {
-            [
-                Token {
-                    token_type: TokenType::Auto,
-                    ..
-                },
-                Token {
-                    token_type: TokenType::Id(id),
-                    ..
-                },
-                Token {
-                    token_type: TokenType::Eq,
-                    ..
-                },
-                Token {
-                    token_type: TokenType::Float(f),
-                    ..
-                },
-                Token {
-                    token_type: TokenType::Int(i),
-                    ..
-                },
-            ] => {
+            [Token {
+                token_type: TokenType::Auto,
+                ..
+            }, Token {
+                token_type: TokenType::Id(id),
+                ..
+            }, Token {
+                token_type: TokenType::Eq,
+                ..
+            }, Token {
+                token_type: TokenType::Float(f),
+                ..
+            }, Token {
+                token_type: TokenType::Int(i),
+                ..
+            }] => {
                 assert_eq!(id, "x");
                 assert!((f.into_inner() - 1.2).abs() < f64::EPSILON);
                 assert_eq!(*i, 33); // ASCII for '3'
@@ -1023,15 +1017,10 @@ auto y = 42"#;
         let token_types: Vec<_> = tokens.into_iter().map(|t| t.token_type).collect();
 
         match &token_types[..] {
-            [
-                TokenType::Int(42),
-                TokenType::Int(1000),
-                TokenType::Float(OrderedFloat(f1)),
-                TokenType::Float(OrderedFloat(f2)),
-                TokenType::Float(OrderedFloat(f3)),
-            ] if (*f1 - 3.45).abs() < f64::EPSILON
-                && (*f2 - 0.5).abs() < f64::EPSILON
-                && (*f3 - 5.0).abs() < f64::EPSILON => {}
+            [TokenType::Int(42), TokenType::Int(1000), TokenType::Float(OrderedFloat(f1)), TokenType::Float(OrderedFloat(f2)), TokenType::Float(OrderedFloat(f3))]
+                if (*f1 - 3.45).abs() < f64::EPSILON
+                    && (*f2 - 0.5).abs() < f64::EPSILON
+                    && (*f3 - 5.0).abs() < f64::EPSILON => {}
             _ => panic!("Unexpected token types: {:?}", token_types),
         }
     }
@@ -1183,38 +1172,8 @@ world"
         let token_types: Vec<_> = tokens.into_iter().map(|t| t.token_type).collect();
 
         match &token_types[..] {
-            [
-                TokenType::Auto,
-                TokenType::Id(x),
-                TokenType::Eq,
-                TokenType::Int(42),
-                TokenType::If,
-                TokenType::Else,
-                TokenType::For,
-                TokenType::While,
-                TokenType::Match,
-                TokenType::Const,
-                TokenType::Class,
-                TokenType::Interface,
-                TokenType::Enum,
-                TokenType::Is,
-                TokenType::As,
-                TokenType::In,
-                TokenType::Id(range),
-                TokenType::Id(list),
-                TokenType::Id(map),
-                TokenType::Id(opt),
-                TokenType::Id(res),
-                TokenType::Id(some),
-                TokenType::None,
-                TokenType::Id(ok),
-                TokenType::Id(err),
-                TokenType::Bool(true),
-                TokenType::Bool(false),
-                TokenType::And,
-                TokenType::Or,
-                TokenType::Common,
-            ] => {
+            [TokenType::Auto, TokenType::Id(x), TokenType::Eq, TokenType::Int(42), TokenType::If, TokenType::Else, TokenType::For, TokenType::While, TokenType::Match, TokenType::Const, TokenType::Class, TokenType::Interface, TokenType::Enum, TokenType::Is, TokenType::As, TokenType::In, TokenType::Id(range), TokenType::Id(list), TokenType::Id(map), TokenType::Id(opt), TokenType::Id(res), TokenType::Id(some), TokenType::None, TokenType::Id(ok), TokenType::Id(err), TokenType::Bool(true), TokenType::Bool(false), TokenType::And, TokenType::Or, TokenType::Common] =>
+            {
                 assert_eq!(x, "x");
                 assert_eq!(range, "range");
                 assert_eq!(list, "list");
@@ -1293,20 +1252,8 @@ world"
         // Test combined operators with identifiers and numbers
         let token_types = get_tokens("a += 1 b -= 2 c *= 3 d /= 4");
         match &token_types[..] {
-            [
-                TokenType::Id(a),
-                TokenType::PlusEq,
-                TokenType::Int(1),
-                TokenType::Id(b),
-                TokenType::MinusEq,
-                TokenType::Int(2),
-                TokenType::Id(c),
-                TokenType::StarEq,
-                TokenType::Int(3),
-                TokenType::Id(d),
-                TokenType::SlashEq,
-                TokenType::Int(4),
-            ] => {
+            [TokenType::Id(a), TokenType::PlusEq, TokenType::Int(1), TokenType::Id(b), TokenType::MinusEq, TokenType::Int(2), TokenType::Id(c), TokenType::StarEq, TokenType::Int(3), TokenType::Id(d), TokenType::SlashEq, TokenType::Int(4)] =>
+            {
                 assert_eq!(a, "a");
                 assert_eq!(b, "b");
                 assert_eq!(c, "c");

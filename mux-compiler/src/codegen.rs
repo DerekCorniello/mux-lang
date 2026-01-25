@@ -1,5 +1,4 @@
 use crate::semantics::SymbolKind;
-use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -8,6 +7,7 @@ use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, IntValue,
     PointerValue,
 };
+use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 use crate::lexer::Span;
@@ -672,7 +672,7 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<(), String> {
         println!("Generating vtables for class: {}", class_name);
         for (interface_name, interface_methods) in interfaces {
-            println!("  Interface: {}", interface_name);
+            // println!("  Interface: {}", interface_name);
             let mut vtable_values = Vec::new();
             for method_name in interface_methods.keys() {
                 let class_method_name = format!("{}.{}", class_name, method_name);
@@ -2882,7 +2882,8 @@ impl<'a> CodeGenerator<'a> {
                                                                 .next()
                                                                 .unwrap_or(' ')
                                                                 .is_uppercase()
-                                                                || param_name.len() > 3 // Heuristic: generic names are usually short
+                                                                || param_name.len() > 3
+                                                            // Heuristic: generic names are usually short
                                                         },
                                                     );
 
