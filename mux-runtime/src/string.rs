@@ -86,7 +86,6 @@ pub extern "C" fn mux_string_concat(a: *const c_char, b: *const c_char) -> *mut 
     let a_str = unsafe { CStr::from_ptr(a).to_string_lossy() };
     let b_str = unsafe { CStr::from_ptr(b).to_string_lossy() };
     let result = MuxString(a_str.to_string()).concat(&MuxString(b_str.to_string()));
-    eprintln!("Concat: '{}' + '{}' = '{}'", a_str, b_str, result.0);
     CString::new(result.0).unwrap().into_raw()
 }
 

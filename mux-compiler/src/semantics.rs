@@ -1215,14 +1215,6 @@ impl SemanticAnalyzer {
                         }
                     }
                 }
-                // Unbounded type variables still support a universal `to_string()`.
-                if method_name == "to_string" {
-                    return Some(MethodSig {
-                        params: vec![],
-                        return_type: Type::Primitive(PrimitiveType::Str),
-                        is_static: false,
-                    });
-                }
                 None
             }
             Type::Primitive(prim) => {
@@ -1464,33 +1456,23 @@ impl SemanticAnalyzer {
                 _ => None,
             }
         } else {
-            // For most operators, types must be compatible. For numeric ops, allow promotion.
-            let (left_promoted, right_promoted, promoted_type) = match (left_type, right_type) {
-                (Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Float))
-                | (Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Int)) => (
-                    Type::Primitive(PrimitiveType::Float),
-                    Type::Primitive(PrimitiveType::Float),
-                    Some(Type::Primitive(PrimitiveType::Float)),
-                ),
-                _ if left_type == right_type => (
-                    left_type.clone(),
-                    right_type.clone(),
-                    Some(left_type.clone()),
-                ),
-                _ => (left_type.clone(), right_type.clone(), None),
-            };
+            // No implicit type promotion: operands must have the same type (or be supported by
+            // explicit interfaces/overloads elsewhere in the type system).
+            if left_type != right_type {
+                return None;
+            }
 
             match op {
                 BinaryOp::Add => {
                     // built-in support for primitives, or interface support for custom types
                     if matches!(
-                        &left_promoted,
+                        left_type,
                         Type::Primitive(
                             PrimitiveType::Str | PrimitiveType::Int | PrimitiveType::Float
                         )
-                    ) || self.type_implements_interface(&left_promoted, "Add")
+                    ) || self.type_implements_interface(left_type, "Add")
                     {
-                        promoted_type
+                        Some(left_type.clone())
                     } else {
                         None
                     }
@@ -1498,11 +1480,11 @@ impl SemanticAnalyzer {
                 BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => {
                     // built-in support for numeric primitives, or interface support for custom types
                     if matches!(
-                        &left_promoted,
+                        left_type,
                         Type::Primitive(PrimitiveType::Int | PrimitiveType::Float)
-                    ) || self.type_implements_interface(&left_promoted, "Arithmetic")
+                    ) || self.type_implements_interface(left_type, "Arithmetic")
                     {
-                        promoted_type
+                        Some(left_type.clone())
                     } else {
                         None
                     }
@@ -1517,19 +1499,20 @@ impl SemanticAnalyzer {
                 | BinaryOp::GreaterEqual => {
                     // comparison operators for ordered types
                     if matches!(
-                        &left_promoted,
+                        left_type,
                         Type::Primitive(
                             PrimitiveType::Int | PrimitiveType::Float | PrimitiveType::Str
                         )
-                    ) && promoted_type.is_some()
-                    {
+                    ) {
                         Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
                     } else {
                         None
                     }
                 }
                 BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
-                    if matches!(left_type, Type::Primitive(PrimitiveType::Bool)) {
+                    if matches!(left_type, Type::Primitive(PrimitiveType::Bool))
+                        && matches!(right_type, Type::Primitive(PrimitiveType::Bool))
+                    {
                         Some(Type::Primitive(PrimitiveType::Bool))
                     } else {
                         None

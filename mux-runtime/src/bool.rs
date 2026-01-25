@@ -21,7 +21,6 @@ impl fmt::Display for Bool {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_bool_to_string(b: i32) -> *mut c_char {
-    eprintln!("mux_bool_to_string called with b: {}", b);
     let s = format!("{}", Bool(b != 0));
     CString::new(s).unwrap().into_raw()
 }
