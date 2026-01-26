@@ -14,7 +14,6 @@ func name<T>(T s) returns string {
     return "hi im " + s.to_string()
 }
 
-/*
 class Stack<T> {
     list<T> items
     func push(T item) returns void { items.push_back(item) }
@@ -50,7 +49,6 @@ auto test = Stack<int>.from([1,2,3])
 println("instantiated stack")
 println("stack has: " + test.items.to_string())
 println(test.to_string())
-*/
 
 println("max of 1 and 2 is: " + max(1, 2).to_string())
 println("max of -1 and -2 is: " + max(-1, -2).to_string())
