@@ -1552,9 +1552,11 @@ impl<'a> CodeGenerator<'a> {
         }
 
         // For specialized methods (name contains $), wrap all parameters in pointers
-        // This ensures uniform calling convention: all method parameters are pointers
+        // BUT: only for instance methods, not static methods
+        // Static methods should use concrete types after specialization
         let is_specialized = func.name.contains('$');
-        if is_specialized {
+        let is_static = func.is_common;
+        if is_specialized && !is_static {
             let ptr_type = self.context.ptr_type(AddressSpace::default());
             param_types = param_types
                 .into_iter()
@@ -2697,6 +2699,24 @@ impl<'a> CodeGenerator<'a> {
                                             )?,
                                         };
                                         self.generic_context = Some(context);
+
+                                        // Save variables and current builder state before generating specialized methods
+                                        let saved_variables = self.variables.clone();
+                                        let saved_insert_block = self.builder.get_insert_block();
+
+                                        // Generate specialized methods for this class variant if not already generated
+                                        if !resolved_type_args.is_empty() {
+                                            self.generate_specialized_methods(
+                                                class_name,
+                                                &resolved_type_args,
+                                            )?;
+                                        }
+
+                                        // Restore variables and builder state after generating specialized methods
+                                        self.variables = saved_variables;
+                                        if let Some(block) = saved_insert_block {
+                                            self.builder.position_at_end(block);
+                                        }
 
                                         // Generate static method call - prioritize specialized methods
                                         let mut call_args = vec![];
@@ -3878,10 +3898,27 @@ impl<'a> CodeGenerator<'a> {
                         ResolvedType::Primitive(PrimitiveType::Bool) => {
                             // For bool, unbox if necessary and return i1
                             if value.is_int_value() {
-                                // Already raw bool (i1)
-                                self.builder
-                                    .build_return(Some(&value))
-                                    .map_err(|e| e.to_string())?;
+                                let int_val = value.into_int_value();
+                                // Check if we need to truncate i32/i64 to i1
+                                if int_val.get_type().get_bit_width() == 1 {
+                                    // Already i1, return directly
+                                    self.builder
+                                        .build_return(Some(&value))
+                                        .map_err(|e| e.to_string())?;
+                                } else {
+                                    // Truncate i32/i64 to i1
+                                    let bool_val = self
+                                        .builder
+                                        .build_int_truncate(
+                                            int_val,
+                                            self.context.bool_type(),
+                                            "int_to_i1",
+                                        )
+                                        .map_err(|e| e.to_string())?;
+                                    self.builder
+                                        .build_return(Some(&bool_val))
+                                        .map_err(|e| e.to_string())?;
+                                }
                             } else if value.is_pointer_value() {
                                 // Extract from boxed value
                                 let ptr = value.into_pointer_value();
@@ -6676,17 +6713,9 @@ impl<'a> CodeGenerator<'a> {
                 .left()
                 .ok_or("Call returned no value")?;
             println!("DEBUG: Raw bool extracted: {:?}", result);
-            // Result is already i32, convert to i64 for LLVM compatibility
-            let extended = self
-                .builder
-                .build_int_z_extend(
-                    result.into_int_value(),
-                    self.context.i64_type(),
-                    "i32_to_i64",
-                )
-                .map_err(|e| e.to_string())?;
-            println!("DEBUG: Extended i32 to i64: {:?}", extended);
-            Ok(extended)
+            // Return i32 from the runtime function directly
+            // Callers should handle conversion to i1 if needed for return types
+            Ok(result.into_int_value())
         } else {
             Err("Expected bool value or pointer".to_string())
         }
@@ -6735,7 +6764,17 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         field_ptr: PointerValue<'a>,
         field_type: &Type,
+        is_generic_param: bool,
     ) -> Result<(), String> {
+        // Generic parameter fields are boxed, initialize as null pointer
+        if is_generic_param {
+            let null_ptr = self.context.ptr_type(AddressSpace::default()).const_null();
+            self.builder
+                .build_store(field_ptr, null_ptr)
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+
         let resolved_type = self.resolve_type(field_type)?;
 
         match resolved_type {
@@ -7259,7 +7298,7 @@ impl<'a> CodeGenerator<'a> {
 
                 // Convert TypeNode to Type for resolution
                 let field_type = self.type_node_to_type(&field.type_);
-                self.initialize_field_by_type(field_ptr, &field_type)?;
+                self.initialize_field_by_type(field_ptr, &field_type, field.is_generic_param)?;
             }
         }
 

@@ -1,0 +1,26 @@
+// Simple generic class test
+class Box<T> {
+    T value
+    
+    func get<T>() returns T {
+        return self.value
+    }
+    
+    func set<T>(T new_value) returns void {
+        self.value = new_value
+    }
+    
+    func to_string() returns string {
+        return "Box with: " + self.value.to_string()
+    }
+}
+
+auto int_box = Box<int>.new()
+int_box.set(42)
+println(int_box.to_string())
+
+auto string_box = Box<string>.new()
+string_box.set("hello")
+println(string_box.to_string())
+
+println("Generic class test completed")

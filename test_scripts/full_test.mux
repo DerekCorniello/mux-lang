@@ -16,10 +16,10 @@ class Circle is Drawable, ShapeLike {
 
 class Stack<T> {
     list<T> items
-    func push(T item) returns void { items.push_back(item) }
+    func push(T item) returns void { self.items.push_back(item) }
     func pop() returns Optional<T> {
-        if items.is_empty() { return None }
-        return items.pop_back()
+        if self.items.is_empty() { return None }
+        return self.items.pop_back()
     }
 }
 

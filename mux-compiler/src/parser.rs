@@ -439,9 +439,11 @@ impl<'a> Parser<'a> {
                 TokenType::Id(_) => {
                     let field_type = self.parse_type()?;
                     let field_name = self.consume_identifier("Expected field name")?;
+                    let is_generic_param = Self::is_field_generic_param(&field_type, &type_params);
                     fields.push(Field {
                         name: field_name,
                         type_: field_type,
+                        is_generic_param,
                     });
                 }
                 TokenType::NewLine => {
@@ -2325,6 +2327,25 @@ impl<'a> Parser<'a> {
         };
         Ok(precedence)
     }
+
+    /// Check if a field type is a direct generic parameter (e.g., T, U, not List<T>)
+    fn is_field_generic_param(
+        field_type: &TypeNode,
+        type_param_names: &[(String, Vec<TraitBound>)],
+    ) -> bool {
+        match &field_type.kind {
+            TypeKind::Named(name, type_args) => {
+                // A field is a generic parameter if:
+                // 1. It has no type arguments (e.g., T not T<int>)
+                // 2. Its name matches a type parameter (e.g., T or U)
+                type_args.is_empty()
+                    && type_param_names
+                        .iter()
+                        .any(|(param_name, _)| param_name == name)
+            }
+            _ => false,
+        }
+    }
 }
 
 impl std::error::Error for ParserError {}
@@ -2721,6 +2742,7 @@ pub struct Param {
 pub struct Field {
     pub name: String,
     pub type_: TypeNode,
+    pub is_generic_param: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
