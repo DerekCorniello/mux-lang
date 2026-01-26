@@ -672,25 +672,12 @@ impl<'a> CodeGenerator<'a> {
             std::collections::HashMap<String, MethodSig>,
         >,
     ) -> Result<(), String> {
-        println!("Generating vtables for class: {}", class_name);
         for (interface_name, interface_methods) in interfaces {
             // println!("  Interface: {}", interface_name);
             let mut vtable_values = Vec::new();
             for method_name in interface_methods.keys() {
                 let class_method_name = format!("{}.{}", class_name, method_name);
-                println!(
-                    "    Method: {} -> looking for {}",
-                    method_name, class_method_name
-                );
                 let func = self.functions.get(&class_method_name).ok_or_else(|| {
-                    println!(
-                        "    ERROR: Method {} not found in functions map",
-                        class_method_name
-                    );
-                    println!(
-                        "    Available functions: {:?}",
-                        self.functions.keys().collect::<Vec<_>>()
-                    );
                     format!(
                         "Class {} does not implement method {} for interface {}",
                         class_name, method_name, interface_name
@@ -1411,11 +1398,6 @@ impl<'a> CodeGenerator<'a> {
                 // Generic functions will be declared when instantiated
                 if func.type_params.is_empty() {
                     self.declare_function(func)?;
-                } else {
-                    eprintln!(
-                        "DEBUG: Skipping declaration of generic function '{}'",
-                        func.name
-                    );
                 }
             }
         }
@@ -1425,7 +1407,6 @@ impl<'a> CodeGenerator<'a> {
             if let AstNode::Class { name, methods, .. } = node {
                 for method in methods {
                     let prefixed_name = format!("{}.{}", name, method.name);
-                    println!("Declaring class method: {}", prefixed_name);
                     let mut method_copy = method.clone();
                     method_copy.name = prefixed_name;
                     self.declare_function(&method_copy)?;
@@ -1466,11 +1447,6 @@ impl<'a> CodeGenerator<'a> {
                     // Generic functions will be generated when instantiated
                     if func.type_params.is_empty() {
                         self.generate_function(func)?;
-                    } else {
-                        eprintln!(
-                            "DEBUG: Skipping generation of generic function '{}'",
-                            func.name
-                        );
                     }
                 }
                 AstNode::Statement(stmt) => {
@@ -1494,7 +1470,6 @@ impl<'a> CodeGenerator<'a> {
                     // Generate non-generic class methods, OR
                     // Generate static methods with no type parameters that DON'T use class type params
                     if type_params.is_empty() {
-                        println!("Generating class method: {}", prefixed_name);
                         let mut method_copy = method.clone();
                         method_copy.name = prefixed_name;
                         self.generate_function(&method_copy)?;
@@ -1506,16 +1481,9 @@ impl<'a> CodeGenerator<'a> {
                             && !Self::method_uses_type_params(method, &class_type_param_names)
                         {
                             // Static method with no type params and doesn't use class type params - can generate once
-                            println!("Generating class method: {}", prefixed_name);
                             let mut method_copy = method.clone();
                             method_copy.name = prefixed_name;
                             self.generate_function(&method_copy)?;
-                        } else {
-                            eprintln!(
-                                "DEBUG: Skipping generation of generic class method '{}.{}' (class has {} type params, method is static={}, has {} type params, uses class type params={})",
-                                name, method.name, type_params.len(), method.is_common, method.type_params.len(), 
-                                Self::method_uses_type_params(method, &type_params.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>())
-                            );
                         }
                     }
                 }
@@ -1718,10 +1686,6 @@ impl<'a> CodeGenerator<'a> {
 
         // Generate function body
         for stmt in &func.body {
-            eprintln!(
-                "DEBUG: Generating statement in {}: {:?}",
-                func.name, stmt.kind
-            );
             self.generate_statement(stmt, Some(&function))?;
         }
 
@@ -2018,7 +1982,6 @@ impl<'a> CodeGenerator<'a> {
                                             .build_load(field_type, field_ptr, name)
                                             .map_err(|e| e.to_string())?;
 
-                                        println!("DEBUG: Self field access loaded: {:?}", loaded);
                                         // Return the boxed value directly (all fields are stored as Value*)
                                         return Ok(loaded);
                                     }
@@ -2120,10 +2083,6 @@ impl<'a> CodeGenerator<'a> {
                                             .lookup(type_name)
                                             .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
                                             .unwrap_or(false);
-                                        println!(
-                                            "DEBUG: Storing variable of type {} (is_enum: {})",
-                                            type_name, is_enum
-                                        );
                                         if is_enum {
                                             // For enum types, store struct value directly (don't box)
                                             right_val
@@ -2234,11 +2193,6 @@ impl<'a> CodeGenerator<'a> {
                                         self.variables.get(obj_name).map(|(_, _, t)| t)
                                     {
                                         if let Type::Named(class_name, _) = type_node {
-                                            println!("DEBUG: Field assignment - looking for class '{}' in field_map", class_name);
-                                            println!(
-                                                "DEBUG: Available classes in field_map: {:?}",
-                                                self.field_map.keys().collect::<Vec<_>>()
-                                            );
                                             if let Some(field_indices) =
                                                 self.field_map.get(class_name.as_str())
                                             {
@@ -2271,32 +2225,8 @@ impl<'a> CodeGenerator<'a> {
                                                             .map(|f| &f.type_);
 
                                                         // DEBUG: Log field assignment
-                                                        println!(
-                                                            "DEBUG: Assigning to field '{}' of class '{}'",
-                                                            field, class_name
-                                                        );
-                                                        println!(
-                                                            "DEBUG: Field type: {:?}",
-                                                            field_type_node
-                                                        );
-                                                        println!(
-                                                            "DEBUG: Value to store type: {:?}",
-                                                            right_val.get_type()
-                                                        );
 
                                                         // DEBUG: Log field assignment
-                                                        println!(
-                                                            "DEBUG: Assigning to field '{}' of class '{}'",
-                                                            field, class_name
-                                                        );
-                                                        println!(
-                                                            "DEBUG: Field type: {:?}",
-                                                            field_type_node
-                                                        );
-                                                        println!(
-                                                            "DEBUG: Right value type: {:?}",
-                                                            right_val.get_type()
-                                                        );
 
                                                         let value_to_store = if let Some(
                                                             field_type,
@@ -2314,36 +2244,19 @@ impl<'a> CodeGenerator<'a> {
                                                                        .unwrap_or(false);
                                                                 if is_enum {
                                                                     // For enum fields, store struct value directly
-                                                                    println!(
-                                                                        "DEBUG: Storing enum field directly (unboxed)"
-                                                                    );
                                                                     right_val
                                                                 } else {
                                                                     // For other fields, box the value
-                                                                    println!(
-                                                                        "DEBUG: Boxing value for field storage"
-                                                                    );
                                                                     self.box_value(right_val).into()
                                                                 }
                                                             } else {
                                                                 // For non-named types, box the value
-                                                                println!(
-                                                                    "DEBUG: Boxing non-named type value for field storage"
-                                                                );
                                                                 self.box_value(right_val).into()
                                                             }
                                                         } else {
                                                             // Fallback: box the value
-                                                            println!(
-                                                                "DEBUG: No field type found, boxing value for field storage"
-                                                            );
                                                             self.box_value(right_val).into()
                                                         };
-
-                                                        println!(
-                                                            "DEBUG: Value to store type: {:?}",
-                                                            value_to_store.get_type()
-                                                        );
 
                                                         self.builder
                                                             .build_store(field_ptr, value_to_store)
@@ -2487,24 +2400,8 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             ExpressionKind::Call { func, args } => {
-                if let ExpressionKind::Identifier(name) = &func.kind {
-                    eprintln!(
-                        "DEBUG: Function call to '{}' with {} args",
-                        name,
-                        args.len()
-                    );
-                }
+                if let ExpressionKind::Identifier(_name) = &func.kind {}
                 if let ExpressionKind::FieldAccess { expr, field } = &func.kind {
-                    eprintln!(
-                        "DEBUG: Method call to '{}.{}' with {} args",
-                        if let ExpressionKind::Identifier(id) = &expr.kind {
-                            id
-                        } else {
-                            "other"
-                        },
-                        field,
-                        args.len()
-                    );
                     // Special case: method calls on 'self' (keep existing logic)
                     if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                         if obj_name == "self" {
@@ -2568,10 +2465,6 @@ impl<'a> CodeGenerator<'a> {
                             if let Some((_, _, var_type)) = self.variables.get(name) {
                                 // This is an instance method call on a variable
                                 let var_type_clone = var_type.clone();
-                                println!(
-                                    "DEBUG: Found variable '{}' with type '{:?}', looking for method '{}'",
-                                    name, var_type_clone, field
-                                );
                                 let obj_value = self.generate_expression(expr)?;
                                 return self.generate_method_call(
                                     obj_value,
@@ -2591,10 +2484,6 @@ impl<'a> CodeGenerator<'a> {
                                                     field, name
                                                 ));
                                             }
-                                            println!(
-                                                "DEBUG: Found class '{}' with method '{}'",
-                                                name, field
-                                            );
                                             // Generate static method call (no self parameter)
                                             let mut call_args = vec![];
                                             for arg in args {
@@ -2654,21 +2543,13 @@ impl<'a> CodeGenerator<'a> {
                         }
                         ExpressionKind::GenericType(class_name, type_args) => {
                             // DEBUG: Log the raw type arguments
-                            println!(
-                                "DEBUG: GenericType {} with raw type_args: {:?}",
-                                class_name, type_args
-                            );
-                            for (i, arg) in type_args.iter().enumerate() {
-                                println!("DEBUG:   type_arg[{}]: {:?}", i, arg);
-                            }
+                            for _arg in type_args.iter() {}
 
                             // Convert type arguments to Type
                             let resolved_type_args = type_args
                                 .iter()
                                 .map(|arg| self.type_node_to_type(arg))
                                 .collect::<Vec<_>>();
-
-                            println!("DEBUG: Resolved type_args: {:?}", resolved_type_args);
 
                             // Check if this is a constructor call
                             if field == "new" {
@@ -2720,12 +2601,8 @@ impl<'a> CodeGenerator<'a> {
 
                                         // Generate static method call - prioritize specialized methods
                                         let mut call_args = vec![];
-                                        for (i, arg) in args.iter().enumerate() {
+                                        for arg in args.iter() {
                                             let arg_val = self.generate_expression(arg)?;
-                                            println!(
-                                                "DEBUG: Static method arg {}: {:?}",
-                                                i, arg_val
-                                            );
                                             call_args.push(arg_val.into());
                                         }
 
@@ -2741,16 +2618,8 @@ impl<'a> CodeGenerator<'a> {
                                             .get_function(&specialized_method_name)
                                             .is_some()
                                         {
-                                            println!(
-                                                "DEBUG: Using specialized static method: {}",
-                                                specialized_method_name
-                                            );
                                             specialized_method_name
                                         } else {
-                                            println!(
-                                                "DEBUG: Using generic static method: {}.{}",
-                                                class_name, field
-                                            );
                                             format!("{}.{}", class_name, field)
                                         };
 
@@ -3024,18 +2893,8 @@ impl<'a> CodeGenerator<'a> {
                                     };
                                 } else {
                                     // Not a function pointer, try global function lookup
-                                    eprintln!("DEBUG: Looking up function '{}' in module", name);
                                     if let Some(func) = self.module.get_function(name) {
-                                        eprintln!(
-                                            "DEBUG: Found function '{}' in module, treating as regular function",
-                                            name
-                                        );
                                         // Print some info about the found function
-                                        eprintln!(
-                                            "DEBUG: Function '{}' param count: {}",
-                                            name,
-                                            func.get_params().len()
-                                        );
                                         let mut call_args = vec![];
                                         for arg in args {
                                             call_args.push(self.generate_expression(arg)?.into());
@@ -3058,20 +2917,10 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             } else {
                                 // Check if this is a generic function that needs instantiation
-                                eprintln!("DEBUG: Checking if '{}' is a generic function", name);
                                 if let Some(func_symbol) = self.analyzer.symbol_table().lookup(name)
                                 {
-                                    eprintln!(
-                                        "DEBUG: Found symbol for '{}': {:?}",
-                                        name, func_symbol.kind
-                                    );
                                     if let SymbolKind::Function = func_symbol.kind {
                                         if let Some(func_node) = self.function_nodes.get(name) {
-                                            eprintln!(
-                                                "DEBUG: Found func_node for '{}', type_params: {}",
-                                                name,
-                                                func_node.type_params.len()
-                                            );
                                             // Check if this function has truly generic type parameters (not concrete types)
                                             let has_generic_params =
                                                 !func_node.type_params.is_empty()
@@ -3091,27 +2940,12 @@ impl<'a> CodeGenerator<'a> {
                                                     );
 
                                             if has_generic_params {
-                                                eprintln!(
-                                                    "DEBUG: '{}' has generic parameters, instantiating",
-                                                    name
-                                                );
                                                 // This is a generic function call - instantiate it
                                                 return self
                                                     .generate_generic_function_call(name, args);
-                                            } else {
-                                                eprintln!(
-                                                    "DEBUG: '{}' has concrete type parameters, treating as regular function",
-                                                    name
-                                                );
                                             }
-                                        } else {
-                                            eprintln!("DEBUG: No func_node found for '{}'", name);
                                         }
-                                    } else {
-                                        eprintln!("DEBUG: '{}' is not a function symbol", name);
                                     }
-                                } else {
-                                    eprintln!("DEBUG: No symbol found for '{}'", name);
                                 }
 
                                 // Not a generic function, try global function lookup
@@ -3301,14 +3135,10 @@ impl<'a> CodeGenerator<'a> {
                 Ok(self.generate_lambda_expression(params, body)?)
             }
             ExpressionKind::FieldAccess { expr, field } => {
-                println!("DEBUG: FieldAccess expr.kind: {:?}", &expr.kind);
-                println!("DEBUG: FieldAccess field: {}", field);
                 let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name == "self" {
                         // Special case: accessing field of 'self' - load actual object pointer from alloca first
-                        println!("DEBUG: Looking for 'self' in variables");
                         if let Some((self_ptr, _, _)) = self.variables.get("self") {
-                            println!("DEBUG: Found 'self' in variables");
                             let self_value_ptr = self
                                 .builder
                                 .build_load(
@@ -3340,7 +3170,6 @@ impl<'a> CodeGenerator<'a> {
                         self.generate_expression(expr)?.into_pointer_value()
                     }
                 } else {
-                    println!("DEBUG: Non-identifier expression, generating struct_ptr");
                     self.generate_expression(expr)?.into_pointer_value()
                 };
 
@@ -3368,15 +3197,7 @@ impl<'a> CodeGenerator<'a> {
 
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
-                        println!(
-                            "DEBUG: Found variable '{}' with type: {:?}",
-                            obj_name, type_node
-                        );
                         if let Type::Named(class_name, _) = type_node {
-                            println!(
-                                "DEBUG: Looking for field '{}' in class '{}'",
-                                field, class_name
-                            );
                             if let Some(field_indices) = self.field_map.get(class_name.as_str()) {
                                 if let Some(&index) = field_indices.get(field) {
                                     let struct_type = self
@@ -3390,10 +3211,6 @@ impl<'a> CodeGenerator<'a> {
                                             .map_err(|e| e.to_string())?;
 
                                         // DEBUG: Log field access
-                                        println!(
-                                            "DEBUG: Accessing field '{}' from class '{}'",
-                                            field, class_name
-                                        );
 
                                         // Check if this field is an enum type
                                         let field_types = self
@@ -3402,20 +3219,12 @@ impl<'a> CodeGenerator<'a> {
                                             .ok_or("Field types not found for class")?;
                                         if index < field_types.len() {
                                             let field_type = field_types[index];
-                                            println!(
-                                                "DEBUG: Field '{}' has LLVM type: {:?}",
-                                                field, field_type
-                                            );
 
                                             // Check if field type is a struct (enum)
                                             if let BasicTypeEnum::StructType(struct_type) =
                                                 field_type
                                             {
                                                 // For enum fields: load as struct value
-                                                println!(
-                                                    "DEBUG: Loading enum field {} as struct value",
-                                                    field
-                                                );
                                                 let loaded = self
                                                     .builder
                                                     .build_load(struct_type, field_ptr, field)
@@ -3425,17 +3234,8 @@ impl<'a> CodeGenerator<'a> {
                                         }
                                         // For non-enum fields: check if it's a generic field
                                         let field_type_node = &field_types[index];
-                                        println!(
-                                            "DEBUG: Field type node comparison: {:?} vs {:?}",
-                                            field_type_node,
-                                            BasicTypeEnum::IntType(self.context.i64_type())
-                                        );
                                         if *field_type_node == self.context.i64_type().into() {
                                             // This might be a generic field (T), load as pointer (boxed value)
-                                            println!(
-                                                "DEBUG: Loading generic field '{}' as pointer (boxed value)",
-                                                field
-                                            );
                                             let loaded = self
                                                 .builder
                                                 .build_load(
@@ -3444,10 +3244,6 @@ impl<'a> CodeGenerator<'a> {
                                                     field,
                                                 )
                                                 .map_err(|e| e.to_string())?;
-                                            println!(
-                                                "DEBUG: Loaded generic field '{}' as pointer: {:?}",
-                                                field, loaded
-                                            );
                                             return Ok(loaded);
                                         } else {
                                             // Regular non-enum field
@@ -3464,7 +3260,6 @@ impl<'a> CodeGenerator<'a> {
                                                 .analyzer
                                                 .resolve_type(&field_def.type_)
                                                 .map_err(|e| e.to_string())?;
-                                            println!("DEBUG: Specialized method field '{}' resolved to type: {:?}", field, resolved_field_type);
 
                                             // Load the field value (all fields stored as Value*)
                                             let loaded = self
@@ -3494,7 +3289,6 @@ impl<'a> CodeGenerator<'a> {
                                                         if let Some(concrete_type) =
                                                             context.type_params.get(name)
                                                         {
-                                                            println!("DEBUG: Found substituted generic type {} -> {:?}", name, concrete_type);
                                                             // Recursively handle the concrete type
                                                             match concrete_type {
                                                                 Type::Primitive(
@@ -3540,7 +3334,6 @@ impl<'a> CodeGenerator<'a> {
                             }
                         }
                     } else if let Some((_, _, type_node)) = self.variables.get(obj_name) {
-                        println!("DEBUG: Variable type node: {:?}", type_node);
                         match type_node {
                             Type::Primitive(PrimitiveType::Int) if field == "to_string" => {
                                 let ptr = self.generate_expression(expr)?;
@@ -3568,7 +3361,6 @@ impl<'a> CodeGenerator<'a> {
                             }
                             Type::Primitive(PrimitiveType::Float) if field == "to_string" => {
                                 let float_val = self.generate_expression(expr)?;
-                                eprintln!("DEBUG: Float value generated: {:?}", float_val);
                                 // Call mux_float_to_string directly on the raw float
                                 let func = self
                                     .module
@@ -3578,7 +3370,6 @@ impl<'a> CodeGenerator<'a> {
                                     .builder
                                     .build_call(func, &[float_val.into()], "float_to_str")
                                     .map_err(|e| e.to_string())?;
-                                eprintln!("DEBUG: mux_float_to_string call result: {:?}", call);
                                 let func_new = self
                                     .module
                                     .get_function("mux_new_string_from_cstr")
@@ -3591,10 +3382,6 @@ impl<'a> CodeGenerator<'a> {
                                         "new_str",
                                     )
                                     .map_err(|e| e.to_string())?;
-                                eprintln!(
-                                    "DEBUG: Final result: {:?}",
-                                    call2.try_as_basic_value().left().unwrap()
-                                );
                                 return Ok(call2.try_as_basic_value().left().unwrap());
                             }
                             Type::Primitive(PrimitiveType::Bool) if field == "to_string" => {
@@ -3759,9 +3546,7 @@ impl<'a> CodeGenerator<'a> {
                     self.variables
                         .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
                 } else {
-                    eprintln!("DEBUG: Boxing value for variable '{}' (AutoDecl)", name);
                     let boxed = self.box_value(value);
-                    eprintln!("DEBUG: Boxed value created for '{}' (AutoDecl)", name);
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
                     let alloca = self
                         .builder
@@ -3770,10 +3555,6 @@ impl<'a> CodeGenerator<'a> {
                     self.builder
                         .build_store(alloca, boxed)
                         .map_err(|e| e.to_string())?;
-                    eprintln!(
-                        "DEBUG: Stored boxed value in variable '{}' (AutoDecl)",
-                        name
-                    );
                     self.variables.insert(
                         name.clone(),
                         (
@@ -3787,19 +3568,12 @@ impl<'a> CodeGenerator<'a> {
             StatementKind::TypedDecl(name, type_node, expr) => {
                 let var_type = self.llvm_type_from_mux_type(type_node)?;
                 let value = self.generate_expression(expr)?;
-                eprintln!(
-                    "DEBUG: Variable '{}' assignment - generated value type: struct={}, pointer={}",
-                    name,
-                    value.is_struct_value(),
-                    value.is_pointer_value()
-                );
                 let symbol = self
                     .analyzer
                     .symbol_table()
                     .lookup(name)
                     .ok_or("Symbol not found")?;
                 let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-                eprintln!("DEBUG: Variable '{}' type: {:?}", name, resolved_type);
                 if value.is_struct_value() {
                     let alloca = self
                         .builder
@@ -3811,9 +3585,7 @@ impl<'a> CodeGenerator<'a> {
                     self.variables
                         .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
                 } else {
-                    eprintln!("DEBUG: Boxing value for variable '{}'", name);
                     let boxed = self.box_value(value);
-                    eprintln!("DEBUG: Boxed value created for '{}'", name);
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
                     let alloca = self
                         .builder
@@ -3822,7 +3594,6 @@ impl<'a> CodeGenerator<'a> {
                     self.builder
                         .build_store(alloca, boxed)
                         .map_err(|e| e.to_string())?;
-                    eprintln!("DEBUG: Stored boxed value in variable '{}'", name);
                     self.variables.insert(
                         name.clone(),
                         (
@@ -3952,13 +3723,10 @@ impl<'a> CodeGenerator<'a> {
                         ResolvedType::List(_) => {
                             // For list types, return the wrapped Value* directly
                             // The function signature should expect wrapped pointers for lists
-                            eprintln!("DEBUG: Processing list return statement");
                             if value.is_pointer_value() {
-                                eprintln!("DEBUG: Returning wrapped Value* for list");
                                 self.builder
                                     .build_return(Some(&value))
                                     .map_err(|e| e.to_string())?;
-                                eprintln!("DEBUG: Return statement executed successfully");
                             } else {
                                 return Err("Expected pointer value for list return".to_string());
                             }
@@ -4313,12 +4081,9 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?;
 
                     // Execute body
-                    eprintln!("DEBUG: Executing for loop body statements");
                     for stmt in body {
-                        eprintln!("DEBUG: Executing statement in for loop body");
                         self.generate_statement(stmt, Some(function))?;
                     }
-                    eprintln!("DEBUG: Finished executing for loop body");
 
                     // Increment index
                     let one = self.context.i64_type().const_int(1, false);
@@ -4927,16 +4692,9 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             StatementKind::Expression(expr) => {
-                if let ExpressionKind::Identifier(name) = &expr.kind {
-                    eprintln!("DEBUG: Expression statement for identifier: {}", name);
-                } else if let ExpressionKind::Call { func, args } = &expr.kind {
-                    if let ExpressionKind::Identifier(name) = &func.kind {
-                        eprintln!(
-                            "DEBUG: Expression statement function call: '{}' with {} args",
-                            name,
-                            args.len()
-                        );
-                    }
+                if let ExpressionKind::Identifier(_name) = &expr.kind {
+                } else if let ExpressionKind::Call { func, args: _args } = &expr.kind {
+                    if let ExpressionKind::Identifier(_name) = &func.kind {}
                 }
                 self.generate_expression(expr)?;
             }
@@ -4981,13 +4739,8 @@ impl<'a> CodeGenerator<'a> {
                             self.create_specialized_method_name(name, type_args, method_name);
                         let method_func_name =
                             if self.module.get_function(&specialized_method_name).is_some() {
-                                println!(
-                                    "DEBUG: Using specialized method: {}",
-                                    specialized_method_name
-                                );
                                 specialized_method_name
                             } else {
-                                println!("DEBUG: Using generic method: {}.{}", name, method_name);
                                 format!("{}.{}", name, method_name)
                             };
 
@@ -5166,7 +4919,6 @@ impl<'a> CodeGenerator<'a> {
             },
             PrimitiveType::Bool => match method_name {
                 "to_string" => {
-                    eprintln!("DEBUG: Compiling bool.to_string() method call");
                     let bool_value: BasicValueEnum<'a>;
                     if obj_value.is_int_value() {
                         // Already a primitive boolean (i1), convert to i32 for mux_bool_to_string
@@ -5242,7 +4994,6 @@ impl<'a> CodeGenerator<'a> {
             },
             PrimitiveType::Char => match method_name {
                 "to_string" => {
-                    eprintln!("DEBUG: Using direct float to_string in primitive method call");
                     let func = self
                         .module
                         .get_function("mux_float_to_string")
@@ -5264,10 +5015,8 @@ impl<'a> CodeGenerator<'a> {
                             "new_str",
                         )
                         .map_err(|e| e.to_string())?;
-                    eprintln!("DEBUG: Float to_string completed successfully");
                     // mux_new_string_from_cstr returns a pointer
                     let result = call2.try_as_basic_value().left().unwrap();
-                    eprintln!("DEBUG: Float to_string returning result: {:?}", result);
                     Ok(result)
                 }
                 _ => Err(format!("Method {} not implemented for char", method_name)),
@@ -5325,20 +5074,16 @@ impl<'a> CodeGenerator<'a> {
                 Ok(boxed_call.try_as_basic_value().left().unwrap())
             }
             "push_back" => {
-                eprintln!("DEBUG: Calling push_back on list");
                 if args.len() != 1 {
                     return Err("push_back() method takes exactly 1 argument".to_string());
                 }
                 let elem_val = self.generate_expression(&args[0])?;
-                eprintln!("DEBUG: Generated element value for push_back");
                 let elem_ptr = self.box_value(elem_val);
-                eprintln!("DEBUG: Boxed element for push_back");
 
                 self.generate_runtime_call(
                     "mux_list_push_back_value",
                     &[obj_value.into(), elem_ptr.into()],
                 );
-                eprintln!("DEBUG: Called mux_list_push_back_value");
                 Ok(self.context.i32_type().const_int(0, false).into()) // Return dummy value
             }
             "pop_back" => {
@@ -5871,16 +5616,13 @@ impl<'a> CodeGenerator<'a> {
                 Ok(val.into())
             }
             LiteralNode::Boolean(b) => {
-                println!("DEBUG: Generating boolean literal: {}", b);
                 let val = self
                     .context
                     .i32_type()
                     .const_int(if *b { 1 } else { 0 }, false);
-                println!("DEBUG: Boolean LLVM value: {:?}", val);
                 let bool_val = self
                     .generate_runtime_call("mux_bool_value", &[val.into()])
                     .unwrap();
-                println!("DEBUG: Boxed boolean value: {:?}", bool_val);
                 Ok(bool_val)
             }
             LiteralNode::String(s) => {
@@ -5932,7 +5674,6 @@ impl<'a> CodeGenerator<'a> {
                 // For now, assume string concatenation if either operand is a pointer (boxed value)
                 // This is a simplified check - in a real implementation, we'd check types
                 if left.is_pointer_value() || right.is_pointer_value() {
-                    println!("DEBUG: Using string concatenation (pointer detected)");
                     // Use string concatenation
                     let left_ptr = if left.is_pointer_value() {
                         left.into_pointer_value()
@@ -6626,13 +6367,11 @@ impl<'a> CodeGenerator<'a> {
                 .unwrap();
             call.into_pointer_value()
         } else if val.is_pointer_value() {
-            println!("DEBUG: Value is already a pointer, returning as-is");
             // Assume string or already boxed Value (from Map/Set/List literals)
             // Map/Set/List literals already return *mut Value pointers, so just return as-is
             val.into_pointer_value()
         } else {
             // For bool
-            println!("DEBUG: Boxing bool value");
             let call = self
                 .generate_runtime_call("mux_bool_value", &[val.into()])
                 .unwrap();
@@ -6690,15 +6429,9 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         val: BasicValueEnum<'a>,
     ) -> Result<inkwell::values::IntValue<'a>, String> {
-        println!(
-            "DEBUG: get_raw_bool_value called with value type: {:?}",
-            val.get_type()
-        );
         if val.is_int_value() {
-            println!("DEBUG: Value is already int, returning as-is");
             Ok(val.into_int_value())
         } else if val.is_pointer_value() {
-            println!("DEBUG: Extracting bool from pointer");
             // Use safe runtime function to extract bool
             let ptr = val.into_pointer_value();
             let get_bool_fn = self
@@ -6712,7 +6445,6 @@ impl<'a> CodeGenerator<'a> {
                 .try_as_basic_value()
                 .left()
                 .ok_or("Call returned no value")?;
-            println!("DEBUG: Raw bool extracted: {:?}", result);
             // Return i32 from the runtime function directly
             // Callers should handle conversion to i1 if needed for return types
             Ok(result.into_int_value())
@@ -7016,11 +6748,6 @@ impl<'a> CodeGenerator<'a> {
         class_name: &str,
         type_args: &[Type],
     ) -> Result<(), String> {
-        println!(
-            "DEBUG: generate_specialized_methods called for class '{}' with {:?}",
-            class_name, type_args
-        );
-
         // Save the current builder position so we can restore it after generating specialized methods
         let saved_insert_block = self.builder.get_insert_block();
 
@@ -7036,8 +6763,6 @@ impl<'a> CodeGenerator<'a> {
         if self.generated_methods.contains_key(&variant_key) {
             return Ok(());
         }
-
-        println!("DEBUG: Generating specialized methods for {}", variant_key);
 
         // Mark this variant as being processed to prevent infinite recursion
         self.generated_methods.insert(variant_key.clone(), true);
@@ -7062,11 +6787,6 @@ impl<'a> CodeGenerator<'a> {
                 continue;
             }
 
-            println!(
-                "DEBUG: Generating specialized method: {}",
-                specialized_method_name
-            );
-
             // Get the original method AST node
             let original_method_name = if method_sig.is_static {
                 // Static methods are stored as "ClassName.method_name"
@@ -7076,19 +6796,8 @@ impl<'a> CodeGenerator<'a> {
                 format!("{}.{}", class_name, method_name)
             };
 
-            println!(
-                "DEBUG: Looking for method '{}' in function_nodes",
-                original_method_name
-            );
             if let Some(method_node) = self.function_nodes.get(&original_method_name) {
-                println!("DEBUG: Found method node for '{}'", original_method_name);
-                println!("DEBUG: Method has {} params", method_node.params.len());
-                for (i, param) in method_node.params.iter().enumerate() {
-                    println!(
-                        "DEBUG: Param[{}]: '{}' type: {:?}",
-                        i, param.name, param.type_
-                    );
-                }
+                for _param in method_node.params.iter() {}
                 // Clone the method and specialize it
                 let mut specialized_method = method_node.clone();
                 specialized_method.name = specialized_method_name.clone();
@@ -7098,20 +6807,12 @@ impl<'a> CodeGenerator<'a> {
                     .type_params
                     .iter()
                     .enumerate()
-                    .map(|(i, param)| (param.0.clone(), type_args[i].clone()))
+                    .map(|(_i, param)| (param.0.clone(), type_args[_i].clone()))
                     .collect::<HashMap<_, _>>();
 
                 // Substitute types in parameters and return type
                 for param in &mut specialized_method.params {
-                    println!(
-                        "DEBUG: Before substitution - param '{}' type: {:?}",
-                        param.name, param.type_
-                    );
                     param.type_ = self.substitute_types_in_type_node(&param.type_, &type_param_map);
-                    println!(
-                        "DEBUG: After substitution - param '{}' type: {:?}",
-                        param.name, param.type_
-                    );
                 }
                 specialized_method.return_type = self.substitute_types_in_type_node(
                     &specialized_method.return_type,
@@ -7160,26 +6861,13 @@ impl<'a> CodeGenerator<'a> {
         class_name: &str,
         type_args: &[Type],
     ) -> Result<HashMap<String, Type>, String> {
-        println!(
-            "DEBUG: Building type param map for class '{}' with {} type args",
-            class_name,
-            type_args.len()
-        );
         let mut type_params = HashMap::new();
 
         // Get the class symbol to find generic parameter names
         if let Some(class_symbol) = self.analyzer.symbol_table().lookup(class_name) {
-            println!(
-                "DEBUG: Found class symbol with {} type params",
-                class_symbol.type_params.len()
-            );
             if class_symbol.type_params.len() == type_args.len() {
                 for (i, param) in class_symbol.type_params.iter().enumerate() {
                     // param is (String, Vec<String>) - first element is the parameter name
-                    println!(
-                        "DEBUG: Mapping param '{}' to type {:?}",
-                        param.0, type_args[i]
-                    );
                     type_params.insert(param.0.clone(), type_args[i].clone());
                 }
             } else {
@@ -7192,27 +6880,18 @@ impl<'a> CodeGenerator<'a> {
             return Err(format!("Class {} not found", class_name));
         }
 
-        println!("DEBUG: Final type param map: {:?}", type_params);
         Ok(type_params)
     }
 
     fn generate_constructor_call(
         &mut self,
         class_name: &str,
-        args: &[ExpressionNode],
+        _args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
         // DEBUG: Log class construction
-        println!("DEBUG: Creating instance of class: {}", class_name);
         if let Some(fields) = self.classes.get(class_name) {
-            println!("DEBUG: Class {} has {} fields:", class_name, fields.len());
-            for (i, field) in fields.iter().enumerate() {
-                println!(
-                    "DEBUG:   Field {}: {} of type {:?}",
-                    i, field.name, field.type_.kind
-                );
-            }
+            for _field in fields.iter() {}
         }
-        println!("DEBUG: Constructor has {} arguments", args.len());
 
         // Get the class type from our type map
         let class_type = *self
@@ -7378,11 +7057,6 @@ impl<'a> CodeGenerator<'a> {
         func_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
-        eprintln!(
-            "DEBUG: generate_generic_function_call called for '{}' with {} args",
-            func_name,
-            args.len()
-        );
         // Get the generic function AST node
         let func_node = self
             .function_nodes
@@ -7407,8 +7081,6 @@ impl<'a> CodeGenerator<'a> {
             self.infer_types_from_signature(&param.type_, &arg_type, &mut type_map)?;
         }
 
-        eprintln!("DEBUG: Inferred type map: {:?}", type_map);
-
         // Convert to concrete types list in the order of type parameters
         let mut concrete_types = Vec::new();
         for (type_param_name, _) in &func_node.type_params {
@@ -7422,23 +7094,17 @@ impl<'a> CodeGenerator<'a> {
             }
         }
 
-        eprintln!("DEBUG: Concrete types: {:?}", concrete_types);
-
         // Create instantiation key
         let type_names: Vec<String> = concrete_types
             .iter()
             .map(|t| self.type_to_string(t))
             .collect();
         let instance_name = format!("{}_{}", func_name, type_names.join("_"));
-        eprintln!("DEBUG: Instance name: {}", instance_name);
 
         // Check if already instantiated
         if self.module.get_function(&instance_name).is_none() {
-            eprintln!("DEBUG: Instantiating generic function");
             // Instantiate the generic function
             self.instantiate_generic_function(func_name, &concrete_types, &instance_name)?;
-        } else {
-            eprintln!("DEBUG: Function already instantiated");
         }
 
         // Call the instantiated function
@@ -7446,7 +7112,6 @@ impl<'a> CodeGenerator<'a> {
             .module
             .get_function(&instance_name)
             .ok_or(format!("Instantiated function {} not found", instance_name))?;
-        eprintln!("DEBUG: Calling instantiated function");
 
         let mut call_args = vec![];
         for arg in args {
@@ -7458,7 +7123,6 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &call_args, "generic_func_call")
             .map_err(|e| e.to_string())?;
 
-        eprintln!("DEBUG: Generic function call completed");
         match call.try_as_basic_value().left() {
             Some(val) => Ok(val),
             None => Ok(self.context.i32_type().const_int(0, false).into()),
@@ -7471,11 +7135,6 @@ impl<'a> CodeGenerator<'a> {
         concrete_types: &[Type],
         instance_name: &str,
     ) -> Result<(), String> {
-        eprintln!(
-            "DEBUG: Instantiating '{}' to '{}'",
-            func_name, instance_name
-        );
-
         let func_node = self
             .function_nodes
             .get(func_name)
@@ -7485,7 +7144,6 @@ impl<'a> CodeGenerator<'a> {
         let mut type_map = std::collections::HashMap::new();
         for (i, type_param) in func_node.type_params.iter().enumerate() {
             if i < concrete_types.len() {
-                eprintln!("DEBUG: Mapping {} -> {:?}", type_param.0, concrete_types[i]);
                 type_map.insert(type_param.0.clone(), concrete_types[i].clone());
             }
         }
@@ -7494,27 +7152,13 @@ impl<'a> CodeGenerator<'a> {
         let mut substituted_func = func_node.clone();
         substituted_func.name = instance_name.to_string();
         substituted_func.type_params.clear(); // No longer generic
-        eprintln!(
-            "DEBUG: Created substituted function with {} params",
-            substituted_func.params.len()
-        );
 
         // Substitute types in parameters and return type
         for param in &mut substituted_func.params {
-            let old_type = param.type_.clone();
             param.type_ = self.substitute_types_in_type_node(&param.type_, &type_map);
-            eprintln!(
-                "DEBUG: Param '{}' type: {:?} -> {:?}",
-                param.name, old_type, param.type_
-            );
         }
-        let old_return = substituted_func.return_type.clone();
         substituted_func.return_type =
             self.substitute_types_in_type_node(&substituted_func.return_type, &type_map);
-        eprintln!(
-            "DEBUG: Return type: {:?} -> {:?}",
-            old_return, substituted_func.return_type
-        );
 
         // Substitute types in the function body
         let mut substituted_body = Vec::new();
@@ -7530,13 +7174,10 @@ impl<'a> CodeGenerator<'a> {
         let saved_builder_position = self.builder.get_insert_block();
 
         // Declare the instantiated function
-        eprintln!("DEBUG: Declaring instantiated function");
         self.declare_function(&substituted_func)?;
 
         // Generate the instantiated function
-        eprintln!("DEBUG: Generating instantiated function");
         self.generate_function(&substituted_func)?;
-        eprintln!("DEBUG: Instantiation completed");
 
         // Restore context (back to calling context)
         self.variables = saved_variables;
@@ -7757,17 +7398,12 @@ impl<'a> CodeGenerator<'a> {
         arg_type: &Type,
         type_map: &mut std::collections::HashMap<String, Type>,
     ) -> Result<(), String> {
-        eprintln!(
-            "DEBUG: infer_types_from_signature: param_type={:?}, arg_type={:?}",
-            param_type, arg_type
-        );
         match &param_type.kind {
             TypeKind::Named(name, type_args) => {
                 if type_args.is_empty() {
                     // This is a potential generic parameter or concrete type
                     if name.chars().next().unwrap_or(' ').is_uppercase() || name.len() <= 3 {
                         // Likely a generic parameter - infer it from the argument type
-                        eprintln!("DEBUG: Inferring generic param {} -> {:?}", name, arg_type);
                         if let Some(existing) = type_map.get(name) {
                             if existing != arg_type {
                                 return Err(format!(
