@@ -2,11 +2,11 @@
 class Box<T> {
     T value
     
-    func get() returns T {
+    func get<T>() returns T {
         return self.value
     }
     
-    func set(T new_value) returns void {
+    func set<T>(T new_value) returns void {
         self.value = new_value
     }
     
