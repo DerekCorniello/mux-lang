@@ -881,23 +881,6 @@ entry:
   ret ptr %obj_ptr
 }
 
-define void @"Stack$int.push"(ptr %0, ptr %1) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %item = alloca ptr, align 8
-  store ptr %1, ptr %item, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %items = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %items1 = load ptr, ptr %items, align 8
-  %item2 = load ptr, ptr %item, align 8
-  %get_int = call i64 @mux_value_get_int(ptr %item2)
-  %call = call ptr @mux_int_value(i64 %get_int)
-  call void @mux_list_push_back_value(ptr %items1, ptr %call)
-  ret void
-}
-
 define ptr @"Stack$int.pop"(ptr %0) {
 entry:
   %self = alloca ptr, align 8
@@ -925,6 +908,23 @@ if_merge_6:                                       ; preds = %if_else_6
   %items5 = load ptr, ptr %items4, align 8
   %list_pop_back = call ptr @mux_list_pop_back_value(ptr %items5)
   ret ptr %list_pop_back
+}
+
+define void @"Stack$int.push"(ptr %0, ptr %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %item = alloca ptr, align 8
+  store ptr %1, ptr %item, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %items = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %items1 = load ptr, ptr %items, align 8
+  %item2 = load ptr, ptr %item, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %item2)
+  %call = call ptr @mux_int_value(i64 %get_int)
+  call void @mux_list_push_back_value(ptr %items1, ptr %call)
+  ret void
 }
 
 define i64 @lambda_0(i64 %n) {

@@ -248,6 +248,18 @@ entry:
   ret void
 }
 
+define i64 @"Box$int.get"(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %value = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %value1 = load ptr, ptr %value, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %value1)
+  ret i64 %get_int
+}
+
 define ptr @"Box$int.to_string"(ptr %0) {
 entry:
   %self = alloca ptr, align 8
@@ -267,18 +279,6 @@ entry:
   ret ptr %from_string
 }
 
-define i64 @"Box$int.get"(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %value = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %value1 = load ptr, ptr %value, align 8
-  %get_int = call i64 @mux_value_get_int(ptr %value1)
-  ret i64 %get_int
-}
-
 define void @"Box$int.set"(ptr %0, ptr %1) {
 entry:
   %self = alloca ptr, align 8
@@ -293,6 +293,17 @@ entry:
   %call = call ptr @mux_int_value(i64 %get_int)
   store ptr %call, ptr %value, align 8
   ret void
+}
+
+define ptr @"Box$string.get"(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %value = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %value1 = load ptr, ptr %value, align 8
+  ret ptr %value1
 }
 
 define ptr @"Box$string.to_string"(ptr %0) {
@@ -311,17 +322,6 @@ entry:
   %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string2)
   %from_string = call ptr @mux_value_from_string(ptr %string_concat)
   ret ptr %from_string
-}
-
-define ptr @"Box$string.get"(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %value = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %value1 = load ptr, ptr %value, align 8
-  ret ptr %value1
 }
 
 define void @"Box$string.set"(ptr %0, ptr %1) {
