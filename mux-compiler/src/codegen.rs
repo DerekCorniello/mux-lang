@@ -38,6 +38,7 @@ pub struct CodeGenerator<'a> {
     current_function_return_type: Option<ResolvedType>,
     generic_context: Option<GenericContext>,
     context_stack: Vec<GenericContext>,
+    generated_methods: HashMap<String, bool>,
 }
 
 impl<'a> CodeGenerator<'a> {
@@ -579,6 +580,7 @@ impl<'a> CodeGenerator<'a> {
             current_function_return_type: None,
             generic_context: None,
             context_stack: Vec::new(),
+            generated_methods: HashMap::new(),
         }
     }
 
@@ -1357,6 +1359,44 @@ impl<'a> CodeGenerator<'a> {
         Ok(function.as_global_value().as_pointer_value().into())
     }
 
+    /// Check if a method's parameters or return type reference any of the given type parameters
+    fn method_uses_type_params(method: &FunctionNode, type_param_names: &[&str]) -> bool {
+        // Check parameter types
+        for param in &method.params {
+            if Self::type_node_contains_names(&param.type_, type_param_names) {
+                return true;
+            }
+        }
+        // Check return type
+        if Self::type_node_contains_names(&method.return_type, type_param_names) {
+            return true;
+        }
+        false
+    }
+
+    /// Check if a TypeNode contains any of the given names (for generic type parameters)
+    fn type_node_contains_names(type_node: &TypeNode, names: &[&str]) -> bool {
+        match &type_node.kind {
+            TypeKind::Named(n, args) => {
+                if names.contains(&n.as_str()) {
+                    return true;
+                }
+                for arg in args {
+                    if Self::type_node_contains_names(arg, names) {
+                        return true;
+                    }
+                }
+                false
+            }
+            TypeKind::List(inner) => Self::type_node_contains_names(inner, names),
+            TypeKind::Map(k, v) => {
+                Self::type_node_contains_names(k, names) || Self::type_node_contains_names(v, names)
+            }
+            TypeKind::Set(inner) => Self::type_node_contains_names(inner, names),
+            _ => false,
+        }
+    }
+
     pub fn generate(&mut self, nodes: &[AstNode]) -> Result<(), String> {
         // Zero pass: generate LLVM types for user-defined types
         self.generate_user_defined_types(nodes)?;
@@ -1442,13 +1482,42 @@ impl<'a> CodeGenerator<'a> {
 
         // Generate class methods with prefixed names
         for node in nodes {
-            if let AstNode::Class { name, methods, .. } = node {
+            if let AstNode::Class {
+                name,
+                methods,
+                type_params,
+                ..
+            } = node
+            {
                 for method in methods {
                     let prefixed_name = format!("{}.{}", name, method.name);
-                    println!("Generating class method: {}", prefixed_name);
-                    let mut method_copy = method.clone();
-                    method_copy.name = prefixed_name;
-                    self.generate_function(&method_copy)?;
+                    // Generate non-generic class methods, OR
+                    // Generate static methods with no type parameters that DON'T use class type params
+                    if type_params.is_empty() {
+                        println!("Generating class method: {}", prefixed_name);
+                        let mut method_copy = method.clone();
+                        method_copy.name = prefixed_name;
+                        self.generate_function(&method_copy)?;
+                    } else {
+                        let class_type_param_names: Vec<&str> =
+                            type_params.iter().map(|(p, _)| p.as_str()).collect();
+                        if method.is_common
+                            && method.type_params.is_empty()
+                            && !Self::method_uses_type_params(method, &class_type_param_names)
+                        {
+                            // Static method with no type params and doesn't use class type params - can generate once
+                            println!("Generating class method: {}", prefixed_name);
+                            let mut method_copy = method.clone();
+                            method_copy.name = prefixed_name;
+                            self.generate_function(&method_copy)?;
+                        } else {
+                            eprintln!(
+                                "DEBUG: Skipping generation of generic class method '{}.{}' (class has {} type params, method is static={}, has {} type params, uses class type params={})",
+                                name, method.name, type_params.len(), method.is_common, method.type_params.len(), 
+                                Self::method_uses_type_params(method, &type_params.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>())
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -1480,6 +1549,26 @@ impl<'a> CodeGenerator<'a> {
         let is_class_method = func.name.contains('.');
         if is_class_method && !func.is_common {
             param_types.insert(0, self.context.ptr_type(AddressSpace::default()).into());
+        }
+
+        // For specialized methods (name contains $), wrap all parameters in pointers
+        // This ensures uniform calling convention: all method parameters are pointers
+        let is_specialized = func.name.contains('$');
+        if is_specialized {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            param_types = param_types
+                .into_iter()
+                .enumerate()
+                .map(|(i, param_type)| {
+                    // Skip self parameter (index 0)
+                    if i == 0 && is_class_method && !func.is_common {
+                        param_type
+                    } else {
+                        // Wrap non-self parameters in pointers
+                        ptr_type.into()
+                    }
+                })
+                .collect();
         }
 
         let fn_type = if matches!(
@@ -1522,8 +1611,18 @@ impl<'a> CodeGenerator<'a> {
         let is_class_method = func.name.contains('.');
         let mut param_index = 0;
         if is_class_method && !func.is_common {
-            let class_name = func.name.split('.').next().unwrap();
-            let class_type = self.type_map.get(class_name).unwrap();
+            let class_name = func
+                .name
+                .split('.')
+                .next()
+                .or_else(|| {
+                    // Handle specialized method names like Box$int.to_string
+                    func.name.split('$').next()
+                })
+                .unwrap();
+            // For specialized methods like Box$int.to_string, we need just "Box"
+            let base_class_name = class_name.split('$').next().unwrap_or(class_name);
+            let class_type = self.type_map.get(base_class_name).unwrap();
             let arg = function.get_nth_param(param_index).unwrap();
             param_index += 1;
             // Set self as variable
@@ -1535,7 +1634,7 @@ impl<'a> CodeGenerator<'a> {
             self.builder
                 .build_store(alloca, arg)
                 .map_err(|e| e.to_string())?;
-            let self_type = Type::Named(class_name.to_string(), vec![]);
+            let self_type = Type::Named(base_class_name.to_string(), vec![]);
             self.variables
                 .insert("self".to_string(), (alloca, *class_type, self_type.clone()));
             // Also set current_self_type in the analyzer for type checking
@@ -2133,6 +2232,11 @@ impl<'a> CodeGenerator<'a> {
                                         self.variables.get(obj_name).map(|(_, _, t)| t)
                                     {
                                         if let Type::Named(class_name, _) = type_node {
+                                            println!("DEBUG: Field assignment - looking for class '{}' in field_map", class_name);
+                                            println!(
+                                                "DEBUG: Available classes in field_map: {:?}",
+                                                self.field_map.keys().collect::<Vec<_>>()
+                                            );
                                             if let Some(field_indices) =
                                                 self.field_map.get(class_name.as_str())
                                             {
@@ -2594,7 +2698,7 @@ impl<'a> CodeGenerator<'a> {
                                         };
                                         self.generic_context = Some(context);
 
-                                        // Generate static method call
+                                        // Generate static method call - prioritize specialized methods
                                         let mut call_args = vec![];
                                         for (i, arg) in args.iter().enumerate() {
                                             let arg_val = self.generate_expression(arg)?;
@@ -2604,13 +2708,43 @@ impl<'a> CodeGenerator<'a> {
                                             );
                                             call_args.push(arg_val.into());
                                         }
-                                        let function_name = format!("{}.{}", class_name, field);
+
+                                        // Try specialized method first
+                                        let specialized_method_name = self
+                                            .create_specialized_method_name(
+                                                class_name,
+                                                &resolved_type_args,
+                                                field,
+                                            );
+                                        let function_name = if self
+                                            .module
+                                            .get_function(&specialized_method_name)
+                                            .is_some()
+                                        {
+                                            println!(
+                                                "DEBUG: Using specialized static method: {}",
+                                                specialized_method_name
+                                            );
+                                            specialized_method_name
+                                        } else {
+                                            println!(
+                                                "DEBUG: Using generic static method: {}.{}",
+                                                class_name, field
+                                            );
+                                            format!("{}.{}", class_name, field)
+                                        };
+
                                         let call = self
                                             .builder
                                             .build_call(
-                                                self.module.get_function(&function_name).unwrap(),
+                                                self.module.get_function(&function_name).ok_or(
+                                                    format!("Method '{}' not found", function_name),
+                                                )?,
                                                 &call_args,
-                                                &format!("{}.{}_call", class_name, field),
+                                                &format!(
+                                                    "{}_call",
+                                                    function_name.replace('.', "_")
+                                                ),
                                             )
                                             .map_err(|e| e.to_string())?;
 
@@ -2872,7 +3006,10 @@ impl<'a> CodeGenerator<'a> {
                                     // Not a function pointer, try global function lookup
                                     eprintln!("DEBUG: Looking up function '{}' in module", name);
                                     if let Some(func) = self.module.get_function(name) {
-                                        eprintln!("DEBUG: Found function '{}' in module, treating as regular function", name);
+                                        eprintln!(
+                                            "DEBUG: Found function '{}' in module, treating as regular function",
+                                            name
+                                        );
                                         // Print some info about the found function
                                         eprintln!(
                                             "DEBUG: Function '{}' param count: {}",
@@ -3144,10 +3281,14 @@ impl<'a> CodeGenerator<'a> {
                 Ok(self.generate_lambda_expression(params, body)?)
             }
             ExpressionKind::FieldAccess { expr, field } => {
+                println!("DEBUG: FieldAccess expr.kind: {:?}", &expr.kind);
+                println!("DEBUG: FieldAccess field: {}", field);
                 let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name == "self" {
                         // Special case: accessing field of 'self' - load actual object pointer from alloca first
+                        println!("DEBUG: Looking for 'self' in variables");
                         if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                            println!("DEBUG: Found 'self' in variables");
                             let self_value_ptr = self
                                 .builder
                                 .build_load(
@@ -3179,6 +3320,7 @@ impl<'a> CodeGenerator<'a> {
                         self.generate_expression(expr)?.into_pointer_value()
                     }
                 } else {
+                    println!("DEBUG: Non-identifier expression, generating struct_ptr");
                     self.generate_expression(expr)?.into_pointer_value()
                 };
 
@@ -3206,7 +3348,15 @@ impl<'a> CodeGenerator<'a> {
 
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
+                        println!(
+                            "DEBUG: Found variable '{}' with type: {:?}",
+                            obj_name, type_node
+                        );
                         if let Type::Named(class_name, _) = type_node {
+                            println!(
+                                "DEBUG: Looking for field '{}' in class '{}'",
+                                field, class_name
+                            );
                             if let Some(field_indices) = self.field_map.get(class_name.as_str()) {
                                 if let Some(&index) = field_indices.get(field) {
                                     let struct_type = self
@@ -3294,6 +3444,7 @@ impl<'a> CodeGenerator<'a> {
                                                 .analyzer
                                                 .resolve_type(&field_def.type_)
                                                 .map_err(|e| e.to_string())?;
+                                            println!("DEBUG: Specialized method field '{}' resolved to type: {:?}", field, resolved_field_type);
 
                                             // Load the field value (all fields stored as Value*)
                                             let loaded = self
@@ -3316,6 +3467,48 @@ impl<'a> CodeGenerator<'a> {
                                                     let raw_bool =
                                                         self.get_raw_bool_value(loaded)?;
                                                     return Ok(raw_bool.into());
+                                                }
+                                                Type::Named(name, _type_args) => {
+                                                    // Check if this is a substituted generic type
+                                                    if let Some(context) = &self.generic_context {
+                                                        if let Some(concrete_type) =
+                                                            context.type_params.get(name)
+                                                        {
+                                                            println!("DEBUG: Found substituted generic type {} -> {:?}", name, concrete_type);
+                                                            // Recursively handle the concrete type
+                                                            match concrete_type {
+                                                                Type::Primitive(
+                                                                    PrimitiveType::Int,
+                                                                ) => {
+                                                                    let raw_int = self
+                                                                        .get_raw_int_value(
+                                                                            loaded,
+                                                                        )?;
+                                                                    return Ok(raw_int.into());
+                                                                }
+                                                                Type::Primitive(
+                                                                    PrimitiveType::Float,
+                                                                ) => {
+                                                                    let raw_float = self
+                                                                        .get_raw_float_value(
+                                                                            loaded,
+                                                                        )?;
+                                                                    return Ok(raw_float.into());
+                                                                }
+                                                                Type::Primitive(
+                                                                    PrimitiveType::Bool,
+                                                                ) => {
+                                                                    let raw_bool = self
+                                                                        .get_raw_bool_value(
+                                                                            loaded,
+                                                                        )?;
+                                                                    return Ok(raw_bool.into());
+                                                                }
+                                                                _ => {} // for other concrete types, continue with default handling
+                                                            }
+                                                        }
+                                                    }
+                                                    // If no generic context match, continue with default handling
                                                 }
                                                 _ => {} // for non-primitives, return the loaded pointer
                                             }
@@ -4736,7 +4929,7 @@ impl<'a> CodeGenerator<'a> {
             Type::List(_) => self.generate_list_method_call(obj_value, method_name, args),
             Type::Map(_, _) => self.generate_map_method_call(obj_value, method_name, args),
             Type::Set(_) => self.generate_set_method_call(obj_value, method_name, args),
-            Type::Named(name, _) => {
+            Type::Named(name, type_args) => {
                 if let Some(class) = self.analyzer.symbol_table().lookup(name) {
                     if let Some(method) = class.methods.get(method_name) {
                         if method.is_static {
@@ -4745,7 +4938,22 @@ impl<'a> CodeGenerator<'a> {
                                 method_name
                             ));
                         }
-                        // Generate instance method call
+
+                        // Generate instance method call - prioritize specialized methods
+                        let specialized_method_name =
+                            self.create_specialized_method_name(name, type_args, method_name);
+                        let method_func_name =
+                            if self.module.get_function(&specialized_method_name).is_some() {
+                                println!(
+                                    "DEBUG: Using specialized method: {}",
+                                    specialized_method_name
+                                );
+                                specialized_method_name
+                            } else {
+                                println!("DEBUG: Using generic method: {}.{}", name, method_name);
+                                format!("{}.{}", name, method_name)
+                            };
+
                         let mut call_args = vec![obj_value.into()]; // self
                         for arg in args {
                             let arg_val = self.generate_expression(arg)?;
@@ -4755,10 +4963,10 @@ impl<'a> CodeGenerator<'a> {
                             .builder
                             .build_call(
                                 self.module
-                                    .get_function(&format!("{}.{}", name, method_name))
-                                    .unwrap(),
+                                    .get_function(&method_func_name)
+                                    .ok_or(format!("Method '{}' not found", method_func_name))?,
                                 &call_args,
-                                &format!("{}.{}_call", name, method_name),
+                                &format!("{}_call", method_func_name.replace('.', "_")),
                             )
                             .map_err(|e| e.to_string())?;
                         match call.try_as_basic_value().left() {
@@ -6683,6 +6891,11 @@ impl<'a> CodeGenerator<'a> {
         self.context_stack.push(context.clone());
         self.generic_context = Some(context);
 
+        // Generate specialized methods for this class variant if not already generated
+        if !type_args.is_empty() {
+            self.generate_specialized_methods(class_name, type_args)?;
+        }
+
         // Generate constructor with context
         let result = self.generate_constructor_call(class_name, args);
 
@@ -6691,6 +6904,216 @@ impl<'a> CodeGenerator<'a> {
         self.generic_context = self.context_stack.last().cloned();
 
         result
+    }
+
+    #[allow(clippy::only_used_in_recursion)]
+    fn sanitize_type_name(&self, type_: &Type) -> String {
+        match type_ {
+            Type::Primitive(PrimitiveType::Int) => "int".to_string(),
+            Type::Primitive(PrimitiveType::Float) => "float".to_string(),
+            Type::Primitive(PrimitiveType::Bool) => "bool".to_string(),
+            Type::Primitive(PrimitiveType::Str) => "string".to_string(),
+            Type::Named(name, type_args) => {
+                if type_args.is_empty() {
+                    name.clone()
+                } else {
+                    let args_str = type_args
+                        .iter()
+                        .map(|arg| self.sanitize_type_name(arg))
+                        .collect::<Vec<_>>()
+                        .join("_");
+                    format!("{}_{}", name, args_str)
+                }
+            }
+            Type::Generic(name) | Type::Variable(name) => name.clone(),
+            Type::List(inner) => format!("list_{}", self.sanitize_type_name(inner)),
+            Type::Map(k, v) => format!(
+                "map_{}_{}",
+                self.sanitize_type_name(k),
+                self.sanitize_type_name(v)
+            ),
+            Type::Set(inner) => format!("set_{}", self.sanitize_type_name(inner)),
+            Type::Tuple(elements) => {
+                let elements_str = elements
+                    .iter()
+                    .map(|e| self.sanitize_type_name(e))
+                    .collect::<Vec<_>>()
+                    .join("_");
+                format!("tuple_{}", elements_str)
+            }
+            Type::Optional(inner) => format!("optional_{}", self.sanitize_type_name(inner)),
+            Type::Instantiated(name, type_args) => {
+                let args_str = type_args
+                    .iter()
+                    .map(|arg| self.sanitize_type_name(arg))
+                    .collect::<Vec<_>>()
+                    .join("$");
+                format!("{}${}", name, args_str)
+            }
+            _ => "unknown".to_string(),
+        }
+    }
+
+    fn create_specialized_method_name(
+        &self,
+        class_name: &str,
+        type_args: &[Type],
+        method_name: &str,
+    ) -> String {
+        if type_args.is_empty() {
+            format!("{}.{}", class_name, method_name)
+        } else {
+            let args_str = type_args
+                .iter()
+                .map(|t| self.sanitize_type_name(t))
+                .collect::<Vec<_>>()
+                .join("$");
+            format!("{}${}.{}", class_name, args_str, method_name)
+        }
+    }
+
+    fn generate_specialized_methods(
+        &mut self,
+        class_name: &str,
+        type_args: &[Type],
+    ) -> Result<(), String> {
+        println!(
+            "DEBUG: generate_specialized_methods called for class '{}' with {:?}",
+            class_name, type_args
+        );
+
+        // Save the current builder position so we can restore it after generating specialized methods
+        let saved_insert_block = self.builder.get_insert_block();
+
+        // Check if we need to generate specialized methods for this variant
+        let variant_suffix = type_args
+            .iter()
+            .map(|t| self.sanitize_type_name(t))
+            .collect::<Vec<_>>()
+            .join("$");
+        let variant_key = format!("{}${}", class_name, variant_suffix);
+
+        // Skip if we've already generated methods for this variant
+        if self.generated_methods.contains_key(&variant_key) {
+            return Ok(());
+        }
+
+        println!("DEBUG: Generating specialized methods for {}", variant_key);
+
+        // Mark this variant as being processed to prevent infinite recursion
+        self.generated_methods.insert(variant_key.clone(), true);
+
+        // Get the class symbol to access methods
+        let class_symbol = self
+            .analyzer
+            .symbol_table()
+            .lookup(class_name)
+            .ok_or(format!("Class {} not found", class_name))?;
+
+        // Generate specialized methods (including static methods)
+        for (method_name, method_sig) in &class_symbol.methods {
+            let specialized_method_name =
+                self.create_specialized_method_name(class_name, type_args, method_name);
+
+            // Skip if this specific method was already generated
+            if self
+                .generated_methods
+                .contains_key(&specialized_method_name)
+            {
+                continue;
+            }
+
+            println!(
+                "DEBUG: Generating specialized method: {}",
+                specialized_method_name
+            );
+
+            // Get the original method AST node
+            let original_method_name = if method_sig.is_static {
+                // Static methods are stored as "ClassName.method_name"
+                format!("{}.{}", class_name, method_name)
+            } else {
+                // Instance methods are stored as "ClassName.method_name" too
+                format!("{}.{}", class_name, method_name)
+            };
+
+            println!(
+                "DEBUG: Looking for method '{}' in function_nodes",
+                original_method_name
+            );
+            if let Some(method_node) = self.function_nodes.get(&original_method_name) {
+                println!("DEBUG: Found method node for '{}'", original_method_name);
+                println!("DEBUG: Method has {} params", method_node.params.len());
+                for (i, param) in method_node.params.iter().enumerate() {
+                    println!(
+                        "DEBUG: Param[{}]: '{}' type: {:?}",
+                        i, param.name, param.type_
+                    );
+                }
+                // Clone the method and specialize it
+                let mut specialized_method = method_node.clone();
+                specialized_method.name = specialized_method_name.clone();
+
+                // Create type parameter substitution map
+                let type_param_map = class_symbol
+                    .type_params
+                    .iter()
+                    .enumerate()
+                    .map(|(i, param)| (param.0.clone(), type_args[i].clone()))
+                    .collect::<HashMap<_, _>>();
+
+                // Substitute types in parameters and return type
+                for param in &mut specialized_method.params {
+                    println!(
+                        "DEBUG: Before substitution - param '{}' type: {:?}",
+                        param.name, param.type_
+                    );
+                    param.type_ = self.substitute_types_in_type_node(&param.type_, &type_param_map);
+                    println!(
+                        "DEBUG: After substitution - param '{}' type: {:?}",
+                        param.name, param.type_
+                    );
+                }
+                specialized_method.return_type = self.substitute_types_in_type_node(
+                    &specialized_method.return_type,
+                    &type_param_map,
+                );
+
+                // Substitute types in the method body
+                let mut substituted_body = Vec::new();
+                for stmt in &specialized_method.body {
+                    substituted_body
+                        .push(self.substitute_types_in_statement(stmt, &type_param_map));
+                }
+                specialized_method.body = substituted_body;
+
+                // Set up generic context for specialized method generation
+                let specialized_context = GenericContext {
+                    type_params: type_param_map,
+                };
+                let old_context = self.generic_context.take();
+                self.generic_context = Some(specialized_context);
+
+                // Declare the specialized method first
+                self.declare_function(&specialized_method)?;
+
+                // Generate the specialized method
+                self.generate_function(&specialized_method)?;
+
+                // Mark as generated
+                self.generated_methods.insert(specialized_method_name, true);
+
+                // Restore original context
+                self.generic_context = old_context;
+            }
+        }
+
+        // Restore the builder position to where we were before generating specialized methods
+        if let Some(block) = saved_insert_block {
+            self.builder.position_at_end(block);
+        }
+
+        Ok(())
     }
 
     fn build_type_param_map(

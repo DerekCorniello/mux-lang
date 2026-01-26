@@ -16,16 +16,16 @@ func name<T>(T s) returns string {
 
 class Stack<T> {
     list<T> items
-    func push(T item) returns void { items.push_back(item) }
+    func push(T item) returns void { self.items.push_back(item) }
     func pop() returns Optional<T> {
-        if items.is_empty() { return None }
+        if self.items.is_empty() { return None }
         return self.items.pop_back()
     }
     common func who_am_i() returns string {
         return "im a stack!"
     }
 
-    common func from<T>(list<T> init_list) returns Stack<T> {
+    common func from(list<T> init_list) returns Stack<T> {
         auto new_stack = Stack<T>.new()
         println("init new obj")
         new_stack.items = init_list

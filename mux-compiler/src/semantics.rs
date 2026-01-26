@@ -1961,6 +1961,21 @@ impl SemanticAnalyzer {
 
         // add methods to class scope and analyze their bodies.
         for method in methods {
+            // Validate: reject method type parameters that shadow class type parameters
+            let class_type_param_names: Vec<&str> =
+                type_params.iter().map(|(p, _)| p.as_str()).collect();
+            for (method_type_param, _) in &method.type_params {
+                if class_type_param_names.contains(&method_type_param.as_str()) {
+                    return Err(SemanticError {
+                        message: format!(
+                            "Type parameter '{}' in method '{}' shadows class type parameter '{}'; methods implicitly use class type parameters and should not re-declare them",
+                            method_type_param, method.name, method_type_param
+                        ),
+                        span: method.span,
+                    });
+                }
+            }
+
             // resolve method type
             let param_types = method
                 .params
