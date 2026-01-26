@@ -550,19 +550,19 @@ for_continue_5:                                   ; preds = %for_exit_5
   call void @mux_println_val(ptr %call109)
   %stack110 = load ptr, ptr %stack, align 8
   %call111 = call ptr @mux_int_value(i64 99)
-  call void @Stack.push(ptr %stack110, ptr %call111)
+  call void @"Stack$int.push"(ptr %stack110, ptr %call111)
   %call112 = call ptr @mux_new_string_from_cstr(ptr @str_16)
   call void @mux_println_val(ptr %call112)
   %stack113 = load ptr, ptr %stack, align 8
-  %Stack.pop_call = call ptr @Stack.pop(ptr %stack113)
+  %"Stack$int_pop_call" = call ptr @"Stack$int.pop"(ptr %stack113)
   %popped = alloca ptr, align 8
-  store ptr %Stack.pop_call, ptr %popped, align 8
+  store ptr %"Stack$int_pop_call", ptr %popped, align 8
   %popped114 = load ptr, ptr %popped, align 8
   %discriminant_call115 = call i32 @mux_optional_discriminant(ptr %popped114)
   %match_cmp116 = icmp eq i32 %discriminant_call115, 0
-  br i1 %match_cmp116, label %match_arm_6_0, label %match_next_6_0
+  br i1 %match_cmp116, label %match_arm_7_0, label %match_next_7_0
 
-match_end_6:                                      ; preds = %match_arm_6_1, %match_next_6_0, %match_arm_6_0
+match_end_7:                                      ; preds = %match_arm_7_1, %match_next_7_0, %match_arm_7_0
   %user_func_call = call ptr @divide(i64 10, i64 2)
   %res = alloca ptr, align 8
   store ptr %user_func_call, ptr %res, align 8
@@ -571,9 +571,9 @@ match_end_6:                                      ; preds = %match_arm_6_1, %mat
   %res132 = load ptr, ptr %res, align 8
   %discriminant_call133 = call i32 @mux_result_discriminant(ptr %res132)
   %match_cmp134 = icmp eq i32 %discriminant_call133, 0
-  br i1 %match_cmp134, label %match_arm_7_0, label %match_next_7_0
+  br i1 %match_cmp134, label %match_arm_8_0, label %match_next_8_0
 
-match_arm_6_0:                                    ; preds = %for_continue_5
+match_arm_7_0:                                    ; preds = %for_continue_5
   %data_call117 = call ptr @mux_optional_data(ptr %popped114)
   %get_int118 = call i64 @mux_value_get_int(ptr %data_call117)
   %call119 = call ptr @mux_int_value(i64 %get_int118)
@@ -589,24 +589,24 @@ match_arm_6_0:                                    ; preds = %for_continue_5
   %string_concat127 = call ptr @mux_string_concat(ptr %get_string125, ptr %get_string126)
   %from_string128 = call ptr @mux_value_from_string(ptr %string_concat127)
   call void @mux_println_val(ptr %from_string128)
-  br label %match_end_6
+  br label %match_end_7
 
-match_next_6_0:                                   ; preds = %for_continue_5
+match_next_7_0:                                   ; preds = %for_continue_5
   %match_cmp129 = icmp eq i32 %discriminant_call115, 1
-  br i1 %match_cmp129, label %match_arm_6_1, label %match_end_6
+  br i1 %match_cmp129, label %match_arm_7_1, label %match_end_7
 
-match_arm_6_1:                                    ; preds = %match_next_6_0
+match_arm_7_1:                                    ; preds = %match_next_7_0
   %call130 = call ptr @mux_new_string_from_cstr(ptr @str_18)
   call void @mux_println_val(ptr %call130)
-  br label %match_end_6
+  br label %match_end_7
 
-match_end_7:                                      ; preds = %match_arm_7_1, %match_next_7_0, %match_arm_7_0
+match_end_8:                                      ; preds = %match_arm_8_1, %match_next_8_0, %match_arm_8_0
   %res146 = load ptr, ptr %res, align 8
   %discriminant_call147 = call i32 @mux_result_discriminant(ptr %res146)
   %match_cmp148 = icmp eq i32 %discriminant_call147, 0
-  br i1 %match_cmp148, label %match_arm_8_0, label %match_next_8_0
+  br i1 %match_cmp148, label %match_arm_9_0, label %match_next_9_0
 
-match_arm_7_0:                                    ; preds = %match_end_6
+match_arm_8_0:                                    ; preds = %match_end_7
   %data_call135 = call ptr @mux_result_data(ptr %res132)
   %get_int136 = call i64 @mux_value_get_int(ptr %data_call135)
   %call137 = call ptr @mux_int_value(i64 %get_int136)
@@ -617,21 +617,21 @@ match_arm_7_0:                                    ; preds = %match_end_6
   %int_to_str141 = call ptr @mux_int_to_string(i64 %get_int140)
   %new_str142 = call ptr @mux_new_string_from_cstr(ptr %int_to_str141)
   call void @mux_println_val(ptr %new_str142)
-  br label %match_end_7
+  br label %match_end_8
 
-match_next_7_0:                                   ; preds = %match_end_6
+match_next_8_0:                                   ; preds = %match_end_7
   %match_cmp143 = icmp eq i32 %discriminant_call133, 1
-  br i1 %match_cmp143, label %match_arm_7_1, label %match_end_7
+  br i1 %match_cmp143, label %match_arm_8_1, label %match_end_8
 
-match_arm_7_1:                                    ; preds = %match_next_7_0
+match_arm_8_1:                                    ; preds = %match_next_8_0
   %data_call144 = call ptr @mux_result_data(ptr %res132)
   %e = alloca ptr, align 8
   store ptr %data_call144, ptr %e, align 8
   %e145 = load ptr, ptr %e, align 8
   call void @mux_println_val(ptr %e145)
-  br label %match_end_7
+  br label %match_end_8
 
-match_end_8:                                      ; preds = %match_arm_8_1, %match_next_8_0, %match_arm_8_0
+match_end_9:                                      ; preds = %match_arm_9_1, %match_next_9_0, %match_arm_9_0
   %call158 = call ptr @mux_new_list()
   %call159 = call ptr @mux_int_value(i64 1)
   call void @mux_list_push_back(ptr %call158, ptr %call159)
@@ -650,9 +650,9 @@ match_end_8:                                      ; preds = %match_arm_8_1, %mat
   %maybeEven166 = load ptr, ptr %maybeEven, align 8
   %discriminant_call167 = call i32 @mux_optional_discriminant(ptr %maybeEven166)
   %match_cmp168 = icmp eq i32 %discriminant_call167, 0
-  br i1 %match_cmp168, label %match_arm_9_0, label %match_next_9_0
+  br i1 %match_cmp168, label %match_arm_10_0, label %match_next_10_0
 
-match_arm_8_0:                                    ; preds = %match_end_7
+match_arm_9_0:                                    ; preds = %match_end_8
   %data_call149 = call ptr @mux_result_data(ptr %res146)
   %get_int150 = call i64 @mux_value_get_int(ptr %data_call149)
   %call151 = call ptr @mux_int_value(i64 %get_int150)
@@ -660,21 +660,21 @@ match_arm_8_0:                                    ; preds = %match_end_7
   store ptr %call151, ptr %v152, align 8
   %call153 = call ptr @mux_new_string_from_cstr(ptr @str_20)
   call void @mux_println_val(ptr %call153)
-  br label %match_end_8
+  br label %match_end_9
 
-match_next_8_0:                                   ; preds = %match_end_7
+match_next_9_0:                                   ; preds = %match_end_8
   %match_cmp154 = icmp eq i32 %discriminant_call147, 1
-  br i1 %match_cmp154, label %match_arm_8_1, label %match_end_8
+  br i1 %match_cmp154, label %match_arm_9_1, label %match_end_9
 
-match_arm_8_1:                                    ; preds = %match_next_8_0
+match_arm_9_1:                                    ; preds = %match_next_9_0
   %data_call155 = call ptr @mux_result_data(ptr %res146)
   %e156 = alloca ptr, align 8
   store ptr %data_call155, ptr %e156, align 8
   %call157 = call ptr @mux_new_string_from_cstr(ptr @str_21)
   call void @mux_println_val(ptr %call157)
-  br label %match_end_8
+  br label %match_end_9
 
-match_end_9:                                      ; preds = %match_arm_9_1, %match_next_9_0, %match_arm_9_0
+match_end_10:                                     ; preds = %match_arm_10_1, %match_next_10_0, %match_arm_10_0
   %square = alloca ptr, align 8
   store ptr @lambda_0, ptr %square, align 8
   %call179 = call ptr @mux_new_string_from_cstr(ptr @str_24)
@@ -756,7 +756,7 @@ match_end_9:                                      ; preds = %match_arm_9_1, %mat
   call void @mux_println_val(ptr %call233)
   ret void
 
-match_arm_9_0:                                    ; preds = %match_end_8
+match_arm_10_0:                                   ; preds = %match_end_9
   %data_call169 = call ptr @mux_optional_data(ptr %maybeEven166)
   %get_int170 = call i64 @mux_value_get_int(ptr %data_call169)
   %call171 = call ptr @mux_int_value(i64 %get_int170)
@@ -767,16 +767,16 @@ match_arm_9_0:                                    ; preds = %match_end_8
   %int_to_str175 = call ptr @mux_int_to_string(i64 %get_int174)
   %new_str176 = call ptr @mux_new_string_from_cstr(ptr %int_to_str175)
   call void @mux_println_val(ptr %new_str176)
-  br label %match_end_9
+  br label %match_end_10
 
-match_next_9_0:                                   ; preds = %match_end_8
+match_next_10_0:                                  ; preds = %match_end_9
   %match_cmp177 = icmp eq i32 %discriminant_call167, 1
-  br i1 %match_cmp177, label %match_arm_9_1, label %match_end_9
+  br i1 %match_cmp177, label %match_arm_10_1, label %match_end_10
 
-match_arm_9_1:                                    ; preds = %match_next_9_0
+match_arm_10_1:                                   ; preds = %match_next_10_0
   %call178 = call ptr @mux_new_string_from_cstr(ptr @str_23)
   call void @mux_println_val(ptr %call178)
-  br label %match_end_9
+  br label %match_end_10
 }
 
 define void @Circle.draw(ptr %0) {
@@ -817,49 +817,9 @@ entry:
   ret void
 }
 
-define void @Stack.push(ptr %0, ptr %1) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %item = alloca ptr, align 8
-  store ptr %1, ptr %item, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %items = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %items1 = load ptr, ptr %items, align 8
-  %item2 = load ptr, ptr %item, align 8
-  call void @mux_list_push_back_value(ptr %items1, ptr %item2)
-  ret void
-}
+declare void @Stack.push(ptr, ptr)
 
-define ptr @Stack.pop(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %items = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %items1 = load ptr, ptr %items, align 8
-  %extract_list = call ptr @mux_value_get_list(ptr %items1)
-  %list_is_empty = call i1 @mux_list_is_empty(ptr %extract_list)
-  br i1 %list_is_empty, label %if_then_11, label %if_else_11
-
-if_then_11:                                       ; preds = %entry
-  %none_literal = call ptr @mux_optional_none()
-  %none_value = call ptr @mux_value_from_optional(ptr %none_literal)
-  ret ptr %none_value
-
-if_else_11:                                       ; preds = %entry
-  br label %if_merge_11
-
-if_merge_11:                                      ; preds = %if_else_11
-  %load_self_for_field_access2 = load ptr, ptr %self, align 8
-  %self_data_ptr3 = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access2)
-  %items4 = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr3, i32 0, i32 0
-  %items5 = load ptr, ptr %items4, align 8
-  %list_pop_back = call ptr @mux_list_pop_back_value(ptr %items5)
-  ret ptr %list_pop_back
-}
+declare ptr @Stack.pop(ptr)
 
 define { i32, double, double } @Shape_Circle(double %0) {
 entry:
@@ -921,6 +881,52 @@ entry:
   ret ptr %obj_ptr
 }
 
+define void @"Stack$int.push"(ptr %0, ptr %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %item = alloca ptr, align 8
+  store ptr %1, ptr %item, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %items = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %items1 = load ptr, ptr %items, align 8
+  %item2 = load ptr, ptr %item, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %item2)
+  %call = call ptr @mux_int_value(i64 %get_int)
+  call void @mux_list_push_back_value(ptr %items1, ptr %call)
+  ret void
+}
+
+define ptr @"Stack$int.pop"(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %items = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %items1 = load ptr, ptr %items, align 8
+  %extract_list = call ptr @mux_value_get_list(ptr %items1)
+  %list_is_empty = call i1 @mux_list_is_empty(ptr %extract_list)
+  br i1 %list_is_empty, label %if_then_6, label %if_else_6
+
+if_then_6:                                        ; preds = %entry
+  %none_literal = call ptr @mux_optional_none()
+  %none_value = call ptr @mux_value_from_optional(ptr %none_literal)
+  ret ptr %none_value
+
+if_else_6:                                        ; preds = %entry
+  br label %if_merge_6
+
+if_merge_6:                                       ; preds = %if_else_6
+  %load_self_for_field_access2 = load ptr, ptr %self, align 8
+  %self_data_ptr3 = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access2)
+  %items4 = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr3, i32 0, i32 0
+  %items5 = load ptr, ptr %items4, align 8
+  %list_pop_back = call ptr @mux_list_pop_back_value(ptr %items5)
+  ret ptr %list_pop_back
+}
+
 define i64 @lambda_0(i64 %n) {
 entry:
   %call = call ptr @mux_int_value(i64 %n)
@@ -949,14 +955,14 @@ entry:
   %index = alloca i64, align 8
   store i64 0, ptr %index, align 4
   %item = alloca ptr, align 8
-  br label %for_header_10
+  br label %for_header_11
 
-for_header_10:                                    ; preds = %for_body_10, %entry
+for_header_11:                                    ; preds = %for_body_11, %entry
   %index_load = load i64, ptr %index, align 4
   %cmp = icmp slt i64 %index_load, %list_len
-  br i1 %cmp, label %for_body_10, label %for_exit_10
+  br i1 %cmp, label %for_body_11, label %for_exit_11
 
-for_body_10:                                      ; preds = %for_header_10
+for_body_11:                                      ; preds = %for_header_11
   %index_load2 = load i64, ptr %index, align 4
   %list_get_value = call ptr @mux_value_list_get_value(ptr %items2, i64 %index_load2)
   store ptr %list_get_value, ptr %item, align 8
@@ -969,12 +975,12 @@ for_body_10:                                      ; preds = %for_header_10
   call void @mux_list_push_back_value(ptr %out3, ptr %call6)
   %inc = add i64 %index_load2, 1
   store i64 %inc, ptr %index, align 4
-  br label %for_header_10
+  br label %for_header_11
 
-for_exit_10:                                      ; preds = %for_header_10
-  br label %for_continue_10
+for_exit_11:                                      ; preds = %for_header_11
+  br label %for_continue_11
 
-for_continue_10:                                  ; preds = %for_exit_10
+for_continue_11:                                  ; preds = %for_exit_11
   %out7 = load ptr, ptr %out, align 8
   ret ptr %out7
 }

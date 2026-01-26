@@ -11,7 +11,7 @@ Drawing rectangle with width: 10.0 height: 20.0
 1
 9
 status successful
-true
+false
 status failed
 false
 done

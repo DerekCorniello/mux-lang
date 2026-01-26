@@ -16,6 +16,7 @@ source_filename = "mux_module"
 @str_5 = global [10 x i8] c" height: \00"
 @str_6 = global [5 x i8] c"none\00"
 @type_name_Pair.8 = private unnamed_addr constant [5 x i8] c"Pair\00", align 1
+@type_name_Pair.9 = private unnamed_addr constant [5 x i8] c"Pair\00", align 1
 @str_7 = global [18 x i8] c"status successful\00"
 @str_8 = global [14 x i8] c"status failed\00"
 @str_9 = global [5 x i8] c"done\00"
@@ -315,56 +316,11 @@ entry:
   ret ptr %new_shape2
 }
 
-define ptr @Pair.from(ptr %0, ptr %1) {
-entry:
-  %left = alloca ptr, align 8
-  store ptr %0, ptr %left, align 8
-  %right = alloca ptr, align 8
-  store ptr %1, ptr %right, align 8
-  %type_id = call i32 @mux_register_object_type(ptr @type_name_Pair.8, i64 ptrtoint (ptr getelementptr ({ ptr, ptr }, ptr null, i32 1) to i64))
-  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
-  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
-  %field_0 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
-  store ptr null, ptr %field_0, align 8
-  %field_1 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
-  store i1 false, ptr %field_1, align 1
-  %new_pair = alloca ptr, align 8
-  store ptr %obj_ptr, ptr %new_pair, align 8
-  %left1 = load ptr, ptr %left, align 8
-  %new_pair2 = load ptr, ptr %new_pair, align 8
-  %data_ptr_assign = call ptr @mux_get_object_ptr(ptr %new_pair2)
-  %left3 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign, i32 0, i32 0
-  store ptr %left1, ptr %left3, align 8
-  %right4 = load ptr, ptr %right, align 8
-  %new_pair5 = load ptr, ptr %new_pair, align 8
-  %data_ptr_assign6 = call ptr @mux_get_object_ptr(ptr %new_pair5)
-  %right7 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign6, i32 0, i32 1
-  store ptr %right4, ptr %right7, align 8
-  %new_pair8 = load ptr, ptr %new_pair, align 8
-  ret ptr %new_pair8
-}
+declare ptr @Pair.from(ptr, ptr)
 
-define ptr @Pair.get_left(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %left = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %left1 = load ptr, ptr %left, align 8
-  ret ptr %left1
-}
+declare ptr @Pair.get_left(ptr)
 
-define ptr @Pair.get_right(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
-  %right1 = load ptr, ptr %right, align 8
-  ret ptr %right1
-}
+declare ptr @Pair.get_right(ptr)
 
 define { i32, double, double } @Shape_Circ(double %0) {
 entry:
@@ -466,52 +422,167 @@ for_exit_1:                                       ; preds = %for_header_1
   br label %for_continue_1
 
 for_continue_1:                                   ; preds = %for_exit_1
-  %Pair.from_call = call ptr @Pair.from(i64 1, i64 9)
+  %"Pair$int$int_from_call" = call ptr @"Pair$int$int.from"(i64 1, i64 9)
   %homogenous_pair = alloca ptr, align 8
-  store ptr %Pair.from_call, ptr %homogenous_pair, align 8
+  store ptr %"Pair$int$int_from_call", ptr %homogenous_pair, align 8
   %call7 = call ptr @mux_new_string_from_cstr(ptr @str_7)
   %call8 = call ptr @mux_bool_value(i32 1)
-  %Pair.from_call9 = call ptr @Pair.from(ptr %call7, ptr %call8)
+  %"Pair$string$bool_from_call" = call ptr @"Pair$string$bool.from"(ptr %call7, ptr %call8)
   %heterogenous_pair = alloca ptr, align 8
-  store ptr %Pair.from_call9, ptr %heterogenous_pair, align 8
-  %call10 = call ptr @mux_new_string_from_cstr(ptr @str_8)
-  %call11 = call ptr @mux_bool_value(i32 0)
-  %Pair.from_call12 = call ptr @Pair.from(ptr %call10, ptr %call11)
+  store ptr %"Pair$string$bool_from_call", ptr %heterogenous_pair, align 8
+  %call9 = call ptr @mux_new_string_from_cstr(ptr @str_8)
+  %call10 = call ptr @mux_bool_value(i32 0)
+  %"Pair$string$bool_from_call11" = call ptr @"Pair$string$bool.from"(ptr %call9, ptr %call10)
   %heterogenous_pair_2 = alloca ptr, align 8
-  store ptr %Pair.from_call12, ptr %heterogenous_pair_2, align 8
-  %homogenous_pair13 = load ptr, ptr %homogenous_pair, align 8
-  %Pair.get_left_call = call ptr @Pair.get_left(ptr %homogenous_pair13)
-  %int_to_str = call ptr @mux_int_to_string(ptr %Pair.get_left_call)
+  store ptr %"Pair$string$bool_from_call11", ptr %heterogenous_pair_2, align 8
+  %homogenous_pair12 = load ptr, ptr %homogenous_pair, align 8
+  %"Pair$int$int_get_left_call" = call i64 @"Pair$int$int.get_left"(ptr %homogenous_pair12)
+  %int_to_str = call ptr @mux_int_to_string(i64 %"Pair$int$int_get_left_call")
   %new_str = call ptr @mux_new_string_from_cstr(ptr %int_to_str)
   call void @mux_println_val(ptr %new_str)
-  %homogenous_pair14 = load ptr, ptr %homogenous_pair, align 8
-  %Pair.get_right_call = call ptr @Pair.get_right(ptr %homogenous_pair14)
-  %int_to_str15 = call ptr @mux_int_to_string(ptr %Pair.get_right_call)
-  %new_str16 = call ptr @mux_new_string_from_cstr(ptr %int_to_str15)
-  call void @mux_println_val(ptr %new_str16)
-  %heterogenous_pair17 = load ptr, ptr %heterogenous_pair, align 8
-  %Pair.get_left_call18 = call ptr @Pair.get_left(ptr %heterogenous_pair17)
-  %value_to_str = call ptr @mux_value_to_string(ptr %Pair.get_left_call18)
-  %new_str19 = call ptr @mux_new_string_from_cstr(ptr %value_to_str)
+  %homogenous_pair13 = load ptr, ptr %homogenous_pair, align 8
+  %"Pair$int$int_get_right_call" = call i64 @"Pair$int$int.get_right"(ptr %homogenous_pair13)
+  %int_to_str14 = call ptr @mux_int_to_string(i64 %"Pair$int$int_get_right_call")
+  %new_str15 = call ptr @mux_new_string_from_cstr(ptr %int_to_str14)
+  call void @mux_println_val(ptr %new_str15)
+  %heterogenous_pair16 = load ptr, ptr %heterogenous_pair, align 8
+  %"Pair$string$bool_get_left_call" = call ptr @"Pair$string$bool.get_left"(ptr %heterogenous_pair16)
+  %value_to_str = call ptr @mux_value_to_string(ptr %"Pair$string$bool_get_left_call")
+  %new_str17 = call ptr @mux_new_string_from_cstr(ptr %value_to_str)
+  call void @mux_println_val(ptr %new_str17)
+  %heterogenous_pair18 = load ptr, ptr %heterogenous_pair, align 8
+  %"Pair$string$bool_get_right_call" = call i1 @"Pair$string$bool.get_right"(ptr %heterogenous_pair18)
+  %i1_to_i32 = zext i1 %"Pair$string$bool_get_right_call" to i32
+  %bool_to_str = call ptr @mux_bool_to_string(i32 %i1_to_i32)
+  %new_str19 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str)
   call void @mux_println_val(ptr %new_str19)
-  %heterogenous_pair20 = load ptr, ptr %heterogenous_pair, align 8
-  %Pair.get_right_call21 = call ptr @Pair.get_right(ptr %heterogenous_pair20)
-  %extract_bool = call i32 @mux_value_get_bool(ptr %Pair.get_right_call21)
-  %bool_to_str = call ptr @mux_bool_to_string(i32 %extract_bool)
-  %new_str22 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str)
-  call void @mux_println_val(ptr %new_str22)
-  %heterogenous_pair_223 = load ptr, ptr %heterogenous_pair_2, align 8
-  %Pair.get_left_call24 = call ptr @Pair.get_left(ptr %heterogenous_pair_223)
-  %value_to_str25 = call ptr @mux_value_to_string(ptr %Pair.get_left_call24)
-  %new_str26 = call ptr @mux_new_string_from_cstr(ptr %value_to_str25)
-  call void @mux_println_val(ptr %new_str26)
-  %heterogenous_pair_227 = load ptr, ptr %heterogenous_pair_2, align 8
-  %Pair.get_right_call28 = call ptr @Pair.get_right(ptr %heterogenous_pair_227)
-  %extract_bool29 = call i32 @mux_value_get_bool(ptr %Pair.get_right_call28)
-  %bool_to_str30 = call ptr @mux_bool_to_string(i32 %extract_bool29)
-  %new_str31 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str30)
-  call void @mux_println_val(ptr %new_str31)
-  %call32 = call ptr @mux_new_string_from_cstr(ptr @str_9)
-  call void @mux_println_val(ptr %call32)
+  %heterogenous_pair_220 = load ptr, ptr %heterogenous_pair_2, align 8
+  %"Pair$string$bool_get_left_call21" = call ptr @"Pair$string$bool.get_left"(ptr %heterogenous_pair_220)
+  %value_to_str22 = call ptr @mux_value_to_string(ptr %"Pair$string$bool_get_left_call21")
+  %new_str23 = call ptr @mux_new_string_from_cstr(ptr %value_to_str22)
+  call void @mux_println_val(ptr %new_str23)
+  %heterogenous_pair_224 = load ptr, ptr %heterogenous_pair_2, align 8
+  %"Pair$string$bool_get_right_call25" = call i1 @"Pair$string$bool.get_right"(ptr %heterogenous_pair_224)
+  %i1_to_i3226 = zext i1 %"Pair$string$bool_get_right_call25" to i32
+  %bool_to_str27 = call ptr @mux_bool_to_string(i32 %i1_to_i3226)
+  %new_str28 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str27)
+  call void @mux_println_val(ptr %new_str28)
+  %call29 = call ptr @mux_new_string_from_cstr(ptr @str_9)
+  call void @mux_println_val(ptr %call29)
   ret void
+}
+
+define i64 @"Pair$int$int.get_right"(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
+  %right1 = load ptr, ptr %right, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %right1)
+  ret i64 %get_int
+}
+
+define ptr @"Pair$int$int.from"(i64 %0, i64 %1) {
+entry:
+  %call = call ptr @mux_int_value(i64 %0)
+  %left = alloca ptr, align 8
+  store ptr %call, ptr %left, align 8
+  %call1 = call ptr @mux_int_value(i64 %1)
+  %right = alloca ptr, align 8
+  store ptr %call1, ptr %right, align 8
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_Pair.8, i64 ptrtoint (ptr getelementptr ({ ptr, ptr }, ptr null, i32 1) to i64))
+  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
+  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
+  %field_0 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
+  store ptr null, ptr %field_0, align 8
+  %field_1 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
+  store ptr null, ptr %field_1, align 8
+  %new_pair = alloca ptr, align 8
+  store ptr %obj_ptr, ptr %new_pair, align 8
+  %left2 = load ptr, ptr %left, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %left2)
+  %new_pair3 = load ptr, ptr %new_pair, align 8
+  %data_ptr_assign = call ptr @mux_get_object_ptr(ptr %new_pair3)
+  %left4 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign, i32 0, i32 0
+  %call5 = call ptr @mux_int_value(i64 %get_int)
+  store ptr %call5, ptr %left4, align 8
+  %right6 = load ptr, ptr %right, align 8
+  %get_int7 = call i64 @mux_value_get_int(ptr %right6)
+  %new_pair8 = load ptr, ptr %new_pair, align 8
+  %data_ptr_assign9 = call ptr @mux_get_object_ptr(ptr %new_pair8)
+  %right10 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign9, i32 0, i32 1
+  %call11 = call ptr @mux_int_value(i64 %get_int7)
+  store ptr %call11, ptr %right10, align 8
+  %new_pair12 = load ptr, ptr %new_pair, align 8
+  ret ptr %new_pair12
+}
+
+define i64 @"Pair$int$int.get_left"(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %left = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %left1 = load ptr, ptr %left, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %left1)
+  ret i64 %get_int
+}
+
+define i1 @"Pair$string$bool.get_right"(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
+  %right1 = load ptr, ptr %right, align 8
+  %get_bool = call i32 @mux_value_get_bool(ptr %right1)
+  %int_to_i1 = trunc i32 %get_bool to i1
+  ret i1 %int_to_i1
+}
+
+define ptr @"Pair$string$bool.from"(ptr %0, i1 %1) {
+entry:
+  %left = alloca ptr, align 8
+  store ptr %0, ptr %left, align 8
+  %call = call ptr @mux_int_value(i1 %1)
+  %right = alloca ptr, align 8
+  store ptr %call, ptr %right, align 8
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_Pair.9, i64 ptrtoint (ptr getelementptr ({ ptr, ptr }, ptr null, i32 1) to i64))
+  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
+  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
+  %field_0 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
+  store ptr null, ptr %field_0, align 8
+  %field_1 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
+  store ptr null, ptr %field_1, align 8
+  %new_pair = alloca ptr, align 8
+  store ptr %obj_ptr, ptr %new_pair, align 8
+  %left1 = load ptr, ptr %left, align 8
+  %new_pair2 = load ptr, ptr %new_pair, align 8
+  %data_ptr_assign = call ptr @mux_get_object_ptr(ptr %new_pair2)
+  %left3 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign, i32 0, i32 0
+  store ptr %left1, ptr %left3, align 8
+  %right4 = load ptr, ptr %right, align 8
+  %get_bool = call i32 @mux_value_get_bool(ptr %right4)
+  %new_pair5 = load ptr, ptr %new_pair, align 8
+  %data_ptr_assign6 = call ptr @mux_get_object_ptr(ptr %new_pair5)
+  %right7 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign6, i32 0, i32 1
+  %call8 = call ptr @mux_int_value(i32 %get_bool)
+  store ptr %call8, ptr %right7, align 8
+  %new_pair9 = load ptr, ptr %new_pair, align 8
+  ret ptr %new_pair9
+}
+
+define ptr @"Pair$string$bool.get_left"(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %left = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %left1 = load ptr, ptr %left, align 8
+  ret ptr %left1
 }

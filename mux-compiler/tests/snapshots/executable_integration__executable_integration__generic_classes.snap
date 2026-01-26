@@ -2,6 +2,6 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
-STDOUT:
- 
-STDERR:
+Box with: 42
+Box with: hello
+Generic class test completed
