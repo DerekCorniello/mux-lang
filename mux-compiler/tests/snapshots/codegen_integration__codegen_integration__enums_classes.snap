@@ -472,6 +472,18 @@ for_continue_1:                                   ; preds = %for_exit_1
   ret void
 }
 
+define i64 @"Pair$int$int.get_right"(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
+  %right1 = load ptr, ptr %right, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %right1)
+  ret i64 %get_int
+}
+
 define ptr @"Pair$int$int.from"(i64 %0, i64 %1) {
 entry:
   %call = call ptr @mux_int_value(i64 %0)
@@ -507,18 +519,6 @@ entry:
   ret ptr %new_pair12
 }
 
-define i64 @"Pair$int$int.get_right"(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
-  %right1 = load ptr, ptr %right, align 8
-  %get_int = call i64 @mux_value_get_int(ptr %right1)
-  ret i64 %get_int
-}
-
 define i64 @"Pair$int$int.get_left"(ptr %0) {
 entry:
   %self = alloca ptr, align 8
@@ -529,6 +529,19 @@ entry:
   %left1 = load ptr, ptr %left, align 8
   %get_int = call i64 @mux_value_get_int(ptr %left1)
   ret i64 %get_int
+}
+
+define i1 @"Pair$string$bool.get_right"(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
+  %right1 = load ptr, ptr %right, align 8
+  %get_bool = call i32 @mux_value_get_bool(ptr %right1)
+  %int_to_i1 = trunc i32 %get_bool to i1
+  ret i1 %int_to_i1
 }
 
 define ptr @"Pair$string$bool.from"(ptr %0, i1 %1) {
@@ -561,19 +574,6 @@ entry:
   store ptr %call8, ptr %right7, align 8
   %new_pair9 = load ptr, ptr %new_pair, align 8
   ret ptr %new_pair9
-}
-
-define i1 @"Pair$string$bool.get_right"(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
-  %right1 = load ptr, ptr %right, align 8
-  %get_bool = call i32 @mux_value_get_bool(ptr %right1)
-  %int_to_i1 = trunc i32 %get_bool to i1
-  ret i1 %int_to_i1
 }
 
 define ptr @"Pair$string$bool.get_left"(ptr %0) {

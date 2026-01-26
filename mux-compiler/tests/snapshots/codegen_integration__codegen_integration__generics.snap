@@ -352,6 +352,23 @@ match_arm_2_1:                                    ; preds = %match_next_2_0
   br label %match_end_2
 }
 
+define void @"Stack$int.push"(ptr %0, ptr %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %item = alloca ptr, align 8
+  store ptr %1, ptr %item, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %items = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %items1 = load ptr, ptr %items, align 8
+  %item2 = load ptr, ptr %item, align 8
+  %get_int = call i64 @mux_value_get_int(ptr %item2)
+  %call = call ptr @mux_int_value(i64 %get_int)
+  call void @mux_list_push_back_value(ptr %items1, ptr %call)
+  ret void
+}
+
 define ptr @"Stack$int.who_am_i"() {
 entry:
   %call = call ptr @mux_new_string_from_cstr(ptr @str_1)
@@ -375,23 +392,6 @@ entry:
   %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string2)
   %from_string = call ptr @mux_value_from_string(ptr %string_concat)
   ret ptr %from_string
-}
-
-define void @"Stack$int.push"(ptr %0, ptr %1) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %item = alloca ptr, align 8
-  store ptr %1, ptr %item, align 8
-  %load_self_for_field_access = load ptr, ptr %self, align 8
-  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
-  %items = getelementptr inbounds nuw { ptr }, ptr %self_data_ptr, i32 0, i32 0
-  %items1 = load ptr, ptr %items, align 8
-  %item2 = load ptr, ptr %item, align 8
-  %get_int = call i64 @mux_value_get_int(ptr %item2)
-  %call = call ptr @mux_int_value(i64 %get_int)
-  call void @mux_list_push_back_value(ptr %items1, ptr %call)
-  ret void
 }
 
 define ptr @"Stack$int.pop"(ptr %0) {
