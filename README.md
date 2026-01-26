@@ -76,8 +76,8 @@ func max<T comparable>(T a, T b) returns T {
 // Generic function with multiple type parameters
 func zip<T, U>(list<T> first, list<U> second) returns list<(T, U)> {
     auto result = list<(T, U)>()
-    T minLen = min(first.length(), second.length())
-    for int i = 0; i < minLen; i += 1 {
+    int minLen = min(first.length(), second.length())
+    for int in range(minLen) {
         result.append((first[i], second[i]))
     }
     return result
