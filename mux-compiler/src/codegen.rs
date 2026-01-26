@@ -618,6 +618,18 @@ impl<'a> CodeGenerator<'a> {
         let mut field_types = Vec::new();
         let mut field_indices = HashMap::new();
 
+        // Collect type parameter names for this class from the symbol table
+        let type_param_names: std::collections::HashSet<String> =
+            if let Some(class_symbol) = self.analyzer.all_symbols().get(name) {
+                class_symbol
+                    .type_params
+                    .iter()
+                    .map(|(param_name, _)| param_name.clone())
+                    .collect()
+            } else {
+                std::collections::HashSet::new()
+            };
+
         // add vtable fields for implemented interfaces FIRST
         let ptr_type = self.context.ptr_type(AddressSpace::default());
         for interface_name in interfaces.keys() {
@@ -628,12 +640,12 @@ impl<'a> CodeGenerator<'a> {
         // add class fields after
         for field in fields {
             let field_type = if let TypeNode {
-                kind: TypeKind::Named(name, _),
+                kind: TypeKind::Named(field_type_name, _),
                 ..
             } = &field.type_
             {
-                // tODO: why is this hardcoded
-                if name == "T" || name == "U" {
+                // Check if this field type is a type parameter of the class
+                if type_param_names.contains(field_type_name) {
                     // generic fields should be pointers (boxed values)
                     self.context.ptr_type(AddressSpace::default()).into()
                 } else {

@@ -1,0 +1,97 @@
+// Test generic classes with arbitrary type parameter names
+// This tests the fix for generic type parameter recognition
+
+// Single type parameter with arbitrary name
+class Box<V> {
+    V value
+    
+    common func from(V val) returns Box<V> {
+        auto box = Box<V>.new()
+        box.value = val
+        return box
+    }
+    
+    func get() returns V {
+        return self.value
+    }
+}
+
+// Two type parameters with arbitrary names
+class Pair<First, Second> {
+    First left
+    Second right
+    
+    common func from(First l, Second r) returns Pair<First, Second> {
+        auto pair = Pair<First, Second>.new()
+        pair.left = l
+        pair.right = r
+        return pair
+    }
+    
+    func get_left() returns First {
+        return self.left
+    }
+    
+    func get_right() returns Second {
+        return self.right
+    }
+}
+
+// Three type parameters with arbitrary names
+class Triple<X, Y, Z> {
+    X a
+    Y b
+    Z c
+    
+    common func from(X x_val, Y y_val, Z z_val) returns Triple<X, Y, Z> {
+        auto triple = Triple<X, Y, Z>.new()
+        triple.a = x_val
+        triple.b = y_val
+        triple.c = z_val
+        return triple
+    }
+    
+    func get_a() returns X {
+        return self.a
+    }
+    
+    func get_b() returns Y {
+        return self.b
+    }
+    
+    func get_c() returns Z {
+        return self.c
+    }
+}
+
+// Test Box<V> with int
+auto box_int = Box<int>.from(42)
+println(box_int.get().to_string())
+
+// Test Box<V> with string
+auto box_string = Box<string>.from("hello")
+println(box_string.get().to_string())
+
+// Test Pair<First, Second> with string and bool
+auto pair1 = Pair<string, bool>.from("status successful", true)
+println(pair1.get_left().to_string())
+println(pair1.get_right().to_string())
+
+// Test Pair<First, Second> with int and float
+auto pair2 = Pair<int, float>.from(42, 3.14)
+println(pair2.get_left().to_string())
+println(pair2.get_right().to_string())
+
+// Test Triple<X, Y, Z> with mixed types
+auto triple1 = Triple<int, string, float>.from(1, "two", 3.0)
+println(triple1.get_a().to_string())
+println(triple1.get_b().to_string())
+println(triple1.get_c().to_string())
+
+// Test Triple<X, Y, Z> with all ints
+auto triple2 = Triple<int, int, int>.from(100, 200, 300)
+println(triple2.get_a().to_string())
+println(triple2.get_b().to_string())
+println(triple2.get_c().to_string())
+
+println("All tests passed!")

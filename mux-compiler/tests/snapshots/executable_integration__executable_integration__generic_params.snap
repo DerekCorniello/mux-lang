@@ -1,0 +1,17 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+42
+hello
+status successful
+false
+42
+3.1
+1
+two
+3.0
+100
+200
+300
+All tests passed!
