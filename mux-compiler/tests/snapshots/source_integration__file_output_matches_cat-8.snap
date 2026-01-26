@@ -2,4 +2,4 @@
 source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Optionals & Results\nfunc divide(int a, int b) returns Result<int, string> {\n    if b == 0 { return Err(\"Division by zero\") }\n    return Ok(a / b)\n}\n\nauto res = divide(10, 2)\nmatch res {\n    Ok(v) { print(\"Result: \" + v) }\n    Err(e) { print(\"Error: \" + e) }\n}\n\nfunc findEven(list<int> nums) returns Optional<int> {\n    for int n in nums { if n % 2 == 0 { return Some(n) } }\n}\n"
+"// Optionals & Results\nfunc divide(int a, int b) returns Result<int, string> {\n    if b == 0 { return Err(\"Division by zero\") }\n    return Ok(a / b)\n}\n\nauto res = divide(10, 2)\nmatch res {\n    Ok(v) { println(\"Result: \" + v.to_string()) }\n    Err(e) { println(\"Error: \" + e) }\n}\n\nauto res2 = divide(10, 0)\nmatch res2 {\n    Ok(v) { println(\"Result: \" + v.to_string()) }\n    Err(e) { println(\"Error: \" + e) }\n}\n\nfunc findEven(list<int> nums) returns Optional<int> {\n    for int n in nums { if n % 2 == 0 { return Some(n) } }\n    return None\n}\n"

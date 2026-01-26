@@ -2,14 +2,13 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::result::MuxResult;
 use crate::Value;
+use crate::result::MuxResult;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Int(pub i64);
 
 impl Int {
-
     pub fn to_float(&self) -> f64 {
         self.0 as f64
     }
@@ -45,8 +44,6 @@ impl Int {
     pub fn lt(&self, other: &Int) -> bool {
         self.0 < other.0
     }
-
-
 }
 
 impl fmt::Display for Int {
@@ -61,9 +58,15 @@ pub extern "C" fn mux_int_to_string(i: i64) -> *mut c_char {
     CString::new(s).unwrap().into_raw()
 }
 
+/// # Safety
+/// v must be a valid pointer to a Value::Int.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_int_to_float(i: i64) -> f64 {
-    Int(i).to_float()
+pub unsafe extern "C" fn mux_int_from_value(v: *mut crate::Value) -> i64 {
+    if let crate::Value::Int(i) = unsafe { &*v } {
+        *i
+    } else {
+        panic!("Expected Int value");
+    }
 }
 
 #[unsafe(no_mangle)]

@@ -1,0 +1,212 @@
+---
+source: mux-compiler/tests/codegen_integration.rs
+expression: ll_content
+---
+; ModuleID = 'mux_module'
+source_filename = "mux_module"
+
+@str_0 = global [6 x i8] c"PI = \00"
+
+declare ptr @mux_value_from_string(ptr)
+
+declare ptr @mux_new_string_from_cstr(ptr)
+
+declare void @mux_print(ptr)
+
+declare void @mux_println_val(ptr)
+
+declare void @exit(i32)
+
+declare ptr @malloc(i64)
+
+declare ptr @mux_string_concat(ptr, ptr)
+
+declare ptr @mux_value_get_string(ptr)
+
+declare ptr @mux_value_from_string.1(ptr)
+
+declare ptr @mux_int_to_string(i64)
+
+declare ptr @mux_int_to_float(i64)
+
+declare ptr @mux_float_to_int(double)
+
+declare ptr @mux_float_to_string(double)
+
+declare ptr @mux_bool_to_string(i32)
+
+declare ptr @mux_bool_to_int(ptr)
+
+declare ptr @mux_bool_to_float(ptr)
+
+declare ptr @mux_string_to_string(ptr)
+
+declare ptr @mux_list_to_string(ptr)
+
+declare ptr @mux_list_value(ptr)
+
+declare ptr @mux_map_value(ptr)
+
+declare ptr @mux_set_value(ptr)
+
+declare ptr @mux_map_to_string(ptr)
+
+declare i32 @mux_register_object_type(ptr, i64)
+
+declare ptr @mux_alloc_object(i32)
+
+declare void @mux_free_object(ptr)
+
+declare ptr @mux_get_object_ptr(ptr)
+
+declare ptr @mux_set_to_string(ptr)
+
+declare ptr @mux_optional_to_string(ptr)
+
+declare ptr @mux_value_from_optional(ptr)
+
+declare ptr @mux_value_get_list(ptr)
+
+declare ptr @mux_value_get_map(ptr)
+
+declare ptr @mux_value_to_string(ptr)
+
+declare ptr @mux_list_value.2(ptr)
+
+declare ptr @mux_map_value.3(ptr)
+
+declare ptr @mux_set_value.4(ptr)
+
+declare ptr @mux_range(i64, i64)
+
+declare ptr @mux_new_list()
+
+declare ptr @mux_new_map()
+
+declare ptr @mux_new_set()
+
+declare ptr @mux_value_add(ptr, ptr)
+
+declare i64 @mux_value_get_int(ptr)
+
+declare double @mux_value_get_float(ptr)
+
+declare i32 @mux_value_get_bool(ptr)
+
+declare i32 @mux_value_get_type_tag(ptr)
+
+declare void @mux_free_value(ptr)
+
+declare void @mux_list_push_back(ptr, ptr)
+
+declare ptr @mux_list_get(ptr, i64)
+
+declare ptr @mux_list_get_value(ptr, i64)
+
+declare i64 @mux_list_length(ptr)
+
+declare i64 @mux_value_list_length(ptr)
+
+declare ptr @mux_value_list_get_value(ptr, i64)
+
+declare ptr @mux_list_pop_back(ptr)
+
+declare void @mux_list_push(ptr, ptr)
+
+declare ptr @mux_list_pop(ptr)
+
+declare void @mux_list_push_front(ptr, ptr)
+
+declare ptr @mux_list_pop_front(ptr)
+
+declare void @mux_list_push_back_value(ptr, ptr)
+
+declare void @mux_list_push_value(ptr, ptr)
+
+declare void @mux_list_push_front_value(ptr, ptr)
+
+declare ptr @mux_list_pop_back_value(ptr)
+
+declare ptr @mux_list_pop_value(ptr)
+
+declare ptr @mux_list_pop_front_value(ptr)
+
+declare i1 @mux_list_is_empty(ptr)
+
+declare void @mux_map_put(ptr, ptr, ptr)
+
+declare ptr @mux_map_get(ptr, ptr)
+
+declare i1 @mux_map_contains(ptr, ptr)
+
+declare ptr @mux_map_remove(ptr, ptr)
+
+declare void @mux_set_add(ptr, ptr)
+
+declare i1 @mux_set_contains(ptr, ptr)
+
+declare i1 @mux_set_remove(ptr, ptr)
+
+declare i64 @mux_set_size(ptr)
+
+declare i1 @mux_set_is_empty(ptr)
+
+declare i64 @mux_map_size(ptr)
+
+declare i1 @mux_map_is_empty(ptr)
+
+declare ptr @mux_int_value(i64)
+
+declare ptr @mux_float_value(double)
+
+declare ptr @mux_bool_value(i32)
+
+declare ptr @mux_string_value(ptr)
+
+declare ptr @mux_int_to_string.5(i64)
+
+declare i64 @mux_int_from_value(ptr)
+
+declare double @mux_float_from_value(ptr)
+
+declare i32 @mux_bool_from_value(ptr)
+
+declare ptr @mux_string_from_value(ptr)
+
+declare ptr @mux_result_ok_int(i64)
+
+declare ptr @mux_result_err_str(ptr)
+
+declare ptr @mux_optional_some_int(i64)
+
+declare ptr @mux_optional_none()
+
+declare ptr @mux_result_ok_int.6(i64)
+
+declare ptr @mux_result_err_str.7(ptr)
+
+declare i32 @mux_optional_discriminant(ptr)
+
+declare ptr @mux_optional_data(ptr)
+
+declare i32 @mux_result_discriminant(ptr)
+
+declare ptr @mux_result_data(ptr)
+
+define void @main() {
+entry:
+  %call = call ptr @mux_float_value(double 3.141590e+00)
+  %pi = alloca ptr, align 8
+  store ptr %call, ptr %pi, align 8
+  %call1 = call ptr @mux_new_string_from_cstr(ptr @str_0)
+  %pi2 = load ptr, ptr %pi, align 8
+  %get_float = call double @mux_value_get_float(ptr %pi2)
+  %float_to_str = call ptr @mux_float_to_string(double %get_float)
+  %new_str = call ptr @mux_new_string_from_cstr(ptr %float_to_str)
+  %get_string = call ptr @mux_value_get_string(ptr %call1)
+  %get_string3 = call ptr @mux_value_get_string(ptr %new_str)
+  %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string3)
+  %from_string = call ptr @mux_value_from_string(ptr %string_concat)
+  call void @mux_println_val(ptr %from_string)
+  ret void
+}

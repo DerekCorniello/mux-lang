@@ -3,11 +3,14 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::raw::c_char;
 
+use crate::Value;
+
 #[derive(Debug)]
 pub struct MuxFile(pub std::fs::File);
 
 pub fn print(s: &str) {
     print!("{}", s);
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
 }
 
 pub fn println(s: &str) {
@@ -16,7 +19,9 @@ pub fn println(s: &str) {
 
 pub fn read_line() -> Result<String, String> {
     let mut input = String::new();
-    io::stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| e.to_string())?;
     Ok(input.trim().to_string())
 }
 
@@ -26,12 +31,14 @@ pub fn open_file(path: &str) -> Result<File, String> {
 
 pub fn read_file(mut file: File) -> Result<String, String> {
     let mut contents = String::new();
-    file.read_to_string(&mut contents).map_err(|e| e.to_string())?;
+    file.read_to_string(&mut contents)
+        .map_err(|e| e.to_string())?;
     Ok(contents)
 }
 
 pub fn write_file(mut file: File, content: &str) -> Result<(), String> {
-    file.write_all(content.as_bytes()).map_err(|e| e.to_string())
+    file.write_all(content.as_bytes())
+        .map_err(|e| e.to_string())
 }
 
 pub fn close_file(_file: File) {
@@ -40,9 +47,31 @@ pub fn close_file(_file: File) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_print(s: *const c_char) {
+pub extern "C" fn mux_value_from_string(s: *const c_char) -> *mut crate::Value {
+    let c_str = unsafe { CStr::from_ptr(s) };
+    let rust_str = c_str.to_string_lossy().to_string();
+    let value = crate::Value::String(rust_str);
+    Box::into_raw(Box::new(value))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_print_cstr(s: *const c_char) {
     let s = unsafe { CStr::from_ptr(s).to_string_lossy() };
     print!("{}", s);
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_print(val: *mut Value) {
+    let val = unsafe { &*val };
+    if let Value::String(s) = val {
+        print!("{}", s);
+    } else {
+        print!("{:?}", val);
+    }
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -54,10 +83,34 @@ pub extern "C" fn mux_println(s: *const c_char) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_println_val(val: *mut Value) {
+    let val = unsafe { &*val };
+    println!("{}", val);
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_read_line() -> *mut c_char {
     match read_line() {
         Ok(s) => CString::new(s).unwrap().into_raw(),
         Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// # Safety
+/// This function is safe as it only flushes stdout.
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_flush_stdout() {
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+
+/// # Safety
+/// Returns a valid i64 from stdin, or 0 on error.
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_read_int() -> i64 {
+    match read_line() {
+        Ok(s) => s.trim().parse().unwrap_or(0),
+        Err(_) => 0,
     }
 }
 
@@ -97,6 +150,8 @@ pub extern "C" fn mux_write_file(file: *mut MuxFile, content: *const c_char) -> 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_close_file(file: *mut MuxFile) {
     if !file.is_null() {
-        unsafe { drop(Box::from_raw(file)); }
+        unsafe {
+            drop(Box::from_raw(file));
+        }
     }
 }

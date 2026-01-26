@@ -3,6 +3,20 @@ auto nums = [1, 2, 3, 4]
 auto scores = {"Alice": 90, "Bob": 85}
 auto matrix = [[1, 2], [3, 4]]
 
-map<string, int> avgs = {"Alice": 90, "Bob": 85}
-list<list<int>> grid = [[1, 2], [3, 4]]
-set<int> myset = {1, 2, 4}
+auto avgs = {"Alice": 90, "Bob": 85}
+auto grid = [[1, 2], [3, 4]]
+auto myset = {1, 2, 4}
+
+println("nums: " + nums.to_string())
+println("scores: " + scores.to_string())
+println("matrix: " + matrix.to_string())
+println("avgs: " + avgs.to_string())
+println("grid: " + grid.to_string())
+println("myset: " + myset.to_string())
+
+// Demonstrate both list access methods
+println("abt to safe")
+println("Safe access: " + nums.get(0).to_string())  // Safe access returns Optional
+println("abt to direct")
+println("Direct access: " + nums[0].to_string())  // Direct access with runtime error if out of bounds
+println("Access a map: " + avgs.get("Alice").to_string())

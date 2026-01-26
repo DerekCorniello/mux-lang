@@ -1,0 +1,8 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+true
+true
+false
+false

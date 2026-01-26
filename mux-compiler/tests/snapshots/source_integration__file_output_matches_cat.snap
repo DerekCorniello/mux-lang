@@ -2,4 +2,4 @@
 source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Collections\nauto nums = [1, 2, 3, 4]\nauto scores = {\"Alice\": 90, \"Bob\": 85}\nauto matrix = [[1, 2], [3, 4]]\n\nmap<string, int> avgs = {\"Alice\": 90, \"Bob\": 85}\nlist<list<int>> grid = [[1, 2], [3, 4]]\nset<int> myset = {1, 2, 4}\n"
+"// Collections\nauto nums = [1, 2, 3, 4]\nauto scores = {\"Alice\": 90, \"Bob\": 85}\nauto matrix = [[1, 2], [3, 4]]\n\nauto avgs = {\"Alice\": 90, \"Bob\": 85}\nauto grid = [[1, 2], [3, 4]]\nauto myset = {1, 2, 4}\n\nprintln(\"nums: \" + nums.to_string())\nprintln(\"scores: \" + scores.to_string())\nprintln(\"matrix: \" + matrix.to_string())\nprintln(\"avgs: \" + avgs.to_string())\nprintln(\"grid: \" + grid.to_string())\nprintln(\"myset: \" + myset.to_string())\n\n// Demonstrate both list access methods\nprintln(\"abt to safe\")\nprintln(\"Safe access: \" + nums.get(0).to_string())  // Safe access returns Optional\nprintln(\"abt to direct\")\nprintln(\"Direct access: \" + nums[0].to_string())  // Direct access with runtime error if out of bounds\nprintln(\"Access a map: \" + avgs.get(\"Alice\").to_string())\n"

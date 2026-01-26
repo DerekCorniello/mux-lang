@@ -1,9 +1,76 @@
-// Enums and Classes
-enum Shape { Circle(float r), Rectangle(float w, float h) }
+// Enums and Classes - Extended Shapes Example
+enum Shape { Circ(float r), Rect(float w, float h) }  // Tagged union for shape data
 
-interface Drawable { func draw() returns void }
+interface DrawableShape { func draw() returns void }  // Interface for drawable behavior
 
-class Circle is Drawable {
-    float radius
-    func draw() returns void { print("Circle radius=" + radius.to_string()) }
+class GenericShape is DrawableShape {
+    Shape shape  // Class contains enum for data
+    func draw() returns void {
+        println("in draw")
+        match self.shape {
+            Circ(r) { 
+                println("In Circ arm")
+                println("Drawing circle with radius: " + r.to_string())
+            }
+            Rect(w, h) { 
+                println("In Rect arm")
+                println("Drawing rectangle with width: " + w.to_string() + " height: " + h.to_string()) 
+            }
+            _ {
+                println("none")
+            }
+        }
+    }
+
+    common func from(Shape init_shape) returns GenericShape {
+        GenericShape new_shape = GenericShape.new()
+        new_shape.shape = init_shape
+        return new_shape
+    }
 }
+
+class Pair<T, U> {
+    T left
+    U right
+    common func from(T left, U right) returns Pair<T, U> {
+        auto new_pair = Pair<T, U>.new()
+        new_pair.left = left
+        new_pair.right = right
+        return new_pair
+    }
+
+    func get_left() returns T {
+        return self.left
+    }
+
+    func get_right() returns U {
+        return self.right
+    }
+}
+
+// Usage: Create shapes via enum, wrap in class for behavior
+auto circleShape = Shape.Circ(5.0)
+auto rectShape = Shape.Rect(10.0, 20.0)
+
+auto circle = GenericShape.from(circleShape)
+auto rect = GenericShape.from(rectShape)
+auto shapes = [circle, rect]
+
+for GenericShape s in shapes {
+    s.draw()  // Polymorphic call via interface
+}
+
+auto homogenous_pair = Pair<int, int>.from(1, 9)
+auto heterogenous_pair = Pair<string, bool>.from("status successful", true)
+auto heterogenous_pair_2 = Pair<string, bool>.from("status failed", false)
+
+println(homogenous_pair.get_left().to_string())
+println(homogenous_pair.get_right().to_string())
+
+println(heterogenous_pair.get_left().to_string())
+println(heterogenous_pair.get_right().to_string())
+
+println(heterogenous_pair_2.get_left().to_string())
+println(heterogenous_pair_2.get_right().to_string())
+
+println("done")

@@ -15,8 +15,6 @@ impl Optional {
     pub fn none() -> Optional {
         Optional::None
     }
-
-
 }
 
 impl fmt::Display for Optional {
@@ -24,6 +22,72 @@ impl fmt::Display for Optional {
         match self {
             Optional::Some(v) => write!(f, "Some({})", v),
             Optional::None => write!(f, "None"),
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_discriminant(opt: *mut Optional) -> i32 {
+    if opt.is_null() {
+        return -1;
+    }
+    unsafe {
+        match &*opt {
+            Optional::Some(_) => 0,
+            Optional::None => 1,
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_data(opt: *mut Optional) -> *mut Value {
+    if opt.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*opt {
+            Optional::Some(v) => Box::into_raw(Box::new(*v.clone())),
+            Optional::None => std::ptr::null_mut(),
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_some_int(val: i64) -> *mut Optional {
+    Box::into_raw(Box::new(Optional::some(Value::Int(val))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_none() -> *mut Optional {
+    Box::into_raw(Box::new(Optional::none()))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_to_string(opt: *const Optional) -> *mut std::ffi::c_char {
+    use std::ffi::CString;
+    if opt.is_null() {
+        return CString::new("null".to_string()).unwrap().into_raw();
+    }
+    unsafe {
+        let s = (*opt).to_string();
+        CString::new(s).unwrap().into_raw()
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Value {
+    if opt.is_null() {
+        return Box::into_raw(Box::new(crate::Value::Optional(None)));
+    }
+    unsafe {
+        let optional = Box::from_raw(opt);
+        match *optional {
+            Optional::Some(value) => Box::into_raw(Box::new(crate::Value::Optional(Some(value)))),
+            Optional::None => Box::into_raw(Box::new(crate::Value::Optional(None))),
         }
     }
 }

@@ -88,6 +88,8 @@ pub enum TokenType {
     In,
     Break,
     Continue,
+    None,
+    Common,
 
     OpenParen,    // (
     CloseParen,   // )
@@ -322,6 +324,10 @@ impl<'a> Lexer<'a> {
                     start_span.complete(self.source.line, self.source.col);
                     Ok(Token::new(TokenType::MinusEq, start_span))
                 }
+                Some(c) if c.is_ascii_digit() => {
+                    // Negative number: include the minus sign and parse as number
+                    self.read_number(first_char, start_span)
+                }
                 _ => Ok(Token::new(TokenType::Minus, start_span)),
             },
             '<' => {
@@ -465,10 +471,12 @@ impl<'a> Lexer<'a> {
                     "in" => TokenType::In,
                     "break" => TokenType::Break,
                     "continue" => TokenType::Continue,
+                    "None" => TokenType::None,
                     "true" => TokenType::Bool(true),
                     "false" => TokenType::Bool(false),
                     "and" => TokenType::And,
                     "or" => TokenType::Or,
+                    "common" => TokenType::Common,
                     _ => TokenType::Id(ident),
                 };
                 Ok(Token::new(token_type, start_span))
@@ -611,12 +619,13 @@ impl<'a> Lexer<'a> {
         let mut num = String::new();
         let mut is_float = false;
 
+        // Handle leading minus sign for negative numbers
+        // Note: if first_char is '-', it was already added to num in the caller
         if first_char == '.' {
             // handle numbers starting with decimal point
             is_float = true;
             num.push('0');
             num.push('.');
-
             // require at least one digit after the decimal point
             let mut has_digit = false;
             while let Some(c) = self.source.peek() {
@@ -637,8 +646,10 @@ impl<'a> Lexer<'a> {
                 ));
             }
         } else {
-            // handle numbers starting with a digit
-            num.push(first_char);
+            // handle numbers starting with a digit (or we already have the minus sign)
+            if first_char != '-' {
+                num.push(first_char);
+            }
 
             // read digits before decimal point
             while let Some(c) = self.source.peek() {
@@ -980,28 +991,22 @@ auto y = 42"#;
 
         // Check the tokens
         match &tokens[..] {
-            [
-                Token {
-                    token_type: TokenType::Auto,
-                    ..
-                },
-                Token {
-                    token_type: TokenType::Id(id),
-                    ..
-                },
-                Token {
-                    token_type: TokenType::Eq,
-                    ..
-                },
-                Token {
-                    token_type: TokenType::Float(f),
-                    ..
-                },
-                Token {
-                    token_type: TokenType::Int(i),
-                    ..
-                },
-            ] => {
+            [Token {
+                token_type: TokenType::Auto,
+                ..
+            }, Token {
+                token_type: TokenType::Id(id),
+                ..
+            }, Token {
+                token_type: TokenType::Eq,
+                ..
+            }, Token {
+                token_type: TokenType::Float(f),
+                ..
+            }, Token {
+                token_type: TokenType::Int(i),
+                ..
+            }] => {
                 assert_eq!(id, "x");
                 assert!((f.into_inner() - 1.2).abs() < f64::EPSILON);
                 assert_eq!(*i, 33); // ASCII for '3'
@@ -1019,15 +1024,10 @@ auto y = 42"#;
         let token_types: Vec<_> = tokens.into_iter().map(|t| t.token_type).collect();
 
         match &token_types[..] {
-            [
-                TokenType::Int(42),
-                TokenType::Int(1000),
-                TokenType::Float(OrderedFloat(f1)),
-                TokenType::Float(OrderedFloat(f2)),
-                TokenType::Float(OrderedFloat(f3)),
-            ] if (*f1 - 3.45).abs() < f64::EPSILON
-                && (*f2 - 0.5).abs() < f64::EPSILON
-                && (*f3 - 5.0).abs() < f64::EPSILON => {}
+            [TokenType::Int(42), TokenType::Int(1000), TokenType::Float(OrderedFloat(f1)), TokenType::Float(OrderedFloat(f2)), TokenType::Float(OrderedFloat(f3))]
+                if (*f1 - 3.45).abs() < f64::EPSILON
+                    && (*f2 - 0.5).abs() < f64::EPSILON
+                    && (*f3 - 5.0).abs() < f64::EPSILON => {}
             _ => panic!("Unexpected token types: {:?}", token_types),
         }
     }
@@ -1122,7 +1122,7 @@ world"
             tokens.into_iter().map(|t| t.token_type).collect::<Vec<_>>(),
             vec![
                 TokenType::Id("Some".to_string()),
-                TokenType::Id("None".to_string()),
+                TokenType::None,
                 TokenType::Id("Ok".to_string()),
                 TokenType::Id("Err".to_string()),
             ]
@@ -1171,7 +1171,7 @@ world"
 
     #[test]
     fn test_keywords_and_identifiers() {
-        let input = "auto x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false and or";
+        let input = "auto x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false and or common";
         let mut source = Source::from_test_str(input);
         let mut lexer = Lexer::new(&mut source);
         let tokens: Vec<_> = lexer.lex_all().unwrap().into_iter().collect();
@@ -1179,37 +1179,8 @@ world"
         let token_types: Vec<_> = tokens.into_iter().map(|t| t.token_type).collect();
 
         match &token_types[..] {
-            [
-                TokenType::Auto,
-                TokenType::Id(x),
-                TokenType::Eq,
-                TokenType::Int(42),
-                TokenType::If,
-                TokenType::Else,
-                TokenType::For,
-                TokenType::While,
-                TokenType::Match,
-                TokenType::Const,
-                TokenType::Class,
-                TokenType::Interface,
-                TokenType::Enum,
-                TokenType::Is,
-                TokenType::As,
-                TokenType::In,
-                TokenType::Id(range),
-                TokenType::Id(list),
-                TokenType::Id(map),
-                TokenType::Id(opt),
-                TokenType::Id(res),
-                TokenType::Id(some),
-                TokenType::Id(none),
-                TokenType::Id(ok),
-                TokenType::Id(err),
-                TokenType::Bool(true),
-                TokenType::Bool(false),
-                TokenType::And,
-                TokenType::Or,
-            ] => {
+            [TokenType::Auto, TokenType::Id(x), TokenType::Eq, TokenType::Int(42), TokenType::If, TokenType::Else, TokenType::For, TokenType::While, TokenType::Match, TokenType::Const, TokenType::Class, TokenType::Interface, TokenType::Enum, TokenType::Is, TokenType::As, TokenType::In, TokenType::Id(range), TokenType::Id(list), TokenType::Id(map), TokenType::Id(opt), TokenType::Id(res), TokenType::Id(some), TokenType::None, TokenType::Id(ok), TokenType::Id(err), TokenType::Bool(true), TokenType::Bool(false), TokenType::And, TokenType::Or, TokenType::Common] =>
+            {
                 assert_eq!(x, "x");
                 assert_eq!(range, "range");
                 assert_eq!(list, "list");
@@ -1217,7 +1188,7 @@ world"
                 assert_eq!(opt, "Optional");
                 assert_eq!(res, "Result");
                 assert_eq!(some, "Some");
-                assert_eq!(none, "None");
+                // none is TokenType::None, not Id
                 assert_eq!(ok, "Ok");
                 assert_eq!(err, "Err");
             }
@@ -1288,20 +1259,8 @@ world"
         // Test combined operators with identifiers and numbers
         let token_types = get_tokens("a += 1 b -= 2 c *= 3 d /= 4");
         match &token_types[..] {
-            [
-                TokenType::Id(a),
-                TokenType::PlusEq,
-                TokenType::Int(1),
-                TokenType::Id(b),
-                TokenType::MinusEq,
-                TokenType::Int(2),
-                TokenType::Id(c),
-                TokenType::StarEq,
-                TokenType::Int(3),
-                TokenType::Id(d),
-                TokenType::SlashEq,
-                TokenType::Int(4),
-            ] => {
+            [TokenType::Id(a), TokenType::PlusEq, TokenType::Int(1), TokenType::Id(b), TokenType::MinusEq, TokenType::Int(2), TokenType::Id(c), TokenType::StarEq, TokenType::Int(3), TokenType::Id(d), TokenType::SlashEq, TokenType::Int(4)] =>
+            {
                 assert_eq!(a, "a");
                 assert_eq!(b, "b");
                 assert_eq!(c, "c");

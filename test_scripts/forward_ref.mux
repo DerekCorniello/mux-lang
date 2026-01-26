@@ -16,6 +16,8 @@ fn odd(int n) returns bool {
 }
 
 fn main() returns void {
-    print(even(4).to_string())
-    print(odd(5).to_string())
+    println(even(4).to_string())
+    println(odd(5).to_string())
+    println(even(7).to_string())
+    println(odd(8).to_string())
 }

@@ -1,0 +1,11 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+max of 1 and 2 is: 2
+max of -1 and -2 is: 2
+hi im derek
+hi im 123
+hello derek
+hello 123
+generics ran successfully

@@ -2,4 +2,4 @@
 source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Generics\nfunc max<T is comparable>(T a, T b) returns T { \n    if a > b { \n        return a\n    }\n    return b \n}\n\nclass Stack<T> {\n    list<T> items\n    func push(T item) returns void { items.push_back(item) }\n    func pop() returns Optional<T> {\n        if items.is_empty() { return None }\n        return Some(items.pop_back())\n    }\n}\n\nauto s = Stack<int>.new([])\ns.push(42)\n"
+"// Simple generic class test\nclass Box<T> {\n    T value\n    \n    func get() returns T {\n        return self.value\n    }\n    \n    func set(T new_value) returns void {\n        self.value = new_value\n    }\n    \n    func to_string() returns string {\n        return \"Box with: \" + self.value.to_string()\n    }\n}\n\nauto int_box = Box<int>.new()\nint_box.set(42)\nprintln(int_box.to_string())\n\nauto string_box = Box<string>.new()\nstring_box.set(\"hello\")\nprintln(string_box.to_string())\n\nprintln(\"Generic class test completed\")\n"

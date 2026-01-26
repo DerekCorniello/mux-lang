@@ -1,0 +1,517 @@
+---
+source: mux-compiler/tests/codegen_integration.rs
+expression: ll_content
+---
+; ModuleID = 'mux_module'
+source_filename = "mux_module"
+
+@GenericShape_DrawableShape_vtable = global { ptr } { ptr @GenericShape.draw }
+@type_name_GenericShape = dso_local unnamed_addr constant [13 x i8] c"GenericShape\00", align 1
+@type_name_Pair = dso_local unnamed_addr constant [5 x i8] c"Pair\00", align 1
+@str_0 = global [8 x i8] c"in draw\00"
+@str_1 = global [12 x i8] c"In Circ arm\00"
+@str_2 = global [29 x i8] c"Drawing circle with radius: \00"
+@str_3 = global [12 x i8] c"In Rect arm\00"
+@str_4 = global [31 x i8] c"Drawing rectangle with width: \00"
+@str_5 = global [10 x i8] c" height: \00"
+@str_6 = global [5 x i8] c"none\00"
+@type_name_Pair.8 = private unnamed_addr constant [5 x i8] c"Pair\00", align 1
+@str_7 = global [18 x i8] c"status successful\00"
+@str_8 = global [14 x i8] c"status failed\00"
+@str_9 = global [5 x i8] c"done\00"
+
+declare ptr @mux_value_from_string(ptr)
+
+declare ptr @mux_new_string_from_cstr(ptr)
+
+declare void @mux_print(ptr)
+
+declare void @mux_println_val(ptr)
+
+declare void @exit(i32)
+
+declare ptr @malloc(i64)
+
+declare ptr @mux_string_concat(ptr, ptr)
+
+declare ptr @mux_value_get_string(ptr)
+
+declare ptr @mux_value_from_string.1(ptr)
+
+declare ptr @mux_int_to_string(i64)
+
+declare ptr @mux_int_to_float(i64)
+
+declare ptr @mux_float_to_int(double)
+
+declare ptr @mux_float_to_string(double)
+
+declare ptr @mux_bool_to_string(i32)
+
+declare ptr @mux_bool_to_int(ptr)
+
+declare ptr @mux_bool_to_float(ptr)
+
+declare ptr @mux_string_to_string(ptr)
+
+declare ptr @mux_list_to_string(ptr)
+
+declare ptr @mux_list_value(ptr)
+
+declare ptr @mux_map_value(ptr)
+
+declare ptr @mux_set_value(ptr)
+
+declare ptr @mux_map_to_string(ptr)
+
+declare i32 @mux_register_object_type(ptr, i64)
+
+declare ptr @mux_alloc_object(i32)
+
+declare void @mux_free_object(ptr)
+
+declare ptr @mux_get_object_ptr(ptr)
+
+declare ptr @mux_set_to_string(ptr)
+
+declare ptr @mux_optional_to_string(ptr)
+
+declare ptr @mux_value_from_optional(ptr)
+
+declare ptr @mux_value_get_list(ptr)
+
+declare ptr @mux_value_get_map(ptr)
+
+declare ptr @mux_value_to_string(ptr)
+
+declare ptr @mux_list_value.2(ptr)
+
+declare ptr @mux_map_value.3(ptr)
+
+declare ptr @mux_set_value.4(ptr)
+
+declare ptr @mux_range(i64, i64)
+
+declare ptr @mux_new_list()
+
+declare ptr @mux_new_map()
+
+declare ptr @mux_new_set()
+
+declare ptr @mux_value_add(ptr, ptr)
+
+declare i64 @mux_value_get_int(ptr)
+
+declare double @mux_value_get_float(ptr)
+
+declare i32 @mux_value_get_bool(ptr)
+
+declare i32 @mux_value_get_type_tag(ptr)
+
+declare void @mux_free_value(ptr)
+
+declare void @mux_list_push_back(ptr, ptr)
+
+declare ptr @mux_list_get(ptr, i64)
+
+declare ptr @mux_list_get_value(ptr, i64)
+
+declare i64 @mux_list_length(ptr)
+
+declare i64 @mux_value_list_length(ptr)
+
+declare ptr @mux_value_list_get_value(ptr, i64)
+
+declare ptr @mux_list_pop_back(ptr)
+
+declare void @mux_list_push(ptr, ptr)
+
+declare ptr @mux_list_pop(ptr)
+
+declare void @mux_list_push_front(ptr, ptr)
+
+declare ptr @mux_list_pop_front(ptr)
+
+declare void @mux_list_push_back_value(ptr, ptr)
+
+declare void @mux_list_push_value(ptr, ptr)
+
+declare void @mux_list_push_front_value(ptr, ptr)
+
+declare ptr @mux_list_pop_back_value(ptr)
+
+declare ptr @mux_list_pop_value(ptr)
+
+declare ptr @mux_list_pop_front_value(ptr)
+
+declare i1 @mux_list_is_empty(ptr)
+
+declare void @mux_map_put(ptr, ptr, ptr)
+
+declare ptr @mux_map_get(ptr, ptr)
+
+declare i1 @mux_map_contains(ptr, ptr)
+
+declare ptr @mux_map_remove(ptr, ptr)
+
+declare void @mux_set_add(ptr, ptr)
+
+declare i1 @mux_set_contains(ptr, ptr)
+
+declare i1 @mux_set_remove(ptr, ptr)
+
+declare i64 @mux_set_size(ptr)
+
+declare i1 @mux_set_is_empty(ptr)
+
+declare i64 @mux_map_size(ptr)
+
+declare i1 @mux_map_is_empty(ptr)
+
+declare ptr @mux_int_value(i64)
+
+declare ptr @mux_float_value(double)
+
+declare ptr @mux_bool_value(i32)
+
+declare ptr @mux_string_value(ptr)
+
+declare ptr @mux_int_to_string.5(i64)
+
+declare i64 @mux_int_from_value(ptr)
+
+declare double @mux_float_from_value(ptr)
+
+declare i32 @mux_bool_from_value(ptr)
+
+declare ptr @mux_string_from_value(ptr)
+
+declare ptr @mux_result_ok_int(i64)
+
+declare ptr @mux_result_err_str(ptr)
+
+declare ptr @mux_optional_some_int(i64)
+
+declare ptr @mux_optional_none()
+
+declare ptr @mux_result_ok_int.6(i64)
+
+declare ptr @mux_result_err_str.7(ptr)
+
+declare i32 @mux_optional_discriminant(ptr)
+
+declare ptr @mux_optional_data(ptr)
+
+declare i32 @mux_result_discriminant(ptr)
+
+declare ptr @mux_result_data(ptr)
+
+define void @GenericShape.draw(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %call = call ptr @mux_new_string_from_cstr(ptr @str_0)
+  call void @mux_println_val(ptr %call)
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %shape = getelementptr inbounds nuw { ptr, { i32, double, double } }, ptr %self_data_ptr, i32 0, i32 1
+  %shape1 = load { i32, double, double }, ptr %shape, align 8
+  %temp_enum = alloca { i32, double, double }, align 8
+  store { i32, double, double } %shape1, ptr %temp_enum, align 8
+  %discriminant_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_enum, i32 0, i32 0
+  %discriminant = load i32, ptr %discriminant_ptr, align 4
+  %temp_enum_struct = alloca { i32, double, double }, align 8
+  store { i32, double, double } %shape1, ptr %temp_enum_struct, align 8
+  %match_cmp = icmp eq i32 %discriminant, 0
+  br i1 %match_cmp, label %match_arm_0_0, label %match_next_0_0
+
+match_end_0:                                      ; preds = %match_arm_0_2, %match_next_0_1, %match_arm_0_1, %match_arm_0_0
+  ret void
+
+match_arm_0_0:                                    ; preds = %entry
+  %data_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_enum_struct, i32 0, i32 1
+  %data = load double, ptr %data_ptr, align 8
+  %call2 = call ptr @mux_float_value(double %data)
+  %r = alloca ptr, align 8
+  store ptr %call2, ptr %r, align 8
+  %call3 = call ptr @mux_new_string_from_cstr(ptr @str_1)
+  call void @mux_println_val(ptr %call3)
+  %call4 = call ptr @mux_new_string_from_cstr(ptr @str_2)
+  %r5 = load ptr, ptr %r, align 8
+  %get_float = call double @mux_value_get_float(ptr %r5)
+  %float_to_str = call ptr @mux_float_to_string(double %get_float)
+  %new_str = call ptr @mux_new_string_from_cstr(ptr %float_to_str)
+  %get_string = call ptr @mux_value_get_string(ptr %call4)
+  %get_string6 = call ptr @mux_value_get_string(ptr %new_str)
+  %string_concat = call ptr @mux_string_concat(ptr %get_string, ptr %get_string6)
+  %from_string = call ptr @mux_value_from_string(ptr %string_concat)
+  call void @mux_println_val(ptr %from_string)
+  br label %match_end_0
+
+match_next_0_0:                                   ; preds = %entry
+  %match_cmp7 = icmp eq i32 %discriminant, 1
+  br i1 %match_cmp7, label %match_arm_0_1, label %match_next_0_1
+
+match_arm_0_1:                                    ; preds = %match_next_0_0
+  %data_ptr8 = getelementptr inbounds nuw { i32, double, double }, ptr %temp_enum_struct, i32 0, i32 1
+  %data9 = load double, ptr %data_ptr8, align 8
+  %call10 = call ptr @mux_float_value(double %data9)
+  %w = alloca ptr, align 8
+  store ptr %call10, ptr %w, align 8
+  %data_ptr11 = getelementptr inbounds nuw { i32, double, double }, ptr %temp_enum_struct, i32 0, i32 2
+  %data12 = load double, ptr %data_ptr11, align 8
+  %call13 = call ptr @mux_float_value(double %data12)
+  %h = alloca ptr, align 8
+  store ptr %call13, ptr %h, align 8
+  %call14 = call ptr @mux_new_string_from_cstr(ptr @str_3)
+  call void @mux_println_val(ptr %call14)
+  %call15 = call ptr @mux_new_string_from_cstr(ptr @str_4)
+  %w16 = load ptr, ptr %w, align 8
+  %get_float17 = call double @mux_value_get_float(ptr %w16)
+  %float_to_str18 = call ptr @mux_float_to_string(double %get_float17)
+  %new_str19 = call ptr @mux_new_string_from_cstr(ptr %float_to_str18)
+  %get_string20 = call ptr @mux_value_get_string(ptr %call15)
+  %get_string21 = call ptr @mux_value_get_string(ptr %new_str19)
+  %string_concat22 = call ptr @mux_string_concat(ptr %get_string20, ptr %get_string21)
+  %from_string23 = call ptr @mux_value_from_string(ptr %string_concat22)
+  %call24 = call ptr @mux_new_string_from_cstr(ptr @str_5)
+  %get_string25 = call ptr @mux_value_get_string(ptr %from_string23)
+  %get_string26 = call ptr @mux_value_get_string(ptr %call24)
+  %string_concat27 = call ptr @mux_string_concat(ptr %get_string25, ptr %get_string26)
+  %from_string28 = call ptr @mux_value_from_string(ptr %string_concat27)
+  %h29 = load ptr, ptr %h, align 8
+  %get_float30 = call double @mux_value_get_float(ptr %h29)
+  %float_to_str31 = call ptr @mux_float_to_string(double %get_float30)
+  %new_str32 = call ptr @mux_new_string_from_cstr(ptr %float_to_str31)
+  %get_string33 = call ptr @mux_value_get_string(ptr %from_string28)
+  %get_string34 = call ptr @mux_value_get_string(ptr %new_str32)
+  %string_concat35 = call ptr @mux_string_concat(ptr %get_string33, ptr %get_string34)
+  %from_string36 = call ptr @mux_value_from_string(ptr %string_concat35)
+  call void @mux_println_val(ptr %from_string36)
+  br label %match_end_0
+
+match_next_0_1:                                   ; preds = %match_next_0_0
+  br i1 true, label %match_arm_0_2, label %match_end_0
+
+match_arm_0_2:                                    ; preds = %match_next_0_1
+  %call37 = call ptr @mux_new_string_from_cstr(ptr @str_6)
+  call void @mux_println_val(ptr %call37)
+  br label %match_end_0
+}
+
+define ptr @GenericShape.from({ i32, double, double } %0) {
+entry:
+  %init_shape = alloca { i32, double, double }, align 8
+  store { i32, double, double } %0, ptr %init_shape, align 8
+  %GenericShape.new_call = call ptr @GenericShape.new()
+  %new_shape = alloca ptr, align 8
+  store ptr %GenericShape.new_call, ptr %new_shape, align 8
+  %load_init_shape = load { i32, double, double }, ptr %init_shape, align 8
+  %new_shape1 = load ptr, ptr %new_shape, align 8
+  %data_ptr_assign = call ptr @mux_get_object_ptr(ptr %new_shape1)
+  %shape = getelementptr inbounds nuw { ptr, { i32, double, double } }, ptr %data_ptr_assign, i32 0, i32 1
+  store { i32, double, double } %load_init_shape, ptr %shape, align 8
+  %new_shape2 = load ptr, ptr %new_shape, align 8
+  ret ptr %new_shape2
+}
+
+define ptr @Pair.from(ptr %0, ptr %1) {
+entry:
+  %left = alloca ptr, align 8
+  store ptr %0, ptr %left, align 8
+  %right = alloca ptr, align 8
+  store ptr %1, ptr %right, align 8
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_Pair.8, i64 ptrtoint (ptr getelementptr ({ ptr, ptr }, ptr null, i32 1) to i64))
+  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
+  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
+  %field_0 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
+  store ptr null, ptr %field_0, align 8
+  %field_1 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
+  store i1 false, ptr %field_1, align 1
+  %new_pair = alloca ptr, align 8
+  store ptr %obj_ptr, ptr %new_pair, align 8
+  %left1 = load ptr, ptr %left, align 8
+  %new_pair2 = load ptr, ptr %new_pair, align 8
+  %data_ptr_assign = call ptr @mux_get_object_ptr(ptr %new_pair2)
+  %left3 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign, i32 0, i32 0
+  store ptr %left1, ptr %left3, align 8
+  %right4 = load ptr, ptr %right, align 8
+  %new_pair5 = load ptr, ptr %new_pair, align 8
+  %data_ptr_assign6 = call ptr @mux_get_object_ptr(ptr %new_pair5)
+  %right7 = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr_assign6, i32 0, i32 1
+  store ptr %right4, ptr %right7, align 8
+  %new_pair8 = load ptr, ptr %new_pair, align 8
+  ret ptr %new_pair8
+}
+
+define ptr @Pair.get_left(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %left = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 0
+  %left1 = load ptr, ptr %left, align 8
+  ret ptr %left1
+}
+
+define ptr @Pair.get_right(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %load_self_for_field_access = load ptr, ptr %self, align 8
+  %self_data_ptr = call ptr @mux_get_object_ptr(ptr %load_self_for_field_access)
+  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %self_data_ptr, i32 0, i32 1
+  %right1 = load ptr, ptr %right, align 8
+  ret ptr %right1
+}
+
+define { i32, double, double } @Shape_Circ(double %0) {
+entry:
+  %temp_struct = alloca { i32, double, double }, align 8
+  store { i32, double, double } zeroinitializer, ptr %temp_struct, align 8
+  %tag_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 0
+  store i32 0, ptr %tag_ptr, align 4
+  %data_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 1
+  store double %0, ptr %data_ptr, align 8
+  %struct = load { i32, double, double }, ptr %temp_struct, align 8
+  ret { i32, double, double } %struct
+}
+
+define { i32, double, double } @Shape_Rect(double %0, double %1) {
+entry:
+  %temp_struct = alloca { i32, double, double }, align 8
+  store { i32, double, double } zeroinitializer, ptr %temp_struct, align 8
+  %tag_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 0
+  store i32 1, ptr %tag_ptr, align 4
+  %data_ptr = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 1
+  store double %0, ptr %data_ptr, align 8
+  %data_ptr1 = getelementptr inbounds nuw { i32, double, double }, ptr %temp_struct, i32 0, i32 2
+  store double %1, ptr %data_ptr1, align 8
+  %struct = load { i32, double, double }, ptr %temp_struct, align 8
+  ret { i32, double, double } %struct
+}
+
+define ptr @GenericShape.new({ i32, double, double } %0) {
+entry:
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_GenericShape, i64 ptrtoint (ptr getelementptr ({ ptr, { i32, double, double } }, ptr null, i32 1) to i64))
+  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
+  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
+  %shape = getelementptr inbounds nuw { ptr, { i32, double, double } }, ptr %data_ptr, i32 0, i32 1
+  store { i32, double, double } %0, ptr %shape, align 8
+  %vtable_DrawableShape = getelementptr inbounds nuw { ptr, { i32, double, double } }, ptr %data_ptr, i32 0, i32 0
+  store ptr @GenericShape_DrawableShape_vtable, ptr %vtable_DrawableShape, align 8
+  ret ptr %obj_ptr
+}
+
+define ptr @Pair.new(ptr %0, ptr %1) {
+entry:
+  %type_id = call i32 @mux_register_object_type(ptr @type_name_Pair, i64 ptrtoint (ptr getelementptr ({ ptr, ptr }, ptr null, i32 1) to i64))
+  %obj_ptr = call ptr @mux_alloc_object(i32 %type_id)
+  %data_ptr = call ptr @mux_get_object_ptr(ptr %obj_ptr)
+  %left = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 0
+  store ptr %0, ptr %left, align 8
+  %right = getelementptr inbounds nuw { ptr, ptr }, ptr %data_ptr, i32 0, i32 1
+  store ptr %1, ptr %right, align 8
+  ret ptr %obj_ptr
+}
+
+define void @main() {
+entry:
+  %Shape_Circ_call = call { i32, double, double } @Shape_Circ(double 5.000000e+00)
+  %circleShape = alloca { i32, double, double }, align 8
+  store { i32, double, double } %Shape_Circ_call, ptr %circleShape, align 8
+  %Shape_Rect_call = call { i32, double, double } @Shape_Rect(double 1.000000e+01, double 2.000000e+01)
+  %rectShape = alloca { i32, double, double }, align 8
+  store { i32, double, double } %Shape_Rect_call, ptr %rectShape, align 8
+  %load_circleShape = load { i32, double, double }, ptr %circleShape, align 8
+  %GenericShape.from_call = call ptr @GenericShape.from({ i32, double, double } %load_circleShape)
+  %circle = alloca ptr, align 8
+  store ptr %GenericShape.from_call, ptr %circle, align 8
+  %load_rectShape = load { i32, double, double }, ptr %rectShape, align 8
+  %GenericShape.from_call1 = call ptr @GenericShape.from({ i32, double, double } %load_rectShape)
+  %rect = alloca ptr, align 8
+  store ptr %GenericShape.from_call1, ptr %rect, align 8
+  %call = call ptr @mux_new_list()
+  %circle2 = load ptr, ptr %circle, align 8
+  call void @mux_list_push_back(ptr %call, ptr %circle2)
+  %rect3 = load ptr, ptr %rect, align 8
+  call void @mux_list_push_back(ptr %call, ptr %rect3)
+  %call4 = call ptr @mux_list_value(ptr %call)
+  %shapes = alloca ptr, align 8
+  store ptr %call4, ptr %shapes, align 8
+  %shapes5 = load ptr, ptr %shapes, align 8
+  %list_len = call i64 @mux_value_list_length(ptr %shapes5)
+  %index = alloca i64, align 8
+  store i64 0, ptr %index, align 4
+  %s = alloca ptr, align 8
+  br label %for_header_1
+
+for_header_1:                                     ; preds = %for_body_1, %entry
+  %index_load = load i64, ptr %index, align 4
+  %cmp = icmp slt i64 %index_load, %list_len
+  br i1 %cmp, label %for_body_1, label %for_exit_1
+
+for_body_1:                                       ; preds = %for_header_1
+  %index_load2 = load i64, ptr %index, align 4
+  %list_get_value = call ptr @mux_value_list_get_value(ptr %shapes5, i64 %index_load2)
+  store ptr %list_get_value, ptr %s, align 8
+  %s6 = load ptr, ptr %s, align 8
+  call void @GenericShape.draw(ptr %s6)
+  %inc = add i64 %index_load2, 1
+  store i64 %inc, ptr %index, align 4
+  br label %for_header_1
+
+for_exit_1:                                       ; preds = %for_header_1
+  br label %for_continue_1
+
+for_continue_1:                                   ; preds = %for_exit_1
+  %Pair.from_call = call ptr @Pair.from(i64 1, i64 9)
+  %homogenous_pair = alloca ptr, align 8
+  store ptr %Pair.from_call, ptr %homogenous_pair, align 8
+  %call7 = call ptr @mux_new_string_from_cstr(ptr @str_7)
+  %call8 = call ptr @mux_bool_value(i32 1)
+  %Pair.from_call9 = call ptr @Pair.from(ptr %call7, ptr %call8)
+  %heterogenous_pair = alloca ptr, align 8
+  store ptr %Pair.from_call9, ptr %heterogenous_pair, align 8
+  %call10 = call ptr @mux_new_string_from_cstr(ptr @str_8)
+  %call11 = call ptr @mux_bool_value(i32 0)
+  %Pair.from_call12 = call ptr @Pair.from(ptr %call10, ptr %call11)
+  %heterogenous_pair_2 = alloca ptr, align 8
+  store ptr %Pair.from_call12, ptr %heterogenous_pair_2, align 8
+  %homogenous_pair13 = load ptr, ptr %homogenous_pair, align 8
+  %Pair.get_left_call = call ptr @Pair.get_left(ptr %homogenous_pair13)
+  %int_to_str = call ptr @mux_int_to_string(ptr %Pair.get_left_call)
+  %new_str = call ptr @mux_new_string_from_cstr(ptr %int_to_str)
+  call void @mux_println_val(ptr %new_str)
+  %homogenous_pair14 = load ptr, ptr %homogenous_pair, align 8
+  %Pair.get_right_call = call ptr @Pair.get_right(ptr %homogenous_pair14)
+  %int_to_str15 = call ptr @mux_int_to_string(ptr %Pair.get_right_call)
+  %new_str16 = call ptr @mux_new_string_from_cstr(ptr %int_to_str15)
+  call void @mux_println_val(ptr %new_str16)
+  %heterogenous_pair17 = load ptr, ptr %heterogenous_pair, align 8
+  %Pair.get_left_call18 = call ptr @Pair.get_left(ptr %heterogenous_pair17)
+  %value_to_str = call ptr @mux_value_to_string(ptr %Pair.get_left_call18)
+  %new_str19 = call ptr @mux_new_string_from_cstr(ptr %value_to_str)
+  call void @mux_println_val(ptr %new_str19)
+  %heterogenous_pair20 = load ptr, ptr %heterogenous_pair, align 8
+  %Pair.get_right_call21 = call ptr @Pair.get_right(ptr %heterogenous_pair20)
+  %extract_bool = call i32 @mux_value_get_bool(ptr %Pair.get_right_call21)
+  %bool_to_str = call ptr @mux_bool_to_string(i32 %extract_bool)
+  %new_str22 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str)
+  call void @mux_println_val(ptr %new_str22)
+  %heterogenous_pair_223 = load ptr, ptr %heterogenous_pair_2, align 8
+  %Pair.get_left_call24 = call ptr @Pair.get_left(ptr %heterogenous_pair_223)
+  %value_to_str25 = call ptr @mux_value_to_string(ptr %Pair.get_left_call24)
+  %new_str26 = call ptr @mux_new_string_from_cstr(ptr %value_to_str25)
+  call void @mux_println_val(ptr %new_str26)
+  %heterogenous_pair_227 = load ptr, ptr %heterogenous_pair_2, align 8
+  %Pair.get_right_call28 = call ptr @Pair.get_right(ptr %heterogenous_pair_227)
+  %extract_bool29 = call i32 @mux_value_get_bool(ptr %Pair.get_right_call28)
+  %bool_to_str30 = call ptr @mux_bool_to_string(i32 %extract_bool29)
+  %new_str31 = call ptr @mux_new_string_from_cstr(ptr %bool_to_str30)
+  call void @mux_println_val(ptr %new_str31)
+  %call32 = call ptr @mux_new_string_from_cstr(ptr @str_9)
+  call void @mux_println_val(ptr %call32)
+  ret void
+}

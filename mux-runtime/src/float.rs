@@ -2,14 +2,13 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::result::MuxResult;
 use crate::Value;
+use crate::result::MuxResult;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Float(pub ordered_float::OrderedFloat<f64>);
 
 impl Float {
-
     pub fn to_int(&self) -> i64 {
         self.0.into_inner() as i64
     }
@@ -53,8 +52,6 @@ impl Float {
     pub fn lt(&self, other: &Float) -> bool {
         self.0 < other.0
     }
-
-
 }
 
 impl fmt::Display for Float {
@@ -65,28 +62,67 @@ impl fmt::Display for Float {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_to_string(f: f64) -> *mut c_char {
-    let s = format!("{}", Float(ordered_float::OrderedFloat(f)));
-    CString::new(s).unwrap().into_raw()
+    let s = format!("{:.1}", f);
+    let c_str = CString::new(s).unwrap();
+    c_str.into_raw()
 }
 
+/// # Safety
+/// v must be a valid pointer to a Value::Float.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_float_to_int(f: f64) -> i64 {
-    Float(ordered_float::OrderedFloat(f)).to_int()
+pub unsafe extern "C" fn mux_float_from_value(v: *mut Value) -> f64 {
+    if let Value::Float(f) = unsafe { &*v } {
+        f.into_inner()
+    } else {
+        panic!("Expected Float value");
+    }
+}
+
+/// # Safety
+/// v must be a valid pointer to a Value::Float.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_int_to_float(v: *mut Value) -> *mut Value {
+    if let Value::Int(i) = unsafe { &*v } {
+        let f = *i as f64;
+        Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(f))))
+    } else {
+        panic!("Expected Int value");
+    }
+}
+
+/// # Safety
+/// v must be a valid pointer to a Value::Float.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_float_to_int(v: *mut Value) -> *mut Value {
+    if let Value::Float(f) = unsafe { &*v } {
+        Box::into_raw(Box::new(Value::Int(f.into_inner() as i64)))
+    } else {
+        panic!("Expected Float value");
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_add(a: f64, b: f64) -> f64 {
-    Float(ordered_float::OrderedFloat(a)).add(&Float(ordered_float::OrderedFloat(b))).0.into_inner()
+    Float(ordered_float::OrderedFloat(a))
+        .add(&Float(ordered_float::OrderedFloat(b)))
+        .0
+        .into_inner()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_sub(a: f64, b: f64) -> f64 {
-    Float(ordered_float::OrderedFloat(a)).sub(&Float(ordered_float::OrderedFloat(b))).0.into_inner()
+    Float(ordered_float::OrderedFloat(a))
+        .sub(&Float(ordered_float::OrderedFloat(b)))
+        .0
+        .into_inner()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_mul(a: f64, b: f64) -> f64 {
-    Float(ordered_float::OrderedFloat(a)).mul(&Float(ordered_float::OrderedFloat(b))).0.into_inner()
+    Float(ordered_float::OrderedFloat(a))
+        .mul(&Float(ordered_float::OrderedFloat(b)))
+        .0
+        .into_inner()
 }
 
 #[unsafe(no_mangle)]

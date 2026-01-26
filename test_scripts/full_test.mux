@@ -10,17 +10,16 @@ interface Drawable { func draw() returns void }
 
 class Circle is Drawable, ShapeLike {
     float radius
-    func draw() returns void { print("Circle radius=" + radius) }
+    func draw() returns void { println("Circle radius=" + self.radius.to_string()) }
     func resize(float newRadius, string _) returns void { radius = newRadius }
 }
 
-func max<T is comparable>(T a, T b) returns T { if a > b { return a } return b }
 class Stack<T> {
     list<T> items
-    func push(T item) returns void { items.append(item) }
+    func push(T item) returns void { items.push_back(item) }
     func pop() returns Optional<T> {
-        if items.isEmpty() { return None }
-        return Some(items.removeLast())
+        if items.is_empty() { return None }
+        return items.pop_back()
     }
 }
 
@@ -28,59 +27,91 @@ func divide(int a, int b) returns Result<int, string> {
     if b == 0 { return Err("Division by zero") }
     return Ok(a / b)
 }
+
 func findEven(list<int> nums) returns Optional<int> {
     for int n in nums { if n % 2 == 0 { return Some(n) } }
+    return None
 }
 
 func map<T, U>(list<T> items, func(T) returns U transform) returns list<U> {
     list<U> out = []
-    for T item in items { out.append(transform(item)) }
+    for T item in items { out.push_back(transform(item)) }
     return out
 }
 
 func main() returns void {
-    auto explicit = 10
+    int explicit = 10
+    println("explicit: " + explicit.to_string())
     auto inferred = 42
+    println("inferred: " + inferred.to_string())
     auto floatVal = 9.4
+    println("floatVal: " + floatVal.to_string())
 
-    if inferred > 40 { print("Big number") } else { print("Small number") }
+    if inferred > 40 { println("Big number") } else { println("Small number") }
 
     auto maybeNum = Some(15)
+    println("maybeNum created")
     match maybeNum {
-        Some(v) if v > 10 { print("Large value: " + v) }
-        Some(v) { print("Small value: " + v) }
-        None { print("No value") }
-        _ { print("Unexpected") }
+        Some(v) if v > 10 { println("Large value: " + v.to_string()) }
+        Some(v) { println("Small value: " + v.to_string()) }
+        None { println("No value") }
+        _ { println("Unexpected") }
     }
 
     auto nums = [1, 2, 3]
-    auto cirs = [Circle(2.0), Circle(3.5)]
+    println("nums: " + nums.to_string())
+    auto c1 = Circle.new()
+    c1.radius = 2.0
+    println("c1.radius set to: " + c1.radius.to_string())
+    auto c2 = Circle.new()
+    c2.radius = 3.5
+    println("c2.radius set to: " + c2.radius.to_string())
+    auto cirs = [c1, c2]
+    println("cirs created with 2 circles")
     for Circle c in cirs { c.draw() }
 
-    auto maximum = max(7, 12)
-    auto stack = Stack<int>.new([])
+    auto stack = Stack<int>.new()
+    println("stack created")
     stack.push(99)
+    println("pushed 99 to stack")
     auto popped = stack.pop()
+    match popped {
+        Some(val) {
+            println("popped from stack: " + val.to_string())
+        }
+        None {
+            println("nothing popped")
+        }
+    }
 
     auto res = divide(10, 2)
-    match res { Ok(v) { print(v) } Err(e) { print(e) } }
+    println("divide(10, 2) result:")
+    match res { Ok(v) { println(v.to_string()) } Err(e) { println(e) } }
     match res {
         Ok(v) {
-            print("got a good val")
+            println("got a good val")
         }
         Err(e) {
-            print("got a bad val")
+            println("got a bad val")
         }
     }
 
     auto maybeEven = findEven([1, 3, 4, 7])
-    match maybeEven { Some(v) { print(v) } None { print("None") } }
+    println("findEven([1, 3, 4, 7]):")
+    match maybeEven { Some(v) { println(v.to_string()) } None { println("None") } }
 
     auto square = func(int n) returns int { return n * n }
+    println("square function created")
     auto doubled = map([1, 2, 3], func(int x) returns int { return x * 2 })
+    println("doubled: " + doubled.to_string())
     auto squared = map([1, 2, 3], square)
+    println("squared: " + squared.to_string())
 
     int val = 10
+    println("val: " + val.to_string())
     auto p = &val
+    println("pointer p created")
     *p = 20
+    println("val after deref assignment: " + val.to_string())
+    println("full_test passes")
 }

@@ -113,7 +113,8 @@ impl<'a> Parser<'a> {
         // check if next token starts a new statement
         if self.current + 1 < self.tokens.len() {
             let next_token = &self.tokens[self.current + 1];
-            if self.is_statement_starter(&next_token.token_type) && !matches!(token.token_type, TokenType::NewLine)
+            if self.is_statement_starter(&next_token.token_type)
+                && !matches!(token.token_type, TokenType::NewLine)
             {
                 // skip error if at eof
                 if next_token.token_type != TokenType::Eof {
@@ -193,30 +194,37 @@ impl<'a> Parser<'a> {
             self.auto_declaration().map(Some)
         } else if self.check(TokenType::Const) {
             self.const_declaration().map(Some)
+        } else if self.check(TokenType::Common) {
+            self.consume();
+            self.function_declaration(true).map(Some)
         } else if self.check(TokenType::Func) {
-            self.function_declaration().map(Some)
+            self.function_declaration(false).map(Some)
         } else if let TokenType::Id(_) = &self.peek().token_type {
             let start = self.current;
-            let _ = self.consume();
-
-            if let TokenType::Id(_) = &self.peek().token_type {
-                let next = self.current + 1;
-                if next < self.tokens.len() && self.tokens[next].token_type == TokenType::Eq {
-                    self.current = start;
-                    match self.typed_declaration() {
-                        Ok(node) => Ok(Some(node)),
-                        Err(e)
-                            if matches!(
-                                e.message.as_str(),
-                                "must be terminated with a newline"
-                                    | "expected newline after statement"
-                            ) =>
-                        {
-                            self.errors.push(e);
-                            self.synchronize();
-                            Ok(None)
+            // Try to parse a type
+            if self.parse_type().is_ok() {
+                if let TokenType::Id(_) = &self.peek().token_type {
+                    let next = self.current + 1;
+                    if next < self.tokens.len() && self.tokens[next].token_type == TokenType::Eq {
+                        self.current = start;
+                        match self.typed_declaration() {
+                            Ok(node) => Ok(Some(node)),
+                            Err(e)
+                                if matches!(
+                                    e.message.as_str(),
+                                    "must be terminated with a newline"
+                                        | "expected newline after statement"
+                                ) =>
+                            {
+                                self.errors.push(e);
+                                self.synchronize();
+                                Ok(None)
+                            }
+                            Err(e) => Err(e),
                         }
-                        Err(e) => Err(e),
+                    } else {
+                        self.current = start;
+                        self.statement().map(Some)
                     }
                 } else {
                     self.current = start;
@@ -410,7 +418,17 @@ impl<'a> Parser<'a> {
         while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
             match self.peek().token_type {
                 TokenType::Func => {
-                    let func_node = self.function_declaration()?;
+                    let func_node = self.function_declaration(false)?;
+                    match func_node {
+                        AstNode::Function(func) => methods.push(func),
+                        _ => {
+                            return Err(ParserError::new("Expected function in class", start_span));
+                        }
+                    }
+                }
+                TokenType::Common => {
+                    self.consume();
+                    let func_node = self.function_declaration(true)?;
                     match func_node {
                         AstNode::Function(func) => methods.push(func),
                         _ => {
@@ -554,7 +572,9 @@ impl<'a> Parser<'a> {
                 self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
 
                 // parse return type.
-                let return_type = if self.matches(&[TokenType::Minus, TokenType::Gt]) || self.matches(&[TokenType::Returns]) {
+                let return_type = if self.matches(&[TokenType::Minus, TokenType::Gt])
+                    || self.matches(&[TokenType::Returns])
+                {
                     self.parse_type()?
                 } else {
                     TypeNode {
@@ -571,6 +591,7 @@ impl<'a> Parser<'a> {
                     return_type,
                     body: vec![],
                     span: start_span,
+                    is_common: false,
                 });
 
                 // no semicolon needed in mux.
@@ -737,7 +758,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn function_declaration(&mut self) -> ParserResult<AstNode> {
+    fn function_declaration(&mut self, is_common: bool) -> ParserResult<AstNode> {
         let start_span = self.peek().span;
         self.consume_token(TokenType::Func, "Expected 'func' keyword")?;
 
@@ -792,6 +813,7 @@ impl<'a> Parser<'a> {
                 let param_type = self.parse_type()?;
                 let param_name = self.consume_identifier("Expected parameter name")?;
                 // optional default value, parsed but currently ignored in ast.
+                // TODO: this is not implemented and needs to be
                 if self.matches(&[TokenType::Eq]) {
                     let _default_expr = self.parse_expression()?;
                 }
@@ -843,6 +865,7 @@ impl<'a> Parser<'a> {
             return_type,
             body: body_statements,
             span,
+            is_common,
         }))
     }
 
@@ -862,7 +885,7 @@ impl<'a> Parser<'a> {
         } else if self.matches(&[TokenType::Return]) {
             self.return_statement()
         } else if self.matches(&[TokenType::Func]) {
-            self.function_declaration()
+            self.function_declaration(false)
         } else if self.looks_like_typed_decl() {
             self.typed_declaration()
         } else if self.check(TokenType::OpenBrace) {
@@ -872,13 +895,15 @@ impl<'a> Parser<'a> {
         }?;
 
         // only do newline-based termination at top level, skip for control-flow statements.
-        if !self.is_in_block() && !matches!(
+        if !self.is_in_block()
+            && !matches!(
                 &result,
                 AstNode::Statement(stmt) if matches!(
                     stmt.kind,
                     StatementKind::If { .. } | StatementKind::While { .. } | StatementKind::For { .. } | StatementKind::Match { .. } | StatementKind::Function { .. }
                 )
-            ) {
+            )
+        {
             if let Err(e) = self.check_statement_termination() {
                 self.errors.push(e);
             }
@@ -1202,40 +1227,37 @@ impl<'a> Parser<'a> {
 
     fn parse_pattern(&mut self) -> ParserResult<PatternNode> {
         match &self.peek().token_type {
+            TokenType::None => {
+                self.current += 1; // consume None
+                Ok(PatternNode::EnumVariant {
+                    name: "None".to_string(),
+                    args: vec![],
+                })
+            }
             TokenType::Id(name) => {
                 let name_clone = name.clone();
                 self.current += 1; // consume the identifier
-                match name_clone.as_str() {
-                    "Some" | "None" | "Ok" | "Err" => {
-                        // Parse enum variant pattern
-                        if self.matches(&[TokenType::OpenParen]) {
-                            // Has arguments
-                            let mut args = Vec::new();
-                            if !self.check(TokenType::CloseParen) {
-                                loop {
-                                    args.push(self.parse_pattern()?);
-                                    if !self.matches(&[TokenType::Comma]) {
-                                        break;
-                                    }
-                                }
+                if self.matches(&[TokenType::OpenParen]) {
+                    // Parse as enum variant pattern
+                    let mut args = Vec::new();
+                    if !self.check(TokenType::CloseParen) {
+                        loop {
+                            args.push(self.parse_pattern()?);
+                            if !self.matches(&[TokenType::Comma]) {
+                                break;
                             }
-                            self.consume_token(
-                                TokenType::CloseParen,
-                                "Expected ')' after enum variant arguments",
-                            )?;
-                            Ok(PatternNode::EnumVariant {
-                                name: name_clone,
-                                args,
-                            })
-                        } else {
-                            // No arguments
-                            Ok(PatternNode::EnumVariant {
-                                name: name_clone,
-                                args: Vec::new(),
-                            })
                         }
                     }
-                    _ => Ok(PatternNode::Identifier(name_clone)),
+                    self.consume_token(
+                        TokenType::CloseParen,
+                        "Expected ')' after enum variant arguments",
+                    )?;
+                    Ok(PatternNode::EnumVariant {
+                        name: name_clone,
+                        args,
+                    })
+                } else {
+                    Ok(PatternNode::Identifier(name_clone))
                 }
             }
             TokenType::Underscore => {
@@ -1275,10 +1297,16 @@ impl<'a> Parser<'a> {
     fn return_statement(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current].span;
 
-        let value = if !self.check_next_line() {
-            Some(self.parse_expression()?)
-        } else {
+        // Check if there's an expression after return
+        let value = if self.is_at_end()
+            || self.check(TokenType::NewLine)
+            || self.check(TokenType::CloseBrace)
+        {
+            // return at end of input, or followed by newline/closing brace - void return
             None
+        } else {
+            // Try to parse an expression
+            Some(self.parse_expression()?)
         };
 
         let end_span = value.as_ref().map_or(start_span, |v| v.span);
@@ -1451,12 +1479,7 @@ impl<'a> Parser<'a> {
                 }
 
                 let type_args = if self.matches(&[TokenType::OpenBracket]) {
-                    let args = self.parse_type_arguments()?;
-                    self.consume_token(
-                        TokenType::CloseBracket,
-                        "Expected ']' after type arguments",
-                    )?;
-                    args
+                    self.parse_type_arguments()?
                 } else {
                     Vec::new()
                 };
@@ -1588,17 +1611,6 @@ impl<'a> Parser<'a> {
             }
         }
         Ok(args)
-    }
-
-    fn check_next_line(&self) -> bool {
-        if self.is_at_end() || self.current == 0 {
-            return false;
-        }
-
-        let current_token = &self.tokens[self.current - 1];
-        let next_token = &self.tokens[self.current];
-
-        next_token.span.row_start > current_token.span.row_start
     }
 
     fn synchronize(&mut self) {
@@ -1736,6 +1748,9 @@ impl<'a> Parser<'a> {
         let mut map_entries = Vec::new();
         let mut is_map = false;
 
+        // Skip newlines after opening brace
+        self.skip_newlines();
+
         if !self.check(TokenType::CloseBrace) {
             // parse first expression to determine if map or set
             let first_expr = self.parse_expression()?;
@@ -1751,27 +1766,16 @@ impl<'a> Parser<'a> {
             }
 
             // parse remaining entries
-            while !self.check(TokenType::CloseBrace) {
+            while self.matches(&[TokenType::Comma]) {
                 self.skip_newlines();
-                if self.check(TokenType::CloseBrace) {
-                    break;
-                }
-
                 if is_map {
-                    self.consume_token(TokenType::Comma, "Expected ',' between map entries")?;
                     let key = self.parse_expression()?;
                     self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
                     let value = self.parse_expression()?;
                     map_entries.push((key, value));
                 } else {
-                    self.consume_token(TokenType::Comma, "Expected ',' between set elements")?;
                     let elem = self.parse_expression()?;
                     set_elements.push(elem);
-                }
-
-                self.skip_newlines();
-                if self.check(TokenType::CloseBrace) {
-                    break;
                 }
             }
         }
@@ -1839,6 +1843,14 @@ impl<'a> Parser<'a> {
                 self.parse_postfix_operators(expr)
             }
 
+            TokenType::None => {
+                let expr = ExpressionNode {
+                    kind: ExpressionKind::None,
+                    span: token_span,
+                };
+                self.parse_postfix_operators(expr)
+            }
+
             TokenType::Char(c) => {
                 let expr = ExpressionNode {
                     kind: ExpressionKind::Literal(LiteralNode::Char(c)),
@@ -1868,13 +1880,22 @@ impl<'a> Parser<'a> {
                 let start_span = token_span;
                 let mut elements = Vec::new();
 
+                // Skip newlines after opening bracket
+                self.skip_newlines();
+
                 if !self.check(TokenType::CloseBracket) {
                     loop {
                         elements.push(self.parse_expression()?);
 
+                        // Skip newlines after comma
+                        self.skip_newlines();
+
                         if !self.matches(&[TokenType::Comma]) {
                             break;
                         }
+
+                        // Skip newlines after comma
+                        self.skip_newlines();
                     }
                 }
 
@@ -1912,7 +1933,7 @@ impl<'a> Parser<'a> {
 
                 self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
 
-                let _return_type = if self.matches(&[TokenType::Returns]) {
+                if self.matches(&[TokenType::Returns]) {
                     self.parse_type()?
                 } else {
                     return Err(ParserError::new(
@@ -2211,6 +2232,7 @@ impl<'a> Parser<'a> {
             TokenType::Ge => Some(BinaryOp::GreaterEqual),
             TokenType::And => Some(BinaryOp::LogicalAnd),
             TokenType::Or => Some(BinaryOp::LogicalOr),
+            TokenType::In => Some(BinaryOp::In),
             TokenType::PlusEq => Some(BinaryOp::AddAssign),
             TokenType::MinusEq => Some(BinaryOp::SubtractAssign),
             TokenType::StarEq => Some(BinaryOp::MultiplyAssign),
@@ -2245,6 +2267,7 @@ impl<'a> Parser<'a> {
             TokenType::Ge => Some(BinaryOp::GreaterEqual),
             TokenType::And => Some(BinaryOp::LogicalAnd),
             TokenType::Or => Some(BinaryOp::LogicalOr),
+            TokenType::In => Some(BinaryOp::In),
             TokenType::PlusEq => Some(BinaryOp::AddAssign),
             TokenType::MinusEq => Some(BinaryOp::SubtractAssign),
             TokenType::StarEq => Some(BinaryOp::MultiplyAssign),
@@ -2287,6 +2310,8 @@ impl<'a> Parser<'a> {
             BinaryOp::LogicalOr => Precedence::Or,
 
             BinaryOp::LogicalAnd => Precedence::And,
+
+            BinaryOp::In => Precedence::Comparison,
 
             BinaryOp::Equal | BinaryOp::NotEqual => Precedence::Equality,
 
@@ -2479,6 +2504,7 @@ impl_spanned!(StatementNode);
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExpressionKind {
     Literal(LiteralNode),
+    None,
     Identifier(String),
     Binary {
         left: Box<ExpressionNode>,
@@ -2705,6 +2731,7 @@ pub struct FunctionNode {
     pub return_type: TypeNode,
     pub body: Vec<StatementNode>,
     pub span: Span,
+    pub is_common: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2755,6 +2782,8 @@ pub enum BinaryOp {
 
     LogicalAnd,
     LogicalOr,
+
+    In,
 
     Assign,
     AddAssign,
@@ -3061,7 +3090,7 @@ mod tests {
                     nodes
                 );
             }
-            Err((_nodes, errors)) => {
+            Err((_, errors)) => {
                 assert!(!errors.is_empty(), "Expected errors but got none");
                 let has_newline_error = errors.iter().any(|e| {
                     e.message.contains("expected newline after statement")

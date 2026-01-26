@@ -1,5 +1,6 @@
 use crate::Value;
 use std::collections::BTreeSet;
+use std::ffi::CString;
 use std::fmt;
 
 #[derive(Clone, Debug)]
@@ -17,8 +18,6 @@ impl Set {
     pub fn contains(&self, val: &Value) -> bool {
         self.0.contains(val)
     }
-
-
 }
 
 impl fmt::Display for Set {
@@ -30,15 +29,18 @@ impl fmt::Display for Set {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_set_add(set: *mut Set, val: *mut Value) {
-    let value = unsafe { *Box::from_raw(val) };
-    unsafe { (*set).add(value) }
+pub extern "C" fn mux_set_value(set: *mut Set) -> *mut Value {
+    let set = unsafe { Box::from_raw(set) };
+    let value = Value::Set(set.0);
+    Box::into_raw(Box::new(value))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_set_remove(set: *mut Set, val: *const Value) -> bool {
-    unsafe { (*set).remove(&*val) }
+pub extern "C" fn mux_set_add(set: *mut Set, val: *mut Value) {
+    let set = unsafe { &mut *set };
+    let val = unsafe { Box::from_raw(val) };
+    set.add(*val);
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -61,4 +63,13 @@ pub unsafe extern "C" fn mux_set_size(set: *const Set) -> i64 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_set_is_empty(set: *const Set) -> bool {
     unsafe { (*set).0.is_empty() }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_to_string(set: *const Set) -> *mut std::ffi::c_char {
+    let set = unsafe { &*set };
+    let s = set.to_string();
+    let c_str = CString::new(s).unwrap();
+    c_str.into_raw()
 }

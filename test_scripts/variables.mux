@@ -6,3 +6,10 @@ auto name = "Mux"
 
 auto flag = true
 auto otherflag = false
+
+println("MAX: 100")
+println("explicit: 42")
+println("inferred: 4.89")
+println("name: Mux")
+println("flag: true")
+println("otherflag: false")

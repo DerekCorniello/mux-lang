@@ -1,0 +1,17 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+in draw
+In Circ arm
+Drawing circle with radius: 5.0
+in draw
+In Rect arm
+Drawing rectangle with width: 10.0 height: 20.0
+1
+9
+status successful
+true
+status failed
+false
+done
