@@ -1,0 +1,88 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+assertion_line: 134
+expression: full_output
+---
+=== COMPREHENSIVE COMPARISON OPERATOR TESTS ===
+
+--- INT COMPARISONS ---
+✓ int: 5 == 5
+✓ int: 5 == 3 is false
+✓ int: 5 != 3
+✓ int: 5 != 5 is false
+✓ int: 3 < 5
+✓ int: 5 < 3 is false
+✓ int: 5 > 3
+✓ int: 3 > 5 is false
+✓ int: 3 <= 5
+✓ int: 5 <= 5
+✓ int: 5 <= 3 is false
+✓ int: 5 >= 3
+✓ int: 5 >= 5
+✓ int: 3 >= 5 is false
+
+--- FLOAT COMPARISONS ---
+✓ float: 5.5 == 5.5
+✓ float: 5.5 == 3.3 is false
+✓ float: 5.5 != 3.3
+✓ float: 5.5 != 5.5 is false
+✓ float: 3.3 < 5.5
+✓ float: 5.5 < 3.3 is false
+✓ float: 5.5 > 3.3
+✓ float: 3.3 > 5.5 is false
+✓ float: 3.3 <= 5.5
+✓ float: 5.5 <= 5.5
+✓ float: 5.5 <= 3.3 is false
+✓ float: 5.5 >= 3.3
+✓ float: 5.5 >= 5.5
+✓ float: 3.3 >= 5.5 is false
+
+--- STRING COMPARISONS ---
+✓ string: "hello" == "hello"
+✓ string: "hello" == "world" is false
+✓ string: "" == ""
+✓ string: "hello" != "world"
+✓ string: "hello" != "hello" is false
+✓ string: "Hello" != "hello" (case sensitive)
+
+--- CHAR COMPARISONS ---
+✓ char: 'a' == 'a'
+✓ char: 'a' == 'b' is false
+✓ char: ' ' == ' ' (space)
+✓ char: 'A' == 'a' is false (case sensitive)
+✓ char: 'a' != 'b'
+✓ char: 'x' != 'y'
+✓ char: 'a' != 'a' is false
+✓ char: '0' == '0' (numeric char)
+✓ char: '0' != '1' (numeric chars)
+
+--- BOOL COMPARISONS ---
+✓ bool: true == true
+✓ bool: false == false
+✓ bool: true == false is false
+✓ bool: true != false
+✓ bool: true != true is false
+
+--- LIST COMPARISONS ---
+✓ list: [1, 2, 3] == [1, 2, 3]
+✓ list: [1, 2, 3] == [1, 2, 4] is false
+✓ list: [1, 2, 3] == [1, 2] is false (different lengths)
+✓ list: [1, 2, 3] != [1, 2, 4]
+✓ list: [1, 2, 3] != [1, 2]
+✓ list: [1, 2, 3] != [1, 2, 3] is false
+
+--- MAP COMPARISONS ---
+✓ map: {1: "a", 2: "b"} == {1: "a", 2: "b"}
+✓ map: {1: "a", 2: "b"} == {1: "a", 2: "c"} is false
+✓ map: {1: "a", 2: "b"} == {1: "a"} is false (different sizes)
+✓ map: {1: "a", 2: "b"} != {1: "a", 2: "c"}
+✓ map: {1: "a", 2: "b"} != {1: "a", 2: "b"} is false
+
+--- SET COMPARISONS ---
+✓ set: {1, 2, 3} == {3, 2, 1} (order independent)
+✓ set: {1, 2, 3} == {1, 2, 4} is false
+✓ set: {1, 2, 3} == {1, 2} is false (different sizes)
+✓ set: {1, 2, 3} != {1, 2, 4}
+✓ set: {1, 2, 3} != {3, 2, 1} is false (order independent)
+
+=== ALL COMPARISON TESTS COMPLETED ===
