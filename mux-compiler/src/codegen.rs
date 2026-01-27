@@ -90,6 +90,26 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_string_concat", fn_type, None);
 
+        // mux_string_equal: (*const c_char, *const c_char) -> i32
+        let params = &[i8_ptr.into(), i8_ptr.into()];
+        let fn_type = context.i32_type().fn_type(params, false);
+        module.add_function("mux_string_equal", fn_type, None);
+
+        // mux_string_not_equal: (*const c_char, *const c_char) -> i32
+        let params = &[i8_ptr.into(), i8_ptr.into()];
+        let fn_type = context.i32_type().fn_type(params, false);
+        module.add_function("mux_string_not_equal", fn_type, None);
+
+        // mux_value_equal: (*const Value, *const Value) -> i32
+        let params = &[i8_ptr.into(), i8_ptr.into()];
+        let fn_type = context.i32_type().fn_type(params, false);
+        module.add_function("mux_value_equal", fn_type, None);
+
+        // mux_value_not_equal: (*const Value, *const Value) -> i32
+        let params = &[i8_ptr.into(), i8_ptr.into()];
+        let fn_type = context.i32_type().fn_type(params, false);
+        module.add_function("mux_value_not_equal", fn_type, None);
+
         // mux_value_get_string: (*const Value) -> *const c_char
         let fn_type = i8_ptr.fn_type(&[i8_ptr.into()], false);
         module.add_function("mux_value_get_string", fn_type, None);
@@ -6102,159 +6122,522 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             BinaryOp::Equal => {
-                // try to get raw int values first
-                if let (Ok(left_int), Ok(right_int)) =
-                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
-                {
-                    self.builder
-                        .build_int_compare(inkwell::IntPredicate::EQ, left_int, right_int, "eq")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else if let (Ok(left_float), Ok(right_float)) = (
-                    self.get_raw_float_value(left),
-                    self.get_raw_float_value(right),
-                ) {
-                    self.builder
-                        .build_float_compare(
-                            inkwell::FloatPredicate::OEQ,
-                            left_float,
-                            right_float,
-                            "feq",
-                        )
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else {
-                    Err("Unsupported eq operands".to_string())
+                // Get the semantic type to determine what kind of comparison to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                match &left_type {
+                    // String comparison
+                    Type::Primitive(PrimitiveType::Str) => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
+
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
+
+                        let equal_fn = self
+                            .module
+                            .get_function("mux_string_equal")
+                            .ok_or("mux_string_equal not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                equal_fn,
+                                &[left_cstr.into(), right_cstr.into()],
+                                "string_equal",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        // Convert i32 result to i1 bool
+                        let result_i32 = result.into_int_value();
+                        let zero = self.context.i32_type().const_zero();
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                result_i32,
+                                zero,
+                                "to_bool",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Int/Char comparison
+                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_compare(inkwell::IntPredicate::EQ, left_int, right_int, "eq")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Bool comparison
+                    Type::Primitive(PrimitiveType::Bool) => {
+                        let left_bool = self.get_raw_bool_value(left)?;
+                        let right_bool = self.get_raw_bool_value(right)?;
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::EQ,
+                                left_bool,
+                                right_bool,
+                                "eq",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Float comparison
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_compare(
+                                inkwell::FloatPredicate::OEQ,
+                                left_float,
+                                right_float,
+                                "feq",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // List/Map/Set comparison using Value equality
+                    Type::List(_)
+                    | Type::Map(_, _)
+                    | Type::Set(_)
+                    | Type::EmptyList
+                    | Type::EmptyMap
+                    | Type::EmptySet => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
+
+                        let equal_fn = self
+                            .module
+                            .get_function("mux_value_equal")
+                            .ok_or("mux_value_equal not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                equal_fn,
+                                &[left_ptr.into(), right_ptr.into()],
+                                "value_equal",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        // Convert i32 result to i1 bool
+                        let result_i32 = result.into_int_value();
+                        let zero = self.context.i32_type().const_zero();
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                result_i32,
+                                zero,
+                                "to_bool",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    _ => Err(format!(
+                        "Equality comparison not supported for type: {:?}",
+                        left_type
+                    )),
                 }
             }
             BinaryOp::Less => {
-                // try to get raw int values first
-                if let (Ok(left_int), Ok(right_int)) =
-                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
-                {
-                    self.builder
-                        .build_int_compare(inkwell::IntPredicate::SLT, left_int, right_int, "lt")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else if let (Ok(left_float), Ok(right_float)) = (
-                    self.get_raw_float_value(left),
-                    self.get_raw_float_value(right),
-                ) {
-                    self.builder
-                        .build_float_compare(
-                            inkwell::FloatPredicate::OLT,
-                            left_float,
-                            right_float,
-                            "flt",
-                        )
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else {
-                    Err("Unsupported lt operands".to_string())
+                // Get the semantic type to determine what kind of comparison to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                match &left_type {
+                    // Int/Char comparison (char stored as int)
+                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::SLT,
+                                left_int,
+                                right_int,
+                                "lt",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Float comparison
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_compare(
+                                inkwell::FloatPredicate::OLT,
+                                left_float,
+                                right_float,
+                                "flt",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // String/List/Map/Set/Bool: Not supported
+                    Type::Primitive(PrimitiveType::Str) => {
+                        Err("Less-than comparison not supported for strings".to_string())
+                    }
+                    Type::Primitive(PrimitiveType::Bool) => {
+                        Err("Less-than comparison not supported for bools".to_string())
+                    }
+                    Type::List(_) | Type::EmptyList => {
+                        Err("Less-than comparison not supported for lists".to_string())
+                    }
+                    Type::Map(_, _) | Type::EmptyMap => {
+                        Err("Less-than comparison not supported for maps".to_string())
+                    }
+                    Type::Set(_) | Type::EmptySet => {
+                        Err("Less-than comparison not supported for sets".to_string())
+                    }
+                    _ => Err(format!(
+                        "Less-than comparison not supported for type: {:?}",
+                        left_type
+                    )),
                 }
             }
             BinaryOp::Greater => {
-                // try to get raw int values first
-                if let (Ok(left_int), Ok(right_int)) =
-                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
-                {
-                    self.builder
-                        .build_int_compare(inkwell::IntPredicate::SGT, left_int, right_int, "gt")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else if let (Ok(left_float), Ok(right_float)) = (
-                    self.get_raw_float_value(left),
-                    self.get_raw_float_value(right),
-                ) {
-                    self.builder
-                        .build_float_compare(
-                            inkwell::FloatPredicate::OGT,
-                            left_float,
-                            right_float,
-                            "fgt",
-                        )
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else {
-                    Err("Unsupported gt operands".to_string())
+                // Get the semantic type to determine what kind of comparison to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                match &left_type {
+                    // Int/Char comparison (char stored as int)
+                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::SGT,
+                                left_int,
+                                right_int,
+                                "gt",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Float comparison
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_compare(
+                                inkwell::FloatPredicate::OGT,
+                                left_float,
+                                right_float,
+                                "fgt",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // String/List/Map/Set/Bool: Not supported
+                    Type::Primitive(PrimitiveType::Str) => {
+                        Err("Greater-than comparison not supported for strings".to_string())
+                    }
+                    Type::Primitive(PrimitiveType::Bool) => {
+                        Err("Greater-than comparison not supported for bools".to_string())
+                    }
+                    Type::List(_) | Type::EmptyList => {
+                        Err("Greater-than comparison not supported for lists".to_string())
+                    }
+                    Type::Map(_, _) | Type::EmptyMap => {
+                        Err("Greater-than comparison not supported for maps".to_string())
+                    }
+                    Type::Set(_) | Type::EmptySet => {
+                        Err("Greater-than comparison not supported for sets".to_string())
+                    }
+                    _ => Err(format!(
+                        "Greater-than comparison not supported for type: {:?}",
+                        left_type
+                    )),
                 }
             }
             BinaryOp::LessEqual => {
-                // try to get raw int values first
-                if let (Ok(left_int), Ok(right_int)) =
-                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
-                {
-                    self.builder
-                        .build_int_compare(inkwell::IntPredicate::SLE, left_int, right_int, "le")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else if let (Ok(left_float), Ok(right_float)) = (
-                    self.get_raw_float_value(left),
-                    self.get_raw_float_value(right),
-                ) {
-                    self.builder
-                        .build_float_compare(
-                            inkwell::FloatPredicate::OLE,
-                            left_float,
-                            right_float,
-                            "fle",
-                        )
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else {
-                    Err("Unsupported le operands".to_string())
+                // Get the semantic type to determine what kind of comparison to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                match &left_type {
+                    // Int/Char comparison (char stored as int)
+                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::SLE,
+                                left_int,
+                                right_int,
+                                "le",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Float comparison
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_compare(
+                                inkwell::FloatPredicate::OLE,
+                                left_float,
+                                right_float,
+                                "fle",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // String/List/Map/Set/Bool: Not supported
+                    Type::Primitive(PrimitiveType::Str) => {
+                        Err("Less-than-or-equal comparison not supported for strings".to_string())
+                    }
+                    Type::Primitive(PrimitiveType::Bool) => {
+                        Err("Less-than-or-equal comparison not supported for bools".to_string())
+                    }
+                    Type::List(_) | Type::EmptyList => {
+                        Err("Less-than-or-equal comparison not supported for lists".to_string())
+                    }
+                    Type::Map(_, _) | Type::EmptyMap => {
+                        Err("Less-than-or-equal comparison not supported for maps".to_string())
+                    }
+                    Type::Set(_) | Type::EmptySet => {
+                        Err("Less-than-or-equal comparison not supported for sets".to_string())
+                    }
+                    _ => Err(format!(
+                        "Less-than-or-equal comparison not supported for type: {:?}",
+                        left_type
+                    )),
                 }
             }
             BinaryOp::GreaterEqual => {
-                // try to get raw int values first
-                if let (Ok(left_int), Ok(right_int)) =
-                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
-                {
-                    self.builder
-                        .build_int_compare(inkwell::IntPredicate::SGE, left_int, right_int, "ge")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else if let (Ok(left_float), Ok(right_float)) = (
-                    self.get_raw_float_value(left),
-                    self.get_raw_float_value(right),
-                ) {
-                    self.builder
-                        .build_float_compare(
-                            inkwell::FloatPredicate::OGE,
-                            left_float,
-                            right_float,
-                            "fge",
-                        )
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else {
-                    Err("Unsupported ge operands".to_string())
+                // Get the semantic type to determine what kind of comparison to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                match &left_type {
+                    // Int/Char comparison (char stored as int)
+                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::SGE,
+                                left_int,
+                                right_int,
+                                "ge",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Float comparison
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_compare(
+                                inkwell::FloatPredicate::OGE,
+                                left_float,
+                                right_float,
+                                "fge",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // String/List/Map/Set/Bool: Not supported
+                    Type::Primitive(PrimitiveType::Str) => {
+                        Err("Greater-than-or-equal comparison not supported for strings"
+                            .to_string())
+                    }
+                    Type::Primitive(PrimitiveType::Bool) => {
+                        Err("Greater-than-or-equal comparison not supported for bools".to_string())
+                    }
+                    Type::List(_) | Type::EmptyList => {
+                        Err("Greater-than-or-equal comparison not supported for lists".to_string())
+                    }
+                    Type::Map(_, _) | Type::EmptyMap => {
+                        Err("Greater-than-or-equal comparison not supported for maps".to_string())
+                    }
+                    Type::Set(_) | Type::EmptySet => {
+                        Err("Greater-than-or-equal comparison not supported for sets".to_string())
+                    }
+                    _ => Err(format!(
+                        "Greater-than-or-equal comparison not supported for type: {:?}",
+                        left_type
+                    )),
                 }
             }
             BinaryOp::NotEqual => {
-                // try to get raw int values first
-                if let (Ok(left_int), Ok(right_int)) =
-                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
-                {
-                    self.builder
-                        .build_int_compare(inkwell::IntPredicate::NE, left_int, right_int, "ne")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else if let (Ok(left_float), Ok(right_float)) = (
-                    self.get_raw_float_value(left),
-                    self.get_raw_float_value(right),
-                ) {
-                    self.builder
-                        .build_float_compare(
-                            inkwell::FloatPredicate::ONE,
-                            left_float,
-                            right_float,
-                            "fne",
-                        )
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else {
-                    Err("Unsupported ne operands".to_string())
+                // Get the semantic type to determine what kind of comparison to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                match &left_type {
+                    // String comparison
+                    Type::Primitive(PrimitiveType::Str) => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
+
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
+
+                        let not_equal_fn = self
+                            .module
+                            .get_function("mux_string_not_equal")
+                            .ok_or("mux_string_not_equal not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                not_equal_fn,
+                                &[left_cstr.into(), right_cstr.into()],
+                                "string_not_equal",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        // Convert i32 result to i1 bool
+                        let result_i32 = result.into_int_value();
+                        let zero = self.context.i32_type().const_zero();
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                result_i32,
+                                zero,
+                                "to_bool",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Int/Char comparison
+                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_compare(inkwell::IntPredicate::NE, left_int, right_int, "ne")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Bool comparison
+                    Type::Primitive(PrimitiveType::Bool) => {
+                        let left_bool = self.get_raw_bool_value(left)?;
+                        let right_bool = self.get_raw_bool_value(right)?;
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                left_bool,
+                                right_bool,
+                                "ne",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Float comparison
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_compare(
+                                inkwell::FloatPredicate::ONE,
+                                left_float,
+                                right_float,
+                                "fne",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // List/Map/Set comparison using Value inequality
+                    Type::List(_)
+                    | Type::Map(_, _)
+                    | Type::Set(_)
+                    | Type::EmptyList
+                    | Type::EmptyMap
+                    | Type::EmptySet => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
+
+                        let not_equal_fn = self
+                            .module
+                            .get_function("mux_value_not_equal")
+                            .ok_or("mux_value_not_equal not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                not_equal_fn,
+                                &[left_ptr.into(), right_ptr.into()],
+                                "value_not_equal",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        // Convert i32 result to i1 bool
+                        let result_i32 = result.into_int_value();
+                        let zero = self.context.i32_type().const_zero();
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                result_i32,
+                                zero,
+                                "to_bool",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    _ => Err(format!(
+                        "Inequality comparison not supported for type: {:?}",
+                        left_type
+                    )),
                 }
             }
             BinaryOp::LogicalAnd => {
