@@ -313,3 +313,15 @@ pub extern "C" fn mux_list_to_string(list: *const List) -> *mut std::ffi::c_char
     let c_str = CString::new(s).unwrap();
     c_str.into_raw()
 }
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_concat(a: *const List, b: *const List) -> *mut List {
+    if a.is_null() || b.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let mut result = unsafe { (*a).0.clone() };
+    result.extend(unsafe { (*b).0.clone() });
+    Box::into_raw(Box::new(List(result)))
+}
