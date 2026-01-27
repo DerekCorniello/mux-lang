@@ -23,6 +23,50 @@ pub extern "C" fn mux_result_ok_int(val: i64) -> *mut MuxResult {
     Box::into_raw(Box::new(MuxResult::ok(Value::Int(val))))
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_float(val: f64) -> *mut MuxResult {
+    use ordered_float::OrderedFloat;
+    Box::into_raw(Box::new(MuxResult::ok(Value::Float(OrderedFloat(val)))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_bool(val: i32) -> *mut MuxResult {
+    Box::into_raw(Box::new(MuxResult::ok(Value::Bool(val != 0))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_char(val: i64) -> *mut MuxResult {
+    // Char is passed as i64, store as int
+    Box::into_raw(Box::new(MuxResult::ok(Value::Int(val))))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_string(val: *mut Value) -> *mut MuxResult {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        // Clone the value instead of taking ownership
+        let value = (*val).clone();
+        Box::into_raw(Box::new(MuxResult::ok(value)))
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_value(val: *mut Value) -> *mut MuxResult {
+    // Generic function for any *mut Value (lists, maps, sets, custom types)
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        // Clone the value instead of taking ownership
+        let value = (*val).clone();
+        Box::into_raw(Box::new(MuxResult::ok(value)))
+    }
+}
+
 /// # Safety
 /// The `msg` pointer must point to a valid, null-terminated C string.
 /// The caller must ensure the pointer remains valid for the duration of this function call.
@@ -64,7 +108,7 @@ pub extern "C" fn mux_result_data(res: *mut MuxResult) -> *mut Value {
     }
     unsafe {
         match &*res {
-            MuxResult::Ok(v) => v.as_ref() as *const Value as *mut Value,
+            MuxResult::Ok(v) => Box::into_raw(Box::new(*v.clone())),
             MuxResult::Err(e) => Box::into_raw(Box::new(Value::String(e.clone()))),
         }
     }

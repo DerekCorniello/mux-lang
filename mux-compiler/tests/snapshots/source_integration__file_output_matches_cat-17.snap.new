@@ -1,0 +1,6 @@
+---
+source: mux-compiler/tests/source_integration.rs
+assertion_line: 28
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Simple Result test\nfunc makeOk() returns Result<string, string> {\n    return Ok(\"success\")\n}\n\nfunc makeErr() returns Result<string, string> {\n    return Err(\"failure\")\n}\n\nauto res_ok = makeOk()\nmatch res_ok {\n    Ok(msg) { println(\"OK: \" + msg) }\n    Err(e) { println(\"ERR: \" + e) }\n}\n\nauto res_err = makeErr()\nmatch res_err {\n    Ok(msg) { println(\"OK: \" + msg) }\n    Err(e) { println(\"ERR: \" + e) }\n}\n"

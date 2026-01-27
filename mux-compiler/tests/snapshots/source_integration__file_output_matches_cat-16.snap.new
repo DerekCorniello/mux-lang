@@ -1,0 +1,6 @@
+---
+source: mux-compiler/tests/source_integration.rs
+assertion_line: 28
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Debug Result<string, string> match issue\nfunc validateInput(string input) returns Result<string, string> {\n    if input == \"\" { return Err(\"Empty input\") }\n    return Ok(\"Valid: \" + input)\n}\n\nprintln(\"Test 1: Ok case\")\nauto res1 = validateInput(\"test\")\nprintln(\"About to match res1\")\nmatch res1 {\n    Ok(msg) { \n        println(\"In Ok arm\")\n        println(\"✓ Result<string, string> Ok: \" + msg) \n    }\n    Err(e) { \n        println(\"In Err arm\")\n        println(\"✗ Unexpected error: \" + e) \n    }\n}\n\nprintln(\"Test 2: Err case\")\nauto res2 = validateInput(\"\")\nprintln(\"About to match res2\")\nmatch res2 {\n    Ok(msg) { \n        println(\"In Ok arm\")\n        println(\"✗ Unexpected success: \" + msg) \n    }\n    Err(e) { \n        println(\"In Err arm\")\n        println(\"✓ Result<string, string> Err: \" + e) \n    }\n}\n\nprintln(\"Done\")\n"

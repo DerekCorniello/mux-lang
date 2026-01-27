@@ -60,6 +60,50 @@ pub extern "C" fn mux_optional_some_int(val: i64) -> *mut Optional {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_some_float(val: f64) -> *mut Optional {
+    use ordered_float::OrderedFloat;
+    Box::into_raw(Box::new(Optional::some(Value::Float(OrderedFloat(val)))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_some_bool(val: i32) -> *mut Optional {
+    Box::into_raw(Box::new(Optional::some(Value::Bool(val != 0))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_some_char(val: i64) -> *mut Optional {
+    // Char is passed as i64, store as int
+    Box::into_raw(Box::new(Optional::some(Value::Int(val))))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_some_string(val: *mut Value) -> *mut Optional {
+    if val.is_null() {
+        return Box::into_raw(Box::new(Optional::none()));
+    }
+    unsafe {
+        // Clone the value instead of taking ownership
+        let value = (*val).clone();
+        Box::into_raw(Box::new(Optional::some(value)))
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_some_value(val: *mut Value) -> *mut Optional {
+    // Generic function for any *mut Value (lists, maps, sets, custom types)
+    if val.is_null() {
+        return Box::into_raw(Box::new(Optional::none()));
+    }
+    unsafe {
+        // Clone the value instead of taking ownership
+        let value = (*val).clone();
+        Box::into_raw(Box::new(Optional::some(value)))
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_none() -> *mut Optional {
     Box::into_raw(Box::new(Optional::none()))
 }
@@ -88,6 +132,23 @@ pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Val
         match *optional {
             Optional::Some(value) => Box::into_raw(Box::new(crate::Value::Optional(Some(value)))),
             Optional::None => Box::into_raw(Box::new(crate::Value::Optional(None))),
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_from_value(val: *mut crate::Value) -> *mut Optional {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*val {
+            crate::Value::Optional(Some(v)) => {
+                Box::into_raw(Box::new(Optional::Some(Box::new(*v.clone()))))
+            }
+            crate::Value::Optional(None) => Box::into_raw(Box::new(Optional::None)),
+            _ => std::ptr::null_mut(),
         }
     }
 }

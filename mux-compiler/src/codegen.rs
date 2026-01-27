@@ -496,6 +496,31 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_optional_some_int", fn_type, None);
 
+        // mux_optional_some_float: (f64) -> *mut Optional
+        let params = &[f64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_optional_some_float", fn_type, None);
+
+        // mux_optional_some_bool: (i32) -> *mut Optional
+        let params = &[context.i32_type().into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_optional_some_bool", fn_type, None);
+
+        // mux_optional_some_char: (i64) -> *mut Optional
+        let params = &[i64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_optional_some_char", fn_type, None);
+
+        // mux_optional_some_string: (*mut Value) -> *mut Optional
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_optional_some_string", fn_type, None);
+
+        // mux_optional_some_value: (*mut Value) -> *mut Optional
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_optional_some_value", fn_type, None);
+
         // mux_optional_none: () -> *mut Optional
         let fn_type = i8_ptr.fn_type(&[], false);
         module.add_function("mux_optional_none", fn_type, None);
@@ -504,6 +529,31 @@ impl<'a> CodeGenerator<'a> {
         let params = &[i64_type.into()];
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_result_ok_int", fn_type, None);
+
+        // mux_result_ok_float: (f64) -> *mut MuxResult
+        let params = &[f64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_result_ok_float", fn_type, None);
+
+        // mux_result_ok_bool: (i32) -> *mut MuxResult
+        let params = &[context.i32_type().into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_result_ok_bool", fn_type, None);
+
+        // mux_result_ok_char: (i64) -> *mut MuxResult
+        let params = &[i64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_result_ok_char", fn_type, None);
+
+        // mux_result_ok_string: (*mut Value) -> *mut MuxResult
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_result_ok_string", fn_type, None);
+
+        // mux_result_ok_value: (*mut Value) -> *mut MuxResult
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_result_ok_value", fn_type, None);
 
         // mux_result_err_str: (*const c_char) -> *mut MuxResult
         let params = &[i8_ptr.into()];
@@ -1748,15 +1798,8 @@ impl<'a> CodeGenerator<'a> {
                     .try_as_basic_value()
                     .left()
                     .unwrap();
-                let value_call = self
-                    .builder
-                    .build_call(
-                        self.module.get_function("mux_value_from_optional").unwrap(),
-                        &[none_call.into()],
-                        "none_value",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(value_call.try_as_basic_value().left().unwrap())
+                // Return Optional pointer directly (not wrapped in Value)
+                Ok(none_call)
             }
             ExpressionKind::Identifier(name) => {
                 if let Some((ptr, var_type, type_node)) = self.variables.get(name) {
@@ -2783,11 +2826,35 @@ impl<'a> CodeGenerator<'a> {
                             if args.len() != 1 {
                                 return Err("Ok takes 1 argument".to_string());
                             }
-                            let arg_val = self.generate_expression(&args[0])?;
+                            let arg_expr = &args[0];
+                            let arg_type = self
+                                .analyzer
+                                .get_expression_type(arg_expr)
+                                .map_err(|e| format!("Type inference failed: {}", e))?;
+                            let arg_val = self.generate_expression(arg_expr)?;
+                            let func_name = match arg_type {
+                                Type::Primitive(PrimitiveType::Int) => "mux_result_ok_int",
+                                Type::Primitive(PrimitiveType::Float) => "mux_result_ok_float",
+                                Type::Primitive(PrimitiveType::Bool) => "mux_result_ok_bool",
+                                Type::Primitive(PrimitiveType::Char) => "mux_result_ok_char",
+                                Type::Primitive(PrimitiveType::Str)
+                                | Type::List(_)
+                                | Type::Map(_, _)
+                                | Type::Set(_)
+                                | Type::Named(_, _)
+                                | Type::Tuple(_)
+                                | Type::Instantiated(_, _) => "mux_result_ok_value",
+                                _ => {
+                                    return Err(format!(
+                                        "Ok() not supported for type {:?}",
+                                        arg_type
+                                    ));
+                                }
+                            };
                             let func = self
                                 .module
-                                .get_function("mux_result_ok_int")
-                                .ok_or("mux_result_ok_int not found")?;
+                                .get_function(func_name)
+                                .ok_or(format!("{} not found", func_name))?;
                             let call = self
                                 .builder
                                 .build_call(func, &[arg_val.into()], "ok_call")
@@ -2811,9 +2878,13 @@ impl<'a> CodeGenerator<'a> {
                                 Type::Primitive(PrimitiveType::Float) => "mux_optional_some_float",
                                 Type::Primitive(PrimitiveType::Bool) => "mux_optional_some_bool",
                                 Type::Primitive(PrimitiveType::Char) => "mux_optional_some_char",
-                                Type::Named(name, _) if name == "String" => {
-                                    "mux_optional_some_string"
-                                }
+                                Type::Primitive(PrimitiveType::Str)
+                                | Type::List(_)
+                                | Type::Map(_, _)
+                                | Type::Set(_)
+                                | Type::Named(_, _)
+                                | Type::Tuple(_)
+                                | Type::Instantiated(_, _) => "mux_optional_some_value",
                                 _ => {
                                     return Err(format!(
                                         "Some() not supported for type {:?}",
@@ -4624,62 +4695,47 @@ impl<'a> CodeGenerator<'a> {
 
                                     // extract the actual value based on the variant type
                                     let (data_val, resolved_type) = if enum_name == "Optional" {
-                                        // optional always wraps the element type
-                                        let get_int_func = self
-                                            .module
-                                            .get_function("mux_value_get_int")
-                                            .ok_or("mux_value_get_int not found")?;
-                                        let val = self
-                                            .builder
-                                            .build_call(get_int_func, &[data_ptr.into()], "get_int")
-                                            .map_err(|e| e.to_string())?
-                                            .try_as_basic_value()
-                                            .left()
-                                            .unwrap();
-                                        (val, Type::Primitive(PrimitiveType::Int))
-                                    } else if enum_name == "Result" {
-                                        // result<T, E>: Ok wraps T, Err wraps E
-                                        if let Type::Named(_, generics) = &match_expr_type {
-                                            if *name == "Ok" {
-                                                // extract as T
-                                                match &generics[0] {
-                                                    Type::Primitive(PrimitiveType::Int) => {
-                                                        let get_int_func = self
-                                                            .module
-                                                            .get_function("mux_value_get_int")
-                                                            .ok_or("mux_value_get_int not found")?;
-                                                        let val = self
-                                                            .builder
-                                                            .build_call(
-                                                                get_int_func,
-                                                                &[data_ptr.into()],
-                                                                "get_int",
-                                                            )
-                                                            .map_err(|e| e.to_string())?
-                                                            .try_as_basic_value()
-                                                            .left()
-                                                            .unwrap();
-                                                        (val, generics[0].clone())
-                                                    }
-                                                    _ => {
-                                                        return Err(format!(
-                                                            "Unsupported Ok type: {:?}",
-                                                            generics[0]
-                                                        ));
-                                                    }
-                                                }
-                                            } else {
-                                                // err
-                                                // for Err, data_ptr is already *mut Value to String
-                                                (data_ptr.into(), generics[1].clone())
-                                            }
+                                        if let Type::Optional(inner_type) = &match_expr_type {
+                                            self.extract_value_from_ptr(
+                                                data_ptr, inner_type, "Some",
+                                            )?
                                         } else {
-                                            return Err(
-                                                "Result type not properly resolved".to_string()
-                                            );
+                                            return Err(format!(
+                                                "Type mismatch: expected Optional, got {:?}",
+                                                match_expr_type
+                                            ));
+                                        }
+                                    } else if enum_name == "Result" {
+                                        if let Type::Named(_, generics) = &match_expr_type {
+                                            if generics.len() != 2 {
+                                                return Err(format!(
+                                                    "Result must have 2 type parameters, got {}",
+                                                    generics.len()
+                                                ));
+                                            }
+                                            let target_type = if *name == "Ok" {
+                                                &generics[0]
+                                            } else {
+                                                &generics[1]
+                                            };
+                                            let variant_name =
+                                                if *name == "Ok" { "Ok" } else { "Err" };
+                                            self.extract_value_from_ptr(
+                                                data_ptr,
+                                                target_type,
+                                                variant_name,
+                                            )?
+                                        } else {
+                                            return Err(format!(
+                                                "Type mismatch: expected Result, got {:?}",
+                                                match_expr_type
+                                            ));
                                         }
                                     } else {
-                                        return Err(format!("Unknown enum {}", enum_name));
+                                        return Err(format!(
+                                            "Unknown enum {} for value extraction",
+                                            enum_name
+                                        ));
                                     };
 
                                     let boxed = self.box_value(data_val);
@@ -6696,6 +6752,165 @@ impl<'a> CodeGenerator<'a> {
             Ok(result.into_int_value())
         } else {
             Err("Expected bool value or pointer".to_string())
+        }
+    }
+
+    /// Extracts a value from a *mut Value pointer based on the wrapped type.
+    /// Used for unwrapping Optional<T> and Result<T, E> in match statements.
+    ///
+    /// # Arguments
+    /// * `data_ptr` - Pointer to the wrapped value (*mut Value)
+    /// * `wrapped_type` - The type of the value being unwrapped
+    /// * `variant_name` - Name of the variant ("Some", "Ok", "Err") for error messages
+    ///
+    /// # Returns
+    /// A tuple of (BasicValueEnum, Type) representing the extracted value and its type
+    fn extract_value_from_ptr(
+        &mut self,
+        data_ptr: PointerValue<'a>,
+        wrapped_type: &Type,
+        variant_name: &str,
+    ) -> Result<(BasicValueEnum<'a>, Type), String> {
+        match wrapped_type {
+            // Primitive types need to be extracted from *mut Value
+            Type::Primitive(PrimitiveType::Int) => {
+                let get_int_func = self
+                    .module
+                    .get_function("mux_value_get_int")
+                    .ok_or(format!(
+                        "Failed to extract int from {}: mux_value_get_int not found",
+                        variant_name
+                    ))?;
+                let val = self
+                    .builder
+                    .build_call(get_int_func, &[data_ptr.into()], "get_int")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("mux_value_get_int returned no value")?;
+                Ok((val, Type::Primitive(PrimitiveType::Int)))
+            }
+            Type::Primitive(PrimitiveType::Float) => {
+                let get_float_func =
+                    self.module
+                        .get_function("mux_value_get_float")
+                        .ok_or(format!(
+                            "Failed to extract float from {}: mux_value_get_float not found",
+                            variant_name
+                        ))?;
+                let val = self
+                    .builder
+                    .build_call(get_float_func, &[data_ptr.into()], "get_float")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("mux_value_get_float returned no value")?;
+                Ok((val, Type::Primitive(PrimitiveType::Float)))
+            }
+            Type::Primitive(PrimitiveType::Bool) => {
+                let get_bool_func =
+                    self.module
+                        .get_function("mux_value_get_bool")
+                        .ok_or(format!(
+                            "Failed to extract bool from {}: mux_value_get_bool not found",
+                            variant_name
+                        ))?;
+                let val = self
+                    .builder
+                    .build_call(get_bool_func, &[data_ptr.into()], "get_bool")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("mux_value_get_bool returned no value")?;
+                Ok((val, Type::Primitive(PrimitiveType::Bool)))
+            }
+            Type::Primitive(PrimitiveType::Char) => {
+                // Char is stored as int
+                let get_int_func = self
+                    .module
+                    .get_function("mux_value_get_int")
+                    .ok_or(format!(
+                        "Failed to extract char from {}: mux_value_get_int not found",
+                        variant_name
+                    ))?;
+                let val = self
+                    .builder
+                    .build_call(get_int_func, &[data_ptr.into()], "get_int")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("mux_value_get_int returned no value")?;
+                Ok((val, Type::Primitive(PrimitiveType::Char)))
+            }
+            Type::Primitive(PrimitiveType::Str) => {
+                // String needs special handling: get C string then wrap in Mux string
+                let get_string_func =
+                    self.module
+                        .get_function("mux_value_get_string")
+                        .ok_or(format!(
+                            "Failed to extract string from {}: mux_value_get_string not found",
+                            variant_name
+                        ))?;
+                let c_str = self
+                    .builder
+                    .build_call(get_string_func, &[data_ptr.into()], "get_string")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("mux_value_get_string returned no value")?
+                    .into_pointer_value();
+
+                // Wrap C string back into Mux string (*mut Value)
+                let new_string_func = self
+                    .module
+                    .get_function("mux_new_string_from_cstr")
+                    .ok_or("mux_new_string_from_cstr not found")?;
+                let mux_string = self
+                    .builder
+                    .build_call(new_string_func, &[c_str.into()], "new_string")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("mux_new_string_from_cstr returned no value")?;
+
+                Ok((mux_string, Type::Primitive(PrimitiveType::Str)))
+            }
+            Type::Primitive(PrimitiveType::Void) => Err(format!(
+                "Unsupported type Void for extraction from {}",
+                variant_name
+            )),
+            Type::Primitive(PrimitiveType::Auto) => Err(format!(
+                "Unsupported type Auto for extraction from {}",
+                variant_name
+            )),
+            // Collections, custom types, and nested Optional/Result stay as *mut Value
+            Type::List(_)
+            | Type::Map(_, _)
+            | Type::Set(_)
+            | Type::Named(_, _)
+            | Type::Optional(_)
+            | Type::Tuple(_)
+            | Type::Instantiated(_, _) => {
+                // These are already *mut Value pointers, no extraction needed
+                Ok((data_ptr.into(), wrapped_type.clone()))
+            }
+            // Reference types - unwrap the reference
+            Type::Reference(inner) => self.extract_value_from_ptr(data_ptr, inner, variant_name),
+            // Other types that shouldn't appear in Optional/Result
+            Type::Void | Type::Never | Type::EmptyList | Type::EmptyMap | Type::EmptySet => {
+                Err(format!(
+                    "Unsupported type {:?} for extraction from {}",
+                    wrapped_type, variant_name
+                ))
+            }
+            Type::Function { .. } => Err(format!(
+                "Unsupported type Function for extraction from {}",
+                variant_name
+            )),
+            Type::Variable(v) | Type::Generic(v) => Err(format!(
+                "Unresolved generic type {} for extraction from {}",
+                v, variant_name
+            )),
         }
     }
 
