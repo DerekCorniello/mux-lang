@@ -1,0 +1,6 @@
+---
+source: mux-compiler/tests/source_integration.rs
+assertion_line: 28
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Simple generic class test\nclass Box<T> {\n    T value\n    \n    func get() returns T {\n        return self.value\n    }\n    \n    func set(T new_value) returns void {\n        self.value = new_value\n    }\n    \n    func to_string() returns string {\n        return \"Box with: \" + self.value.to_string()\n    }\n}\n\nauto int_box = Box<int>.new()\nint_box.set(42)\nprintln(int_box.to_string())\n\nauto string_box = Box<string>.new()\nstring_box.set(\"hello\")\nprintln(string_box.to_string())\n\nprintln(\"Generic class test completed\")\n"

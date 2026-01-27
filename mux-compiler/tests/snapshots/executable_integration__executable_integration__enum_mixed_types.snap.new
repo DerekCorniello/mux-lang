@@ -1,0 +1,31 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+assertion_line: 134
+expression: full_output
+---
+=== Testing Basic Mixed Primitives ===
+✓ Status.Active(string): running
+✓ Status.Inactive(int): 42
+✓ Status.Pending(bool): false
+✓ Status.Code(char): extracted char value
+
+=== Testing Collections as Enum Fields ===
+✓ DataContainer.Names(list<string>): extracted list
+✓ DataContainer.Scores(map<string, int>): extracted map
+✓ DataContainer.Tags(set<string>): extracted set
+
+=== Testing Multiple Fields of Different Types ===
+✓ ComplexVariant.Simple(string): just a message
+✓ ComplexVariant.Detailed(string, int, bool):
+  msg: error occurred
+  code: 404
+  flag: false
+✓ ComplexVariant.Numeric(int, float):
+  int: 123
+  float: 45.7
+
+=== Testing Type-Specific Operations ===
+✓ String concatenation: Hello World
+✓ Integer arithmetic: 42
+
+=== All Mixed-Type Enum Tests Completed ===

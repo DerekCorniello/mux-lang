@@ -4810,27 +4810,16 @@ impl<'a> CodeGenerator<'a> {
                                         .map_err(|e| e.to_string())?;
 
                                     // get the actual field type to load correctly
-                                    let field_type: BasicTypeEnum<'_> =
-                                        if i < field_types_clone.len() {
-                                            match &field_types_clone[i].kind {
-                                                TypeKind::Primitive(PrimitiveType::Float) => {
-                                                    self.context.f64_type().into()
-                                                }
-                                                TypeKind::Primitive(PrimitiveType::Int) => {
-                                                    self.context.i64_type().into()
-                                                }
-                                                TypeKind::Primitive(PrimitiveType::Bool) => {
-                                                    self.context.bool_type().into()
-                                                }
-                                                TypeKind::Primitive(PrimitiveType::Str) => self
-                                                    .context
-                                                    .ptr_type(AddressSpace::default())
-                                                    .into(),
-                                                _ => self.context.f64_type().into(), // fallback to float
-                                            }
-                                        } else {
-                                            self.context.f64_type().into() // fallback
-                                        };
+                                    let field_type: BasicTypeEnum<'_> = if i < field_types_clone
+                                        .len()
+                                    {
+                                        self.type_kind_to_llvm_type(&field_types_clone[i].kind)?
+                                    } else {
+                                        return Err(format!(
+                                                "Field index {} out of bounds for enum variant {}.{} (has {} fields)",
+                                                i, enum_name, name, field_types_clone.len()
+                                            ));
+                                    };
 
                                     let data_val = self
                                         .builder
@@ -4852,7 +4841,10 @@ impl<'a> CodeGenerator<'a> {
                                             .resolve_type(&field_types_clone[i])
                                             .map_err(|e| e.to_string())?
                                     } else {
-                                        Type::Primitive(PrimitiveType::Float) // fallback
+                                        return Err(format!(
+                                            "Field index {} out of bounds for enum variant {}.{} during type resolution (has {} fields)",
+                                            i, enum_name, name, field_types_clone.len()
+                                        ));
                                     };
 
                                     self.variables.insert(
@@ -6681,6 +6673,73 @@ impl<'a> CodeGenerator<'a> {
                 Ok(self.context.ptr_type(AddressSpace::default()).into())
             }
             TypeKind::Auto => Err("Auto type should be resolved".to_string()),
+        }
+    }
+
+    /// Maps a TypeKind to its corresponding LLVM BasicTypeEnum
+    /// Used for enum variant field extraction and storage
+    /// Returns an error for unsupported or invalid types instead of falling back
+    fn type_kind_to_llvm_type(&self, type_kind: &TypeKind) -> Result<BasicTypeEnum<'a>, String> {
+        match type_kind {
+            // Primitive types
+            TypeKind::Primitive(PrimitiveType::Int) => Ok(self.context.i64_type().into()),
+            TypeKind::Primitive(PrimitiveType::Float) => Ok(self.context.f64_type().into()),
+            TypeKind::Primitive(PrimitiveType::Bool) => Ok(self.context.bool_type().into()),
+            TypeKind::Primitive(PrimitiveType::Str) => {
+                Ok(self.context.ptr_type(AddressSpace::default()).into())
+            }
+            TypeKind::Primitive(PrimitiveType::Char) => Ok(self.context.i8_type().into()),
+
+            // Named types (enums, classes)
+            TypeKind::Named(name, _) => {
+                // Check if it's a generic type parameter
+                if let Some(context) = &self.generic_context {
+                    if let Some(concrete) = context.type_params.get(name) {
+                        return self.llvm_type_from_resolved_type(concrete);
+                    }
+                }
+
+                // Check if it's an enum
+                if self.enum_variants.contains_key(name) {
+                    if name == "Optional" || name == "Result" {
+                        // Optional/Result are Value* pointers
+                        Ok(self.context.ptr_type(AddressSpace::default()).into())
+                    } else {
+                        // Custom enums are struct values
+                        let struct_type = self
+                            .type_map
+                            .get(name)
+                            .ok_or_else(|| format!("Enum type {} not found in type map", name))?;
+                        Ok(*struct_type)
+                    }
+                } else {
+                    // Classes are pointers
+                    Ok(self.context.ptr_type(AddressSpace::default()).into())
+                }
+            }
+
+            // Collection types (all pointers)
+            TypeKind::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            TypeKind::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            TypeKind::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            TypeKind::Reference(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+
+            // Function and trait types (pointers)
+            TypeKind::Function { .. } => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            TypeKind::TraitObject(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+
+            // Tuples - not supported in enum variants (migrating away from tuples)
+            TypeKind::Tuple(_) => {
+                Err("Tuple types are not supported in enum variant fields".to_string())
+            }
+
+            // Invalid types
+            TypeKind::Primitive(PrimitiveType::Void) => {
+                Err("Void type cannot be used in enum variant fields".to_string())
+            }
+            TypeKind::Primitive(PrimitiveType::Auto) | TypeKind::Auto => {
+                Err("Auto type should be resolved before codegen".to_string())
+            }
         }
     }
 
