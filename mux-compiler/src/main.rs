@@ -34,7 +34,8 @@ fn main() {
                     let mut analyzer = SemanticAnalyzer::new();
                     let errors = analyzer.analyze(&nodes);
                     if !errors.is_empty() {
-                        println!("Errors: {:?}", errors);
+                        println!("Semantic errors: {:?}", errors);
+                        process::exit(1);
                     }
 
                     let context = inkwell::context::Context::create();
