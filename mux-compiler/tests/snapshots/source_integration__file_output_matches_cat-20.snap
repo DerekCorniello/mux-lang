@@ -1,0 +1,5 @@
+---
+source: mux-compiler/tests/source_integration.rs
+expression: "format!(\"{:#?}\", expected)"
+---
+"// Test void return lambdas\nauto void_lambda = func() returns void {\n    println(\"Hello from void lambda\")\n    return\n}\n\nauto void_lambda_with_params = func(string message) returns void {\n    println(\"Message: \" + message)\n    return\n}\n\n// Test calling them\nvoid_lambda()\nvoid_lambda_with_params(\"Test message\")\n\nprintln(\"Void lambda test completed\")\n"

@@ -1,0 +1,7 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+Hello from void lambda
+Message: Test message
+Void lambda test completed
