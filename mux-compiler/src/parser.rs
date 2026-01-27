@@ -269,6 +269,9 @@ impl<'a> Parser<'a> {
         self.consume_token(TokenType::Eq, "Expected '=' after variable name")?;
         let value = self.parse_expression()?;
 
+        // Validate that postfix ++ and -- don't appear in declarations
+        self.check_no_postfix_increment_decrement(&value)?;
+
         // require newline before next statement at top level.
         if !self.is_in_block() {
             // check if next token starts a new statement.
@@ -313,6 +316,10 @@ impl<'a> Parser<'a> {
 
         self.consume_token(TokenType::Eq, "Expected '=' after constant name")?;
         let value = self.parse_expression()?;
+
+        // Validate that postfix ++ and -- don't appear in declarations
+        self.check_no_postfix_increment_decrement(&value)?;
+
         let span = start_span.combine(&value.span);
 
         Ok(AstNode::Statement(StatementNode {
@@ -327,6 +334,10 @@ impl<'a> Parser<'a> {
         let name = self.consume_identifier("Expected variable name after type")?;
         self.consume_token(TokenType::Eq, "Expected '=' after variable name")?;
         let value = self.parse_expression()?;
+
+        // Validate that postfix ++ and -- don't appear in declarations
+        self.check_no_postfix_increment_decrement(&value)?;
+
         let span = start_span.combine(&value.span);
         Ok(AstNode::Statement(StatementNode {
             kind: StatementKind::TypedDecl(name, type_node, value),
@@ -989,6 +1000,10 @@ impl<'a> Parser<'a> {
     fn if_statement(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current - 1].span;
         let condition = self.parse_expression()?;
+
+        // Validate that postfix ++ and -- don't appear in condition
+        self.check_no_postfix_increment_decrement(&condition)?;
+
         self.skip_newlines();
         if !self.check(TokenType::OpenBrace) {
             return Err(ParserError::new(
@@ -1081,6 +1096,9 @@ impl<'a> Parser<'a> {
         let start_span = self.tokens[self.current].span;
         let condition = self.parse_expression()?;
 
+        // Validate that postfix ++ and -- don't appear in condition
+        self.check_no_postfix_increment_decrement(&condition)?;
+
         // allow newline(s) before body.
         self.skip_newlines();
         // require a braced block body.
@@ -1120,6 +1138,10 @@ impl<'a> Parser<'a> {
         let var = self.consume_identifier("Expected variable name")?;
         self.consume_token(TokenType::In, "Expected 'in' after variable")?;
         let iter = self.parse_expression()?;
+
+        // Validate that postfix ++ and -- don't appear in iterator expression
+        self.check_no_postfix_increment_decrement(&iter)?;
+
         // allow newline(s) before body.
         self.skip_newlines();
         // parse the body, can be a single statement or a block.
@@ -1159,6 +1181,10 @@ impl<'a> Parser<'a> {
     fn match_statement(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current].span;
         let expr = self.parse_expression()?;
+
+        // Validate that postfix ++ and -- don't appear in match expression
+        self.check_no_postfix_increment_decrement(&expr)?;
+
         self.consume_token(TokenType::OpenBrace, "Expected '{' after match expression")?;
         self.skip_newlines();
 
@@ -1308,7 +1334,12 @@ impl<'a> Parser<'a> {
             None
         } else {
             // Try to parse an expression
-            Some(self.parse_expression()?)
+            let expr = self.parse_expression()?;
+
+            // Validate that postfix ++ and -- don't appear in return value
+            self.check_no_postfix_increment_decrement(&expr)?;
+
+            Some(expr)
         };
 
         let end_span = value.as_ref().map_or(start_span, |v| v.span);
@@ -1445,10 +1476,101 @@ impl<'a> Parser<'a> {
         let _ = self.skip_newlines();
         let span = *expr.span();
 
+        // Validate that postfix ++ and -- only appear at statement level
+        self.validate_postfix_in_statement(&expr)?;
+
         Ok(AstNode::Statement(StatementNode {
             kind: StatementKind::Expression(expr),
             span,
         }))
+    }
+
+    fn validate_postfix_in_statement(&self, expr: &ExpressionNode) -> ParserResult<()> {
+        // If this is a postfix ++ or -- at the top level, it's valid
+        if let ExpressionKind::Unary { op, postfix, .. } = &expr.kind {
+            if *postfix && matches!(op, UnaryOp::Incr | UnaryOp::Decr) {
+                return Ok(());
+            }
+        }
+        // Otherwise, check that no nested postfix ++ or -- exist
+        self.check_no_postfix_increment_decrement(expr)
+    }
+
+    fn check_no_postfix_increment_decrement(&self, expr: &ExpressionNode) -> ParserResult<()> {
+        match &expr.kind {
+            ExpressionKind::Unary {
+                op,
+                expr: inner,
+                postfix,
+            } => {
+                // If this is a postfix ++ or --, it's nested and invalid
+                if *postfix && matches!(op, UnaryOp::Incr | UnaryOp::Decr) {
+                    return Err(ParserError::new(
+                        "Increment/Decrement operator can only be used individually, not as a part of an expression".to_string(),
+                        expr.span,
+                    ));
+                }
+                // Otherwise, recurse into the inner expression
+                self.check_no_postfix_increment_decrement(inner)
+            }
+            ExpressionKind::Binary { left, right, .. } => {
+                self.check_no_postfix_increment_decrement(left)?;
+                self.check_no_postfix_increment_decrement(right)
+            }
+            ExpressionKind::Call { func, args } => {
+                self.check_no_postfix_increment_decrement(func)?;
+                for arg in args {
+                    self.check_no_postfix_increment_decrement(arg)?;
+                }
+                Ok(())
+            }
+            ExpressionKind::FieldAccess { expr: inner, .. } => {
+                self.check_no_postfix_increment_decrement(inner)
+            }
+            ExpressionKind::ListAccess { expr: inner, index } => {
+                self.check_no_postfix_increment_decrement(inner)?;
+                self.check_no_postfix_increment_decrement(index)
+            }
+            ExpressionKind::ListLiteral(elems) => {
+                for elem in elems {
+                    self.check_no_postfix_increment_decrement(elem)?;
+                }
+                Ok(())
+            }
+            ExpressionKind::SetLiteral(elems) => {
+                for elem in elems {
+                    self.check_no_postfix_increment_decrement(elem)?;
+                }
+                Ok(())
+            }
+            ExpressionKind::MapLiteral { entries, .. } => {
+                for (key, value) in entries {
+                    self.check_no_postfix_increment_decrement(key)?;
+                    self.check_no_postfix_increment_decrement(value)?;
+                }
+                Ok(())
+            }
+            ExpressionKind::If {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                self.check_no_postfix_increment_decrement(cond)?;
+                self.check_no_postfix_increment_decrement(then_expr)?;
+                self.check_no_postfix_increment_decrement(else_expr)
+            }
+            ExpressionKind::Lambda { body, .. } => {
+                // Check all statements in the lambda body
+                for stmt in body {
+                    if let StatementKind::Expression(e) = &stmt.kind {
+                        self.check_no_postfix_increment_decrement(e)?;
+                    }
+                }
+                Ok(())
+            }
+            // For literals, identifiers, and other leaf nodes, they can't contain postfix ops
+            _ => Ok(()),
+        }
     }
 
     fn parse_type(&mut self) -> ParserResult<TypeNode> {
@@ -1729,6 +1851,13 @@ impl<'a> Parser<'a> {
 
     fn parse_unary(&mut self) -> ParserResult<ExpressionNode> {
         if let Some(op_token) = self.consume_if_unary_operator() {
+            // Reject prefix ++ and --
+            if matches!(op_token.token_type, TokenType::Incr | TokenType::Decr) {
+                return Err(ParserError::new(
+                    "Increment/Decrement operator can only be in the postfix position".to_string(),
+                    op_token.span,
+                ));
+            }
             let expr = self.parse_precedence(Precedence::Unary)?;
             let expr_span = *expr.span();
             Ok(ExpressionNode {

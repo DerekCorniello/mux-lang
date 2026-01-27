@@ -13,3 +13,17 @@ println("inferred: 4.89")
 println("name: Mux")
 println("flag: true")
 println("otherflag: false")
+
+int counter = 0
+println("counter: 0")
+counter++
+println("counter: 1")
+counter++
+println("counter: 2")
+
+int countdown = 5
+println("countdown: 5")
+countdown--
+println("countdown: 4")
+countdown--
+println("countdown: 3")

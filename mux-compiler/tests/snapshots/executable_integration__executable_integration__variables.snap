@@ -8,3 +8,9 @@ inferred: 4.89
 name: Mux
 flag: true
 otherflag: false
+counter: 0
+counter: 1
+counter: 2
+countdown: 5
+countdown: 4
+countdown: 3

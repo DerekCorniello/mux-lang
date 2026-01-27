@@ -762,10 +762,16 @@ impl SemanticAnalyzer {
                         })
                     }
                 }
-                _ => Err(SemanticError {
-                    message: format!("Unsupported unary operator {:?}", op),
-                    span: expr.span,
-                }),
+                UnaryOp::Incr | UnaryOp::Decr => {
+                    let operand_type = self.get_expression_type(expr)?;
+                    match operand_type {
+                        Type::Primitive(crate::parser::PrimitiveType::Int) => Ok(operand_type),
+                        _ => Err(SemanticError {
+                            message: "Increment/Decrement operators require int operand".into(),
+                            span: expr.span,
+                        }),
+                    }
+                }
             },
             ExpressionKind::Call { func, args } => {
                 // get function type
@@ -2455,6 +2461,17 @@ impl SemanticAnalyzer {
                     }
                     UnaryOp::Ref => {
                         // reference operator, operand can be any type
+                    }
+                    UnaryOp::Incr | UnaryOp::Decr => {
+                        if !matches!(
+                            operand_type,
+                            Type::Primitive(crate::parser::PrimitiveType::Int)
+                        ) {
+                            return Err(SemanticError {
+                                message: "Increment/Decrement operators require int operand".into(),
+                                span: expr.span,
+                            });
+                        }
                     }
                     _ => {} // other unary ops not fully implemented yet
                 }

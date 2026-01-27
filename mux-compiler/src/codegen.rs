@@ -3512,6 +3512,122 @@ impl<'a> CodeGenerator<'a> {
                             Ok(boxed_ptr)
                         }
                     }
+                    UnaryOp::Incr => {
+                        // Load current value, add 1, store back
+                        if let ExpressionKind::Identifier(name) = &expr.kind {
+                            if let Some((ptr, _, _)) = self.variables.get(name) {
+                                let ptr_copy = *ptr;
+                                // Load the mux_value* pointer
+                                let value_ptr = self
+                                    .builder
+                                    .build_load(
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        ptr_copy,
+                                        &format!("{}_load", name),
+                                    )
+                                    .map_err(|e| e.to_string())?
+                                    .into_pointer_value();
+
+                                // Extract the i64 from the mux_value using the runtime function
+                                let get_int_func = self
+                                    .module
+                                    .get_function("mux_value_get_int")
+                                    .ok_or("mux_value_get_int not found")?;
+                                let current_val = self
+                                    .builder
+                                    .build_call(
+                                        get_int_func,
+                                        &[value_ptr.into()],
+                                        &format!("{}_get_int", name),
+                                    )
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap()
+                                    .into_int_value();
+
+                                // Add 1
+                                let one = self.context.i64_type().const_int(1, false);
+                                let new_val = self
+                                    .builder
+                                    .build_int_add(current_val, one, "incr_result")
+                                    .map_err(|e| e.to_string())?;
+
+                                // Box it back into a mux_value*
+                                let boxed_val = self.box_value(new_val.into());
+
+                                // Store back to the variable
+                                self.builder
+                                    .build_store(ptr_copy, boxed_val)
+                                    .map_err(|e| e.to_string())?;
+
+                                Ok(new_val.into())
+                            } else {
+                                Err(format!("Undefined variable {}", name))
+                            }
+                        } else {
+                            Err("Increment operator only supports simple variables for now"
+                                .to_string())
+                        }
+                    }
+                    UnaryOp::Decr => {
+                        // Load current value, subtract 1, store back
+                        if let ExpressionKind::Identifier(name) = &expr.kind {
+                            if let Some((ptr, _, _)) = self.variables.get(name) {
+                                let ptr_copy = *ptr;
+                                // Load the mux_value* pointer
+                                let value_ptr = self
+                                    .builder
+                                    .build_load(
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        ptr_copy,
+                                        &format!("{}_load", name),
+                                    )
+                                    .map_err(|e| e.to_string())?
+                                    .into_pointer_value();
+
+                                // Extract the i64 from the mux_value using the runtime function
+                                let get_int_func = self
+                                    .module
+                                    .get_function("mux_value_get_int")
+                                    .ok_or("mux_value_get_int not found")?;
+                                let current_val = self
+                                    .builder
+                                    .build_call(
+                                        get_int_func,
+                                        &[value_ptr.into()],
+                                        &format!("{}_get_int", name),
+                                    )
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap()
+                                    .into_int_value();
+
+                                // Subtract 1
+                                let one = self.context.i64_type().const_int(1, false);
+                                let new_val = self
+                                    .builder
+                                    .build_int_sub(current_val, one, "decr_result")
+                                    .map_err(|e| e.to_string())?;
+
+                                // Box it back into a mux_value*
+                                let boxed_val = self.box_value(new_val.into());
+
+                                // Store back to the variable
+                                self.builder
+                                    .build_store(ptr_copy, boxed_val)
+                                    .map_err(|e| e.to_string())?;
+
+                                Ok(new_val.into())
+                            } else {
+                                Err(format!("Undefined variable {}", name))
+                            }
+                        } else {
+                            Err("Decrement operator only supports simple variables for now"
+                                .to_string())
+                        }
+                    }
                     _ => Err(format!("Unary op not implemented: {:?}", expr)),
                 }
             }
