@@ -1410,7 +1410,12 @@ impl<'a> CodeGenerator<'a> {
                 .analyzer
                 .get_expression_type(expr)
                 .map_err(|e| e.to_string())?;
-            Some(self.llvm_type_from_resolved_type(&return_type)?)
+            // check if return type is void
+            if matches!(return_type, Type::Void) {
+                None
+            } else {
+                Some(self.llvm_type_from_resolved_type(&return_type)?)
+            }
         } else if let Some(StatementNode {
             kind: StatementKind::Expression(expr),
             ..
@@ -1421,7 +1426,12 @@ impl<'a> CodeGenerator<'a> {
                 .analyzer
                 .get_expression_type(expr)
                 .map_err(|e| e.to_string())?;
-            Some(self.llvm_type_from_resolved_type(&return_type)?)
+            // check if return type is void
+            if matches!(return_type, Type::Void) {
+                None
+            } else {
+                Some(self.llvm_type_from_resolved_type(&return_type)?)
+            }
         } else {
             None
         };
@@ -1434,7 +1444,8 @@ impl<'a> CodeGenerator<'a> {
                 _ => None,
             }
         } else {
-            None
+            // when return_type_opt is None, it's a void return
+            Some(ResolvedType::Void)
         };
         let old_return_type = self.current_function_return_type.take();
         self.current_function_return_type = resolved_return_type;
@@ -1486,6 +1497,15 @@ impl<'a> CodeGenerator<'a> {
         // generate all statements
         for stmt in body {
             self.generate_statement(stmt, Some(&function))?;
+        }
+
+        // if void return, add return void if not already terminated
+        if return_type_opt.is_none() {
+            if let Some(block) = self.builder.get_insert_block() {
+                if block.get_terminator().is_none() {
+                    self.builder.build_return(None).map_err(|e| e.to_string())?;
+                }
+            }
         }
 
         // restore variables
@@ -3165,11 +3185,16 @@ impl<'a> CodeGenerator<'a> {
                                                 self.llvm_type_from_mux_type(&type_node)?.into(),
                                             );
                                         }
-                                        // convert return type to LLVM type
-                                        let return_type_node = self.type_to_type_node(&returns);
-                                        let return_type =
-                                            self.llvm_type_from_mux_type(&return_type_node)?;
-                                        return_type.fn_type(&param_types, false)
+                                        // handle return type - check for void first
+                                        if matches!(*returns, Type::Void) {
+                                            self.context.void_type().fn_type(&param_types, false)
+                                        } else {
+                                            // convert return type to LLVM type
+                                            let return_type_node = self.type_to_type_node(&returns);
+                                            let return_type =
+                                                self.llvm_type_from_mux_type(&return_type_node)?;
+                                            return_type.fn_type(&param_types, false)
+                                        }
                                     } else {
                                         return Err("Expected function type".to_string());
                                     };

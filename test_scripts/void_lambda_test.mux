@@ -1,0 +1,16 @@
+// Test void return lambdas
+auto void_lambda = func() returns void {
+    println("Hello from void lambda")
+    return
+}
+
+auto void_lambda_with_params = func(string message) returns void {
+    println("Message: " + message)
+    return
+}
+
+// Test calling them
+void_lambda()
+void_lambda_with_params("Test message")
+
+println("Void lambda test completed")
