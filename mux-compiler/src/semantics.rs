@@ -384,20 +384,10 @@ impl SymbolTable {
             return true;
         }
 
-        // If not found in scopes, check global for non-variable symbols
-        if let Some(symbol) = self.lookup(name) {
-            matches!(
-                symbol.kind,
-                SymbolKind::Function
-                    | SymbolKind::Class
-                    | SymbolKind::Interface
-                    | SymbolKind::Enum
-                    | SymbolKind::Type
-                    | SymbolKind::Import
-            )
-        } else {
-            false
-        }
+        // Only consider symbols that are currently in scope.
+        // Global `all_symbols` is intentionally ignored here to prevent
+        // out-of-scope symbols from being treated as visible.
+        self.get_cloned(name).is_some()
     }
 
     pub fn add_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {

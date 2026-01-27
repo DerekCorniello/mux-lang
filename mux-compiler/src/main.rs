@@ -34,14 +34,14 @@ fn main() {
                     let mut analyzer = SemanticAnalyzer::new();
                     let errors = analyzer.analyze(&nodes);
                     if !errors.is_empty() {
-                        println!("Semantic errors: {:?}", errors);
+                        eprintln!("Semantic errors: {:?}", errors);
                         process::exit(1);
                     }
 
                     let context = inkwell::context::Context::create();
                     let mut codegen = codegen::CodeGenerator::new(&context, &mut analyzer);
                     if let Err(e) = codegen.generate(&nodes) {
-                        println!("Codegen error: {}", e);
+                        eprintln!("Codegen error: {}", e);
                         process::exit(1);
                     }
                     let ir_file = format!("{}.ll", file_path.trim_end_matches(".mux"));
