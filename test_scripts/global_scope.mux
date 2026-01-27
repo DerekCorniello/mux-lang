@@ -1,0 +1,173 @@
+// Comprehensive test for global variable scope support
+// Tests: simple access, modification, local shadowing, multiple functions, nested scopes
+
+println("=== Testing Global Variable Access ===")
+
+// Define global variables
+int global_counter = 0
+bool global_flag = true
+int global_value = 42
+
+// Test 1: Simple global access from function
+func read_global() returns int {
+    return global_value
+}
+
+int result1 = read_global()
+if result1 == 42 {
+    println("✓ Test 1: Functions can read global variables")
+} else {
+    println("✗ FAIL: Expected 42, got " + result1.to_string())
+}
+
+println("")
+println("=== Testing Global Variable Modification ===")
+
+// Test 2: Global modification from function
+func increment_counter() returns void {
+    global_counter = global_counter + 1
+}
+
+increment_counter()
+if global_counter == 1 {
+    println("✓ Test 2: Functions can modify global variables (counter = 1)")
+} else {
+    println("✗ FAIL: Expected counter = 1, got " + global_counter.to_string())
+}
+
+increment_counter()
+increment_counter()
+if global_counter == 3 {
+    println("✓ Test 2b: Multiple calls accumulate changes (counter = 3)")
+} else {
+    println("✗ FAIL: Expected counter = 3, got " + global_counter.to_string())
+}
+
+println("")
+println("=== Testing Local Variable Shadowing ===")
+
+// Test 3: Local variable shadows global
+func test_shadowing() returns int {
+    int global_value = 100  // shadows the global
+    return global_value
+}
+
+int result3 = test_shadowing()
+if result3 == 100 {
+    println("✓ Test 3a: Local variable shadows global (got 100)")
+} else {
+    println("✗ FAIL: Expected 100, got " + result3.to_string())
+}
+
+if global_value == 42 {
+    println("✓ Test 3b: Global remains unchanged after shadowing (still 42)")
+} else {
+    println("✗ FAIL: Global was modified, expected 42, got " + global_value.to_string())
+}
+
+println("")
+println("=== Testing Multiple Functions Sharing Globals ===")
+
+// Test 4: Multiple functions share and modify the same global
+int shared_accumulator = 0
+
+func add_ten() returns void {
+    shared_accumulator = shared_accumulator + 10
+}
+
+func add_five() returns void {
+    shared_accumulator = shared_accumulator + 5
+}
+
+func get_accumulator() returns int {
+    return shared_accumulator
+}
+
+add_ten()
+add_five()
+add_ten()
+
+int result4 = get_accumulator()
+if result4 == 25 {
+    println("✓ Test 4: Multiple functions share globals correctly (10+5+10 = 25)")
+} else {
+    println("✗ FAIL: Expected 25, got " + result4.to_string())
+}
+
+println("")
+println("=== Testing Nested Scopes Within Functions ===")
+
+// Test 5: Globals accessible in nested scopes (if/while blocks)
+int nested_test_var = 0
+
+func test_nested_scopes() returns void {
+    if true {
+        nested_test_var = nested_test_var + 1
+        if true {
+            nested_test_var = nested_test_var + 1
+        }
+    }
+    
+    int counter = 0
+    while counter < 3 {
+        nested_test_var = nested_test_var + 1
+        counter = counter + 1
+    }
+}
+
+test_nested_scopes()
+if nested_test_var == 5 {
+    println("✓ Test 5: Globals accessible in nested scopes (2 from if, 3 from while = 5)")
+} else {
+    println("✗ FAIL: Expected 5, got " + nested_test_var.to_string())
+}
+
+println("")
+println("=== Testing Global Boolean Operations ===")
+
+// Test 6: Boolean globals
+func toggle_flag() returns void {
+    global_flag = !global_flag
+}
+
+if global_flag == true {
+    println("✓ Test 6a: Initial global_flag is true")
+} else {
+    println("✗ FAIL: Expected global_flag to be true")
+}
+
+toggle_flag()
+if global_flag == false {
+    println("✓ Test 6b: toggle_flag() works (now false)")
+} else {
+    println("✗ FAIL: Expected global_flag to be false")
+}
+
+toggle_flag()
+if global_flag == true {
+    println("✓ Test 6c: toggle_flag() works again (now true)")
+} else {
+    println("✗ FAIL: Expected global_flag to be true")
+}
+
+println("")
+println("=== Testing Complex Global Updates ===")
+
+// Test 7: Compound assignments and operations
+int math_global = 10
+
+func complex_math() returns void {
+    math_global = math_global * 2
+    math_global = math_global + 5
+    math_global = math_global - 3
+}
+
+complex_math()
+if math_global == 22 {
+    println("✓ Test 7: Complex math operations on globals (10*2+5-3 = 22)")
+} else {
+    println("✗ FAIL: Expected 22, got " + math_global.to_string())
+}
+
+println("")
+println("=== All Global Scope Tests Completed ===")

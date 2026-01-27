@@ -25,9 +25,9 @@ New value: 100 (expected 100)
 
 === Test 2: FloatBox with float parameters ===
 Initial value: 3.5
-FloatBox update parameter: 7.2
-After update(7.25): 7.2 (expected 7.25)
-FloatBox multiply factor: 2.0
+FloatBox update parameter: 7.25
+After update(7.25): 7.25 (expected 7.25)
+FloatBox multiply factor: 2
 After multiply(2.0): 14.5 (expected 14.5)
 
 === Test 3: StringHolder with string parameters ===

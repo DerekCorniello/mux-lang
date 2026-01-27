@@ -2,4 +2,4 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
-PI = 3.1
+PI = 3.14159
