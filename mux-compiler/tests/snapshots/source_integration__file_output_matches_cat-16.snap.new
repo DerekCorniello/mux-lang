@@ -1,6 +1,0 @@
----
-source: mux-compiler/tests/source_integration.rs
-assertion_line: 28
-expression: "format!(\"{:#?}\", expected)"
----
-"// Test: Single-line enum syntax\n\nenum Status { Active(string), Inactive(int), Pending(bool) }\n\nauto s = Status.Active(\"test\")\nmatch s {\n    Active(msg) { println(\"Got: \" + msg) }\n    Inactive(code) { println(\"Code: \" + code.to_string()) }\n    Pending(flag) { println(\"Flag: \" + flag.to_string()) }\n}\n\nprintln(\"Single-line enum test completed\")\n"
