@@ -5,7 +5,7 @@ expression: full_output
 === Testing Basic Mixed Primitives ===
 ✓ Status.Active(string): running
 ✓ Status.Inactive(int): 42
-✓ Status.Pending(bool): false
+✓ Status.Pending(bool): true
 ✓ Status.Code(char): extracted char value
 
 === Testing Collections as Enum Fields ===

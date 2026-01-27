@@ -937,12 +937,8 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<(), String> {
         let full_name = format!("{}.new", name);
 
-        // params: field types
-        let mut param_types = vec![];
-        for field in fields {
-            let llvm_type = self.llvm_type_from_mux_type(&field.type_)?;
-            param_types.push(llvm_type.into());
-        }
+        // Constructor takes no parameters - fields are initialized separately
+        let param_types = vec![];
 
         // return type: *mut Value (boxed object)
         let ptr_type = self.context.ptr_type(AddressSpace::default());
@@ -1028,8 +1024,8 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?;
 
-        // set fields
-        for (i, field) in fields.iter().enumerate() {
+        // set fields to default (zero) values
+        for field in fields.iter() {
             let field_index = self.field_map.get(name).unwrap().get(&field.name).unwrap();
             let field_ptr = self
                 .builder
@@ -1040,9 +1036,35 @@ impl<'a> CodeGenerator<'a> {
                     &field.name,
                 )
                 .map_err(|e| e.to_string())?;
-            let arg = function.get_nth_param(i as u32).unwrap();
+
+            // Initialize primitive fields with default boxed values
+            let default_value: BasicValueEnum =
+                if matches!(field.type_.kind, TypeKind::Primitive(_)) {
+                    // Create default value based on type
+                    let llvm_type = self.llvm_type_from_mux_type(&field.type_)?;
+                    let zero_val = if llvm_type.is_int_type() {
+                        llvm_type.into_int_type().const_zero().into()
+                    } else if llvm_type.is_float_type() {
+                        llvm_type.into_float_type().const_zero().into()
+                    } else {
+                        // For other types, use null pointer
+                        self.context
+                            .ptr_type(AddressSpace::default())
+                            .const_zero()
+                            .into()
+                    };
+                    // Box the zero value
+                    self.box_value(zero_val).into()
+                } else {
+                    // Non-primitive fields: initialize to null
+                    self.context
+                        .ptr_type(AddressSpace::default())
+                        .const_zero()
+                        .into()
+                };
+
             self.builder
-                .build_store(field_ptr, arg)
+                .build_store(field_ptr, default_value)
                 .map_err(|e| e.to_string())?;
         }
 
@@ -1063,7 +1085,7 @@ impl<'a> CodeGenerator<'a> {
             let field_ptr = self
                 .builder
                 .build_struct_gep(
-                    *class_type,
+                    class_type_clone,
                     struct_ptr_typed,
                     *field_index as u32,
                     &vtable_field_name,
@@ -5824,14 +5846,12 @@ impl<'a> CodeGenerator<'a> {
                 Ok(val.into())
             }
             LiteralNode::Boolean(b) => {
+                // Generate i1 (bool) value directly, like int/float literals
                 let val = self
                     .context
-                    .i32_type()
+                    .bool_type()
                     .const_int(if *b { 1 } else { 0 }, false);
-                let bool_val = self
-                    .generate_runtime_call("mux_bool_value", &[val.into()])
-                    .unwrap();
-                Ok(bool_val)
+                Ok(val.into())
             }
             LiteralNode::String(s) => {
                 let name = format!("str_{}", self.string_counter);
@@ -6984,10 +7004,25 @@ impl<'a> CodeGenerator<'a> {
 
     fn box_value(&mut self, val: BasicValueEnum<'a>) -> PointerValue<'a> {
         if val.is_int_value() {
-            let call = self
-                .generate_runtime_call("mux_int_value", &[val.into()])
-                .unwrap();
-            call.into_pointer_value()
+            let int_val = val.into_int_value();
+            // Check if this is a bool (i1) - LLVM considers i1 as an int type
+            if int_val.get_type().get_bit_width() == 1 {
+                // Bool: extend i1 to i32 for mux_bool_value
+                let i32_val = self
+                    .builder
+                    .build_int_z_extend(int_val, self.context.i32_type(), "bool_to_i32")
+                    .unwrap();
+                let call = self
+                    .generate_runtime_call("mux_bool_value", &[i32_val.into()])
+                    .unwrap();
+                call.into_pointer_value()
+            } else {
+                // Regular int (i64)
+                let call = self
+                    .generate_runtime_call("mux_int_value", &[int_val.into()])
+                    .unwrap();
+                call.into_pointer_value()
+            }
         } else if val.is_float_value() {
             let call = self
                 .generate_runtime_call("mux_float_value", &[val.into()])
@@ -6998,11 +7033,7 @@ impl<'a> CodeGenerator<'a> {
             // map/Set/List literals already return *mut Value pointers, so just return as-is
             val.into_pointer_value()
         } else {
-            // for bool
-            let call = self
-                .generate_runtime_call("mux_bool_value", &[val.into()])
-                .unwrap();
-            call.into_pointer_value()
+            panic!("Unexpected value type in box_value")
         }
     }
 
@@ -7057,7 +7088,18 @@ impl<'a> CodeGenerator<'a> {
         val: BasicValueEnum<'a>,
     ) -> Result<inkwell::values::IntValue<'a>, String> {
         if val.is_int_value() {
-            Ok(val.into_int_value())
+            let int_val = val.into_int_value();
+            // If already i1, return as-is. If i32 (from runtime), truncate to i1
+            if int_val.get_type().get_bit_width() == 1 {
+                Ok(int_val)
+            } else {
+                // Truncate i32 to i1
+                let i1_val = self
+                    .builder
+                    .build_int_truncate(int_val, self.context.bool_type(), "trunc_to_i1")
+                    .map_err(|e| e.to_string())?;
+                Ok(i1_val)
+            }
         } else if val.is_pointer_value() {
             // use safe runtime function to extract bool
             let ptr = val.into_pointer_value();
@@ -7065,16 +7107,20 @@ impl<'a> CodeGenerator<'a> {
                 .module
                 .get_function("mux_value_get_bool")
                 .ok_or("mux_value_get_bool not found")?;
-            let result = self
+            let i32_result = self
                 .builder
                 .build_call(get_bool_fn, &[ptr.into()], "get_bool")
                 .map_err(|e| e.to_string())?
                 .try_as_basic_value()
                 .left()
-                .ok_or("Call returned no value")?;
-            // return i32 from the runtime function directly
-            // callers should handle conversion to i1 if needed for return types
-            Ok(result.into_int_value())
+                .ok_or("Call returned no value")?
+                .into_int_value();
+            // Truncate i32 to i1 so callers get consistent bool type
+            let i1_val = self
+                .builder
+                .build_int_truncate(i32_result, self.context.bool_type(), "trunc_to_i1")
+                .map_err(|e| e.to_string())?;
+            Ok(i1_val)
         } else {
             Err("Expected bool value or pointer".to_string())
         }

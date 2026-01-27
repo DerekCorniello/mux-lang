@@ -37,8 +37,8 @@ After append(' World'): Hello World (expected 'Hello World')
 
 === Test 4: BoolToggle with bool parameters ===
 Initial state: false
-Setting state to: false
-After set_state(true): false (expected true)
+Setting state to: true
+After set_state(true): true (expected true)
 
 === Test 5: MultiParam with multiple parameters ===
 Setting first=10 second=20
