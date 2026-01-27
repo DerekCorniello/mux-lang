@@ -447,7 +447,15 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                TokenType::Id(_) => {
+                TokenType::Id(_) | TokenType::Const => {
+                    // Check if this is a const field
+                    let is_const = if self.check(TokenType::Const) {
+                        self.consume();
+                        true
+                    } else {
+                        false
+                    };
+
                     let field_type = self.parse_type()?;
                     let field_name = self.consume_identifier("Expected field name")?;
                     let is_generic_param = Self::is_field_generic_param(&field_type, &type_params);
@@ -455,6 +463,7 @@ impl<'a> Parser<'a> {
                         name: field_name,
                         type_: field_type,
                         is_generic_param,
+                        is_const,
                     });
                 }
                 TokenType::NewLine => {
@@ -2873,6 +2882,7 @@ pub struct Field {
     pub name: String,
     pub type_: TypeNode,
     pub is_generic_param: bool,
+    pub is_const: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

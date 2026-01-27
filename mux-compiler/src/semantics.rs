@@ -25,7 +25,7 @@ pub struct Symbol {
     pub type_: Option<Type>,
     pub interfaces: std::collections::HashMap<String, std::collections::HashMap<String, MethodSig>>,
     pub methods: std::collections::HashMap<String, MethodSig>,
-    pub fields: std::collections::HashMap<String, Type>,
+    pub fields: std::collections::HashMap<String, (Type, bool)>, // (Type, is_const)
     pub type_params: Vec<(String, Vec<String>)>,
 }
 
@@ -714,6 +714,15 @@ impl SemanticAnalyzer {
                                     message: format!("Undefined variable '{}'", name),
                                     span: left.span,
                                 })?;
+
+                        // Check if trying to assign to a constant
+                        if symbol.kind == SymbolKind::Constant {
+                            return Err(SemanticError {
+                                message: format!("Cannot assign to constant '{}'", name),
+                                span: expr.span,
+                            });
+                        }
+
                         let var_type = symbol.type_.as_ref().ok_or_else(|| SemanticError {
                             message: format!("Variable '{}' has no type information", name),
                             span: left.span,
@@ -723,6 +732,45 @@ impl SemanticAnalyzer {
                         } else {
                             self.check_type_compatibility(var_type, &right_type, expr.span)?;
                         }
+                    } else if let crate::parser::ExpressionKind::FieldAccess {
+                        expr: obj_expr,
+                        field,
+                    } = &left.kind
+                    {
+                        // Check if trying to assign to a const field
+                        let obj_type = self.get_expression_type(obj_expr)?;
+
+                        if let Type::Named(class_name, _) = &obj_type {
+                            if let Some(symbol) = self.symbol_table.lookup(class_name) {
+                                if let Some((field_type, is_const)) = symbol.fields.get(field) {
+                                    // Check if trying to assign to a const field
+                                    if *is_const {
+                                        return Err(SemanticError {
+                                            message: format!(
+                                                "Cannot assign to const field '{}'",
+                                                field
+                                            ),
+                                            span: expr.span,
+                                        });
+                                    }
+
+                                    // Type check
+                                    self.check_type_compatibility(
+                                        field_type,
+                                        &right_type,
+                                        expr.span,
+                                    )?;
+                                } else {
+                                    return Err(SemanticError {
+                                        message: format!(
+                                            "Field '{}' not found on type '{}'",
+                                            field, class_name
+                                        ),
+                                        span: left.span,
+                                    });
+                                }
+                            }
+                        }
                     } else {
                         return Err(SemanticError {
                             message: "Assignment to non-identifier not supported".into(),
@@ -730,6 +778,121 @@ impl SemanticAnalyzer {
                         });
                     }
                     Ok(right_type) // assignment returns the assigned value
+                } else if matches!(
+                    op,
+                    crate::parser::BinaryOp::AddAssign
+                        | crate::parser::BinaryOp::SubtractAssign
+                        | crate::parser::BinaryOp::MultiplyAssign
+                        | crate::parser::BinaryOp::DivideAssign
+                        | crate::parser::BinaryOp::ModuloAssign
+                ) {
+                    // Compound assignment operators - check for const
+                    if let crate::parser::ExpressionKind::Identifier(name) = &left.kind {
+                        let symbol =
+                            self.symbol_table
+                                .lookup(name)
+                                .ok_or_else(|| SemanticError {
+                                    message: format!("Undefined variable '{}'", name),
+                                    span: left.span,
+                                })?;
+
+                        // Check if trying to modify a constant
+                        if symbol.kind == SymbolKind::Constant {
+                            return Err(SemanticError {
+                                message: format!("Cannot modify constant '{}'", name),
+                                span: expr.span,
+                            });
+                        }
+                    } else if let crate::parser::ExpressionKind::FieldAccess {
+                        expr: obj_expr,
+                        field,
+                    } = &left.kind
+                    {
+                        // Check if field is const
+                        let obj_type = self.get_expression_type(obj_expr)?;
+
+                        if let Type::Named(class_name, _) = &obj_type {
+                            if let Some(symbol) = self.symbol_table.lookup(class_name) {
+                                if let Some((_field_type, is_const)) = symbol.fields.get(field) {
+                                    // Check if trying to modify a const field
+                                    if *is_const {
+                                        return Err(SemanticError {
+                                            message: format!(
+                                                "Cannot modify const field '{}'",
+                                                field
+                                            ),
+                                            span: expr.span,
+                                        });
+                                    }
+
+                                    // Type check
+                                    let base_op = match op {
+                                        crate::parser::BinaryOp::AddAssign => {
+                                            crate::parser::BinaryOp::Add
+                                        }
+                                        crate::parser::BinaryOp::SubtractAssign => {
+                                            crate::parser::BinaryOp::Subtract
+                                        }
+                                        crate::parser::BinaryOp::MultiplyAssign => {
+                                            crate::parser::BinaryOp::Multiply
+                                        }
+                                        crate::parser::BinaryOp::DivideAssign => {
+                                            crate::parser::BinaryOp::Divide
+                                        }
+                                        crate::parser::BinaryOp::ModuloAssign => {
+                                            crate::parser::BinaryOp::Modulo
+                                        }
+                                        _ => unreachable!(),
+                                    };
+
+                                    self.resolve_binary_operator(&left_type, &right_type, &base_op)
+                                        .ok_or_else(|| SemanticError {
+                                            message: format!(
+                                                "Binary operator {:?} not supported for types {:?} and {:?}",
+                                                base_op, left_type, right_type
+                                            ),
+                                            span: expr.span,
+                                        })?;
+                                } else {
+                                    return Err(SemanticError {
+                                        message: format!(
+                                            "Field '{}' not found on type '{}'",
+                                            field, class_name
+                                        ),
+                                        span: left.span,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Type check compound assignment
+                    let base_op = match op {
+                        crate::parser::BinaryOp::AddAssign => crate::parser::BinaryOp::Add,
+                        crate::parser::BinaryOp::SubtractAssign => {
+                            crate::parser::BinaryOp::Subtract
+                        }
+                        crate::parser::BinaryOp::MultiplyAssign => {
+                            crate::parser::BinaryOp::Multiply
+                        }
+                        crate::parser::BinaryOp::DivideAssign => crate::parser::BinaryOp::Divide,
+                        crate::parser::BinaryOp::ModuloAssign => crate::parser::BinaryOp::Modulo,
+                        _ => unreachable!(),
+                    };
+
+                    if let Some(result_type) =
+                        self.resolve_binary_operator(&left_type, &right_type, &base_op)
+                    {
+                        Ok(result_type)
+                    } else {
+                        Err(SemanticError {
+                            message: format!(
+                                "Binary operator {:?} not supported for types {:?} and {:?}",
+                                base_op, left_type, right_type
+                            ),
+                            span: expr.span,
+                        })
+                    }
                 } else if let Some(result_type) =
                     self.resolve_binary_operator(&left_type, &right_type, op)
                 {
@@ -773,6 +936,40 @@ impl SemanticAnalyzer {
                     }
                 }
                 UnaryOp::Incr | UnaryOp::Decr => {
+                    // Check if trying to modify a constant
+                    if let crate::parser::ExpressionKind::Identifier(name) = &expr.kind {
+                        if let Some(symbol) = self.symbol_table.lookup(name) {
+                            if symbol.kind == SymbolKind::Constant {
+                                return Err(SemanticError {
+                                    message: format!("Cannot modify constant '{}'", name),
+                                    span: expr.span,
+                                });
+                            }
+                        }
+                    } else if let crate::parser::ExpressionKind::FieldAccess {
+                        expr: obj_expr,
+                        field,
+                    } = &expr.kind
+                    {
+                        // Check if field is const
+                        let obj_type = self.get_expression_type(obj_expr)?;
+                        if let Type::Named(class_name, _) = &obj_type {
+                            if let Some(symbol) = self.symbol_table.lookup(class_name) {
+                                if let Some((_field_type, is_const)) = symbol.fields.get(field) {
+                                    if *is_const {
+                                        return Err(SemanticError {
+                                            message: format!(
+                                                "Cannot modify const field '{}'",
+                                                field
+                                            ),
+                                            span: expr.span,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let operand_type = self.get_expression_type(expr)?;
                     match operand_type {
                         Type::Primitive(crate::parser::PrimitiveType::Int) => Ok(operand_type),
@@ -826,7 +1023,7 @@ impl SemanticAnalyzer {
                     })
                 } else if let Type::Named(name, args) = &expr_type {
                     if let Some(symbol) = self.symbol_table.lookup(name) {
-                        if let Some(field_type) = symbol.fields.get(field) {
+                        if let Some((field_type, _is_const)) = symbol.fields.get(field) {
                             let substituted =
                                 self.substitute_type_params(field_type, &symbol.type_params, args);
                             Ok(substituted)
@@ -1657,7 +1854,7 @@ impl SemanticAnalyzer {
                         match self.resolve_type(&field.type_) {
                             Ok(t) => {
                                 field_types.push(t.clone());
-                                fields_map.insert(field.name.clone(), t);
+                                fields_map.insert(field.name.clone(), (t, field.is_const));
                             }
                             Err(e) => self.errors.push(e),
                         }
@@ -2450,7 +2647,8 @@ impl SemanticAnalyzer {
             ExpressionKind::Binary { left, right, op: _ } => {
                 self.analyze_expression(left)?;
                 self.analyze_expression(right)?;
-                // type checking is now handled in get_expression_type via resolve_binary_operator
+                // type checking and const checking is handled in get_expression_type
+                self.get_expression_type(expr)?;
                 Ok(())
             }
             ExpressionKind::Unary {
@@ -2496,6 +2694,41 @@ impl SemanticAnalyzer {
                                 message: "Increment/Decrement operators require int operand".into(),
                                 span: expr.span,
                             });
+                        }
+
+                        // Check if trying to modify a constant
+                        if let crate::parser::ExpressionKind::Identifier(name) = &expr.kind {
+                            if let Some(symbol) = self.symbol_table.lookup(name) {
+                                if symbol.kind == SymbolKind::Constant {
+                                    return Err(SemanticError {
+                                        message: format!("Cannot modify constant '{}'", name),
+                                        span: expr.span,
+                                    });
+                                }
+                            }
+                        } else if let crate::parser::ExpressionKind::FieldAccess {
+                            expr: obj_expr,
+                            field,
+                        } = &expr.kind
+                        {
+                            // Check if field is const
+                            let obj_type = self.get_expression_type(obj_expr)?;
+                            if let Type::Named(class_name, _) = &obj_type {
+                                if let Some(symbol) = self.symbol_table.lookup(class_name) {
+                                    if let Some((_field_type, is_const)) = symbol.fields.get(field)
+                                    {
+                                        if *is_const {
+                                            return Err(SemanticError {
+                                                message: format!(
+                                                    "Cannot modify const field '{}'",
+                                                    field
+                                                ),
+                                                span: expr.span,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     _ => {} // other unary ops not fully implemented yet

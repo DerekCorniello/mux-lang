@@ -193,6 +193,42 @@ func process(int item, int _) returns void { }  // second parameter unused
 
 All declarations require either an explicit type or `auto` with an initializer; semicolons are not used.
 
+### 4.3 Constants
+
+Constants are immutable values that cannot be reassigned or modified after initialization:
+
+```
+// Function-level constants
+func calculate() returns int {
+    const int MULTIPLIER = 10
+    const float TAX_RATE = 0.08
+    int value = 100
+    return value * MULTIPLIER
+}
+
+// Constants in classes
+class Config {
+    const int MAX_RETRIES
+    int current_retry
+    
+    func increment() returns void {
+        self.current_retry++  // OK - mutable field
+        // self.MAX_RETRIES++  // ERROR: Cannot modify const field 'MAX_RETRIES'
+    }
+}
+
+auto cfg = Config.new()
+cfg.current_retry = 1  // OK - mutable field
+// cfg.MAX_RETRIES = 5  // ERROR: Cannot assign to const field 'MAX_RETRIES'
+```
+
+**Const Enforcement:**
+- Cannot reassign: `const_var = new_value` → ERROR
+- Cannot use compound assignment: `const_var += 1` → ERROR
+- Cannot increment/decrement: `const_var++` or `const_var--` → ERROR
+- Applies to both identifiers and class fields
+- Use `const` when you want a value that won't change after initialization
+
 ---
 
 ## 5. Functions
