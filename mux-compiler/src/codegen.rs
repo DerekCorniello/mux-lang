@@ -6269,236 +6269,107 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             BinaryOp::Less => {
-                // Get the semantic type to determine what kind of comparison to perform
-                let left_type = self
-                    .analyzer
-                    .get_expression_type(left_expr)
-                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-
-                match &left_type {
-                    // Int/Char comparison (char stored as int)
-                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
-                        let left_int = self.get_raw_int_value(left)?;
-                        let right_int = self.get_raw_int_value(right)?;
-                        self.builder
-                            .build_int_compare(
-                                inkwell::IntPredicate::SLT,
-                                left_int,
-                                right_int,
-                                "lt",
-                            )
-                            .map_err(|e| e.to_string())
-                            .map(|v| v.into())
-                    }
-                    // Float comparison
-                    Type::Primitive(PrimitiveType::Float) => {
-                        let left_float = self.get_raw_float_value(left)?;
-                        let right_float = self.get_raw_float_value(right)?;
-                        self.builder
-                            .build_float_compare(
-                                inkwell::FloatPredicate::OLT,
-                                left_float,
-                                right_float,
-                                "flt",
-                            )
-                            .map_err(|e| e.to_string())
-                            .map(|v| v.into())
-                    }
-                    // String/List/Map/Set/Bool: Not supported
-                    Type::Primitive(PrimitiveType::Str) => {
-                        Err("Less-than comparison not supported for strings".to_string())
-                    }
-                    Type::Primitive(PrimitiveType::Bool) => {
-                        Err("Less-than comparison not supported for bools".to_string())
-                    }
-                    Type::List(_) | Type::EmptyList => {
-                        Err("Less-than comparison not supported for lists".to_string())
-                    }
-                    Type::Map(_, _) | Type::EmptyMap => {
-                        Err("Less-than comparison not supported for maps".to_string())
-                    }
-                    Type::Set(_) | Type::EmptySet => {
-                        Err("Less-than comparison not supported for sets".to_string())
-                    }
-                    _ => Err(format!(
-                        "Less-than comparison not supported for type: {:?}",
-                        left_type
-                    )),
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_compare(inkwell::IntPredicate::SLT, left_int, right_int, "lt")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OLT,
+                            left_float,
+                            right_float,
+                            "flt",
+                        )
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported lt operands".to_string())
                 }
             }
             BinaryOp::Greater => {
-                // Get the semantic type to determine what kind of comparison to perform
-                let left_type = self
-                    .analyzer
-                    .get_expression_type(left_expr)
-                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-
-                match &left_type {
-                    // Int/Char comparison (char stored as int)
-                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
-                        let left_int = self.get_raw_int_value(left)?;
-                        let right_int = self.get_raw_int_value(right)?;
-                        self.builder
-                            .build_int_compare(
-                                inkwell::IntPredicate::SGT,
-                                left_int,
-                                right_int,
-                                "gt",
-                            )
-                            .map_err(|e| e.to_string())
-                            .map(|v| v.into())
-                    }
-                    // Float comparison
-                    Type::Primitive(PrimitiveType::Float) => {
-                        let left_float = self.get_raw_float_value(left)?;
-                        let right_float = self.get_raw_float_value(right)?;
-                        self.builder
-                            .build_float_compare(
-                                inkwell::FloatPredicate::OGT,
-                                left_float,
-                                right_float,
-                                "fgt",
-                            )
-                            .map_err(|e| e.to_string())
-                            .map(|v| v.into())
-                    }
-                    // String/List/Map/Set/Bool: Not supported
-                    Type::Primitive(PrimitiveType::Str) => {
-                        Err("Greater-than comparison not supported for strings".to_string())
-                    }
-                    Type::Primitive(PrimitiveType::Bool) => {
-                        Err("Greater-than comparison not supported for bools".to_string())
-                    }
-                    Type::List(_) | Type::EmptyList => {
-                        Err("Greater-than comparison not supported for lists".to_string())
-                    }
-                    Type::Map(_, _) | Type::EmptyMap => {
-                        Err("Greater-than comparison not supported for maps".to_string())
-                    }
-                    Type::Set(_) | Type::EmptySet => {
-                        Err("Greater-than comparison not supported for sets".to_string())
-                    }
-                    _ => Err(format!(
-                        "Greater-than comparison not supported for type: {:?}",
-                        left_type
-                    )),
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_compare(inkwell::IntPredicate::SGT, left_int, right_int, "gt")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OGT,
+                            left_float,
+                            right_float,
+                            "fgt",
+                        )
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported gt operands".to_string())
                 }
             }
             BinaryOp::LessEqual => {
-                // Get the semantic type to determine what kind of comparison to perform
-                let left_type = self
-                    .analyzer
-                    .get_expression_type(left_expr)
-                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-
-                match &left_type {
-                    // Int/Char comparison (char stored as int)
-                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
-                        let left_int = self.get_raw_int_value(left)?;
-                        let right_int = self.get_raw_int_value(right)?;
-                        self.builder
-                            .build_int_compare(
-                                inkwell::IntPredicate::SLE,
-                                left_int,
-                                right_int,
-                                "le",
-                            )
-                            .map_err(|e| e.to_string())
-                            .map(|v| v.into())
-                    }
-                    // Float comparison
-                    Type::Primitive(PrimitiveType::Float) => {
-                        let left_float = self.get_raw_float_value(left)?;
-                        let right_float = self.get_raw_float_value(right)?;
-                        self.builder
-                            .build_float_compare(
-                                inkwell::FloatPredicate::OLE,
-                                left_float,
-                                right_float,
-                                "fle",
-                            )
-                            .map_err(|e| e.to_string())
-                            .map(|v| v.into())
-                    }
-                    // String/List/Map/Set/Bool: Not supported
-                    Type::Primitive(PrimitiveType::Str) => {
-                        Err("Less-than-or-equal comparison not supported for strings".to_string())
-                    }
-                    Type::Primitive(PrimitiveType::Bool) => {
-                        Err("Less-than-or-equal comparison not supported for bools".to_string())
-                    }
-                    Type::List(_) | Type::EmptyList => {
-                        Err("Less-than-or-equal comparison not supported for lists".to_string())
-                    }
-                    Type::Map(_, _) | Type::EmptyMap => {
-                        Err("Less-than-or-equal comparison not supported for maps".to_string())
-                    }
-                    Type::Set(_) | Type::EmptySet => {
-                        Err("Less-than-or-equal comparison not supported for sets".to_string())
-                    }
-                    _ => Err(format!(
-                        "Less-than-or-equal comparison not supported for type: {:?}",
-                        left_type
-                    )),
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_compare(inkwell::IntPredicate::SLE, left_int, right_int, "le")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OLE,
+                            left_float,
+                            right_float,
+                            "fle",
+                        )
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported le operands".to_string())
                 }
             }
             BinaryOp::GreaterEqual => {
-                // Get the semantic type to determine what kind of comparison to perform
-                let left_type = self
-                    .analyzer
-                    .get_expression_type(left_expr)
-                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-
-                match &left_type {
-                    // Int/Char comparison (char stored as int)
-                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
-                        let left_int = self.get_raw_int_value(left)?;
-                        let right_int = self.get_raw_int_value(right)?;
-                        self.builder
-                            .build_int_compare(
-                                inkwell::IntPredicate::SGE,
-                                left_int,
-                                right_int,
-                                "ge",
-                            )
-                            .map_err(|e| e.to_string())
-                            .map(|v| v.into())
-                    }
-                    // Float comparison
-                    Type::Primitive(PrimitiveType::Float) => {
-                        let left_float = self.get_raw_float_value(left)?;
-                        let right_float = self.get_raw_float_value(right)?;
-                        self.builder
-                            .build_float_compare(
-                                inkwell::FloatPredicate::OGE,
-                                left_float,
-                                right_float,
-                                "fge",
-                            )
-                            .map_err(|e| e.to_string())
-                            .map(|v| v.into())
-                    }
-                    // String/List/Map/Set/Bool: Not supported
-                    Type::Primitive(PrimitiveType::Str) => {
-                        Err("Greater-than-or-equal comparison not supported for strings"
-                            .to_string())
-                    }
-                    Type::Primitive(PrimitiveType::Bool) => {
-                        Err("Greater-than-or-equal comparison not supported for bools".to_string())
-                    }
-                    Type::List(_) | Type::EmptyList => {
-                        Err("Greater-than-or-equal comparison not supported for lists".to_string())
-                    }
-                    Type::Map(_, _) | Type::EmptyMap => {
-                        Err("Greater-than-or-equal comparison not supported for maps".to_string())
-                    }
-                    Type::Set(_) | Type::EmptySet => {
-                        Err("Greater-than-or-equal comparison not supported for sets".to_string())
-                    }
-                    _ => Err(format!(
-                        "Greater-than-or-equal comparison not supported for type: {:?}",
-                        left_type
-                    )),
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_compare(inkwell::IntPredicate::SGE, left_int, right_int, "ge")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OGE,
+                            left_float,
+                            right_float,
+                            "fge",
+                        )
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported ge operands".to_string())
                 }
             }
             BinaryOp::NotEqual => {

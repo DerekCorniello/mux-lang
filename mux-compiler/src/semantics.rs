@@ -771,6 +771,15 @@ impl SemanticAnalyzer {
                                 }
                             }
                         }
+                    } else if let crate::parser::ExpressionKind::Unary {
+                        op: crate::parser::UnaryOp::Deref,
+                        expr: _,
+                        postfix: _,
+                    } = &left.kind
+                    {
+                        // Dereference assignment is allowed (e.g., *p = 20)
+                        // Type compatibility already checked via left_type and right_type
+                        // No const checking needed - you can't have a const pointer target
                     } else {
                         return Err(SemanticError {
                             message: "Assignment to non-identifier not supported".into(),
@@ -864,6 +873,14 @@ impl SemanticAnalyzer {
                                 }
                             }
                         }
+                    } else if let crate::parser::ExpressionKind::Unary {
+                        op: crate::parser::UnaryOp::Deref,
+                        expr: _,
+                        postfix: _,
+                    } = &left.kind
+                    {
+                        // Dereference compound assignment is allowed (e.g., *p += 5)
+                        // Type checking happens below via resolve_binary_operator
                     }
 
                     // Type check compound assignment
@@ -968,6 +985,14 @@ impl SemanticAnalyzer {
                                 }
                             }
                         }
+                    } else if let crate::parser::ExpressionKind::Unary {
+                        op: crate::parser::UnaryOp::Deref,
+                        expr: _,
+                        postfix: _,
+                    } = &expr.kind
+                    {
+                        // Dereference increment/decrement is allowed (e.g., (*p)++)
+                        // No const check needed
                     }
 
                     let operand_type = self.get_expression_type(expr)?;
@@ -2647,8 +2672,7 @@ impl SemanticAnalyzer {
             ExpressionKind::Binary { left, right, op: _ } => {
                 self.analyze_expression(left)?;
                 self.analyze_expression(right)?;
-                // type checking and const checking is handled in get_expression_type
-                self.get_expression_type(expr)?;
+                // type checking is handled in get_expression_type via resolve_binary_operator
                 Ok(())
             }
             ExpressionKind::Unary {
@@ -2706,7 +2730,9 @@ impl SemanticAnalyzer {
                                     });
                                 }
                             }
-                        } else if let crate::parser::ExpressionKind::FieldAccess {
+                        }
+
+                        if let crate::parser::ExpressionKind::FieldAccess {
                             expr: obj_expr,
                             field,
                         } = &expr.kind
@@ -2730,6 +2756,8 @@ impl SemanticAnalyzer {
                                 }
                             }
                         }
+
+                        // Dereference increment/decrement is allowed (no const check needed)
                     }
                     _ => {} // other unary ops not fully implemented yet
                 }
