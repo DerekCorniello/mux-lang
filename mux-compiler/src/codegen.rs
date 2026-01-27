@@ -32,6 +32,7 @@ pub struct CodeGenerator<'a> {
     string_counter: usize,
     label_counter: usize,
     variables: HashMap<String, (PointerValue<'a>, BasicTypeEnum<'a>, ResolvedType)>,
+    global_variables: HashMap<String, (PointerValue<'a>, BasicTypeEnum<'a>, ResolvedType)>,
     functions: HashMap<String, FunctionValue<'a>>,
     function_nodes: HashMap<String, FunctionNode>,
     current_function_name: Option<String>,
@@ -661,6 +662,7 @@ impl<'a> CodeGenerator<'a> {
             string_counter: 0,
             label_counter: 0,
             variables: HashMap::new(),
+            global_variables: HashMap::new(),
             functions: HashMap::new(),
             function_nodes: HashMap::new(),
             current_function_name: None,
@@ -669,6 +671,46 @@ impl<'a> CodeGenerator<'a> {
             context_stack: Vec::new(),
             generated_methods: HashMap::new(),
         }
+    }
+
+    /// Create an alloca instruction in the entry block of the current function.
+    /// This ensures proper LLVM dominance - allocas must be in the entry block
+    /// to be used throughout the function, including in match arms and loops.
+    fn create_entry_block_alloca(
+        &self,
+        function: FunctionValue<'a>,
+        ty: BasicTypeEnum<'a>,
+        name: &str,
+    ) -> Result<PointerValue<'a>, String> {
+        let builder = self.context.create_builder();
+
+        let entry = function.get_first_basic_block().unwrap();
+        match entry.get_first_instruction() {
+            Some(first_instr) => builder.position_before(&first_instr),
+            None => builder.position_at_end(entry),
+        }
+
+        builder.build_alloca(ty, name).map_err(|e| e.to_string())
+    }
+
+    /// Create an alloca in the entry block of the current function (inferred from builder position).
+    /// If not in a function context, creates alloca at current position.
+    fn create_entry_alloca(
+        &self,
+        ty: BasicTypeEnum<'a>,
+        name: &str,
+    ) -> Result<PointerValue<'a>, String> {
+        // try to get the current function from the builder's insert block
+        if let Some(block) = self.builder.get_insert_block() {
+            if let Some(function) = block.get_parent() {
+                return self.create_entry_block_alloca(function, ty, name);
+            }
+        }
+
+        // fallback: create alloca at current position (shouldn't happen in normal code)
+        self.builder
+            .build_alloca(ty, name)
+            .map_err(|e| e.to_string())
     }
 
     fn generate_user_defined_types(&mut self, nodes: &[AstNode]) -> Result<(), String> {
@@ -1556,15 +1598,16 @@ impl<'a> CodeGenerator<'a> {
             }
         }
 
-        // second pass: generate code for non-generic functions
+        // second pass: collect top-level statements and function nodes
         let mut top_level_statements = vec![];
+        let mut user_functions = vec![];
         for node in nodes {
             match node {
                 AstNode::Function(func) => {
-                    // only generate non-generic functions
+                    // collect non-generic functions for later generation
                     // generic functions will be generated when instantiated
                     if func.type_params.is_empty() {
-                        self.generate_function(func)?;
+                        user_functions.push(func.clone());
                     }
                 }
                 AstNode::Statement(stmt) => {
@@ -1572,6 +1615,96 @@ impl<'a> CodeGenerator<'a> {
                 }
                 _ => {} // skip classes, interfaces, enums for now
             }
+        }
+
+        // First, analyze top-level statements to identify global variable declarations
+        // and create LLVM global variables for them
+        for stmt in &top_level_statements {
+            match &stmt.kind {
+                StatementKind::TypedDecl(name, type_, _)
+                | StatementKind::ConstDecl(name, type_, _) => {
+                    let resolved_type = self
+                        .analyzer
+                        .resolve_type(type_)
+                        .map_err(|e| e.to_string())?;
+
+                    // determine correct LLVM type based on whether value is boxed
+                    let llvm_type = match &resolved_type {
+                        Type::Primitive(_) => {
+                            // primitives are boxed, use ptr type
+                            self.context.ptr_type(AddressSpace::default()).into()
+                        }
+                        _ => {
+                            // enums, classes, etc. use their actual struct type
+                            self.llvm_type_from_mux_type(type_)?
+                        }
+                    };
+
+                    let global = self.module.add_global(llvm_type, None, name);
+                    global.set_initializer(&llvm_type.const_zero());
+
+                    // store in global_variables for later access
+                    self.global_variables.insert(
+                        name.clone(),
+                        (global.as_pointer_value(), llvm_type, resolved_type),
+                    );
+                }
+                StatementKind::AutoDecl(name, _, _) => {
+                    // for auto declarations, get the inferred type from the symbol table
+                    let symbol = self
+                        .analyzer
+                        .symbol_table()
+                        .lookup(name)
+                        .ok_or_else(|| format!("Symbol {} not found", name))?;
+                    let resolved_type = symbol
+                        .type_
+                        .as_ref()
+                        .ok_or_else(|| format!("Type not inferred for {}", name))?;
+
+                    // determine correct LLVM type based on whether value is boxed
+                    let llvm_type = match resolved_type {
+                        Type::Primitive(_) => {
+                            // primitives are boxed, use ptr type
+                            self.context.ptr_type(AddressSpace::default()).into()
+                        }
+                        _ => {
+                            // enums, classes, etc. use their actual struct type
+                            let type_node = self.type_to_type_node(resolved_type);
+                            self.llvm_type_from_mux_type(&type_node)?
+                        }
+                    };
+
+                    let global = self.module.add_global(llvm_type, None, name);
+                    global.set_initializer(&llvm_type.const_zero());
+
+                    self.global_variables.insert(
+                        name.clone(),
+                        (global.as_pointer_value(), llvm_type, resolved_type.clone()),
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        // generate main function to initialize global variables
+        if !top_level_statements.is_empty() {
+            let main_type = self.context.void_type().fn_type(&[], false);
+            let main_func = self.module.add_function("main", main_type, None);
+            let entry = self.context.append_basic_block(main_func, "entry");
+            self.builder.position_at_end(entry);
+
+            // copy global_variables to variables so statements can access/initialize them
+            self.variables = self.global_variables.clone();
+
+            for stmt in top_level_statements {
+                self.generate_statement(&stmt, Some(&main_func))?;
+            }
+            self.builder.build_return(None).map_err(|e| e.to_string())?;
+        }
+
+        // now generate user-defined functions (they can access globals)
+        for func in user_functions {
+            self.generate_function(&func)?;
         }
 
         // generate class methods with prefixed names
@@ -1606,19 +1739,6 @@ impl<'a> CodeGenerator<'a> {
                     }
                 }
             }
-        }
-
-        // generate main function for top-level statements
-        if !top_level_statements.is_empty() {
-            let main_type = self.context.void_type().fn_type(&[], false);
-            let main_func = self.module.add_function("main", main_type, None);
-            let entry = self.context.append_basic_block(main_func, "entry");
-            self.builder.position_at_end(entry);
-            self.variables.clear(); // start with clean scope
-            for stmt in top_level_statements {
-                self.generate_statement(&stmt, Some(&main_func))?;
-            }
-            self.builder.build_return(None).map_err(|e| e.to_string())?;
         }
 
         Ok(())
@@ -1844,7 +1964,11 @@ impl<'a> CodeGenerator<'a> {
                 Ok(none_call)
             }
             ExpressionKind::Identifier(name) => {
-                if let Some((ptr, var_type, type_node)) = self.variables.get(name) {
+                if let Some((ptr, var_type, type_node)) = self
+                    .variables
+                    .get(name)
+                    .or_else(|| self.global_variables.get(name))
+                {
                     match type_node {
                         Type::Named(type_name, _) => {
                             if type_name == "Optional" || type_name == "Result" {
@@ -1854,7 +1978,7 @@ impl<'a> CodeGenerator<'a> {
                                     .build_load(
                                         self.context.ptr_type(AddressSpace::default()),
                                         *ptr,
-                                        name,
+                                        &format!("load_{}", name),
                                     )
                                     .map_err(|e| e.to_string())?
                                     .into_pointer_value();
@@ -1883,7 +2007,7 @@ impl<'a> CodeGenerator<'a> {
                                     .build_load(
                                         self.context.ptr_type(AddressSpace::default()),
                                         *ptr,
-                                        name,
+                                        &format!("load_{}", name),
                                     )
                                     .map_err(|e| e.to_string())?
                                     .into_pointer_value();
@@ -1897,7 +2021,7 @@ impl<'a> CodeGenerator<'a> {
                                 .build_load(
                                     self.context.ptr_type(AddressSpace::default()),
                                     *ptr,
-                                    name,
+                                    &format!("load_{}", name),
                                 )
                                 .map_err(|e| e.to_string())?
                                 .into_pointer_value();
@@ -1928,7 +2052,7 @@ impl<'a> CodeGenerator<'a> {
                                 .build_load(
                                     self.context.ptr_type(AddressSpace::default()),
                                     *ptr,
-                                    name,
+                                    &format!("load_{}", name),
                                 )
                                 .map_err(|e| e.to_string())?
                                 .into_pointer_value();
@@ -1941,7 +2065,7 @@ impl<'a> CodeGenerator<'a> {
                                 .build_load(
                                     self.context.ptr_type(AddressSpace::default()),
                                     *ptr,
-                                    name,
+                                    &format!("load_{}", name),
                                 )
                                 .map_err(|e| e.to_string())?
                                 .into_pointer_value();
@@ -1961,7 +2085,11 @@ impl<'a> CodeGenerator<'a> {
                     if let Some(ref func_name) = self.current_function_name {
                         if func_name.contains('.') {
                             let class_name = func_name.split('.').next().unwrap();
-                            if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                            if let Some((self_ptr, _, _)) = self
+                                .variables
+                                .get("self")
+                                .or_else(|| self.global_variables.get("self"))
+                            {
                                 if self
                                     .field_map
                                     .get(class_name)
@@ -2042,7 +2170,11 @@ impl<'a> CodeGenerator<'a> {
                                     .and_then(|fields| fields.get(name))
                                 {
                                     // this is a field access on self
-                                    if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                                    if let Some((self_ptr, _, _)) = self
+                                        .variables
+                                        .get("self")
+                                        .or_else(|| self.global_variables.get("self"))
+                                    {
                                         // load the object pointer from the alloca
                                         let self_value_ptr = self
                                             .builder
@@ -2126,8 +2258,10 @@ impl<'a> CodeGenerator<'a> {
                                             .and_then(|fields| fields.get(name))
                                         {
                                             // this is a field assignment on self
-                                            if let Some((self_ptr, _, _)) =
-                                                self.variables.get("self")
+                                            if let Some((self_ptr, _, _)) = self
+                                                .variables
+                                                .get("self")
+                                                .or_else(|| self.global_variables.get("self"))
                                             {
                                                 // load the object pointer from the alloca
                                                 let self_value_ptr = self
@@ -2182,7 +2316,11 @@ impl<'a> CodeGenerator<'a> {
                                     }
                                 }
 
-                                if let Some((ptr, _, type_node)) = self.variables.get(name) {
+                                if let Some((ptr, _, type_node)) = self
+                                    .variables
+                                    .get(name)
+                                    .or_else(|| self.global_variables.get(name))
+                                {
                                     let ptr_copy = *ptr;
                                     // don't box enum struct values - store them directly
                                     let value_to_store = if let Type::Named(type_name, _) =
@@ -2227,57 +2365,63 @@ impl<'a> CodeGenerator<'a> {
                                 Ok(right_val)
                             } else if let ExpressionKind::FieldAccess { expr, field } = &left.kind {
                                 // handle field assignment
-                                let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) =
-                                    &expr.kind
-                                {
-                                    if obj_name == "self" {
-                                        // special case: accessing field of 'self'
-                                        if let Some((self_ptr, _, _)) = self.variables.get("self") {
-                                            let self_value_ptr = self
-                                                .builder
-                                                .build_load(
-                                                    self.context.ptr_type(AddressSpace::default()),
-                                                    *self_ptr,
-                                                    "load_self_for_field_assign",
-                                                )
-                                                .map_err(|e| e.to_string())?
-                                                .into_pointer_value();
+                                let mut struct_ptr =
+                                    if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                                        if obj_name == "self" {
+                                            // special case: accessing field of 'self'
+                                            if let Some((self_ptr, _, _)) = self
+                                                .variables
+                                                .get("self")
+                                                .or_else(|| self.global_variables.get("self"))
+                                            {
+                                                let self_value_ptr = self
+                                                    .builder
+                                                    .build_load(
+                                                        self.context
+                                                            .ptr_type(AddressSpace::default()),
+                                                        *self_ptr,
+                                                        "load_self_for_field_assign",
+                                                    )
+                                                    .map_err(|e| e.to_string())?
+                                                    .into_pointer_value();
 
-                                            // get the raw data pointer from the boxed Value
-                                            let get_ptr_func = self
-                                                .module
-                                                .get_function("mux_get_object_ptr")
-                                                .ok_or("mux_get_object_ptr not found")?;
-                                            let data_ptr = self
-                                                .builder
-                                                .build_call(
-                                                    get_ptr_func,
-                                                    &[self_value_ptr.into()],
-                                                    "self_data_ptr_assign",
-                                                )
-                                                .map_err(|e| e.to_string())?
-                                                .try_as_basic_value()
-                                                .left()
-                                                .unwrap()
-                                                .into_pointer_value();
-                                            data_ptr
+                                                // get the raw data pointer from the boxed Value
+                                                let get_ptr_func = self
+                                                    .module
+                                                    .get_function("mux_get_object_ptr")
+                                                    .ok_or("mux_get_object_ptr not found")?;
+                                                let data_ptr = self
+                                                    .builder
+                                                    .build_call(
+                                                        get_ptr_func,
+                                                        &[self_value_ptr.into()],
+                                                        "self_data_ptr_assign",
+                                                    )
+                                                    .map_err(|e| e.to_string())?
+                                                    .try_as_basic_value()
+                                                    .left()
+                                                    .unwrap()
+                                                    .into_pointer_value();
+                                                data_ptr
+                                            } else {
+                                                return Err("Self not found in field assignment"
+                                                    .to_string());
+                                            }
                                         } else {
-                                            return Err(
-                                                "Self not found in field assignment".to_string()
-                                            );
+                                            self.generate_expression(expr)?.into_pointer_value()
                                         }
                                     } else {
                                         self.generate_expression(expr)?.into_pointer_value()
-                                    }
-                                } else {
-                                    self.generate_expression(expr)?.into_pointer_value()
-                                };
+                                    };
 
                                 // for non-self class objects, get the data pointer
                                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                                     if obj_name != "self" {
-                                        if let Some(Type::Named(_, _)) =
-                                            self.variables.get(obj_name).map(|(_, _, t)| t)
+                                        if let Some(Type::Named(_, _)) = self
+                                            .variables
+                                            .get(obj_name)
+                                            .or_else(|| self.global_variables.get(obj_name))
+                                            .map(|(_, _, t)| t)
                                         {
                                             let get_ptr_func = self
                                                 .module
@@ -2300,8 +2444,11 @@ impl<'a> CodeGenerator<'a> {
                                 }
 
                                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                                    if let Some(type_node) =
-                                        self.variables.get(obj_name).map(|(_, _, t)| t)
+                                    if let Some(type_node) = self
+                                        .variables
+                                        .get(obj_name)
+                                        .or_else(|| self.global_variables.get(obj_name))
+                                        .map(|(_, _, t)| t)
                                     {
                                         if let Type::Named(class_name, _) = type_node {
                                             if let Some(field_indices) =
@@ -2417,7 +2564,11 @@ impl<'a> CodeGenerator<'a> {
                                 return Err("Unsupported add assign operands".to_string());
                             };
                             if let ExpressionKind::Identifier(name) = &left.kind {
-                                if let Some((ptr, _, _)) = self.variables.get(name) {
+                                if let Some((ptr, _, _)) = self
+                                    .variables
+                                    .get(name)
+                                    .or_else(|| self.global_variables.get(name))
+                                {
                                     let ptr_copy = *ptr;
                                     let boxed = self.box_value(result);
                                     self.builder
@@ -2470,7 +2621,11 @@ impl<'a> CodeGenerator<'a> {
                                 return Err("Unsupported sub assign operands".to_string());
                             };
                             if let ExpressionKind::Identifier(name) = &left.kind {
-                                if let Some((ptr, _, _)) = self.variables.get(name) {
+                                if let Some((ptr, _, _)) = self
+                                    .variables
+                                    .get(name)
+                                    .or_else(|| self.global_variables.get(name))
+                                {
                                     let ptr_copy = *ptr;
                                     let boxed = self.box_value(result);
                                     self.builder
@@ -2501,6 +2656,12 @@ impl<'a> CodeGenerator<'a> {
                         _ => Err("Assignment op not implemented".to_string()),
                     }
                 } else {
+                    // Special handling for short-circuit logical operators
+                    if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr) {
+                        return self.generate_short_circuit_logical_op(left, op, right);
+                    }
+
+                    // Regular binary operations - evaluate both operands
                     let left_val = self.generate_expression(left)?;
                     let right_val = self.generate_expression(right)?;
                     Ok(self.generate_binary_op(left, left_val, op, right, right_val)?)
@@ -2569,7 +2730,11 @@ impl<'a> CodeGenerator<'a> {
                     match &expr.kind {
                         ExpressionKind::Identifier(name) => {
                             // first check if this is a variable in current scope
-                            if let Some((_, _, var_type)) = self.variables.get(name) {
+                            if let Some((_, _, var_type)) = self
+                                .variables
+                                .get(name)
+                                .or_else(|| self.global_variables.get(name))
+                            {
                                 // this is an instance method call on a variable
                                 let var_type_clone = var_type.clone();
                                 let obj_value = self.generate_expression(expr)?;
@@ -2964,7 +3129,11 @@ impl<'a> CodeGenerator<'a> {
                         }
                         _ => {
                             // first check if this is a function pointer variable
-                            if let Some((ptr, _, var_type)) = self.variables.get(name) {
+                            if let Some((ptr, _, var_type)) = self
+                                .variables
+                                .get(name)
+                                .or_else(|| self.global_variables.get(name))
+                            {
                                 let var_type_clone = var_type.clone();
                                 if matches!(var_type, Type::Function { .. }) {
                                     // load function pointer
@@ -3269,7 +3438,11 @@ impl<'a> CodeGenerator<'a> {
                 let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name == "self" {
                         // special case: accessing field of 'self' - load actual object pointer from alloca first
-                        if let Some((self_ptr, _, _)) = self.variables.get("self") {
+                        if let Some((self_ptr, _, _)) = self
+                            .variables
+                            .get("self")
+                            .or_else(|| self.global_variables.get("self"))
+                        {
                             let self_value_ptr = self
                                 .builder
                                 .build_load(
@@ -3307,8 +3480,11 @@ impl<'a> CodeGenerator<'a> {
                 // for non-self class objects, get the data pointer
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name != "self" {
-                        if let Some(Type::Named(_, _)) =
-                            self.variables.get(obj_name).map(|(_, _, t)| t)
+                        if let Some(Type::Named(_, _)) = self
+                            .variables
+                            .get(obj_name)
+                            .or_else(|| self.global_variables.get(obj_name))
+                            .map(|(_, _, t)| t)
                         {
                             let get_ptr_func = self
                                 .module
@@ -3327,7 +3503,12 @@ impl<'a> CodeGenerator<'a> {
                 }
 
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                    if let Some(type_node) = self.variables.get(obj_name).map(|(_, _, t)| t) {
+                    if let Some(type_node) = self
+                        .variables
+                        .get(obj_name)
+                        .or_else(|| self.global_variables.get(obj_name))
+                        .map(|(_, _, t)| t)
+                    {
                         if let Type::Named(class_name, _) = type_node {
                             if let Some(field_indices) = self.field_map.get(class_name.as_str()) {
                                 if let Some(&index) = field_indices.get(field) {
@@ -3462,7 +3643,11 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             }
                         }
-                    } else if let Some((_, _, type_node)) = self.variables.get(obj_name) {
+                    } else if let Some((_, _, type_node)) = self
+                        .variables
+                        .get(obj_name)
+                        .or_else(|| self.global_variables.get(obj_name))
+                    {
                         match type_node {
                             Type::Primitive(PrimitiveType::Int) if field == "to_string" => {
                                 let ptr = self.generate_expression(expr)?;
@@ -3575,7 +3760,11 @@ impl<'a> CodeGenerator<'a> {
                 match op {
                     UnaryOp::Ref => {
                         if let ExpressionKind::Identifier(name) = &expr.kind {
-                            if let Some((ptr, _, _)) = self.variables.get(name) {
+                            if let Some((ptr, _, _)) = self
+                                .variables
+                                .get(name)
+                                .or_else(|| self.global_variables.get(name))
+                            {
                                 // for identifier references: return pointer to the alloca containing the boxed value
                                 // don't dereference - we want a reference to the variable itself
                                 Ok((*ptr).into())
@@ -3616,7 +3805,11 @@ impl<'a> CodeGenerator<'a> {
                         // now we need to extract the actual value from the boxed pointer
                         // this depends on the type of the referenced variable
                         if let ExpressionKind::Identifier(name) = &expr.kind {
-                            if let Some((_, _, var_type)) = self.variables.get(name) {
+                            if let Some((_, _, var_type)) = self
+                                .variables
+                                .get(name)
+                                .or_else(|| self.global_variables.get(name))
+                            {
                                 match var_type {
                                     Type::Reference(inner_type) => match inner_type.as_ref() {
                                         Type::Primitive(PrimitiveType::Int) => {
@@ -3645,7 +3838,11 @@ impl<'a> CodeGenerator<'a> {
                     UnaryOp::Incr => {
                         // Load current value, add 1, store back
                         if let ExpressionKind::Identifier(name) = &expr.kind {
-                            if let Some((ptr, _, _)) = self.variables.get(name) {
+                            if let Some((ptr, _, _)) = self
+                                .variables
+                                .get(name)
+                                .or_else(|| self.global_variables.get(name))
+                            {
                                 let ptr_copy = *ptr;
                                 // Load the mux_value* pointer
                                 let value_ptr = self
@@ -3758,7 +3955,58 @@ impl<'a> CodeGenerator<'a> {
                                 .to_string())
                         }
                     }
-                    _ => Err(format!("Unary op not implemented: {:?}", expr)),
+                    UnaryOp::Not => {
+                        // Evaluate the expression to get a bool value
+                        let expr_val = self.generate_expression(expr)?;
+
+                        // Get raw bool value (i1) - handles both raw i1 and boxed bool
+                        let bool_val = self.get_raw_bool_value(expr_val)?;
+
+                        // Use LLVM's build_not to invert the i1 value
+                        let not_result = self
+                            .builder
+                            .build_not(bool_val, "not")
+                            .map_err(|e| e.to_string())?;
+
+                        Ok(not_result.into())
+                    }
+                    UnaryOp::Neg => {
+                        // Negate a number (int or float)
+                        let expr_val = self.generate_expression(expr)?;
+
+                        if expr_val.is_int_value() {
+                            let int_val = expr_val.into_int_value();
+                            let neg = self
+                                .builder
+                                .build_int_neg(int_val, "neg")
+                                .map_err(|e| e.to_string())?;
+                            Ok(neg.into())
+                        } else if expr_val.is_float_value() {
+                            let float_val = expr_val.into_float_value();
+                            let neg = self
+                                .builder
+                                .build_float_neg(float_val, "neg")
+                                .map_err(|e| e.to_string())?;
+                            Ok(neg.into())
+                        } else {
+                            // Try to extract from boxed value
+                            if let Ok(int_val) = self.get_raw_int_value(expr_val) {
+                                let neg = self
+                                    .builder
+                                    .build_int_neg(int_val, "neg")
+                                    .map_err(|e| e.to_string())?;
+                                Ok(neg.into())
+                            } else if let Ok(float_val) = self.get_raw_float_value(expr_val) {
+                                let neg = self
+                                    .builder
+                                    .build_float_neg(float_val, "neg")
+                                    .map_err(|e| e.to_string())?;
+                                Ok(neg.into())
+                            } else {
+                                Err("Negation only works on int or float values".to_string())
+                            }
+                        }
+                    }
                 }
             }
             _ => Err("Expression type not implemented".to_string()),
@@ -3779,35 +4027,62 @@ impl<'a> CodeGenerator<'a> {
                     .lookup(name)
                     .ok_or("Symbol not found")?;
                 let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-                if value.is_struct_value() {
-                    let var_type = value.get_type();
-                    let alloca = self
-                        .builder
-                        .build_alloca(var_type, name)
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_store(alloca, value)
-                        .map_err(|e| e.to_string())?;
-                    self.variables
-                        .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
+
+                // check if this variable already exists in current scope (e.g., pre-created global)
+                if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
+                    // variable already exists - just store to it (this handles globals in main)
+                    if value.is_struct_value() {
+                        self.builder
+                            .build_store(existing_ptr, value)
+                            .map_err(|e| e.to_string())?;
+                    } else {
+                        let boxed = self.box_value(value);
+                        self.builder
+                            .build_store(existing_ptr, boxed)
+                            .map_err(|e| e.to_string())?;
+                    }
                 } else {
-                    let boxed = self.box_value(value);
-                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let alloca = self
-                        .builder
-                        .build_alloca(ptr_type, name)
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_store(alloca, boxed)
-                        .map_err(|e| e.to_string())?;
-                    self.variables.insert(
-                        name.clone(),
-                        (
-                            alloca,
-                            BasicTypeEnum::PointerType(ptr_type),
-                            resolved_type.clone(),
-                        ),
-                    );
+                    // create new local variable
+                    if value.is_struct_value() {
+                        let var_type = value.get_type();
+                        let alloca = if let Some(func) = function {
+                            // in a function - create alloca in entry block
+                            self.create_entry_block_alloca(*func, var_type, name)?
+                        } else {
+                            // top-level (shouldn't happen as globals are pre-created)
+                            self.builder
+                                .build_alloca(var_type, name)
+                                .map_err(|e| e.to_string())?
+                        };
+                        self.builder
+                            .build_store(alloca, value)
+                            .map_err(|e| e.to_string())?;
+                        self.variables
+                            .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
+                    } else {
+                        let boxed = self.box_value(value);
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                        let alloca = if let Some(func) = function {
+                            // in a function - create alloca in entry block
+                            self.create_entry_block_alloca(*func, ptr_type.into(), name)?
+                        } else {
+                            // top-level (shouldn't happen as globals are pre-created)
+                            self.builder
+                                .build_alloca(ptr_type, name)
+                                .map_err(|e| e.to_string())?
+                        };
+                        self.builder
+                            .build_store(alloca, boxed)
+                            .map_err(|e| e.to_string())?;
+                        self.variables.insert(
+                            name.clone(),
+                            (
+                                alloca,
+                                BasicTypeEnum::PointerType(ptr_type),
+                                resolved_type.clone(),
+                            ),
+                        );
+                    }
                 }
             }
             StatementKind::TypedDecl(name, type_node, expr) => {
@@ -3819,23 +4094,91 @@ impl<'a> CodeGenerator<'a> {
                     .lookup(name)
                     .ok_or("Symbol not found")?;
                 let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-                if value.is_struct_value() {
-                    let alloca = self
-                        .builder
-                        .build_alloca(var_type, name)
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_store(alloca, value)
-                        .map_err(|e| e.to_string())?;
-                    self.variables
-                        .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
+
+                // check if this variable already exists in current scope (e.g., pre-created global)
+                if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
+                    // variable already exists - just store to it (this handles globals in main)
+                    if value.is_struct_value() {
+                        self.builder
+                            .build_store(existing_ptr, value)
+                            .map_err(|e| e.to_string())?;
+                    } else {
+                        let boxed = self.box_value(value);
+                        self.builder
+                            .build_store(existing_ptr, boxed)
+                            .map_err(|e| e.to_string())?;
+                    }
                 } else {
-                    let boxed = self.box_value(value);
-                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let alloca = self
-                        .builder
-                        .build_alloca(ptr_type, name)
+                    // create new local variable (this handles new locals in functions)
+                    if value.is_struct_value() {
+                        let alloca = if let Some(func) = function {
+                            // in a function - create alloca in entry block
+                            self.create_entry_block_alloca(*func, var_type, name)?
+                        } else {
+                            // top-level (shouldn't happen as globals are pre-created)
+                            self.builder
+                                .build_alloca(var_type, name)
+                                .map_err(|e| e.to_string())?
+                        };
+                        self.builder
+                            .build_store(alloca, value)
+                            .map_err(|e| e.to_string())?;
+                        self.variables
+                            .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
+                    } else {
+                        let boxed = self.box_value(value);
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                        let alloca = if let Some(func) = function {
+                            // in a function - create alloca in entry block
+                            self.create_entry_block_alloca(*func, ptr_type.into(), name)?
+                        } else {
+                            // top-level (shouldn't happen as globals are pre-created)
+                            self.builder
+                                .build_alloca(ptr_type, name)
+                                .map_err(|e| e.to_string())?
+                        };
+                        self.builder
+                            .build_store(alloca, boxed)
+                            .map_err(|e| e.to_string())?;
+                        self.variables.insert(
+                            name.clone(),
+                            (
+                                alloca,
+                                BasicTypeEnum::PointerType(ptr_type),
+                                resolved_type.clone(),
+                            ),
+                        );
+                    }
+                }
+            }
+            StatementKind::ConstDecl(name, _, expr) => {
+                let value = self.generate_expression(expr)?;
+                let boxed = self.box_value(value);
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let symbol = self
+                    .analyzer
+                    .symbol_table()
+                    .lookup(name)
+                    .ok_or("Symbol not found")?;
+                let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+
+                // check if this constant already exists in current scope (e.g., pre-created global)
+                if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
+                    // constant already exists - just store to it
+                    self.builder
+                        .build_store(existing_ptr, boxed)
                         .map_err(|e| e.to_string())?;
+                } else {
+                    // create new local constant
+                    let alloca = if let Some(func) = function {
+                        // in a function - create alloca in entry block
+                        self.create_entry_block_alloca(*func, ptr_type.into(), name)?
+                    } else {
+                        // top-level (shouldn't happen as globals are pre-created)
+                        self.builder
+                            .build_alloca(ptr_type, name)
+                            .map_err(|e| e.to_string())?
+                    };
                     self.builder
                         .build_store(alloca, boxed)
                         .map_err(|e| e.to_string())?;
@@ -3848,32 +4191,6 @@ impl<'a> CodeGenerator<'a> {
                         ),
                     );
                 }
-            }
-            StatementKind::ConstDecl(name, _, expr) => {
-                let value = self.generate_expression(expr)?;
-                let boxed = self.box_value(value);
-                let ptr_type = self.context.ptr_type(AddressSpace::default());
-                let alloca = self
-                    .builder
-                    .build_alloca(ptr_type, name)
-                    .map_err(|e| e.to_string())?;
-                self.builder
-                    .build_store(alloca, boxed)
-                    .map_err(|e| e.to_string())?;
-                let symbol = self
-                    .analyzer
-                    .symbol_table()
-                    .lookup(name)
-                    .ok_or("Symbol not found")?;
-                let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
-                self.variables.insert(
-                    name.clone(),
-                    (
-                        alloca,
-                        BasicTypeEnum::PointerType(ptr_type),
-                        resolved_type.clone(),
-                    ),
-                );
             }
             StatementKind::Return(Some(expr)) => {
                 // special handling for boolean literals in boolean functions
@@ -4418,14 +4735,22 @@ impl<'a> CodeGenerator<'a> {
                 let match_expr_type = match &match_expr.kind {
                     ExpressionKind::Identifier(name) => {
                         if name == "self" {
-                            if let Some((_, _, var_type)) = self.variables.get(name) {
+                            if let Some((_, _, var_type)) = self
+                                .variables
+                                .get(name)
+                                .or_else(|| self.global_variables.get(name))
+                            {
                                 var_type.clone()
                             } else {
                                 return Err("Self not found".to_string());
                             }
                         } else if name.starts_with("match_temp_") {
                             // temporary variable created during codegen
-                            if let Some((_, _, var_type)) = self.variables.get(name) {
+                            if let Some((_, _, var_type)) = self
+                                .variables
+                                .get(name)
+                                .or_else(|| self.global_variables.get(name))
+                            {
                                 var_type.clone()
                             } else {
                                 return Err(format!("Temporary variable {} not found", name));
@@ -4439,8 +4764,10 @@ impl<'a> CodeGenerator<'a> {
                     ExpressionKind::FieldAccess { expr, field } => {
                         if let ExpressionKind::Identifier(obj) = &expr.kind {
                             if obj == "self" {
-                                if let Some((_, _, Type::Named(class_name, _))) =
-                                    self.variables.get("self")
+                                if let Some((_, _, Type::Named(class_name, _))) = self
+                                    .variables
+                                    .get("self")
+                                    .or_else(|| self.global_variables.get("self"))
                                 {
                                     if let Some(fields) = self.classes.get(class_name) {
                                         if let Some(f) = fields.iter().find(|f| f.name == *field) {
@@ -4516,8 +4843,10 @@ impl<'a> CodeGenerator<'a> {
                         if let ExpressionKind::Identifier(obj) = &expr.kind {
                             if obj == "self" {
                                 // handle self.field
-                                if let Some((_, _, Type::Named(class_name, _))) =
-                                    self.variables.get("self")
+                                if let Some((_, _, Type::Named(class_name, _))) = self
+                                    .variables
+                                    .get("self")
+                                    .or_else(|| self.global_variables.get("self"))
                                 {
                                     if let Some(fields) = self.classes.get(class_name) {
                                         if let Some(f) = fields.iter().find(|f| f.name == *field) {
@@ -4544,7 +4873,11 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             } else {
                                 // handle obj.field where obj is not self
-                                if let Some((_, _, var_type)) = self.variables.get(obj) {
+                                if let Some((_, _, var_type)) = self
+                                    .variables
+                                    .get(obj)
+                                    .or_else(|| self.global_variables.get(obj))
+                                {
                                     if let Type::Named(class_name, _) = var_type {
                                         if let Some(fields) = self.classes.get(class_name) {
                                             if let Some(f) =
@@ -4782,10 +5115,7 @@ impl<'a> CodeGenerator<'a> {
 
                                     let boxed = self.box_value(data_val);
                                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                    let alloca = self
-                                        .builder
-                                        .build_alloca(ptr_type, var)
-                                        .map_err(|e| e.to_string())?;
+                                    let alloca = self.create_entry_alloca(ptr_type.into(), var)?;
                                     self.builder
                                         .build_store(alloca, boxed)
                                         .map_err(|e| e.to_string())?;
@@ -5894,6 +6224,122 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    fn generate_short_circuit_logical_op(
+        &mut self,
+        left_expr: &ExpressionNode,
+        op: &BinaryOp,
+        right_expr: &ExpressionNode,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        // Get the current function from the current basic block
+        let current_bb = self
+            .builder
+            .get_insert_block()
+            .ok_or("No current basic block for short-circuit logical operation")?;
+        let current_fn = current_bb
+            .get_parent()
+            .ok_or("No current function for short-circuit logical operation")?;
+
+        match op {
+            BinaryOp::LogicalAnd => {
+                // Create basic blocks for control flow
+                let eval_right_bb = self
+                    .context
+                    .append_basic_block(current_fn, "and_eval_right");
+                let merge_bb = self.context.append_basic_block(current_fn, "and_merge");
+
+                // Evaluate left operand
+                let left_val = self.generate_expression(left_expr)?;
+                let left_bool = self.get_raw_bool_value(left_val)?;
+                let left_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating left operand")?;
+
+                // If left is false, skip to merge with false result
+                // If left is true, evaluate right operand
+                self.builder
+                    .build_conditional_branch(left_bool, eval_right_bb, merge_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // eval_right_bb: evaluate right operand
+                self.builder.position_at_end(eval_right_bb);
+                let right_val = self.generate_expression(right_expr)?;
+                let right_bool = self.get_raw_bool_value(right_val)?;
+                let right_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating right operand")?;
+                self.builder
+                    .build_unconditional_branch(merge_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // merge_bb: phi node combines results
+                self.builder.position_at_end(merge_bb);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "and_result")
+                    .map_err(|e| e.to_string())?;
+
+                let false_val = self.context.bool_type().const_zero();
+                phi.add_incoming(&[
+                    (&false_val, left_bb),   // Left was false, return false
+                    (&right_bool, right_bb), // Left was true, return right
+                ]);
+
+                Ok(phi.as_basic_value())
+            }
+            BinaryOp::LogicalOr => {
+                // Create basic blocks for control flow
+                let eval_right_bb = self.context.append_basic_block(current_fn, "or_eval_right");
+                let merge_bb = self.context.append_basic_block(current_fn, "or_merge");
+
+                // Evaluate left operand
+                let left_val = self.generate_expression(left_expr)?;
+                let left_bool = self.get_raw_bool_value(left_val)?;
+                let left_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating left operand")?;
+
+                // If left is true, skip to merge with true result
+                // If left is false, evaluate right operand
+                self.builder
+                    .build_conditional_branch(left_bool, merge_bb, eval_right_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // eval_right_bb: evaluate right operand
+                self.builder.position_at_end(eval_right_bb);
+                let right_val = self.generate_expression(right_expr)?;
+                let right_bool = self.get_raw_bool_value(right_val)?;
+                let right_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating right operand")?;
+                self.builder
+                    .build_unconditional_branch(merge_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // merge_bb: phi node combines results
+                self.builder.position_at_end(merge_bb);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "or_result")
+                    .map_err(|e| e.to_string())?;
+
+                let true_val = self.context.bool_type().const_int(1, false);
+                phi.add_incoming(&[
+                    (&true_val, left_bb),    // Left was true, return true
+                    (&right_bool, right_bb), // Left was false, return right
+                ]);
+
+                Ok(phi.as_basic_value())
+            }
+            _ => Err(
+                "generate_short_circuit_logical_op called with non-logical operator".to_string(),
+            ),
+        }
+    }
+
     fn generate_binary_op(
         &mut self,
         left_expr: &ExpressionNode,
@@ -6535,20 +6981,10 @@ impl<'a> CodeGenerator<'a> {
                     )),
                 }
             }
-            BinaryOp::LogicalAnd => {
-                // for now, assume bool
-                let and = self
-                    .builder
-                    .build_and(left.into_int_value(), right.into_int_value(), "and")
-                    .map_err(|e| e.to_string())?;
-                Ok(and.into())
-            }
-            BinaryOp::LogicalOr => {
-                let or = self
-                    .builder
-                    .build_or(left.into_int_value(), right.into_int_value(), "or")
-                    .map_err(|e| e.to_string())?;
-                Ok(or.into())
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
+                // These should be handled by generate_short_circuit_logical_op
+                // and should not reach here
+                Err("Logical AND/OR should use short-circuit evaluation".to_string())
             }
             BinaryOp::Modulo => {
                 // try to get raw int values first
@@ -7877,15 +8313,19 @@ impl<'a> CodeGenerator<'a> {
         let (self_ptr, _, _) = self
             .variables
             .get("self")
+            .or_else(|| self.global_variables.get("self"))
             .ok_or("Self not found in method call")?;
 
         // get class name from self type
-        let class_name =
-            if let Some((_, _, Type::Named(class_name, _))) = self.variables.get("self") {
-                class_name
-            } else {
-                return Err("Self type not found".to_string());
-            };
+        let class_name = if let Some((_, _, Type::Named(class_name, _))) = self
+            .variables
+            .get("self")
+            .or_else(|| self.global_variables.get("self"))
+        {
+            class_name
+        } else {
+            return Err("Self type not found".to_string());
+        };
 
         // build method function name: {class_name}.{method_name}
         let method_func_name = format!("{}.{}", class_name, method_name);

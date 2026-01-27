@@ -2,8 +2,8 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::Value;
 use crate::result::MuxResult;
+use crate::Value;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Float(pub ordered_float::OrderedFloat<f64>);
@@ -62,7 +62,8 @@ impl fmt::Display for Float {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_to_string(f: f64) -> *mut c_char {
-    let s = format!("{:.1}", f);
+    // Format with up to 6 decimal places, removing trailing zeros
+    let s = format!("{}", f);
     let c_str = CString::new(s).unwrap();
     c_str.into_raw()
 }

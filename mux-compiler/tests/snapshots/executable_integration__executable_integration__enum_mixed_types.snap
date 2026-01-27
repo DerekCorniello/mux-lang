@@ -21,7 +21,7 @@ expression: full_output
   flag: false
 ✓ ComplexVariant.Numeric(int, float):
   int: 123
-  float: 45.7
+  float: 45.67
 
 === Testing Type-Specific Operations ===
 ✓ String concatenation: Hello World
