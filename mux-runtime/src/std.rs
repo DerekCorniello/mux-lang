@@ -313,4 +313,33 @@ pub extern "C" fn mux_value_get_type_tag(val: *const Value) -> i32 {
     }
 }
 
+/// Compare two Value pointers for equality
+/// Returns 1 if equal, 0 if not equal
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_equal(a: *const Value, b: *const Value) -> i32 {
+    if a.is_null() || b.is_null() {
+        return if a == b { 1 } else { 0 };
+    }
+    unsafe {
+        if *a == *b {
+            1
+        } else {
+            0
+        }
+    }
+}
+
+/// Compare two Value pointers for inequality
+/// Returns 1 if not equal, 0 if equal
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_not_equal(a: *const Value, b: *const Value) -> i32 {
+    if mux_value_equal(a, b) == 1 {
+        0
+    } else {
+        1
+    }
+}
+
 // Proper Value cleanup function

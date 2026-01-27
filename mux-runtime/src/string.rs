@@ -4,8 +4,8 @@ use std::os::raw::c_char;
 
 use ordered_float;
 
-use crate::Value;
 use crate::result::MuxResult;
+use crate::Value;
 
 #[derive(Clone, Debug)]
 pub struct MuxString(pub String);
@@ -117,4 +117,35 @@ pub extern "C" fn mux_new_string_from_cstr(s: *const c_char) -> *mut Value {
     let rust_str = c_str.to_string_lossy().to_string();
     let value = Value::String(rust_str);
     Box::into_raw(Box::new(value))
+}
+
+/// Compare two C strings for equality
+/// Returns 1 if equal, 0 if not equal
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_string_equal(a: *const c_char, b: *const c_char) -> i32 {
+    if a.is_null() || b.is_null() {
+        return if a == b { 1 } else { 0 };
+    }
+    unsafe {
+        let a_str = CStr::from_ptr(a);
+        let b_str = CStr::from_ptr(b);
+        if a_str == b_str {
+            1
+        } else {
+            0
+        }
+    }
+}
+
+/// Compare two C strings for inequality
+/// Returns 1 if not equal, 0 if equal
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_string_not_equal(a: *const c_char, b: *const c_char) -> i32 {
+    if mux_string_equal(a, b) == 1 {
+        0
+    } else {
+        1
+    }
 }
