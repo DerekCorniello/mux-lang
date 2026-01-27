@@ -378,7 +378,26 @@ impl SymbolTable {
     }
 
     pub fn exists(&self, name: &str) -> bool {
-        self.lookup(name).is_some()
+        // For variable/constant lookups, only check the scope stack (not global)
+        // For other symbol kinds (functions, classes, etc.), check global too
+        if self.get_cloned(name).is_some() {
+            return true;
+        }
+
+        // If not found in scopes, check global for non-variable symbols
+        if let Some(symbol) = self.lookup(name) {
+            matches!(
+                symbol.kind,
+                SymbolKind::Function
+                    | SymbolKind::Class
+                    | SymbolKind::Interface
+                    | SymbolKind::Enum
+                    | SymbolKind::Type
+                    | SymbolKind::Import
+            )
+        } else {
+            false
+        }
     }
 
     pub fn add_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {
@@ -402,7 +421,8 @@ impl SymbolTable {
         current_borrow
             .symbols
             .insert(name.to_string(), symbol.clone());
-        // Don't add 'self' to global symbol table - it should only exist in local scope
+        // Add everything to global symbol table (needed for codegen to look up variables)
+        // Out-of-scope access is prevented by the proper exists() check during semantics
         if name != "self" {
             self.all_symbols.insert(name.to_string(), symbol);
         }
@@ -2109,7 +2129,11 @@ impl SemanticAnalyzer {
             StatementKind::Expression(expr) => {
                 self.analyze_expression(expr)?;
             }
-            StatementKind::Block(stmts) => self.analyze_block(stmts)?,
+            StatementKind::Block(stmts) => {
+                self.symbol_table.push_scope()?;
+                self.analyze_block(stmts)?;
+                self.symbol_table.pop_scope()?;
+            }
             StatementKind::ConstDecl(name, type_node, expr) => {
                 let declared_type = self.resolve_type(type_node)?;
                 let expr_type = self.get_expression_type(expr)?;
@@ -2133,9 +2157,15 @@ impl SemanticAnalyzer {
                 else_block,
             } => {
                 self.analyze_expression(cond)?;
+
+                self.symbol_table.push_scope()?;
                 self.analyze_block(then_block)?;
+                self.symbol_table.pop_scope()?;
+
                 if let Some(else_block) = else_block {
+                    self.symbol_table.push_scope()?;
                     self.analyze_block(else_block)?;
+                    self.symbol_table.pop_scope()?;
                 }
             }
             StatementKind::For {
@@ -2172,7 +2202,10 @@ impl SemanticAnalyzer {
             }
             StatementKind::While { cond, body } => {
                 self.analyze_expression(cond)?;
+
+                self.symbol_table.push_scope()?;
                 self.analyze_block(body)?;
+                self.symbol_table.pop_scope()?;
             }
             StatementKind::Match { expr, arms } => {
                 self.analyze_expression(expr)?;
