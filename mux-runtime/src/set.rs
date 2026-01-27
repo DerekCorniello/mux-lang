@@ -73,3 +73,16 @@ pub extern "C" fn mux_set_to_string(set: *const Set) -> *mut std::ffi::c_char {
     let c_str = CString::new(s).unwrap();
     c_str.into_raw()
 }
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::mutable_key_type)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_union(a: *const Set, b: *const Set) -> *mut Set {
+    if a.is_null() || b.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let mut result = unsafe { (*a).0.clone() };
+    result.extend(unsafe { (*b).0.clone() });
+    Box::into_raw(Box::new(Set(result)))
+}

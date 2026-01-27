@@ -103,3 +103,16 @@ pub extern "C" fn mux_map_to_string(map: *const Map) -> *mut c_char {
     let c_str = CString::new(s).unwrap();
     c_str.into_raw()
 }
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::mutable_key_type)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_merge(a: *const Map, b: *const Map) -> *mut Map {
+    if a.is_null() || b.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let mut result = unsafe { (*a).0.clone() };
+    result.extend(unsafe { (*b).0.clone() });
+    Box::into_raw(Box::new(Map(result)))
+}

@@ -1,4 +1,4 @@
-use crate::{Value, list::List, map::Map, optional::Optional, result::MuxResult, set::Set};
+use crate::{list::List, map::Map, optional::Optional, result::MuxResult, set::Set, Value};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -129,6 +129,20 @@ pub extern "C" fn mux_value_get_map(val: *mut Value) -> *mut Map {
     unsafe {
         match &*val {
             Value::Map(map_data) => Box::into_raw(Box::new(Map(map_data.clone()))),
+            _ => std::ptr::null_mut(),
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_get_set(val: *mut Value) -> *mut Set {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*val {
+            Value::Set(set_data) => Box::into_raw(Box::new(Set(set_data.clone()))),
             _ => std::ptr::null_mut(),
         }
     }

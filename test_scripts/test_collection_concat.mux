@@ -1,0 +1,39 @@
+// Test list concatenation
+auto list1 = [1, 2]
+auto list2 = [3, 4]
+auto combined = list1 + list2
+print("List concat: ")
+print(combined.to_string())
+print("\n")
+
+// Test map merge
+auto map1 = {"a": 1, "b": 2}
+auto map2 = {"c": 3, "d": 4}
+auto merged = map1 + map2
+print("Map merge: ")
+print(merged.to_string())
+print("\n")
+
+// Test set union
+auto set1 = {1, 2, 3}
+auto set2 = {3, 4, 5}
+auto unioned = set1 + set2
+print("Set union: ")
+print(unioned.to_string())
+print("\n")
+
+// Test that string concat still works
+auto str1 = "Hello "
+auto str2 = "World"
+auto greeting = str1 + str2
+print("String concat: ")
+print(greeting.to_string())
+print("\n")
+
+// Test that numeric addition still works
+auto num1 = 10
+auto num2 = 20
+auto sum = num1 + num2
+print("Numeric add: ")
+print(sum.to_string())
+print("\n")

@@ -1480,12 +1480,14 @@ impl SemanticAnalyzer {
 
             match op {
                 BinaryOp::Add => {
-                    // built-in support for primitives, or interface support for custom types
+                    // built-in support for primitives and collections, or interface support for custom types
                     if matches!(
                         left_type,
                         Type::Primitive(
                             PrimitiveType::Str | PrimitiveType::Int | PrimitiveType::Float
-                        )
+                        ) | Type::List(_)
+                            | Type::Map(_, _)
+                            | Type::Set(_)
                     ) || self.type_implements_interface(left_type, "Add")
                     {
                         Some(left_type.clone())

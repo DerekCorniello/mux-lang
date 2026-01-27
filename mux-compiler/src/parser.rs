@@ -1496,6 +1496,7 @@ impl<'a> Parser<'a> {
         self.check_no_postfix_increment_decrement(expr)
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn check_no_postfix_increment_decrement(&self, expr: &ExpressionNode) -> ParserResult<()> {
         match &expr.kind {
             ExpressionKind::Unary {

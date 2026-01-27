@@ -53,6 +53,7 @@ impl<'a> CodeGenerator<'a> {
         let i8_ptr = context.ptr_type(AddressSpace::default());
         let list_ptr = i8_ptr; // placeholder for *mut List
         let map_ptr = i8_ptr; // placeholder for *mut Map
+        let set_ptr = i8_ptr; // placeholder for *mut Set
 
         // mux_value_from_string: (*const c_char) -> *mut Value
         let params = &[i8_ptr.into()];
@@ -204,6 +205,22 @@ impl<'a> CodeGenerator<'a> {
         // mux_value_get_map: (*mut Value) -> *mut Map
         let fn_type = map_ptr.fn_type(&[i8_ptr.into()], false);
         module.add_function("mux_value_get_map", fn_type, None);
+
+        // mux_value_get_set: (*mut Value) -> *mut Set
+        let fn_type = set_ptr.fn_type(&[i8_ptr.into()], false);
+        module.add_function("mux_value_get_set", fn_type, None);
+
+        // mux_list_concat: (*const List, *const List) -> *mut List
+        let fn_type = list_ptr.fn_type(&[list_ptr.into(), list_ptr.into()], false);
+        module.add_function("mux_list_concat", fn_type, None);
+
+        // mux_map_merge: (*const Map, *const Map) -> *mut Map
+        let fn_type = map_ptr.fn_type(&[map_ptr.into(), map_ptr.into()], false);
+        module.add_function("mux_map_merge", fn_type, None);
+
+        // mux_set_union: (*const Set, *const Set) -> *mut Set
+        let fn_type = set_ptr.fn_type(&[set_ptr.into(), set_ptr.into()], false);
+        module.add_function("mux_set_union", fn_type, None);
 
         // mux_value_to_string: (*mut Value) -> *const c_char
         let params = &[i8_ptr.into()];
@@ -2401,7 +2418,7 @@ impl<'a> CodeGenerator<'a> {
                 } else {
                     let left_val = self.generate_expression(left)?;
                     let right_val = self.generate_expression(right)?;
-                    Ok(self.generate_binary_op(left_val, op, right_val)?)
+                    Ok(self.generate_binary_op(left, left_val, op, right, right_val)?)
                 }
             }
             ExpressionKind::Call { func, args } => {
@@ -5779,75 +5796,189 @@ impl<'a> CodeGenerator<'a> {
 
     fn generate_binary_op(
         &mut self,
+        left_expr: &ExpressionNode,
         left: BasicValueEnum<'a>,
         op: &BinaryOp,
+        _right_expr: &ExpressionNode,
         right: BasicValueEnum<'a>,
     ) -> Result<BasicValueEnum<'a>, String> {
         match op {
             BinaryOp::Add => {
-                // check for string concatenation first
-                // for now, assume string concatenation if either operand is a pointer (boxed value)
-                // this is a simplified check - in a real implementation, we'd check types
-                if left.is_pointer_value() || right.is_pointer_value() {
-                    // use string concatenation
-                    let left_ptr = if left.is_pointer_value() {
-                        left.into_pointer_value()
-                    } else {
-                        // convert non-pointer to string pointer
-                        self.box_value(left)
-                    };
-                    let right_ptr = if right.is_pointer_value() {
-                        right.into_pointer_value()
-                    } else {
-                        // convert non-pointer to string pointer
-                        self.box_value(right)
-                    };
+                // Get the semantic type to determine what kind of addition to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
 
-                    // extract C strings from Value pointers
-                    let left_cstr = self.extract_c_string_from_value(left_ptr)?;
-                    let right_cstr = self.extract_c_string_from_value(right_ptr)?;
+                // Semantics already validated both types are the same, so just check left
+                match &left_type {
+                    // String concatenation
+                    Type::Primitive(PrimitiveType::Str) => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
 
-                    // call string concatenation function
-                    let concat_fn = self
-                        .module
-                        .get_function("mux_string_concat")
-                        .ok_or("mux_string_concat not found")?;
-                    let result = self
-                        .builder
-                        .build_call(
-                            concat_fn,
-                            &[left_cstr.into(), right_cstr.into()],
-                            "string_concat",
-                        )
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .ok_or("Call returned no value")?;
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
 
-                    // convert result back to Value pointer
-                    return self.box_string_value(result.into_pointer_value());
-                }
+                        let concat_fn = self
+                            .module
+                            .get_function("mux_string_concat")
+                            .ok_or("mux_string_concat not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                concat_fn,
+                                &[left_cstr.into(), right_cstr.into()],
+                                "string_concat",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?
+                            .into_pointer_value();
 
-                // try arithmetic operations
-                if let (Ok(left_int), Ok(right_int)) =
-                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
-                {
-                    self.builder
-                        .build_int_add(left_int, right_int, "add")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else if let (Ok(left_float), Ok(right_float)) = (
-                    self.get_raw_float_value(left),
-                    self.get_raw_float_value(right),
-                ) {
-                    self.builder
-                        .build_float_add(left_float, right_float, "fadd")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into())
-                } else {
-                    // no implicit numeric promotion: require exact numeric types or explicit
-                    // `.to_int()` / `.to_float()` conversions in source.
-                    Err("Unsupported add operands".to_string())
+                        self.box_string_value(result)
+                    }
+
+                    // List concatenation
+                    Type::List(_) => {
+                        // Extract List pointers from Value wrappers
+                        let left_list = self.extract_list_from_value(left.into_pointer_value())?;
+                        let right_list =
+                            self.extract_list_from_value(right.into_pointer_value())?;
+
+                        // Call mux_list_concat
+                        let concat_fn = self
+                            .module
+                            .get_function("mux_list_concat")
+                            .ok_or("mux_list_concat not found")?;
+                        let result_list = self
+                            .builder
+                            .build_call(
+                                concat_fn,
+                                &[left_list.into(), right_list.into()],
+                                "list_concat",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?
+                            .into_pointer_value();
+
+                        // Wrap in Value
+                        let list_value_fn = self
+                            .module
+                            .get_function("mux_list_value")
+                            .ok_or("mux_list_value not found")?;
+                        let result = self
+                            .builder
+                            .build_call(list_value_fn, &[result_list.into()], "list_value")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        Ok(result)
+                    }
+
+                    // Map merge
+                    Type::Map(_, _) => {
+                        let left_map = self.extract_map_from_value(left.into_pointer_value())?;
+                        let right_map = self.extract_map_from_value(right.into_pointer_value())?;
+
+                        let merge_fn = self
+                            .module
+                            .get_function("mux_map_merge")
+                            .ok_or("mux_map_merge not found")?;
+                        let result_map = self
+                            .builder
+                            .build_call(merge_fn, &[left_map.into(), right_map.into()], "map_merge")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?
+                            .into_pointer_value();
+
+                        let map_value_fn = self
+                            .module
+                            .get_function("mux_map_value")
+                            .ok_or("mux_map_value not found")?;
+                        let result = self
+                            .builder
+                            .build_call(map_value_fn, &[result_map.into()], "map_value")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        Ok(result)
+                    }
+
+                    // Set union
+                    Type::Set(_) => {
+                        let left_set = self.extract_set_from_value(left.into_pointer_value())?;
+                        let right_set = self.extract_set_from_value(right.into_pointer_value())?;
+
+                        let union_fn = self
+                            .module
+                            .get_function("mux_set_union")
+                            .ok_or("mux_set_union not found")?;
+                        let result_set = self
+                            .builder
+                            .build_call(union_fn, &[left_set.into(), right_set.into()], "set_union")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?
+                            .into_pointer_value();
+
+                        let set_value_fn = self
+                            .module
+                            .get_function("mux_set_value")
+                            .ok_or("mux_set_value not found")?;
+                        let result = self
+                            .builder
+                            .build_call(set_value_fn, &[result_set.into()], "set_value")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        Ok(result)
+                    }
+
+                    // Numeric addition (int)
+                    Type::Primitive(PrimitiveType::Int) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_add(left_int, right_int, "add")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+
+                    // Numeric addition (float)
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_add(left_float, right_float, "fadd")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+
+                    _ => Err(format!(
+                        "Add operation not supported for type: {:?}",
+                        left_type
+                    )),
                 }
             }
             BinaryOp::Subtract => {
@@ -6605,6 +6736,63 @@ impl<'a> CodeGenerator<'a> {
             .left()
             .ok_or("Call returned no value")?;
         Ok(value_ptr)
+    }
+
+    fn extract_list_from_value(
+        &mut self,
+        value_ptr: PointerValue<'a>,
+    ) -> Result<PointerValue<'a>, String> {
+        let get_list_fn = self
+            .module
+            .get_function("mux_value_get_list")
+            .ok_or("mux_value_get_list not found")?;
+        let list_ptr = self
+            .builder
+            .build_call(get_list_fn, &[value_ptr.into()], "get_list")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("Call returned no value")?
+            .into_pointer_value();
+        Ok(list_ptr)
+    }
+
+    fn extract_map_from_value(
+        &mut self,
+        value_ptr: PointerValue<'a>,
+    ) -> Result<PointerValue<'a>, String> {
+        let get_map_fn = self
+            .module
+            .get_function("mux_value_get_map")
+            .ok_or("mux_value_get_map not found")?;
+        let map_ptr = self
+            .builder
+            .build_call(get_map_fn, &[value_ptr.into()], "get_map")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("Call returned no value")?
+            .into_pointer_value();
+        Ok(map_ptr)
+    }
+
+    fn extract_set_from_value(
+        &mut self,
+        value_ptr: PointerValue<'a>,
+    ) -> Result<PointerValue<'a>, String> {
+        let get_set_fn = self
+            .module
+            .get_function("mux_value_get_set")
+            .ok_or("mux_value_get_set not found")?;
+        let set_ptr = self
+            .builder
+            .build_call(get_set_fn, &[value_ptr.into()], "get_set")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("Call returned no value")?
+            .into_pointer_value();
+        Ok(set_ptr)
     }
 
     fn initialize_field_by_type(
