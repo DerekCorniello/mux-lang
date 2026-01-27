@@ -5866,7 +5866,11 @@ impl<'a> CodeGenerator<'a> {
                     .unwrap();
                 Ok(call)
             }
-            _ => Err("Literal type not implemented".to_string()),
+            LiteralNode::Char(c) => {
+                // Chars are stored as i64 for compatibility with int comparisons
+                let val = self.context.i64_type().const_int(*c as u64, false);
+                Ok(val.into())
+            }
         }
     }
 

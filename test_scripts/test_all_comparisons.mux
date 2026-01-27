@@ -7,13 +7,11 @@
 // - INT:    ==, !=, <, >, <=, >= (all 6 operators)
 // - FLOAT:  ==, !=, <, >, <=, >= (all 6 operators)
 // - STRING: ==, != (only equality operators)
+// - CHAR:   ==, != (only equality operators)
 // - BOOL:   ==, != (only equality operators)
 // - LIST:   ==, != (only equality operators)
 // - MAP:    ==, != (only equality operators)
 // - SET:    ==, != (only equality operators, order-independent)
-//
-// Note: Char comparisons (==, !=) are supported but char literals
-// are not yet implemented in codegen, so they are not tested here.
 //
 // Expected: All tests should output "✓" (pass). Any "✗ FAIL" indicates
 // a bug in the comparison operator implementation.
@@ -253,6 +251,69 @@ func main() returns void {
         println("✓ string: \"Hello\" != \"hello\" (case sensitive)")
     } else {
         println("✗ FAIL: string: \"Hello\" != \"hello\" (case sensitive)")
+    }
+    
+    println("")
+    
+    // ========== CHAR COMPARISONS ==========
+    println("--- CHAR COMPARISONS ---")
+    
+    // Char: == (Equal)
+    if 'a' == 'a' {
+        println("✓ char: 'a' == 'a'")
+    } else {
+        println("✗ FAIL: char: 'a' == 'a'")
+    }
+    
+    if 'a' == 'b' {
+        println("✗ FAIL: char: 'a' == 'b' should be false")
+    } else {
+        println("✓ char: 'a' == 'b' is false")
+    }
+    
+    // Char: special characters
+    if ' ' == ' ' {
+        println("✓ char: ' ' == ' ' (space)")
+    } else {
+        println("✗ FAIL: char: ' ' == ' ' (space)")
+    }
+    
+    if 'A' == 'a' {
+        println("✗ FAIL: char: 'A' == 'a' should be false (case sensitive)")
+    } else {
+        println("✓ char: 'A' == 'a' is false (case sensitive)")
+    }
+    
+    // Char: != (Not Equal)
+    if 'a' != 'b' {
+        println("✓ char: 'a' != 'b'")
+    } else {
+        println("✗ FAIL: char: 'a' != 'b'")
+    }
+    
+    if 'x' != 'y' {
+        println("✓ char: 'x' != 'y'")
+    } else {
+        println("✗ FAIL: char: 'x' != 'y'")
+    }
+    
+    if 'a' != 'a' {
+        println("✗ FAIL: char: 'a' != 'a' should be false")
+    } else {
+        println("✓ char: 'a' != 'a' is false")
+    }
+    
+    // Char: numeric chars
+    if '0' == '0' {
+        println("✓ char: '0' == '0' (numeric char)")
+    } else {
+        println("✗ FAIL: char: '0' == '0' (numeric char)")
+    }
+    
+    if '0' != '1' {
+        println("✓ char: '0' != '1' (numeric chars)")
+    } else {
+        println("✗ FAIL: char: '0' != '1' (numeric chars)")
     }
     
     println("")
