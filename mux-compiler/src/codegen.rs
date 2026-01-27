@@ -4939,15 +4939,23 @@ impl<'a> CodeGenerator<'a> {
                             self.create_specialized_method_name(name, type_args, method_name);
                         let method_func_name =
                             if self.module.get_function(&specialized_method_name).is_some() {
-                                specialized_method_name
+                                specialized_method_name.clone()
                             } else {
                                 format!("{}.{}", name, method_name)
                             };
 
+                        // Specialized methods (containing '$') expect boxed parameters
+                        // Non-specialized methods expect concrete types
+                        let is_specialized = method_func_name.contains('$');
+
                         let mut call_args = vec![obj_value.into()]; // self
                         for arg in args {
                             let arg_val = self.generate_expression(arg)?;
-                            call_args.push(self.box_value(arg_val).into());
+                            if is_specialized {
+                                call_args.push(self.box_value(arg_val).into());
+                            } else {
+                                call_args.push(arg_val.into());
+                            }
                         }
                         let call = self
                             .builder

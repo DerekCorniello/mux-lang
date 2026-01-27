@@ -1,0 +1,145 @@
+// Test class method parameter passing
+// This tests that method parameters receive correct values (not garbage)
+
+class Calculator {
+    int value
+    
+    func add(int amount) returns void {
+        println("Before add - value: " + self.value.to_string())
+        println("Parameter amount received: " + amount.to_string())
+        self.value = self.value + amount
+        println("After add - value: " + self.value.to_string())
+    }
+    
+    func multiply(int factor) returns void {
+        println("Before multiply - value: " + self.value.to_string())
+        println("Parameter factor received: " + factor.to_string())
+        self.value = self.value * factor
+        println("After multiply - value: " + self.value.to_string())
+    }
+    
+    func set(int new_value) returns int {
+        auto old_value = self.value
+        self.value = new_value
+        return old_value
+    }
+}
+
+class FloatBox {
+    float value
+    
+    func update(float new_val) returns void {
+        println("FloatBox update parameter: " + new_val.to_string())
+        self.value = new_val
+    }
+    
+    func multiply(float factor) returns float {
+        println("FloatBox multiply factor: " + factor.to_string())
+        self.value = self.value * factor
+        return self.value
+    }
+}
+
+class StringHolder {
+    string text
+    
+    func append(string suffix) returns void {
+        println("Appending: " + suffix)
+        self.text = self.text + suffix
+    }
+    
+    func get() returns string {
+        return self.text
+    }
+}
+
+class BoolToggle {
+    bool state
+    
+    func set_state(bool new_state) returns void {
+        println("Setting state to: " + new_state.to_string())
+        self.state = new_state
+    }
+}
+
+class MultiParam {
+    int a
+    int b
+    
+    func set_both(int first, int second) returns void {
+        println("Setting first=" + first.to_string() + " second=" + second.to_string())
+        self.a = first
+        self.b = second
+    }
+    
+    func add_to_both(int amount) returns int {
+        println("Adding " + amount.to_string() + " to both")
+        self.a = self.a + amount
+        self.b = self.b + amount
+        return self.a + self.b
+    }
+}
+
+func main() returns void {
+    println("=== Test 1: Calculator with int parameters ===")
+    auto calc = Calculator.new()
+    calc.value = 10
+    println("Initial value set to: 10")
+    println("")
+    
+    println("Calling calc.add(5)...")
+    calc.add(5)
+    println("Expected value: 15")
+    println("Actual value: " + calc.value.to_string())
+    println("")
+    
+    println("Calling calc.multiply(2)...")
+    calc.multiply(2)
+    println("Expected value: 30")
+    println("Actual value: " + calc.value.to_string())
+    println("")
+    
+    println("Calling calc.set(100) (method with return value)...")
+    auto old = calc.set(100)
+    println("Old value: " + old.to_string() + " (expected 30)")
+    println("New value: " + calc.value.to_string() + " (expected 100)")
+    println("")
+    
+    println("=== Test 2: FloatBox with float parameters ===")
+    auto fbox = FloatBox.new()
+    fbox.value = 3.5
+    println("Initial value: 3.5")
+    fbox.update(7.25)
+    println("After update(7.25): " + fbox.value.to_string() + " (expected 7.25)")
+    auto result = fbox.multiply(2.0)
+    println("After multiply(2.0): " + result.to_string() + " (expected 14.5)")
+    println("")
+    
+    println("=== Test 3: StringHolder with string parameters ===")
+    auto holder = StringHolder.new()
+    holder.text = "Hello"
+    println("Initial text: " + holder.text)
+    holder.append(" World")
+    println("After append(' World'): " + holder.get() + " (expected 'Hello World')")
+    println("")
+    
+    println("=== Test 4: BoolToggle with bool parameters ===")
+    auto toggle = BoolToggle.new()
+    toggle.state = false
+    println("Initial state: " + toggle.state.to_string())
+    toggle.set_state(true)
+    println("After set_state(true): " + toggle.state.to_string() + " (expected true)")
+    println("")
+    
+    println("=== Test 5: MultiParam with multiple parameters ===")
+    auto multi = MultiParam.new()
+    multi.set_both(10, 20)
+    println("After set_both(10, 20): a=" + multi.a.to_string() + " b=" + multi.b.to_string())
+    println("Expected: a=10 b=20")
+    auto sum = multi.add_to_both(5)
+    println("After add_to_both(5): sum=" + sum.to_string() + " (expected 40)")
+    println("Values: a=" + multi.a.to_string() + " b=" + multi.b.to_string() + " (expected a=15 b=25)")
+    println("")
+    
+    println("=== All tests completed ===")
+}

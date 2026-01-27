@@ -1,0 +1,51 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+=== Test 1: Calculator with int parameters ===
+Initial value set to: 10
+
+Calling calc.add(5)...
+Before add - value: 10
+Parameter amount received: 5
+After add - value: 15
+Expected value: 15
+Actual value: 15
+
+Calling calc.multiply(2)...
+Before multiply - value: 15
+Parameter factor received: 2
+After multiply - value: 30
+Expected value: 30
+Actual value: 30
+
+Calling calc.set(100) (method with return value)...
+Old value: 30 (expected 30)
+New value: 100 (expected 100)
+
+=== Test 2: FloatBox with float parameters ===
+Initial value: 3.5
+FloatBox update parameter: 7.2
+After update(7.25): 7.2 (expected 7.25)
+FloatBox multiply factor: 2.0
+After multiply(2.0): 14.5 (expected 14.5)
+
+=== Test 3: StringHolder with string parameters ===
+Initial text: Hello
+Appending:  World
+After append(' World'): Hello World (expected 'Hello World')
+
+=== Test 4: BoolToggle with bool parameters ===
+Initial state: false
+Setting state to: false
+After set_state(true): false (expected true)
+
+=== Test 5: MultiParam with multiple parameters ===
+Setting first=10 second=20
+After set_both(10, 20): a=10 b=20
+Expected: a=10 b=20
+Adding 5 to both
+After add_to_both(5): sum=40 (expected 40)
+Values: a=15 b=25 (expected a=15 b=25)
+
+=== All tests completed ===
