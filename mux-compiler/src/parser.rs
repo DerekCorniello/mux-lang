@@ -691,6 +691,7 @@ impl<'a> Parser<'a> {
         self.consume_token(TokenType::OpenBrace, "Expected '{' after enum header")?;
 
         let mut variants = Vec::new();
+        self.skip_newlines(); // Allow newlines after opening brace
 
         while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
             let variant_name = self.consume_identifier("Expected variant name")?;
@@ -725,10 +726,12 @@ impl<'a> Parser<'a> {
             });
 
             if self.matches(&[TokenType::Comma]) {
+                self.skip_newlines(); // Allow newlines after comma
                 if self.check(TokenType::CloseBrace) {
                     break;
                 }
             } else {
+                self.skip_newlines(); // Allow newlines before closing brace
                 break;
             }
         }
