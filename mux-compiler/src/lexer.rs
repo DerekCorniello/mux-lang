@@ -474,8 +474,6 @@ impl<'a> Lexer<'a> {
                     "None" => TokenType::None,
                     "true" => TokenType::Bool(true),
                     "false" => TokenType::Bool(false),
-                    "and" => TokenType::And,
-                    "or" => TokenType::Or,
                     "common" => TokenType::Common,
                     _ => TokenType::Id(ident),
                 };
@@ -1171,7 +1169,7 @@ world"
 
     #[test]
     fn test_keywords_and_identifiers() {
-        let input = "auto x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false and or common";
+        let input = "auto x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false common";
         let mut source = Source::from_test_str(input);
         let mut lexer = Lexer::new(&mut source);
         let tokens: Vec<_> = lexer.lex_all().unwrap().into_iter().collect();
@@ -1179,7 +1177,7 @@ world"
         let token_types: Vec<_> = tokens.into_iter().map(|t| t.token_type).collect();
 
         match &token_types[..] {
-            [TokenType::Auto, TokenType::Id(x), TokenType::Eq, TokenType::Int(42), TokenType::If, TokenType::Else, TokenType::For, TokenType::While, TokenType::Match, TokenType::Const, TokenType::Class, TokenType::Interface, TokenType::Enum, TokenType::Is, TokenType::As, TokenType::In, TokenType::Id(range), TokenType::Id(list), TokenType::Id(map), TokenType::Id(opt), TokenType::Id(res), TokenType::Id(some), TokenType::None, TokenType::Id(ok), TokenType::Id(err), TokenType::Bool(true), TokenType::Bool(false), TokenType::And, TokenType::Or, TokenType::Common] =>
+            [TokenType::Auto, TokenType::Id(x), TokenType::Eq, TokenType::Int(42), TokenType::If, TokenType::Else, TokenType::For, TokenType::While, TokenType::Match, TokenType::Const, TokenType::Class, TokenType::Interface, TokenType::Enum, TokenType::Is, TokenType::As, TokenType::In, TokenType::Id(range), TokenType::Id(list), TokenType::Id(map), TokenType::Id(opt), TokenType::Id(res), TokenType::Id(some), TokenType::None, TokenType::Id(ok), TokenType::Id(err), TokenType::Bool(true), TokenType::Bool(false), TokenType::Common] =>
             {
                 assert_eq!(x, "x");
                 assert_eq!(range, "range");

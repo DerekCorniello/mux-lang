@@ -2501,6 +2501,12 @@ impl<'a> CodeGenerator<'a> {
                         _ => Err("Assignment op not implemented".to_string()),
                     }
                 } else {
+                    // Special handling for short-circuit logical operators
+                    if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr) {
+                        return self.generate_short_circuit_logical_op(left, op, right);
+                    }
+
+                    // Regular binary operations - evaluate both operands
                     let left_val = self.generate_expression(left)?;
                     let right_val = self.generate_expression(right)?;
                     Ok(self.generate_binary_op(left, left_val, op, right, right_val)?)
@@ -3758,7 +3764,58 @@ impl<'a> CodeGenerator<'a> {
                                 .to_string())
                         }
                     }
-                    _ => Err(format!("Unary op not implemented: {:?}", expr)),
+                    UnaryOp::Not => {
+                        // Evaluate the expression to get a bool value
+                        let expr_val = self.generate_expression(expr)?;
+
+                        // Get raw bool value (i1) - handles both raw i1 and boxed bool
+                        let bool_val = self.get_raw_bool_value(expr_val)?;
+
+                        // Use LLVM's build_not to invert the i1 value
+                        let not_result = self
+                            .builder
+                            .build_not(bool_val, "not")
+                            .map_err(|e| e.to_string())?;
+
+                        Ok(not_result.into())
+                    }
+                    UnaryOp::Neg => {
+                        // Negate a number (int or float)
+                        let expr_val = self.generate_expression(expr)?;
+
+                        if expr_val.is_int_value() {
+                            let int_val = expr_val.into_int_value();
+                            let neg = self
+                                .builder
+                                .build_int_neg(int_val, "neg")
+                                .map_err(|e| e.to_string())?;
+                            Ok(neg.into())
+                        } else if expr_val.is_float_value() {
+                            let float_val = expr_val.into_float_value();
+                            let neg = self
+                                .builder
+                                .build_float_neg(float_val, "neg")
+                                .map_err(|e| e.to_string())?;
+                            Ok(neg.into())
+                        } else {
+                            // Try to extract from boxed value
+                            if let Ok(int_val) = self.get_raw_int_value(expr_val) {
+                                let neg = self
+                                    .builder
+                                    .build_int_neg(int_val, "neg")
+                                    .map_err(|e| e.to_string())?;
+                                Ok(neg.into())
+                            } else if let Ok(float_val) = self.get_raw_float_value(expr_val) {
+                                let neg = self
+                                    .builder
+                                    .build_float_neg(float_val, "neg")
+                                    .map_err(|e| e.to_string())?;
+                                Ok(neg.into())
+                            } else {
+                                Err("Negation only works on int or float values".to_string())
+                            }
+                        }
+                    }
                 }
             }
             _ => Err("Expression type not implemented".to_string()),
@@ -5894,6 +5951,122 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    fn generate_short_circuit_logical_op(
+        &mut self,
+        left_expr: &ExpressionNode,
+        op: &BinaryOp,
+        right_expr: &ExpressionNode,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        // Get the current function from the current basic block
+        let current_bb = self
+            .builder
+            .get_insert_block()
+            .ok_or("No current basic block for short-circuit logical operation")?;
+        let current_fn = current_bb
+            .get_parent()
+            .ok_or("No current function for short-circuit logical operation")?;
+
+        match op {
+            BinaryOp::LogicalAnd => {
+                // Create basic blocks for control flow
+                let eval_right_bb = self
+                    .context
+                    .append_basic_block(current_fn, "and_eval_right");
+                let merge_bb = self.context.append_basic_block(current_fn, "and_merge");
+
+                // Evaluate left operand
+                let left_val = self.generate_expression(left_expr)?;
+                let left_bool = self.get_raw_bool_value(left_val)?;
+                let left_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating left operand")?;
+
+                // If left is false, skip to merge with false result
+                // If left is true, evaluate right operand
+                self.builder
+                    .build_conditional_branch(left_bool, eval_right_bb, merge_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // eval_right_bb: evaluate right operand
+                self.builder.position_at_end(eval_right_bb);
+                let right_val = self.generate_expression(right_expr)?;
+                let right_bool = self.get_raw_bool_value(right_val)?;
+                let right_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating right operand")?;
+                self.builder
+                    .build_unconditional_branch(merge_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // merge_bb: phi node combines results
+                self.builder.position_at_end(merge_bb);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "and_result")
+                    .map_err(|e| e.to_string())?;
+
+                let false_val = self.context.bool_type().const_zero();
+                phi.add_incoming(&[
+                    (&false_val, left_bb),   // Left was false, return false
+                    (&right_bool, right_bb), // Left was true, return right
+                ]);
+
+                Ok(phi.as_basic_value())
+            }
+            BinaryOp::LogicalOr => {
+                // Create basic blocks for control flow
+                let eval_right_bb = self.context.append_basic_block(current_fn, "or_eval_right");
+                let merge_bb = self.context.append_basic_block(current_fn, "or_merge");
+
+                // Evaluate left operand
+                let left_val = self.generate_expression(left_expr)?;
+                let left_bool = self.get_raw_bool_value(left_val)?;
+                let left_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating left operand")?;
+
+                // If left is true, skip to merge with true result
+                // If left is false, evaluate right operand
+                self.builder
+                    .build_conditional_branch(left_bool, merge_bb, eval_right_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // eval_right_bb: evaluate right operand
+                self.builder.position_at_end(eval_right_bb);
+                let right_val = self.generate_expression(right_expr)?;
+                let right_bool = self.get_raw_bool_value(right_val)?;
+                let right_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating right operand")?;
+                self.builder
+                    .build_unconditional_branch(merge_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // merge_bb: phi node combines results
+                self.builder.position_at_end(merge_bb);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "or_result")
+                    .map_err(|e| e.to_string())?;
+
+                let true_val = self.context.bool_type().const_int(1, false);
+                phi.add_incoming(&[
+                    (&true_val, left_bb),    // Left was true, return true
+                    (&right_bool, right_bb), // Left was false, return right
+                ]);
+
+                Ok(phi.as_basic_value())
+            }
+            _ => Err(
+                "generate_short_circuit_logical_op called with non-logical operator".to_string(),
+            ),
+        }
+    }
+
     fn generate_binary_op(
         &mut self,
         left_expr: &ExpressionNode,
@@ -6535,20 +6708,10 @@ impl<'a> CodeGenerator<'a> {
                     )),
                 }
             }
-            BinaryOp::LogicalAnd => {
-                // for now, assume bool
-                let and = self
-                    .builder
-                    .build_and(left.into_int_value(), right.into_int_value(), "and")
-                    .map_err(|e| e.to_string())?;
-                Ok(and.into())
-            }
-            BinaryOp::LogicalOr => {
-                let or = self
-                    .builder
-                    .build_or(left.into_int_value(), right.into_int_value(), "or")
-                    .map_err(|e| e.to_string())?;
-                Ok(or.into())
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
+                // These should be handled by generate_short_circuit_logical_op
+                // and should not reach here
+                Err("Logical AND/OR should use short-circuit evaluation".to_string())
             }
             BinaryOp::Modulo => {
                 // try to get raw int values first
