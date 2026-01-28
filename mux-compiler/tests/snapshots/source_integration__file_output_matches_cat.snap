@@ -1,5 +1,0 @@
----
-source: mux-compiler/tests/source_integration.rs
-expression: "format!(\"{:#?}\", expected)"
----
-"// Test list concatenation\nauto list1 = [1, 2]\nauto list2 = [3, 4]\nauto combined = list1 + list2\nprint(\"List concat: \")\nprint(combined.to_string())\nprint(\"\\n\")\n\n// Test map merge\nauto map1 = {\"a\": 1, \"b\": 2}\nauto map2 = {\"c\": 3, \"d\": 4}\nauto merged = map1 + map2\nprint(\"Map merge: \")\nprint(merged.to_string())\nprint(\"\\n\")\n\n// Test set union\nauto set1 = {1, 2, 3}\nauto set2 = {3, 4, 5}\nauto unioned = set1 + set2\nprint(\"Set union: \")\nprint(unioned.to_string())\nprint(\"\\n\")\n\n// Test that string concat still works\nauto str1 = \"Hello \"\nauto str2 = \"World\"\nauto greeting = str1 + str2\nprint(\"String concat: \")\nprint(greeting.to_string())\nprint(\"\\n\")\n\n// Test that numeric addition still works\nauto num1 = 10\nauto num2 = 20\nauto sum = num1 + num2\nprint(\"Numeric add: \")\nprint(sum.to_string())\nprint(\"\\n\")\n"
