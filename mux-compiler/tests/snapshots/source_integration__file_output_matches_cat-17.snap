@@ -1,5 +1,0 @@
----
-source: mux-compiler/tests/source_integration.rs
-expression: "format!(\"{:#?}\", expected)"
----
-"// Imports test\nauto pi = 3.14159\nprint(\"PI = \" + pi.to_string())\n"

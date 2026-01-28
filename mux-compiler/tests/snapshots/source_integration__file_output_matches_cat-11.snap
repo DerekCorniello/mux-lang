@@ -1,5 +1,0 @@
----
-source: mux-compiler/tests/source_integration.rs
-expression: "format!(\"{:#?}\", expected)"
----
-"// Collections\nauto nums = [1, 2, 3, 4]\nauto scores = {\"Alice\": 90, \"Bob\": 85}\nauto matrix = [[1, 2], [3, 4]]\n\nauto avgs = {\"Alice\": 90, \"Bob\": 85}\nauto grid = [[1, 2], [3, 4]]\nauto myset = {1, 2, 4}\n\nprint(\"nums: \" + nums.to_string())\nprint(\"scores: \" + scores.to_string())\nprint(\"matrix: \" + matrix.to_string())\nprint(\"avgs: \" + avgs.to_string())\nprint(\"grid: \" + grid.to_string())\nprint(\"myset: \" + myset.to_string())\n\n// Demonstrate both list access methods\nprint(\"abt to safe\")\nprint(\"Safe access: \" + nums.get(0).to_string())  // Safe access returns Optional\nprint(\"abt to direct\")\nprint(\"Direct access: \" + nums[0].to_string())  // Direct access with runtime error if out of bounds\nprint(\"Access a map: \" + avgs.get(\"Alice\").to_string())\n"
