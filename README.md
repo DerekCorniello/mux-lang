@@ -39,7 +39,7 @@ Mux (fully "MuxLang") is a statically-typed, garbage-collected language that com
 
 ## 3. Types
 
-**Note**: Not sure that I want to/will do implicit conversions, like 7 -> 7.0, 7 -> "7", or 7 -> true
+**Type System**: Mux uses **strict static typing** with **NO implicit type conversions**. All type conversions must be explicit using conversion methods.
 
 ### 3.1 Primitive Types
 
@@ -48,10 +48,130 @@ int      // 64-bit signed integer
 float    // 64-bit IEEE-754
 bool     // true | false
 char     // Unicode code point
-str   // UTF-8 sequence
+str      // UTF-8 sequence
 ```
 
-### 3.2 Composite Types
+### 3.2 Type Conversions
+
+Mux requires **explicit type conversions** for all operations. There are no implicit conversions between types.
+
+#### 3.2.1 Numeric Conversions
+
+```mux
+// Integer conversions
+auto x = 42
+auto x_float = x.to_float()     // int -> float
+auto x_str = x.to_string()      // int -> str
+auto x_same = x.to_int()        // int -> int (identity)
+
+// Float conversions
+auto pi = 3.14
+auto pi_int = pi.to_int()       // float -> int (truncates: 3)
+auto pi_str = pi.to_string()    // float -> str
+auto pi_same = pi.to_float()    // float -> float (identity)
+
+// Boolean conversions
+auto flag = true
+auto flag_int = flag.to_int()   // bool -> int (true=1, false=0)
+auto flag_float = flag.to_float() // bool -> float (true=1.0, false=0.0)
+auto flag_str = flag.to_string() // bool -> str ("true" or "false")
+
+// Char conversions
+auto ch = 'A'
+auto ch_str = ch.to_string()    // char -> str
+
+// Method calls on literals require parentheses
+auto num = (3).to_string()      // Valid
+auto val = (42).to_float()      // Valid
+// auto bad = 3.to_string()     // ERROR: parsed as float 3.0
+```
+
+#### 3.2.2 String Parsing (Fallible Conversions)
+
+String and char parsing methods return `Result<T, str>` because they can fail:
+
+```mux
+// String to number (returns Result)
+auto num_str = "42"
+auto result = num_str.to_int()
+match result {
+    Ok(value) {
+        println("Parsed: " + value.to_string())  // "Parsed: 42"
+    }
+    Err(error) {
+        println("Parse error: " + error)
+    }
+}
+
+// String to float
+auto float_str = "3.14159"
+auto float_result = float_str.to_float()
+match float_result {
+    Ok(value) { println(value.to_string()) }
+    Err(msg) { println("Error: " + msg) }
+}
+
+// Char to digit (only works for '0'-'9')
+auto digit_char = '5'
+auto digit_result = digit_char.to_int()
+match digit_result {
+    Ok(digit) { println(digit.to_string()) }  // "5"
+    Err(msg) { println(msg) }
+}
+
+auto letter = 'A'
+auto letter_result = letter.to_int()
+match letter_result {
+    Ok(_) { println("Unexpected success") }
+    Err(msg) { println(msg) }  // "Character is not a digit (0-9)"
+}
+```
+
+#### 3.2.3 No Implicit Conversions
+
+The following operations are **compile-time errors**:
+
+```mux
+// Type mismatches in binary operations
+auto bad1 = 1 + 1.0        // ERROR: cannot add int and float
+auto bad2 = "hello" + 3    // ERROR: cannot add str and int
+auto bad3 = true + false   // ERROR: cannot add bool and bool
+
+// Type mismatches in comparisons
+auto bad4 = 1 < 1.0        // ERROR: cannot compare int and float
+auto bad5 = "a" == 1       // ERROR: cannot compare str and int
+
+// Function argument type mismatches
+func takes_string(str s) returns void { }
+takes_string(123)          // ERROR: expected str, got int
+
+// Correct usage requires explicit conversion
+auto good1 = 1 + (1.0).to_int()           // OK: 2
+auto good2 = "hello" + (3).to_string()    // OK: "hello3"
+auto good3 = 1.to_float() < 1.0           // OK: true
+auto good4 = (true).to_int() + (false).to_int()  // OK: 1
+```
+
+#### 3.2.4 Available Conversion Methods
+
+| From Type | Method | Returns | Notes |
+|-----------|--------|---------|-------|
+| `int` | `.to_string()` | `str` | Converts to string representation |
+| `int` | `.to_float()` | `float` | Converts to floating-point |
+| `int` | `.to_int()` | `int` | Identity function |
+| `float` | `.to_string()` | `str` | Converts to string representation |
+| `float` | `.to_int()` | `int` | Truncates decimal part |
+| `float` | `.to_float()` | `float` | Identity function |
+| `bool` | `.to_string()` | `str` | Returns "true" or "false" |
+| `bool` | `.to_int()` | `int` | Returns 1 or 0 |
+| `bool` | `.to_float()` | `float` | Returns 1.0 or 0.0 |
+| `char` | `.to_string()` | `str` | Converts char to string |
+| `char` | `.to_int()` | `Result<int, str>` | Digit value for '0'-'9' only |
+| `str` | `.to_string()` | `str` | Identity function |
+| `str` | `.to_int()` | `Result<int, str>` | Parses string as integer |
+| `str` | `.to_float()` | `Result<float, str>` | Parses string as float |
+
+### 3.3 Composite Types
 
 ```
 Optional<T>
@@ -60,7 +180,7 @@ list<T>
 map<K,V>
 ```
 
-### 3.3 Generics
+### 3.4 Generics
 
 Mux supports Go-style generics with type parameters:
 
@@ -110,7 +230,7 @@ interface Numeric {
 // comparable - types that support == and !=
 ```
 
-### 3.4 Generic Type Constraints
+### 3.5 Generic Type Constraints
 
 ```
 // Using built-in constraints
@@ -139,7 +259,7 @@ int maximum = max(3, 7)        // Generic T inferred as int
 auto pairs = zip(numbers, ["a", "b", "c"])  // T=int, U=str inferred
 ```
 
-### 3.5 User-Defined Types
+### 3.6 User-Defined Types
 
 - **Structs**: simple aggregates
 - **Enums**: tagged unions (see §8)
