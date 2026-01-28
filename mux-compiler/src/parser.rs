@@ -458,12 +458,38 @@ impl<'a> Parser<'a> {
 
                     let field_type = self.parse_type()?;
                     let field_name = self.consume_identifier("Expected field name")?;
+
+                    // Check for optional default value
+                    let default_value = if self.matches(&[TokenType::Eq]) {
+                        let expr = self.parse_primary()?;
+
+                        // Validate it's a literal expression
+                        if !Self::is_literal_expression(&expr) {
+                            return Err(ParserError::new(
+                                "Field default values must be literals (int, float, string, bool, char)",
+                                expr.span,
+                            ));
+                        }
+                        Some(expr)
+                    } else {
+                        None
+                    };
+
+                    // For const fields, require a default value
+                    if is_const && default_value.is_none() {
+                        return Err(ParserError::new(
+                            "Const fields must have a default value",
+                            self.previous().span,
+                        ));
+                    }
+
                     let is_generic_param = Self::is_field_generic_param(&field_type, &type_params);
                     fields.push(Field {
                         name: field_name,
                         type_: field_type,
                         is_generic_param,
                         is_const,
+                        default_value,
                     });
                 }
                 TokenType::NewLine => {
@@ -2458,6 +2484,10 @@ impl<'a> Parser<'a> {
             _ => false,
         }
     }
+
+    fn is_literal_expression(expr: &ExpressionNode) -> bool {
+        matches!(expr.kind, ExpressionKind::Literal(_))
+    }
 }
 
 impl std::error::Error for ParserError {}
@@ -2856,6 +2886,7 @@ pub struct Field {
     pub type_: TypeNode,
     pub is_generic_param: bool,
     pub is_const: bool,
+    pub default_value: Option<ExpressionNode>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

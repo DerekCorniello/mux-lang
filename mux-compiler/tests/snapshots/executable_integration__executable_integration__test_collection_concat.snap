@@ -4,19 +4,11 @@ expression: full_output
 ---
 List concat: 
 [1, 2, 3, 4]
-
-
 Map merge: 
 {a: 1, b: 2, c: 3, d: 4}
-
-
 Set union: 
 {1, 2, 3, 4, 5}
-
-
 String concat: 
 Hello World
-
-
 Numeric add: 
 30

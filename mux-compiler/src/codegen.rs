@@ -1099,8 +1099,19 @@ impl<'a> CodeGenerator<'a> {
                 )
                 .map_err(|e| e.to_string())?;
 
-            // Initialize primitive fields with default boxed values
-            let default_value: BasicValueEnum =
+            // Check if field has a default value
+            let default_value: BasicValueEnum = if let Some(default_expr) = &field.default_value {
+                // Generate code for the literal default value
+                let literal_val = self.generate_expression(default_expr)?;
+
+                // Box if primitive
+                if matches!(field.type_.kind, TypeKind::Primitive(_)) {
+                    self.box_value(literal_val).into()
+                } else {
+                    literal_val
+                }
+            } else {
+                // No default value - use zero/null initialization
                 if matches!(field.type_.kind, TypeKind::Primitive(_)) {
                     // Create default value based on type
                     let llvm_type = self.llvm_type_from_mux_type(&field.type_)?;
@@ -1123,7 +1134,8 @@ impl<'a> CodeGenerator<'a> {
                         .ptr_type(AddressSpace::default())
                         .const_zero()
                         .into()
-                };
+                }
+            };
 
             self.builder
                 .build_store(field_ptr, default_value)
