@@ -23,5 +23,7 @@ target
 # Build artifacts
 *.so
 test_scripts/*.ll
+*.ll
+*.mux
 test_scripts/*
 !test_scripts/*.mux

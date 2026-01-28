@@ -863,7 +863,7 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn generate_interface_type(&mut self, name: &str) -> Result<(), String> {
-        // generate LLVM struct for interface: { *mut vtable }
+        // generate LLVM struct for interface: { *mut vtable, field1, field2, ... }
         // for simplicity, vtable is struct of void* function pointers
         let symbol = self.analyzer.all_symbols().get(name).unwrap();
         let interface_methods = symbol.interfaces.get(name).unwrap();
@@ -880,8 +880,16 @@ impl<'a> CodeGenerator<'a> {
             .insert(name.to_string(), vtable_struct_type);
         let vtable_ptr_type = self.context.ptr_type(AddressSpace::default());
 
-        // interface struct: { vtable_ptr }
-        let interface_struct_type = self.context.struct_type(&[vtable_ptr_type.into()], false);
+        // interface struct: { vtable_ptr, field1, field2, ... }
+        let mut struct_fields = vec![vtable_ptr_type.into()];
+
+        // Add interface fields to the struct
+        for (field_type, _) in symbol.fields.values() {
+            let llvm_field_type = self.semantic_type_to_llvm(field_type)?;
+            struct_fields.push(llvm_field_type);
+        }
+
+        let interface_struct_type = self.context.struct_type(&struct_fields, false);
         self.type_map
             .insert(name.to_string(), interface_struct_type.into());
 
@@ -7367,64 +7375,34 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn llvm_type_from_mux_type(&self, type_node: &TypeNode) -> Result<BasicTypeEnum<'a>, String> {
-        match &type_node.kind {
-            TypeKind::Primitive(PrimitiveType::Int) => Ok(self.context.i64_type().into()),
-            TypeKind::Primitive(PrimitiveType::Float) => Ok(self.context.f64_type().into()),
-            TypeKind::Primitive(PrimitiveType::Bool) => Ok(self.context.bool_type().into()),
-            TypeKind::Primitive(PrimitiveType::Str) => {
-                Ok(self.context.ptr_type(AddressSpace::default()).into())
-            }
-            TypeKind::Primitive(PrimitiveType::Char) => Ok(self.context.i8_type().into()),
-            TypeKind::Primitive(PrimitiveType::Void) => {
-                Err("Void type not allowed here".to_string())
-            }
-            TypeKind::Primitive(PrimitiveType::Auto) => {
-                Err("Auto primitive should be resolved".to_string())
-            }
-            TypeKind::Named(name, _) => {
-                if let Some(context) = &self.generic_context {
-                    if let Some(concrete) = context.type_params.get(name) {
-                        return self.llvm_type_from_resolved_type(concrete);
-                    }
-                }
+        self.type_kind_to_llvm_type(&type_node.kind)
+    }
 
-                if self.enum_variants.contains_key(name) {
-                    if name == "Optional" || name == "Result" {
-                        // for Optional/Result: values are always Value* pointers
-                        Ok(self.context.ptr_type(AddressSpace::default()).into())
-                    } else {
-                        // for custom enums: values are struct values
-                        let struct_type = self.type_map.get(name).ok_or("Enum type not found")?;
-                        Ok(*struct_type)
-                    }
-                } else {
-                    // for classes, values are pointers to structs
-                    Ok(self.context.ptr_type(AddressSpace::default()).into())
-                }
-            }
-            TypeKind::Reference(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            TypeKind::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            TypeKind::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            TypeKind::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-
-            TypeKind::Function {
-                params: _,
-                returns: _,
-            } => {
-                // for now, all function types are generic pointers
-                Ok(self.context.ptr_type(AddressSpace::default()).into())
-            }
-            TypeKind::TraitObject(_) => {
-                // for now, trait objects are just pointers
-                Ok(self.context.ptr_type(AddressSpace::default()).into())
-            }
-            TypeKind::Auto => Err("Auto type should be resolved".to_string()),
+    fn semantic_type_to_llvm(&self, sem_type: &Type) -> Result<BasicTypeEnum<'a>, String> {
+        match sem_type {
+            Type::Primitive(prim) => match prim {
+                PrimitiveType::Int => Ok(self.context.i64_type().into()),
+                PrimitiveType::Float => Ok(self.context.f64_type().into()),
+                PrimitiveType::Bool => Ok(self.context.bool_type().into()),
+                PrimitiveType::Str => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+                PrimitiveType::Char => Ok(self.context.i8_type().into()),
+                PrimitiveType::Void => Err("Void type not allowed in fields".to_string()),
+                PrimitiveType::Auto => Err("Auto type should be resolved".to_string()),
+            },
+            Type::Named(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::Optional(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::Reference(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::Function { .. } => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            _ => Err(format!(
+                "Unsupported type in interface fields: {:?}",
+                sem_type
+            )),
         }
     }
 
-    /// Maps a TypeKind to its corresponding LLVM BasicTypeEnum
-    /// Used for enum variant field extraction and storage
-    /// Returns an error for unsupported or invalid types instead of falling back
     fn type_kind_to_llvm_type(&self, type_kind: &TypeKind) -> Result<BasicTypeEnum<'a>, String> {
         match type_kind {
             // Primitive types

@@ -448,49 +448,8 @@ impl<'a> Parser<'a> {
                     }
                 }
                 TokenType::Id(_) | TokenType::Const => {
-                    // Check if this is a const field
-                    let is_const = if self.check(TokenType::Const) {
-                        self.consume();
-                        true
-                    } else {
-                        false
-                    };
-
-                    let field_type = self.parse_type()?;
-                    let field_name = self.consume_identifier("Expected field name")?;
-
-                    // Check for optional default value
-                    let default_value = if self.matches(&[TokenType::Eq]) {
-                        let expr = self.parse_primary()?;
-
-                        // Validate it's a literal expression
-                        if !Self::is_literal_expression(&expr) {
-                            return Err(ParserError::new(
-                                "Field default values must be literals (int, float, string, bool, char)",
-                                expr.span,
-                            ));
-                        }
-                        Some(expr)
-                    } else {
-                        None
-                    };
-
-                    // For const fields, require a default value
-                    if is_const && default_value.is_none() {
-                        return Err(ParserError::new(
-                            "Const fields must have a default value",
-                            self.previous().span,
-                        ));
-                    }
-
-                    let is_generic_param = Self::is_field_generic_param(&field_type, &type_params);
-                    fields.push(Field {
-                        name: field_name,
-                        type_: field_type,
-                        is_generic_param,
-                        is_const,
-                        default_value,
-                    });
+                    let field = self.parse_field_declaration(&type_params)?;
+                    fields.push(field);
                 }
                 TokenType::NewLine => {
                     self.consume_token(TokenType::NewLine, "Expected newline")?;
@@ -572,6 +531,7 @@ impl<'a> Parser<'a> {
 
         self.consume_token(TokenType::OpenBrace, "Expected '{' after interface header")?;
 
+        let mut fields = Vec::new();
         let mut methods = Vec::new();
 
         while !self.is_at_end() {
@@ -579,75 +539,87 @@ impl<'a> Parser<'a> {
             if self.check(TokenType::CloseBrace) {
                 break;
             }
-            if self.matches(&[TokenType::Func]) {
-                // parse function signature for interface method.
-                let name = self.consume_identifier("Expected method name")?;
 
-                // parse type parameters if present.
-                let type_params = if self.matches(&[TokenType::Lt]) {
+            match self.peek().token_type {
+                TokenType::Func => {
+                    self.consume();
+                    // parse function signature for interface method.
+                    let name = self.consume_identifier("Expected method name")?;
+
+                    // parse type parameters if present.
+                    let type_params = if self.matches(&[TokenType::Lt]) {
+                        let mut params = Vec::new();
+                        if !self.check(TokenType::Gt) {
+                            loop {
+                                let param =
+                                    self.consume_identifier("Expected type parameter name")?;
+                                params.push((param, Vec::new()));
+                                if !self.matches(&[TokenType::Comma]) {
+                                    break;
+                                }
+                            }
+                        }
+                        self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
+                        params
+                    } else {
+                        Vec::new()
+                    };
+
+                    // parse parameters.
+                    self.consume_token(TokenType::OpenParen, "Expected '(' after method name")?;
                     let mut params = Vec::new();
-                    if !self.check(TokenType::Gt) {
+                    if !self.check(TokenType::CloseParen) {
                         loop {
-                            let param = self.consume_identifier("Expected type parameter name")?;
-                            params.push((param, Vec::new()));
+                            let param_type = self.parse_type()?;
+                            let param_name = self.consume_identifier("Expected parameter name")?;
+                            params.push(Param {
+                                name: param_name,
+                                type_: param_type,
+                            });
                             if !self.matches(&[TokenType::Comma]) {
                                 break;
                             }
                         }
                     }
-                    self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
-                    params
-                } else {
-                    Vec::new()
-                };
+                    self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
 
-                // parse parameters.
-                self.consume_token(TokenType::OpenParen, "Expected '(' after method name")?;
-                let mut params = Vec::new();
-                if !self.check(TokenType::CloseParen) {
-                    loop {
-                        let param_type = self.parse_type()?;
-                        let param_name = self.consume_identifier("Expected parameter name")?;
-                        params.push(Param {
-                            name: param_name,
-                            type_: param_type,
-                        });
-                        if !self.matches(&[TokenType::Comma]) {
-                            break;
+                    // parse return type.
+                    let return_type = if self.matches(&[TokenType::Minus, TokenType::Gt])
+                        || self.matches(&[TokenType::Returns])
+                    {
+                        self.parse_type()?
+                    } else {
+                        TypeNode {
+                            kind: TypeKind::Primitive(PrimitiveType::Void),
+                            span: self.peek().span,
                         }
-                    }
+                    };
+
+                    // add the method to the interface.
+                    methods.push(FunctionNode {
+                        name,
+                        type_params,
+                        params,
+                        return_type,
+                        body: vec![],
+                        span: start_span,
+                        is_common: false,
+                    });
                 }
-                self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
-
-                // parse return type.
-                let return_type = if self.matches(&[TokenType::Minus, TokenType::Gt])
-                    || self.matches(&[TokenType::Returns])
-                {
-                    self.parse_type()?
-                } else {
-                    TypeNode {
-                        kind: TypeKind::Primitive(PrimitiveType::Void),
-                        span: self.peek().span,
-                    }
-                };
-
-                // add the method to the interface.
-                methods.push(FunctionNode {
-                    name,
-                    type_params,
-                    params,
-                    return_type,
-                    body: vec![],
-                    span: start_span,
-                    is_common: false,
-                });
-
-                // no semicolon needed in mux.
-            } else {
-                return Err(ParserError::new(
-                    "Expected function declaration in interface",
-                    self.peek().span,
-                ));
+                TokenType::Id(_) | TokenType::Const => {
+                    // Parse field declaration
+                    let field = self.parse_field_declaration(&type_params)?;
+                    fields.push(field);
+                }
+                TokenType::NewLine => {
+                    self.consume_token(TokenType::NewLine, "Expected newline")?;
+                }
+                _ => {
+                    return Err(ParserError::new(
+                        "Expected field or function declaration in interface",
+                        self.peek().span,
+                    ));
+                }
             }
         }
 
@@ -659,6 +631,7 @@ impl<'a> Parser<'a> {
         Ok(AstNode::Interface {
             name,
             type_params,
+            fields,
             methods,
             span: full_span,
         })
@@ -2467,6 +2440,55 @@ impl<'a> Parser<'a> {
     }
 
     /// Check if a field type is a direct generic parameter (e.g., T, U, not List<T>)
+    fn parse_field_declaration(
+        &mut self,
+        type_param_names: &[(String, Vec<TraitBound>)],
+    ) -> ParserResult<Field> {
+        // Check if this is a const field
+        let is_const = if self.check(TokenType::Const) {
+            self.consume();
+            true
+        } else {
+            false
+        };
+
+        let field_type = self.parse_type()?;
+        let field_name = self.consume_identifier("Expected field name")?;
+
+        // Check for optional default value
+        let default_value = if self.matches(&[TokenType::Eq]) {
+            let expr = self.parse_primary()?;
+
+            // Validate it's a literal expression
+            if !Self::is_literal_expression(&expr) {
+                return Err(ParserError::new(
+                    "Field default values must be literals (int, float, string, bool, char)",
+                    expr.span,
+                ));
+            }
+            Some(expr)
+        } else {
+            None
+        };
+
+        // For const fields, require a default value
+        if is_const && default_value.is_none() {
+            return Err(ParserError::new(
+                "Const fields must have a default value",
+                self.previous().span,
+            ));
+        }
+
+        let is_generic_param = Self::is_field_generic_param(&field_type, type_param_names);
+        Ok(Field {
+            name: field_name,
+            type_: field_type,
+            is_generic_param,
+            is_const,
+            default_value,
+        })
+    }
+
     fn is_field_generic_param(
         field_type: &TypeNode,
         type_param_names: &[(String, Vec<TraitBound>)],
@@ -2567,6 +2589,7 @@ pub enum AstNode {
     Interface {
         name: String,
         type_params: Vec<(String, Vec<TraitBound>)>,
+        fields: Vec<Field>,
         methods: Vec<FunctionNode>,
         span: Span,
     },
