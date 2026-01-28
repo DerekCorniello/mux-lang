@@ -35,7 +35,7 @@ pub enum Type {
     List(Box<Type>),
     Map(Box<Type>, Box<Type>),
     Set(Box<Type>),
-    Tuple(Vec<Type>),
+
     Optional(Box<Type>),
     Reference(Box<Type>),
     Void,
@@ -131,11 +131,7 @@ impl Unifier {
                 self.unify(v1, v2, span)?;
             }
             (Type::Set(t1), Type::Set(t2)) => self.unify(t1, t2, span)?,
-            (Type::Tuple(ts1), Type::Tuple(ts2)) if ts1.len() == ts2.len() => {
-                for (t1, t2) in ts1.iter().zip(ts2) {
-                    self.unify(t1, t2, span)?;
-                }
-            }
+
             (Type::Optional(t1), Type::Optional(t2)) => self.unify(t1, t2, span)?,
             (Type::Void, Type::Void) => {}
             (Type::EmptyList, Type::EmptyList) => {}
@@ -170,7 +166,7 @@ impl Unifier {
             | Type::Set(inner)
             | Type::Optional(inner) => self.occurs(var, inner),
             Type::Map(k, v) => self.occurs(var, k) || self.occurs(var, v),
-            Type::Tuple(ts) => ts.iter().any(|t| self.occurs(var, t)),
+
             _ => false,
         }
     }
@@ -194,7 +190,7 @@ impl Unifier {
             Type::List(inner) => Type::List(Box::new(self.apply(inner))),
             Type::Map(k, v) => Type::Map(Box::new(self.apply(k)), Box::new(self.apply(v))),
             Type::Set(inner) => Type::Set(Box::new(self.apply(inner))),
-            Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| self.apply(t)).collect()),
+
             Type::Optional(inner) => Type::Optional(Box::new(self.apply(inner))),
             _ => t.clone(),
         }
@@ -626,13 +622,7 @@ impl SemanticAnalyzer {
                 let resolved_inner = self.resolve_type(inner)?;
                 Ok(Type::Set(Box::new(resolved_inner)))
             }
-            TypeKind::Tuple(elements) => {
-                let resolved_elements = elements
-                    .iter()
-                    .map(|e| self.resolve_type(e))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Type::Tuple(resolved_elements))
-            }
+
             TypeKind::TraitObject(_) => Err(SemanticError {
                 message: "Trait objects not yet supported".into(),
                 span: type_node.span,
@@ -2621,24 +2611,6 @@ impl SemanticAnalyzer {
             }
             PatternNode::Literal(_) => {} // literals don't bind variables
             PatternNode::Wildcard => {}   // no binding
-            PatternNode::Tuple(elements) => {
-                if let Type::Tuple(expected_elements) = expected_type {
-                    if elements.len() != expected_elements.len() {
-                        return Err(SemanticError {
-                            message: "Tuple pattern length mismatch".to_string(),
-                            span,
-                        });
-                    }
-                    for (elem, expected) in elements.iter().zip(expected_elements) {
-                        self.set_pattern_types(elem, expected, span)?;
-                    }
-                } else {
-                    return Err(SemanticError {
-                        message: format!("Tuple pattern on non-tuple type {:?}", expected_type),
-                        span,
-                    });
-                }
-            }
         }
         Ok(())
     }
@@ -2655,11 +2627,6 @@ impl SemanticAnalyzer {
             }
             PatternNode::Literal(_) => {} // literals don't bind variables
             PatternNode::Wildcard => {}   // no binding
-            PatternNode::Tuple(elements) => {
-                for elem in elements {
-                    self.analyze_pattern(elem)?;
-                }
-            }
         }
         Ok(())
     }

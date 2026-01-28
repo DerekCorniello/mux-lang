@@ -1304,22 +1304,7 @@ impl<'a> Parser<'a> {
                 self.current += 1; // consume the underscore
                 Ok(PatternNode::Wildcard)
             }
-            TokenType::OpenParen => {
-                self.current += 1; // consume the opening paren
-                let mut elements = Vec::new();
 
-                if !self.check(TokenType::CloseParen) {
-                    loop {
-                        elements.push(self.parse_pattern()?);
-                        if !self.matches(&[TokenType::Comma]) {
-                            break;
-                        }
-                    }
-                }
-
-                self.consume_token(TokenType::CloseParen, "Expected ')' after tuple pattern")?;
-                Ok(PatternNode::Tuple(elements))
-            }
             _ => {
                 let token = self.consume();
                 match &token.token_type {
@@ -1667,21 +1652,6 @@ impl<'a> Parser<'a> {
 
                     return Ok(TypeNode {
                         kind: TypeKind::Set(Box::new(element_type)),
-                        span: start_span,
-                    });
-                }
-
-                if name == "tuple" && next_is_gt {
-                    self.consume_token(TokenType::Lt, "Expected '<' for tuple element types")?;
-                    let mut element_types = Vec::new();
-                    element_types.push(self.parse_type()?);
-                    while self.matches(&[TokenType::Comma]) {
-                        element_types.push(self.parse_type()?);
-                    }
-                    self.consume_token(TokenType::Gt, "Expected '>' after tuple element types")?;
-
-                    return Ok(TypeNode {
-                        kind: TypeKind::Tuple(element_types),
                         span: start_span,
                     });
                 }
@@ -2731,7 +2701,7 @@ pub enum TypeKind {
     List(Box<TypeNode>),
     Map(Box<TypeNode>, Box<TypeNode>),
     Set(Box<TypeNode>),
-    Tuple(Vec<TypeNode>),
+
     Auto,
 }
 
@@ -2923,7 +2893,7 @@ pub enum PatternNode {
     Literal(LiteralNode),
     Identifier(String),
     Wildcard, // `_`
-    Tuple(Vec<PatternNode>),
+
     EnumVariant {
         name: String,
         args: Vec<PatternNode>,

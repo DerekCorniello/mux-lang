@@ -3079,7 +3079,6 @@ impl<'a> CodeGenerator<'a> {
                                 | Type::Map(_, _)
                                 | Type::Set(_)
                                 | Type::Named(_, _)
-                                | Type::Tuple(_)
                                 | Type::Instantiated(_, _) => "mux_result_ok_value",
                                 _ => {
                                     return Err(format!(
@@ -3120,7 +3119,6 @@ impl<'a> CodeGenerator<'a> {
                                 | Type::Map(_, _)
                                 | Type::Set(_)
                                 | Type::Named(_, _)
-                                | Type::Tuple(_)
                                 | Type::Instantiated(_, _) => "mux_optional_some_value",
                                 _ => {
                                     return Err(format!(
@@ -5240,7 +5238,7 @@ impl<'a> CodeGenerator<'a> {
                         }
                         PatternNode::Identifier(_) => self.context.bool_type().const_int(1, false),
                         PatternNode::Literal(_) => self.context.bool_type().const_int(1, false),
-                        PatternNode::Tuple(_) => self.context.bool_type().const_int(1, false),
+
                         PatternNode::Wildcard => self.context.bool_type().const_int(1, false),
                     };
 
@@ -7336,7 +7334,7 @@ impl<'a> CodeGenerator<'a> {
             ResolvedType::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             ResolvedType::Optional(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             ResolvedType::Reference(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            ResolvedType::Tuple(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+
             ResolvedType::EmptyList => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             ResolvedType::EmptyMap => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             ResolvedType::EmptySet => Ok(self.context.ptr_type(AddressSpace::default()).into()),
@@ -7396,14 +7394,7 @@ impl<'a> CodeGenerator<'a> {
             TypeKind::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             TypeKind::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             TypeKind::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            TypeKind::Tuple(elements) => {
-                let mut element_types = Vec::new();
-                for elem in elements {
-                    element_types.push(self.llvm_type_from_mux_type(elem)?);
-                }
-                let struct_type = self.context.struct_type(&element_types, false);
-                Ok(struct_type.into())
-            }
+
             TypeKind::Function {
                 params: _,
                 returns: _,
@@ -7471,11 +7462,6 @@ impl<'a> CodeGenerator<'a> {
             TypeKind::Function { .. } => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             TypeKind::TraitObject(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
 
-            // Tuples - not supported in enum variants (migrating away from tuples)
-            TypeKind::Tuple(_) => {
-                Err("Tuple types are not supported in enum variant fields".to_string())
-            }
-
             // Invalid types
             TypeKind::Primitive(PrimitiveType::Void) => {
                 Err("Void type cannot be used in enum variant fields".to_string())
@@ -7508,10 +7494,7 @@ impl<'a> CodeGenerator<'a> {
                 kind: TypeKind::Set(Box::new(self.type_to_type_node(inner))),
                 span: Span::new(0, 0),
             },
-            Type::Tuple(elements) => TypeNode {
-                kind: TypeKind::Tuple(elements.iter().map(|e| self.type_to_type_node(e)).collect()),
-                span: Span::new(0, 0),
-            },
+
             Type::Optional(inner) => TypeNode {
                 kind: TypeKind::Named("Optional".to_string(), vec![self.type_to_type_node(inner)]),
                 span: Span::new(0, 0),
@@ -7596,9 +7579,7 @@ impl<'a> CodeGenerator<'a> {
                 Box::new(self.type_node_to_type(v)),
             ),
             TypeKind::Set(inner) => Type::Set(Box::new(self.type_node_to_type(inner))),
-            TypeKind::Tuple(elements) => {
-                Type::Tuple(elements.iter().map(|e| self.type_node_to_type(e)).collect())
-            }
+
             TypeKind::TraitObject(_) => Type::Variable("trait_object".to_string()),
 
             TypeKind::Reference(inner) => Type::Reference(Box::new(self.type_node_to_type(inner))),
@@ -7684,12 +7665,7 @@ impl<'a> CodeGenerator<'a> {
                 Box::new(self.resolve_type(k)?),
                 Box::new(self.resolve_type(v)?),
             )),
-            Type::Tuple(elements) => Ok(Type::Tuple(
-                elements
-                    .iter()
-                    .map(|e| self.resolve_type(e))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )),
+
             Type::Optional(inner) => Ok(Type::Optional(Box::new(self.resolve_type(inner)?))),
             Type::Reference(inner) => Ok(Type::Reference(Box::new(self.resolve_type(inner)?))),
             Type::Function { params, returns } => Ok(Type::Function {
@@ -7975,7 +7951,6 @@ impl<'a> CodeGenerator<'a> {
             | Type::Set(_)
             | Type::Named(_, _)
             | Type::Optional(_)
-            | Type::Tuple(_)
             | Type::Instantiated(_, _) => {
                 // These are already *mut Value pointers, no extraction needed
                 Ok((data_ptr.into(), wrapped_type.clone()))
@@ -8308,14 +8283,7 @@ impl<'a> CodeGenerator<'a> {
                 self.sanitize_type_name(v)
             ),
             Type::Set(inner) => format!("set_{}", self.sanitize_type_name(inner)),
-            Type::Tuple(elements) => {
-                let elements_str = elements
-                    .iter()
-                    .map(|e| self.sanitize_type_name(e))
-                    .collect::<Vec<_>>()
-                    .join("_");
-                format!("tuple_{}", elements_str)
-            }
+
             Type::Optional(inner) => format!("optional_{}", self.sanitize_type_name(inner)),
             Type::Instantiated(name, type_args) => {
                 let args_str = type_args

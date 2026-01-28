@@ -834,7 +834,7 @@ auto pairs = zip<int, string>(numbers, names)  // when inference is ambiguous
 
 ```
 // Good uses of underscore
-auto (first, _) = getTuple()           // ignore second element
+// auto (first, _) = getTuple()           // ignore second element - tuples not supported
 func process(int data, string _) { }  // ignore second parameter
 for _ in range(0, 10) { }            // ignore loop counter
 match result { Ok(_) { } }           // ignore success value
