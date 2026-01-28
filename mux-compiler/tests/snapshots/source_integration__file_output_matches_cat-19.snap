@@ -2,4 +2,4 @@
 source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Test void return lambdas\nauto void_lambda = func() returns void {\n    println(\"Hello from void lambda\")\n    return\n}\n\nauto void_lambda_with_params = func(string message) returns void {\n    println(\"Message: \" + message)\n    return\n}\n\n// Test calling them\nvoid_lambda()\nvoid_lambda_with_params(\"Test message\")\n\nprintln(\"Void lambda test completed\")\n"
+"// Test forward referencing: mutual recursion\nfn even(int n) returns bool {\n    if n == 0 {\n        return true\n    } else {\n        return odd(n - 1)\n    }\n}\n\nfn odd(int n) returns bool {\n    if n == 0 {\n        return false\n    } else {\n        return even(n - 1)\n    }\n}\n\nfn main() returns void {\n    print(even(4).to_string())\n    print(odd(5).to_string())\n    print(even(7).to_string())\n    print(odd(8).to_string())\n}\n"

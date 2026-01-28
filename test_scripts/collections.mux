@@ -7,16 +7,16 @@ auto avgs = {"Alice": 90, "Bob": 85}
 auto grid = [[1, 2], [3, 4]]
 auto myset = {1, 2, 4}
 
-println("nums: " + nums.to_string())
-println("scores: " + scores.to_string())
-println("matrix: " + matrix.to_string())
-println("avgs: " + avgs.to_string())
-println("grid: " + grid.to_string())
-println("myset: " + myset.to_string())
+print("nums: " + nums.to_string())
+print("scores: " + scores.to_string())
+print("matrix: " + matrix.to_string())
+print("avgs: " + avgs.to_string())
+print("grid: " + grid.to_string())
+print("myset: " + myset.to_string())
 
 // Demonstrate both list access methods
-println("abt to safe")
-println("Safe access: " + nums.get(0).to_string())  // Safe access returns Optional
-println("abt to direct")
-println("Direct access: " + nums[0].to_string())  // Direct access with runtime error if out of bounds
-println("Access a map: " + avgs.get("Alice").to_string())
+print("abt to safe")
+print("Safe access: " + nums.get(0).to_string())  // Safe access returns Optional
+print("abt to direct")
+print("Direct access: " + nums[0].to_string())  // Direct access with runtime error if out of bounds
+print("Access a map: " + avgs.get("Alice").to_string())

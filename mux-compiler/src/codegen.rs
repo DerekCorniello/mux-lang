@@ -71,10 +71,10 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = void_type.fn_type(params, false);
         module.add_function("mux_print", fn_type, None);
 
-        // mux_println_val: (*mut Value) -> ()
+        // mux_print: (*mut Value) -> ()
         let params = &[i8_ptr.into()];
         let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_println_val", fn_type, None);
+        module.add_function("mux_print", fn_type, None);
 
         // exit: (i32) -> ()
         let params = &[context.i32_type().into()];
@@ -3009,21 +3009,6 @@ impl<'a> CodeGenerator<'a> {
                             // return void, but since BasicValueEnum, return a dummy
                             Ok(self.context.i32_type().const_int(0, false).into())
                         }
-                        "println" => {
-                            if args.len() != 1 {
-                                return Err("println takes 1 argument".to_string());
-                            }
-                            let arg_val = self.generate_expression(&args[0])?;
-                            let func_println = self
-                                .module
-                                .get_function("mux_println_val")
-                                .ok_or("mux_println_val not found")?;
-                            self.builder
-                                .build_call(func_println, &[arg_val.into()], "println_call")
-                                .map_err(|e| e.to_string())?;
-                            // return void, but since BasicValueEnum, return a dummy
-                            Ok(self.context.i32_type().const_int(0, false).into())
-                        }
                         "Err" => {
                             if args.len() != 1 {
                                 return Err("Err takes 1 argument".to_string());
@@ -3396,7 +3381,7 @@ impl<'a> CodeGenerator<'a> {
                         &[error_msg.as_pointer_value().into()],
                     )
                     .unwrap();
-                self.generate_runtime_call("mux_println_val", &[error_str.into()]);
+                self.generate_runtime_call("mux_print", &[error_str.into()]);
                 self.generate_runtime_call(
                     "exit",
                     &[self.context.i32_type().const_int(1, false).into()],

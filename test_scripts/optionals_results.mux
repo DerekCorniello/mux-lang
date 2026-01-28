@@ -1,6 +1,6 @@
 // Comprehensive Optional & Result Type Extraction Tests
 
-println("=== Testing Result<int, string> ===")
+print("=== Testing Result<int, string> ===")
 
 // Test 1: Result<int, string> with Ok
 func divide(int a, int b) returns Result<int, string> {
@@ -10,19 +10,19 @@ func divide(int a, int b) returns Result<int, string> {
 
 auto res1 = divide(10, 2)
 match res1 {
-    Ok(v) { println("✓ Result<int, string> Ok: " + v.to_string()) }
-    Err(e) { println("✗ Unexpected error: " + e) }
+    Ok(v) { print("✓ Result<int, string> Ok: " + v.to_string()) }
+    Err(e) { print("✗ Unexpected error: " + e) }
 }
 
 // Test 2: Result<int, string> with Err
 auto res2 = divide(10, 0)
 match res2 {
-    Ok(v) { println("✗ Unexpected success: " + v.to_string()) }
-    Err(e) { println("✓ Result<int, string> Err: " + e) }
+    Ok(v) { print("✗ Unexpected success: " + v.to_string()) }
+    Err(e) { print("✓ Result<int, string> Err: " + e) }
 }
 
-println("")
-println("=== Testing Optional<int> ===")
+print("")
+print("=== Testing Optional<int> ===")
 
 // Test 3: Optional<int> with Some
 func findEven(list<int> nums) returns Optional<int> {
@@ -32,19 +32,19 @@ func findEven(list<int> nums) returns Optional<int> {
 
 auto opt1 = findEven([1, 3, 4, 7])
 match opt1 {
-    Some(n) { println("✓ Optional<int> Some: " + n.to_string()) }
-    None { println("✗ Unexpected None") }
+    Some(n) { print("✓ Optional<int> Some: " + n.to_string()) }
+    None { print("✗ Unexpected None") }
 }
 
 // Test 4: Optional<int> with None
 auto opt2 = findEven([1, 3, 5, 7])
 match opt2 {
-    Some(n) { println("✗ Unexpected Some: " + n.to_string()) }
-    None { println("✓ Optional<int> None") }
+    Some(n) { print("✗ Unexpected Some: " + n.to_string()) }
+    None { print("✓ Optional<int> None") }
 }
 
-println("")
-println("=== Testing Result<string, string> ===")
+print("")
+print("=== Testing Result<string, string> ===")
 
 // Test 5: Result<string, string> with Ok
 func validateInput(int code) returns Result<string, string> {
@@ -54,19 +54,19 @@ func validateInput(int code) returns Result<string, string> {
 
 auto res3 = validateInput(1)
 match res3 {
-    Ok(msg) { println("✓ Result<string, string> Ok: " + msg) }
-    Err(e) { println("✗ Unexpected error: " + e) }
+    Ok(msg) { print("✓ Result<string, string> Ok: " + msg) }
+    Err(e) { print("✗ Unexpected error: " + e) }
 }
 
 // Test 6: Result<string, string> with Err  
 auto res4 = validateInput(0)
 match res4 {
-    Ok(msg) { println("✗ Unexpected success: " + msg) }
-    Err(e) { println("✓ Result<string, string> Err: " + e) }
+    Ok(msg) { print("✗ Unexpected success: " + msg) }
+    Err(e) { print("✓ Result<string, string> Err: " + e) }
 }
 
-println("")
-println("=== Testing Optional<list<int>> ===")
+print("")
+print("=== Testing Optional<list<int>> ===")
 
 // Test 7: Optional<list<int>> with Some
 func getNumbersIfPositive(int threshold) returns Optional<list<int>> {
@@ -76,12 +76,12 @@ func getNumbersIfPositive(int threshold) returns Optional<list<int>> {
 
 auto opt3 = getNumbersIfPositive(5)
 match opt3 {
-    Some(lst) { println("✓ Optional<list<int>> Some: list returned") }
-    None { println("✗ Unexpected None") }
+    Some(lst) { print("✓ Optional<list<int>> Some: list returned") }
+    None { print("✗ Unexpected None") }
 }
 
-println("")
-println("=== Testing Result<list<string>, string> ===")
+print("")
+print("=== Testing Result<list<string>, string> ===")
 
 // Test 8: Result<list<string>, string> with Ok
 func getNames(int code) returns Result<list<string>, string> {
@@ -91,9 +91,9 @@ func getNames(int code) returns Result<list<string>, string> {
 
 auto res5 = getNames(1)
 match res5 {
-    Ok(names) { println("✓ Result<list<string>, string> Ok: list returned") }
-    Err(e) { println("✗ Unexpected error: " + e) }
+    Ok(names) { print("✓ Result<list<string>, string> Ok: list returned") }
+    Err(e) { print("✗ Unexpected error: " + e) }
 }
 
-println("")
-println("=== All tests completed ===")
+print("")
+print("=== All tests completed ===")

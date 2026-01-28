@@ -314,10 +314,6 @@ lazy_static! {
             params: vec![Type::Primitive(PrimitiveType::Str)],
             return_type: Type::Void,
         });
-        m.insert("println", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Void,
-        });
         m.insert("read_line", BuiltInSig {
             params: vec![],
             return_type: Type::Primitive(PrimitiveType::Str),
@@ -491,11 +487,6 @@ impl SemanticAnalyzer {
         let builtins = vec![
             (
                 "print",
-                vec![Type::Primitive(PrimitiveType::Str)],
-                Type::Void,
-            ),
-            (
-                "println",
                 vec![Type::Primitive(PrimitiveType::Str)],
                 Type::Void,
             ),

@@ -2,4 +2,4 @@
 source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Test forward referencing: mutual recursion\nfn even(int n) returns bool {\n    if n == 0 {\n        return true\n    } else {\n        return odd(n - 1)\n    }\n}\n\nfn odd(int n) returns bool {\n    if n == 0 {\n        return false\n    } else {\n        return even(n - 1)\n    }\n}\n\nfn main() returns void {\n    println(even(4).to_string())\n    println(odd(5).to_string())\n    println(even(7).to_string())\n    println(odd(8).to_string())\n}\n"
+"// Variable declarations and type inference\nconst int MAX = 100\nint explicit = 42\nauto inferred = 4.89\nauto name = \"Mux\"\n\nauto flag = true\nauto otherflag = false\n\nprint(\"MAX: 100\")\nprint(\"explicit: 42\")\nprint(\"inferred: 4.89\")\nprint(\"name: Mux\")\nprint(\"flag: true\")\nprint(\"otherflag: false\")\n\nint counter = 0\nprint(\"counter: 0\")\ncounter++\nprint(\"counter: 1\")\ncounter++\nprint(\"counter: 2\")\n\nint countdown = 5\nprint(\"countdown: 5\")\ncountdown--\nprint(\"countdown: 4\")\ncountdown--\nprint(\"countdown: 3\")\n"
