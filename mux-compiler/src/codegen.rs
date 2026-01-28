@@ -159,6 +159,26 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_string_to_string", fn_type, None);
 
+        // mux_string_to_int: (*const c_char) -> *mut MuxResult
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_string_to_int", fn_type, None);
+
+        // mux_string_to_float: (*const c_char) -> *mut MuxResult
+        let params = &[i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_string_to_float", fn_type, None);
+
+        // mux_char_to_int: (i64) -> *mut MuxResult
+        let params = &[i64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_char_to_int", fn_type, None);
+
+        // mux_char_to_string: (i64) -> *const c_char
+        let params = &[i64_type.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_char_to_string", fn_type, None);
+
         // mux_list_to_string: (*mut List) -> *const c_char
         let params = &[i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
@@ -2060,7 +2080,12 @@ impl<'a> CodeGenerator<'a> {
                                     Ok(raw_bool.into())
                                 }
                                 PrimitiveType::Str => Ok(ptr_to_boxed.into()),
-                                PrimitiveType::Char | PrimitiveType::Void | PrimitiveType::Auto => {
+                                PrimitiveType::Char => {
+                                    // Char is stored as i64
+                                    let raw_char = self.get_raw_int_value(ptr_to_boxed.into())?;
+                                    Ok(raw_char.into())
+                                }
+                                PrimitiveType::Void | PrimitiveType::Auto => {
                                     Err(format!("Unsupported primitive type {:?}", prim))
                                 }
                             }
@@ -3698,6 +3723,27 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?;
                                 return Ok(call2.try_as_basic_value().left().unwrap());
                             }
+                            Type::Primitive(PrimitiveType::Int) if field == "to_float" => {
+                                // Get the boxed int value
+                                let ptr = self.generate_expression(expr)?;
+                                // Extract the raw i64 value
+                                let raw_int = self.get_raw_int_value(ptr)?;
+                                // Convert to f64 using sitofp instruction
+                                let float_val = self
+                                    .builder
+                                    .build_signed_int_to_float(
+                                        raw_int,
+                                        self.context.f64_type(),
+                                        "int_to_float",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(float_val.into());
+                            }
+                            Type::Primitive(PrimitiveType::Int) if field == "to_int" => {
+                                // Identity function - just return the boxed int value
+                                let int_val = self.generate_expression(expr)?;
+                                return Ok(int_val);
+                            }
                             Type::Primitive(PrimitiveType::Float) if field == "to_string" => {
                                 let float_val = self.generate_expression(expr)?;
                                 // call mux_float_to_string directly on the raw float
@@ -3723,6 +3769,27 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?;
                                 return Ok(call2.try_as_basic_value().left().unwrap());
                             }
+                            Type::Primitive(PrimitiveType::Float) if field == "to_int" => {
+                                // Get the boxed float value
+                                let ptr = self.generate_expression(expr)?;
+                                // Extract the raw f64 value
+                                let raw_float = self.get_raw_float_value(ptr)?;
+                                // Convert to i64 using fptosi instruction (truncates)
+                                let int_val = self
+                                    .builder
+                                    .build_float_to_signed_int(
+                                        raw_float,
+                                        self.context.i64_type(),
+                                        "float_to_int",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(int_val.into());
+                            }
+                            Type::Primitive(PrimitiveType::Float) if field == "to_float" => {
+                                // Identity function - just return the boxed float value
+                                let float_val = self.generate_expression(expr)?;
+                                return Ok(float_val);
+                            }
                             Type::Primitive(PrimitiveType::Bool) if field == "to_string" => {
                                 let ptr = self.generate_expression(expr)?;
                                 let func = self
@@ -3747,6 +3814,38 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?;
                                 return Ok(call2.try_as_basic_value().left().unwrap());
                             }
+                            Type::Primitive(PrimitiveType::Bool) if field == "to_int" => {
+                                // Get the boxed bool value
+                                let ptr = self.generate_expression(expr)?;
+                                // Extract the raw i32 value
+                                let raw_bool = self.get_raw_bool_value(ptr)?;
+                                // Extend i32 to i64: true -> 1, false -> 0
+                                let int_val = self
+                                    .builder
+                                    .build_int_z_extend(
+                                        raw_bool,
+                                        self.context.i64_type(),
+                                        "bool_to_int",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(int_val.into());
+                            }
+                            Type::Primitive(PrimitiveType::Bool) if field == "to_float" => {
+                                // Get the boxed bool value
+                                let ptr = self.generate_expression(expr)?;
+                                // Extract the raw i32 value
+                                let raw_bool = self.get_raw_bool_value(ptr)?;
+                                // Convert i32 to f64: true -> 1.0, false -> 0.0
+                                let float_val = self
+                                    .builder
+                                    .build_unsigned_int_to_float(
+                                        raw_bool,
+                                        self.context.f64_type(),
+                                        "bool_to_float",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(float_val.into());
+                            }
                             Type::Primitive(PrimitiveType::Str) if field == "to_string" => {
                                 let ptr = self.generate_expression(expr)?;
                                 let func = self
@@ -3770,6 +3869,110 @@ impl<'a> CodeGenerator<'a> {
                                     )
                                     .map_err(|e| e.to_string())?;
                                 return Ok(call2.try_as_basic_value().left().unwrap());
+                            }
+                            Type::Primitive(PrimitiveType::Str) if field == "to_int" => {
+                                // Get the string value (it's a *mut Value)
+                                let ptr = self.generate_expression(expr)?;
+                                // Call mux_value_to_string to get *const c_char
+                                let func_to_cstr = self
+                                    .module
+                                    .get_function("mux_value_to_string")
+                                    .ok_or("mux_value_to_string not found")?;
+                                let cstr = self
+                                    .builder
+                                    .build_call(func_to_cstr, &[ptr.into()], "str_to_cstr")
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap();
+                                // Call mux_string_to_int which returns *mut MuxResult
+                                let func = self
+                                    .module
+                                    .get_function("mux_string_to_int")
+                                    .ok_or("mux_string_to_int not found")?;
+                                let result_ptr = self
+                                    .builder
+                                    .build_call(func, &[cstr.into()], "str_to_int")
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap();
+                                return Ok(result_ptr);
+                            }
+                            Type::Primitive(PrimitiveType::Str) if field == "to_float" => {
+                                // Get the string value (it's a *mut Value)
+                                let ptr = self.generate_expression(expr)?;
+                                // Call mux_value_to_string to get *const c_char
+                                let func_to_cstr = self
+                                    .module
+                                    .get_function("mux_value_to_string")
+                                    .ok_or("mux_value_to_string not found")?;
+                                let cstr = self
+                                    .builder
+                                    .build_call(func_to_cstr, &[ptr.into()], "str_to_cstr")
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap();
+                                // Call mux_string_to_float which returns *mut MuxResult
+                                let func = self
+                                    .module
+                                    .get_function("mux_string_to_float")
+                                    .ok_or("mux_string_to_float not found")?;
+                                let result_ptr = self
+                                    .builder
+                                    .build_call(func, &[cstr.into()], "str_to_float")
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap();
+                                return Ok(result_ptr);
+                            }
+                            Type::Primitive(PrimitiveType::Char) if field == "to_int" => {
+                                // Get the char value (it's an i64)
+                                let char_val = self.generate_expression(expr)?;
+                                // Call mux_char_to_int which returns *mut MuxResult
+                                let func = self
+                                    .module
+                                    .get_function("mux_char_to_int")
+                                    .ok_or("mux_char_to_int not found")?;
+                                let result_ptr = self
+                                    .builder
+                                    .build_call(func, &[char_val.into()], "char_to_int")
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap();
+                                return Ok(result_ptr);
+                            }
+                            Type::Primitive(PrimitiveType::Char) if field == "to_string" => {
+                                // Get the char value (it's an i64)
+                                let char_val = self.generate_expression(expr)?;
+                                // Call mux_char_to_string which returns *const c_char
+                                let func = self
+                                    .module
+                                    .get_function("mux_char_to_string")
+                                    .ok_or("mux_char_to_string not found")?;
+                                let cstr = self
+                                    .builder
+                                    .build_call(func, &[char_val.into()], "char_to_str")
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap();
+                                // Convert to *mut Value (string)
+                                let func_new = self
+                                    .module
+                                    .get_function("mux_new_string_from_cstr")
+                                    .ok_or("mux_new_string_from_cstr not found")?;
+                                let result = self
+                                    .builder
+                                    .build_call(func_new, &[cstr.into()], "new_str")
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .unwrap();
+                                return Ok(result);
                             }
                             _ => {}
                         }
@@ -5408,15 +5611,16 @@ impl<'a> CodeGenerator<'a> {
                     Ok(call2.try_as_basic_value().left().unwrap())
                 }
                 "to_float" => {
-                    let func = self
-                        .module
-                        .get_function("mux_int_to_float")
-                        .ok_or("mux_int_to_float not found")?;
-                    let call = self
+                    // Convert raw i64 to f64 using LLVM sitofp instruction
+                    let float_val = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "int_to_float")
+                        .build_signed_int_to_float(
+                            obj_value.into_int_value(),
+                            self.context.f64_type(),
+                            "int_to_float",
+                        )
                         .map_err(|e| e.to_string())?;
-                    Ok(call.try_as_basic_value().left().unwrap())
+                    Ok(float_val.into())
                 }
                 "to_int" => {
                     // int.to_int() just returns itself (identity operation)
@@ -5449,15 +5653,17 @@ impl<'a> CodeGenerator<'a> {
                     Ok(call2.try_as_basic_value().left().unwrap())
                 }
                 "to_int" => {
-                    let func = self
-                        .module
-                        .get_function("mux_float_to_int")
-                        .ok_or("mux_float_to_int not found")?;
-                    let call = self
+                    // float.to_int() - direct LLVM conversion using fptosi
+                    let float_val = obj_value.into_float_value();
+                    let int_val = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "float_to_int")
+                        .build_float_to_signed_int(
+                            float_val,
+                            self.context.i64_type(),
+                            "float_to_int",
+                        )
                         .map_err(|e| e.to_string())?;
-                    Ok(call.try_as_basic_value().left().unwrap())
+                    Ok(int_val.into())
                 }
                 "to_float" => {
                     // float.to_float() just returns itself (identity operation)
@@ -5488,6 +5694,56 @@ impl<'a> CodeGenerator<'a> {
                         )
                         .map_err(|e| e.to_string())?;
                     Ok(call2.try_as_basic_value().left().unwrap())
+                }
+                "to_int" => {
+                    // str.to_int() - call mux_string_to_int which returns Result<int, str>
+                    // First convert the boxed string to a C string
+                    let func_to_cstr = self
+                        .module
+                        .get_function("mux_value_to_string")
+                        .ok_or("mux_value_to_string not found")?;
+                    let cstr = self
+                        .builder
+                        .build_call(func_to_cstr, &[obj_value.into()], "str_to_cstr")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap();
+                    // Now call mux_string_to_int with the C string
+                    let func = self
+                        .module
+                        .get_function("mux_string_to_int")
+                        .ok_or("mux_string_to_int not found")?;
+                    let call = self
+                        .builder
+                        .build_call(func, &[cstr.into()], "str_to_int")
+                        .map_err(|e| e.to_string())?;
+                    Ok(call.try_as_basic_value().left().unwrap())
+                }
+                "to_float" => {
+                    // str.to_float() - call mux_string_to_float which returns Result<float, str>
+                    // First convert the boxed string to a C string
+                    let func_to_cstr = self
+                        .module
+                        .get_function("mux_value_to_string")
+                        .ok_or("mux_value_to_string not found")?;
+                    let cstr = self
+                        .builder
+                        .build_call(func_to_cstr, &[obj_value.into()], "str_to_cstr")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap();
+                    // Now call mux_string_to_float with the C string
+                    let func = self
+                        .module
+                        .get_function("mux_string_to_float")
+                        .ok_or("mux_string_to_float not found")?;
+                    let call = self
+                        .builder
+                        .build_call(func, &[cstr.into()], "str_to_float")
+                        .map_err(|e| e.to_string())?;
+                    Ok(call.try_as_basic_value().left().unwrap())
                 }
                 "length" => {
                     let func = self
@@ -5554,44 +5810,46 @@ impl<'a> CodeGenerator<'a> {
                     Ok(call2.try_as_basic_value().left().unwrap())
                 }
                 "to_int" => {
-                    let func = self
-                        .module
-                        .get_function("mux_bool_to_int")
-                        .ok_or("mux_bool_to_int not found")?;
-                    let call = self
+                    // bool.to_int() - direct LLVM conversion
+                    // obj_value is i32 (0 or 1), extend to i64
+                    let bool_i32 = obj_value.into_int_value();
+                    let int_val = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "bool_to_int")
+                        .build_int_z_extend(bool_i32, self.context.i64_type(), "bool_to_int")
                         .map_err(|e| e.to_string())?;
-                    Ok(call.try_as_basic_value().left().unwrap())
+                    Ok(int_val.into())
                 }
                 "to_float" => {
-                    let func = self
-                        .module
-                        .get_function("mux_bool_to_float")
-                        .ok_or("mux_bool_to_float not found")?;
-                    let call = self
+                    // bool.to_float() - direct LLVM conversion
+                    // obj_value is i32 (0 or 1), convert to f64
+                    let bool_i32 = obj_value.into_int_value();
+                    let float_val = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "bool_to_float")
+                        .build_unsigned_int_to_float(
+                            bool_i32,
+                            self.context.f64_type(),
+                            "bool_to_float",
+                        )
                         .map_err(|e| e.to_string())?;
-                    Ok(call.try_as_basic_value().left().unwrap())
+                    Ok(float_val.into())
                 }
                 _ => Err(format!("Method {} not implemented for bool", method_name)),
             },
             PrimitiveType::Char => match method_name {
                 "to_string" => {
+                    // char.to_string() - call mux_char_to_string
                     let func = self
                         .module
-                        .get_function("mux_float_to_string")
-                        .ok_or("mux_float_to_string not found")?;
+                        .get_function("mux_char_to_string")
+                        .ok_or("mux_char_to_string not found")?;
                     let call = self
                         .builder
-                        .build_call(func, &[obj_value.into()], "float_to_str")
+                        .build_call(func, &[obj_value.into()], "char_to_str")
                         .map_err(|e| e.to_string())?;
                     let func_new = self
                         .module
                         .get_function("mux_new_string_from_cstr")
                         .ok_or("mux_new_string_from_cstr not found")?;
-                    // handle pointer return value
                     let call2 = self
                         .builder
                         .build_call(
@@ -5600,9 +5858,20 @@ impl<'a> CodeGenerator<'a> {
                             "new_str",
                         )
                         .map_err(|e| e.to_string())?;
-                    // mux_new_string_from_cstr returns a pointer
-                    let result = call2.try_as_basic_value().left().unwrap();
-                    Ok(result)
+                    Ok(call2.try_as_basic_value().left().unwrap())
+                }
+                "to_int" => {
+                    // char.to_int() - call mux_char_to_int which returns Result<int, str>
+                    // Only works for '0'-'9', returns error for other chars
+                    let func = self
+                        .module
+                        .get_function("mux_char_to_int")
+                        .ok_or("mux_char_to_int not found")?;
+                    let call = self
+                        .builder
+                        .build_call(func, &[obj_value.into()], "char_to_int")
+                        .map_err(|e| e.to_string())?;
+                    Ok(call.try_as_basic_value().left().unwrap())
                 }
                 _ => Err(format!("Method {} not implemented for char", method_name)),
             },
@@ -8839,6 +9108,7 @@ impl<'a> CodeGenerator<'a> {
                     PrimitiveType::Float => Type::Primitive(PrimitiveType::Float),
                     PrimitiveType::Bool => Type::Primitive(PrimitiveType::Bool),
                     PrimitiveType::Str => Type::Primitive(PrimitiveType::Str),
+                    PrimitiveType::Char => Type::Primitive(PrimitiveType::Char),
                     _ => return Err(format!("Unsupported primitive type {:?}", primitive)),
                 };
                 if expected != *arg_type {

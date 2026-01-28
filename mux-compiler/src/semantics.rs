@@ -1487,13 +1487,36 @@ impl SemanticAnalyzer {
                         _ => None,
                     },
                     PrimitiveType::Str => match method_name {
-                        "to_string" | "length" => Some(MethodSig {
+                        "to_string" => Some(MethodSig {
                             params: vec![],
-                            return_type: if method_name == "to_string" {
-                                Type::Primitive(PrimitiveType::Str)
-                            } else {
-                                Type::Primitive(PrimitiveType::Int)
-                            },
+                            return_type: Type::Primitive(PrimitiveType::Str),
+                            is_static: false,
+                        }),
+                        "length" => Some(MethodSig {
+                            params: vec![],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
+                        "to_int" => Some(MethodSig {
+                            params: vec![],
+                            return_type: Type::Named(
+                                "Result".to_string(),
+                                vec![
+                                    Type::Primitive(PrimitiveType::Int),
+                                    Type::Primitive(PrimitiveType::Str),
+                                ],
+                            ),
+                            is_static: false,
+                        }),
+                        "to_float" => Some(MethodSig {
+                            params: vec![],
+                            return_type: Type::Named(
+                                "Result".to_string(),
+                                vec![
+                                    Type::Primitive(PrimitiveType::Float),
+                                    Type::Primitive(PrimitiveType::Str),
+                                ],
+                            ),
                             is_static: false,
                         }),
                         _ => None,
@@ -1516,6 +1539,17 @@ impl SemanticAnalyzer {
                         "to_string" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Primitive(PrimitiveType::Str),
+                            is_static: false,
+                        }),
+                        "to_int" => Some(MethodSig {
+                            params: vec![],
+                            return_type: Type::Named(
+                                "Result".to_string(),
+                                vec![
+                                    Type::Primitive(PrimitiveType::Int),
+                                    Type::Primitive(PrimitiveType::Str),
+                                ],
+                            ),
                             is_static: false,
                         }),
                         _ => None,
