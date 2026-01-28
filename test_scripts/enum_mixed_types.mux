@@ -1,110 +1,110 @@
 // Comprehensive test for enum variants with mixed types
 // Tests that enum field extraction handles different types correctly
 
-println("=== Testing Basic Mixed Primitives ===")
+print("=== Testing Basic Mixed Primitives ===")
 
 // Test 1: Enum with different primitive types per variant
 enum Status { Active(string), Inactive(int), Pending(bool), Code(char) }
 
 auto status1 = Status.Active("running")
 match status1 {
-    Active(msg) { println("✓ Status.Active(string): " + msg) }
-    Inactive(code) { println("✗ Unexpected Inactive") }
-    Pending(flag) { println("✗ Unexpected Pending") }
-    Code(c) { println("✗ Unexpected Code") }
+    Active(msg) { print("✓ Status.Active(string): " + msg) }
+    Inactive(code) { print("✗ Unexpected Inactive") }
+    Pending(flag) { print("✗ Unexpected Pending") }
+    Code(c) { print("✗ Unexpected Code") }
 }
 
 auto status2 = Status.Inactive(42)
 match status2 {
-    Active(msg) { println("✗ Unexpected Active") }
-    Inactive(code) { println("✓ Status.Inactive(int): " + code.to_string()) }
-    Pending(flag) { println("✗ Unexpected Pending") }
-    Code(c) { println("✗ Unexpected Code") }
+    Active(msg) { print("✗ Unexpected Active") }
+    Inactive(code) { print("✓ Status.Inactive(int): " + code.to_string()) }
+    Pending(flag) { print("✗ Unexpected Pending") }
+    Code(c) { print("✗ Unexpected Code") }
 }
 
 auto status3 = Status.Pending(true)
 match status3 {
-    Active(msg) { println("✗ Unexpected Active") }
-    Inactive(code) { println("✗ Unexpected Inactive") }
-    Pending(flag) { println("✓ Status.Pending(bool): " + flag.to_string()) }
-    Code(c) { println("✗ Unexpected Code") }
+    Active(msg) { print("✗ Unexpected Active") }
+    Inactive(code) { print("✗ Unexpected Inactive") }
+    Pending(flag) { print("✓ Status.Pending(bool): " + flag.to_string()) }
+    Code(c) { print("✗ Unexpected Code") }
 }
 
 auto status4 = Status.Code('X')
 match status4 {
-    Active(msg) { println("✗ Unexpected Active") }
-    Inactive(code) { println("✗ Unexpected Inactive") }
-    Pending(flag) { println("✗ Unexpected Pending") }
-    Code(c) { println("✓ Status.Code(char): extracted char value") }
+    Active(msg) { print("✗ Unexpected Active") }
+    Inactive(code) { print("✗ Unexpected Inactive") }
+    Pending(flag) { print("✗ Unexpected Pending") }
+    Code(c) { print("✓ Status.Code(char): extracted char value") }
 }
 
-println("")
-println("=== Testing Collections as Enum Fields ===")
+print("")
+print("=== Testing Collections as Enum Fields ===")
 
 // Test 2: Enum with collection types
 enum DataContainer { Names(list<string>), Scores(map<string, int>), Tags(set<string>) }
 
 auto data1 = DataContainer.Names(["Alice", "Bob", "Charlie"])
 match data1 {
-    Names(lst) { println("✓ DataContainer.Names(list<string>): extracted list") }
-    Scores(m) { println("✗ Unexpected Scores") }
-    Tags(s) { println("✗ Unexpected Tags") }
+    Names(lst) { print("✓ DataContainer.Names(list<string>): extracted list") }
+    Scores(m) { print("✗ Unexpected Scores") }
+    Tags(s) { print("✗ Unexpected Tags") }
 }
 
 auto scores_map = {"Alice": 100, "Bob": 85}
 auto data2 = DataContainer.Scores(scores_map)
 match data2 {
-    Names(lst) { println("✗ Unexpected Names") }
-    Scores(m) { println("✓ DataContainer.Scores(map<string, int>): extracted map") }
-    Tags(s) { println("✗ Unexpected Tags") }
+    Names(lst) { print("✗ Unexpected Names") }
+    Scores(m) { print("✓ DataContainer.Scores(map<string, int>): extracted map") }
+    Tags(s) { print("✗ Unexpected Tags") }
 }
 
 auto tags_set = {"important", "urgent"}  // Using set literal with strings
 auto data3 = DataContainer.Tags(tags_set)
 match data3 {
-    Names(lst) { println("✗ Unexpected Names") }
-    Scores(m) { println("✗ Unexpected Scores") }
-    Tags(s) { println("✓ DataContainer.Tags(set<string>): extracted set") }
+    Names(lst) { print("✗ Unexpected Names") }
+    Scores(m) { print("✗ Unexpected Scores") }
+    Tags(s) { print("✓ DataContainer.Tags(set<string>): extracted set") }
 }
 
-println("")
-println("=== Testing Multiple Fields of Different Types ===")
+print("")
+print("=== Testing Multiple Fields of Different Types ===")
 
 // Test 3: Enum with variants having different numbers and types of fields
 enum ComplexVariant { Simple(string), Detailed(string, int, bool), Numeric(int, float) }
 
 auto var1 = ComplexVariant.Simple("just a message")
 match var1 {
-    Simple(msg) { println("✓ ComplexVariant.Simple(string): " + msg) }
-    Detailed(msg, code, flag) { println("✗ Unexpected Detailed") }
-    Numeric(i, f) { println("✗ Unexpected Numeric") }
+    Simple(msg) { print("✓ ComplexVariant.Simple(string): " + msg) }
+    Detailed(msg, code, flag) { print("✗ Unexpected Detailed") }
+    Numeric(i, f) { print("✗ Unexpected Numeric") }
 }
 
 auto var2 = ComplexVariant.Detailed("error occurred", 404, false)
 match var2 {
-    Simple(msg) { println("✗ Unexpected Simple") }
+    Simple(msg) { print("✗ Unexpected Simple") }
     Detailed(msg, code, flag) { 
-        println("✓ ComplexVariant.Detailed(string, int, bool):")
-        println("  msg: " + msg)
-        println("  code: " + code.to_string())
-        println("  flag: " + flag.to_string())
+        print("✓ ComplexVariant.Detailed(string, int, bool):")
+        print("  msg: " + msg)
+        print("  code: " + code.to_string())
+        print("  flag: " + flag.to_string())
     }
-    Numeric(i, f) { println("✗ Unexpected Numeric") }
+    Numeric(i, f) { print("✗ Unexpected Numeric") }
 }
 
 auto var3 = ComplexVariant.Numeric(123, 45.67)
 match var3 {
-    Simple(msg) { println("✗ Unexpected Simple") }
-    Detailed(msg, code, flag) { println("✗ Unexpected Detailed") }
+    Simple(msg) { print("✗ Unexpected Simple") }
+    Detailed(msg, code, flag) { print("✗ Unexpected Detailed") }
     Numeric(i, f) { 
-        println("✓ ComplexVariant.Numeric(int, float):")
-        println("  int: " + i.to_string())
-        println("  float: " + f.to_string())
+        print("✓ ComplexVariant.Numeric(int, float):")
+        print("  int: " + i.to_string())
+        print("  float: " + f.to_string())
     }
 }
 
-println("")
-println("=== Testing Type-Specific Operations ===")
+print("")
+print("=== Testing Type-Specific Operations ===")
 
 // Test 4: Verify extracted values work correctly in operations
 enum Value { Text(string), Number(int) }
@@ -117,29 +117,29 @@ match val1 {
         match val2 {
             Text(s2) { 
                 auto combined = s1 + s2
-                println("✓ String concatenation: " + combined)
+                print("✓ String concatenation: " + combined)
             }
-            Number(n) { println("✗ Unexpected Number") }
+            Number(n) { print("✗ Unexpected Number") }
         }
     }
-    Number(n) { println("✗ Unexpected Number") }
+    Number(n) { print("✗ Unexpected Number") }
 }
 
 auto val3 = Value.Number(10)
 auto val4 = Value.Number(32)
 
 match val3 {
-    Text(s) { println("✗ Unexpected Text") }
+    Text(s) { print("✗ Unexpected Text") }
     Number(n1) {
         match val4 {
-            Text(s) { println("✗ Unexpected Text") }
+            Text(s) { print("✗ Unexpected Text") }
             Number(n2) {
                 auto sum = n1 + n2
-                println("✓ Integer arithmetic: " + sum.to_string())
+                print("✓ Integer arithmetic: " + sum.to_string())
             }
         }
     }
 }
 
-println("")
-println("=== All Mixed-Type Enum Tests Completed ===")
+print("")
+print("=== All Mixed-Type Enum Tests Completed ===")

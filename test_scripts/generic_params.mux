@@ -66,32 +66,32 @@ class Triple<X, Y, Z> {
 
 // Test Box<V> with int
 auto box_int = Box<int>.from(42)
-println(box_int.get().to_string())
+print(box_int.get().to_string())
 
 // Test Box<V> with string
 auto box_string = Box<string>.from("hello")
-println(box_string.get().to_string())
+print(box_string.get().to_string())
 
 // Test Pair<First, Second> with string and bool
 auto pair1 = Pair<string, bool>.from("status successful", true)
-println(pair1.get_left().to_string())
-println(pair1.get_right().to_string())
+print(pair1.get_left().to_string())
+print(pair1.get_right().to_string())
 
 // Test Pair<First, Second> with int and float
 auto pair2 = Pair<int, float>.from(42, 3.14)
-println(pair2.get_left().to_string())
-println(pair2.get_right().to_string())
+print(pair2.get_left().to_string())
+print(pair2.get_right().to_string())
 
 // Test Triple<X, Y, Z> with mixed types
 auto triple1 = Triple<int, string, float>.from(1, "two", 3.0)
-println(triple1.get_a().to_string())
-println(triple1.get_b().to_string())
-println(triple1.get_c().to_string())
+print(triple1.get_a().to_string())
+print(triple1.get_b().to_string())
+print(triple1.get_c().to_string())
 
 // Test Triple<X, Y, Z> with all ints
 auto triple2 = Triple<int, int, int>.from(100, 200, 300)
-println(triple2.get_a().to_string())
-println(triple2.get_b().to_string())
-println(triple2.get_c().to_string())
+print(triple2.get_a().to_string())
+print(triple2.get_b().to_string())
+print(triple2.get_c().to_string())
 
-println("All tests passed!")
+print("All tests passed!")

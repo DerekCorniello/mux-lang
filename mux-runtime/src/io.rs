@@ -13,10 +13,6 @@ pub fn print(s: &str) {
     std::io::Write::flush(&mut std::io::stdout()).unwrap();
 }
 
-pub fn println(s: &str) {
-    println!("{}", s);
-}
-
 pub fn read_line() -> Result<String, String> {
     let mut input = String::new();
     io::stdin()
@@ -65,25 +61,6 @@ pub extern "C" fn mux_print_cstr(s: *const c_char) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_print(val: *mut Value) {
-    let val = unsafe { &*val };
-    if let Value::String(s) = val {
-        print!("{}", s);
-    } else {
-        print!("{:?}", val);
-    }
-    std::io::Write::flush(&mut std::io::stdout()).unwrap();
-}
-
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_println(s: *const c_char) {
-    let s = unsafe { CStr::from_ptr(s).to_string_lossy() };
-    println!("{}", s);
-}
-
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_println_val(val: *mut Value) {
     let val = unsafe { &*val };
     println!("{}", val);
 }

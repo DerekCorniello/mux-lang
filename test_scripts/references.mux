@@ -2,18 +2,18 @@
 int val = 10
 auto r = &val
 
-println("ref value: " + (*r).to_string())
+print("ref value: " + (*r).to_string())
 
 *r = 20
-println("val after ref update: " + (*r).to_string())
+print("val after ref update: " + (*r).to_string())
 
 // References to list elements
-println("abt to make list")
+print("abt to make list")
 auto numbers = [1, 2, 3, 4, 5]
-println("list made")
+print("list made")
 
 auto first = &numbers[0]
-println("first element: " + (*first).to_string())
+print("first element: " + (*first).to_string())
 
 // Function taking a reference
 func update(&int ref) returns void {
@@ -21,4 +21,4 @@ func update(&int ref) returns void {
 }
 
 update(&val)
-println("val after update: " + val.to_string())
+print("val after update: " + val.to_string())

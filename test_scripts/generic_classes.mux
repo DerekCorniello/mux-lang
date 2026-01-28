@@ -17,10 +17,10 @@ class Box<T> {
 
 auto int_box = Box<int>.new()
 int_box.set(42)
-println(int_box.to_string())
+print(int_box.to_string())
 
 auto string_box = Box<string>.new()
 string_box.set("hello")
-println(string_box.to_string())
+print(string_box.to_string())
 
-println("Generic class test completed")
+print("Generic class test completed")

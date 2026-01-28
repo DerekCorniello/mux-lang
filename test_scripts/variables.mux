@@ -7,23 +7,23 @@ auto name = "Mux"
 auto flag = true
 auto otherflag = false
 
-println("MAX: 100")
-println("explicit: 42")
-println("inferred: 4.89")
-println("name: Mux")
-println("flag: true")
-println("otherflag: false")
+print("MAX: 100")
+print("explicit: 42")
+print("inferred: 4.89")
+print("name: Mux")
+print("flag: true")
+print("otherflag: false")
 
 int counter = 0
-println("counter: 0")
+print("counter: 0")
 counter++
-println("counter: 1")
+print("counter: 1")
 counter++
-println("counter: 2")
+print("counter: 2")
 
 int countdown = 5
-println("countdown: 5")
+print("countdown: 5")
 countdown--
-println("countdown: 4")
+print("countdown: 4")
 countdown--
-println("countdown: 3")
+print("countdown: 3")
