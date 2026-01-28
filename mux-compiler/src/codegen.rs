@@ -9135,7 +9135,7 @@ impl<'a> CodeGenerator<'a> {
             Type::Primitive(PrimitiveType::Int) => "int".to_string(),
             Type::Primitive(PrimitiveType::Float) => "float".to_string(),
             Type::Primitive(PrimitiveType::Bool) => "bool".to_string(),
-            Type::Primitive(PrimitiveType::Str) => "str".to_string(),
+            Type::Primitive(PrimitiveType::Str) => "string".to_string(),
             Type::List(inner) => format!("list_{}", self.type_to_string(inner)),
             _ => "unknown".to_string(),
         }

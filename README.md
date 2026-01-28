@@ -48,7 +48,7 @@ int      // 64-bit signed integer
 float    // 64-bit IEEE-754
 bool     // true | false
 char     // Unicode code point
-str      // UTF-8 sequence
+string   // UTF-8 sequence
 ```
 
 ### 3.2 Type Conversions
@@ -74,7 +74,7 @@ auto pi_same = pi.to_float()    // float -> float (identity)
 auto flag = true
 auto flag_int = flag.to_int()   // bool -> int (true=1, false=0)
 auto flag_float = flag.to_float() // bool -> float (true=1.0, false=0.0)
-auto flag_str = flag.to_string() // bool -> str ("true" or "false")
+auto flag_str = flag.to_string() // bool -> string ("true" or "false")
 
 // Char conversions
 auto ch = 'A'
@@ -88,7 +88,7 @@ auto val = (42).to_float()      // Valid
 
 #### 3.2.2 String Parsing (Fallible Conversions)
 
-String and char parsing methods return `Result<T, str>` because they can fail:
+String and char parsing methods return `Result<T, string>` because they can fail:
 
 ```mux
 // String to number (returns Result)
@@ -134,16 +134,16 @@ The following operations are **compile-time errors**:
 ```mux
 // Type mismatches in binary operations
 auto bad1 = 1 + 1.0        // ERROR: cannot add int and float
-auto bad2 = "hello" + 3    // ERROR: cannot add str and int
+auto bad2 = "hello" + 3    // ERROR: cannot add string and int
 auto bad3 = true + false   // ERROR: cannot add bool and bool
 
 // Type mismatches in comparisons
 auto bad4 = 1 < 1.0        // ERROR: cannot compare int and float
-auto bad5 = "a" == 1       // ERROR: cannot compare str and int
+auto bad5 = "a" == 1       // ERROR: cannot compare string and int
 
 // Function argument type mismatches
-func takes_string(str s) returns void { }
-takes_string(123)          // ERROR: expected str, got int
+func takes_string(string s) returns void { }
+takes_string(123)          // ERROR: expected string, got int
 
 // Correct usage requires explicit conversion
 auto good1 = 1 + (1.0).to_int()           // OK: 2
@@ -156,20 +156,20 @@ auto good4 = (true).to_int() + (false).to_int()  // OK: 1
 
 | From Type | Method | Returns | Notes |
 |-----------|--------|---------|-------|
-| `int` | `.to_string()` | `str` | Converts to string representation |
+| `int` | `.to_string()` | `string` | Converts to string representation |
 | `int` | `.to_float()` | `float` | Converts to floating-point |
 | `int` | `.to_int()` | `int` | Identity function |
-| `float` | `.to_string()` | `str` | Converts to string representation |
+| `float` | `.to_string()` | `string` | Converts to string representation |
 | `float` | `.to_int()` | `int` | Truncates decimal part |
 | `float` | `.to_float()` | `float` | Identity function |
-| `bool` | `.to_string()` | `str` | Returns "true" or "false" |
+| `bool` | `.to_string()` | `string` | Returns "true" or "false" |
 | `bool` | `.to_int()` | `int` | Returns 1 or 0 |
 | `bool` | `.to_float()` | `float` | Returns 1.0 or 0.0 |
-| `char` | `.to_string()` | `str` | Converts char to string |
-| `char` | `.to_int()` | `Result<int, str>` | Digit value for '0'-'9' only |
-| `str` | `.to_string()` | `str` | Identity function |
-| `str` | `.to_int()` | `Result<int, str>` | Parses string as integer |
-| `str` | `.to_float()` | `Result<float, str>` | Parses string as float |
+| `char` | `.to_string()` | `string` | Converts char to string |
+| `char` | `.to_int()` | `Result<int, string>` | Digit value for '0'-'9' only |
+| `string` | `.to_string()` | `str` | Identity function |
+| `string` | `.to_int()` | `Result<int, string>` | Parses string as integer |
+| `string` | `.to_float()` | `Result<float, string>` | Parses string as float |
 
 ### 3.3 Composite Types
 
@@ -256,7 +256,7 @@ func processOrdered<T Ordered & Numeric>(T value) returns T {
 // Type inference with generics
 Vec<int> numbers = [1, 2, 3, 4, 5]
 int maximum = max(3, 7)        // Generic T inferred as int
-auto pairs = zip(numbers, ["a", "b", "c"])  // T=int, U=str inferred
+auto pairs = zip(numbers, ["a", "b", "c"])  // T=int, U=string inferred
 ```
 
 ### 3.6 User-Defined Types
@@ -277,7 +277,7 @@ const int MAX = 100
 // Variables (explicit type required for declarations without inference)
 int x = 5
 bool flag = true
-str name = "MuxLang"
+string name = "MuxLang"
 ```
 
 ### 4.2 Variable Declarations
@@ -292,13 +292,13 @@ auto name = "Mux"    // inferred as str
 
 // Explicit type annotation
 int count = 0
-list<str> names = []
-map<str, str | int> user = {"name": "Alice", "age": 30}
+list<string> names = []
+map<string, string | int> user = {"name": "Alice", "age": 30}
 
 // Valid inference
 auto value = someFunction()
 auto numbers = [1, 2, 3]
-map<str, str> userMap = {"key": "value"}
+map<string, string> userMap = {"key": "value"}
 
 // Invalid - no initializer with 'auto'
 auto x  // ERROR: cannot infer type without initializer
@@ -358,21 +358,21 @@ func add(int a, int b) returns int {
     return a + b
 }
 
-func greet(str name, int times = 1) returns void {
+func greet(string name, int times = 1) returns void {
     for i in range(0, times) {
         print("Hello, " + name)
     }
 }
 
-func processData() returns map<str, int> {
-    map<str, int> results = {"processed": 100, "skipped": 5}
+func processData() returns map<string, int> {
+    map<string, int> results = {"processed": 100, "skipped": 5}
     auto total = results["processed"] + results["skipped"]
     results["total"] = total
     return results
 }
 
 // Function with unused parameters
-func callback(str event, int timestamp, str _) returns void {
+func callback(string event, int timestamp, string _) returns void {
     print("Event: " + event + " at " + timestamp)
     // third parameter ignored
 }
@@ -563,7 +563,7 @@ class Circle is Drawable, ShapeLike {
     }
     
     // Method with unused parameters
-    func resize(float newRadius, str _) returns void {
+    func resize(float newRadius, string _) returns void {
         radius = newRadius  // second parameter ignored
     }
 }
@@ -589,7 +589,7 @@ class Stack<T> {
 auto circle = Circle(5.0)  // type inferred as Circle
 list<Drawable> shapes = [circle]
 Stack<int> intStack = Stack<int>()  // explicit generic instantiation
-Stack<str> stringStack = Stack<str>()  // alternative syntax
+Stack<string> stringStack = Stack<str>()  // alternative syntax
 ```
 
 - `is TraitA, TraitB` declares implemented traits; compiler enforces required methods
@@ -605,30 +605,30 @@ Stack<str> stringStack = Stack<str>()  // alternative syntax
 ```
 // Explicit typing
 list<int> nums = [1, 2, 3, 4]
-map<str, int> scores = {"Alice": 90, "Bob": 85}
+map<string, int> scores = {"Alice": 90, "Bob": 85}
 
 // With type inference
 auto nums = [1, 2, 3, 4]           // inferred as list<int>
-map<str, int> scores = {"Alice": 90, "Bob": 85}
+map<string, int> scores = {"Alice": 90, "Bob": 85}
 // mixed = [1, 2.5, 3]           // ERROR: conflicting types, explicit type needed
 
 // Nested collections
 list<list<int>> matrix = [[1, 2], [3, 4]]
-map<str, list<int>> lookup = {"users": [1, 2, 3], "admins": [4, 5]}
+map<string, list<int>> lookup = {"users": [1, 2, 3], "admins": [4, 5]}
 
 // Complex nested structures
 auto users = [
     {"name": "Alice", "scores": [95, 87, 92]},
     {"name": "Bob", "scores": [78, 85, 90]}
-]  // inferred as list<map<str, str | list<int>>>
+]  // inferred as list<map<string, string | list<int>>>
 
 auto data = {
     "numbers": [1, 2, 3, 4, 5],
     "metadata": {"version": "1.0", "count": 5}
-}  // inferred as map<str, list<int> | map<str, str | int>>
+}  // inferred as map<string, list<int> | map<string, string | int>>
 
 // Generic collections
-list<Pair<int, str>> pairs = [Pair(1, "one"), Pair(2, "two")]
+list<Pair<int, string>> pairs = [Pair(1, "one"), Pair(2, "two")]
 list<Container<int>> containers = list<Container<int>>()
 ```
 
@@ -639,7 +639,7 @@ list<Container<int>> containers = list<Container<int>>()
 ### 11.1 `Result<T, E>`
 
 ```
-func divide(int a, int b) returns Result<int, str> {
+func divide(int a, int b) returns Result<int, string> {
     if b == 0 {
         return Err("division by zero")
     }
@@ -647,7 +647,7 @@ func divide(int a, int b) returns Result<int, str> {
 }
 
 // Usage with inference
-auto result = divide(10, 2)  // inferred as Result<int, str>
+auto result = divide(10, 2)  // inferred as Result<int, string>
 match result {
     Ok(value) {
         auto message = "Result: " + value  // local inference
@@ -823,11 +823,11 @@ import utils.logger as _  // imported but not directly used in this scope
 list<int> empty = []           // empty collection needs explicit type
 auto empty = list<int>()       // or explicit constructor
 
-Result<int, str> pending    // uninitialized variables need explicit type
+Result<int, string> pending    // uninitialized variables need explicit type
 
 // Generic instantiation may need explicit types
 Stack[int] stack = Stack[int]()      // explicit generic parameter
-auto pairs = zip<int, str>(numbers, names)  // when inference is ambiguous
+auto pairs = zip<int, string>(numbers, names)  // when inference is ambiguous
 ```
 
 ### 15.3 Using Underscore Effectively
@@ -835,7 +835,7 @@ auto pairs = zip<int, str>(numbers, names)  // when inference is ambiguous
 ```
 // Good uses of underscore
 auto (first, _) = getTuple()           // ignore second element
-func process(int data, str _) { }  // ignore second parameter
+func process(int data, string _) { }  // ignore second parameter
 for _ in range(0, 10) { }            // ignore loop counter
 match result { Ok(_) { } }           // ignore success value
 
@@ -887,14 +887,14 @@ func main() returns void {
     
     for shape in shapes {
         float area = shape.area()  // inferred as float
-        str message = "Area: " + area  // inferred as str
+        string message = "Area: " + area  // inferred as str
         print(message)
     }
     
     // Working with Results and inference
-    auto results = list<Result<float, str>>()
+    auto results = list<Result<float, string>>()
     for shape in shapes {
-        auto areaResult = Ok(shape.area())  // inferred as Result<float, str>
+        auto areaResult = Ok(shape.area())  // inferred as Result<float, string>
         results.append(areaResult)
     }
     
@@ -903,8 +903,8 @@ func main() returns void {
         return s.area()  // inferred as list<float>
     })
     
-    auto descriptions = map(areas, func(str a) {
-        return "Area: " + a  // inferred as list<str>
+    auto descriptions = map(areas, func(string a) {
+        return "Area: " + a  // inferred as list<string>
     })
     
     // Pattern matching with underscore
@@ -951,7 +951,7 @@ This document outlines a week-by-week schedule for the development of MuxLang's 
 | 2 | **Lexer Implementation** | Implement lexer; test tokenization | Working lexer |
 | 3 | **Parser Implementation** | Parse expressions & statements; build AST | Working parser |
 | 4 | **REPL Prototype** | Minimal REPL to test parsing/evaluation; parser tests | REPL prototype, parser test cases |
-| 5 | **Type System – Core Types** | Implement int, float, bool, str, arrays; AST integration | Core type checker functional |
+| 5 | **Type System – Core Types** | Implement int, float, bool, string, arrays; AST integration | Core type checker functional |
 | 6 | **Type System – Functions & Scope** | Type checking for functions, variables, scopes | Type checker integrated with function support |
 | 7 | **Type System – Traits/Interfaces** | Implement `is Trait` system; write tests | Trait system functional, test suite |
 | 8 | **Memory Management Design** | Decide GC vs manual; design allocator/GC; integrate AST/runtime | Memory management design doc, skeleton allocator/GC |
@@ -959,7 +959,7 @@ This document outlines a week-by-week schedule for the development of MuxLang's 
 | 10 | **LLVM Setup & Expression Codegen** | Install/setup LLVM; codegen for simple expressions | LLVM backend running simple expression programs |
 | 11 | **LLVM Statement & Function Codegen** | Extend codegen to statements, loops, functions | Core constructs codegen functional |
 | 12 | **Integration Testing** | Combine type checker, memory system, LLVM codegen; debug integration | MVP programs running end-to-end |
-| 13 | **Standard Library – Core Types** | Implement I/O, collections, str utilities | Minimal stdlib working |
+| 13 | **Standard Library – Core Types** | Implement I/O, collections, string utilities | Minimal stdlib working |
 | 14 | **Compiler CLI & REPL Improvements** | Implement `mux run/build`; improve REPL; debugging | Usable compiler CLI with REPL |
 | 15 | **Testing & Examples** | Write example programs; test edge cases; fix remaining bugs | Test suite, example programs |
 | 16 | **Polish & Documentation** | Expand stdlib, improve error reporting, finalize docs | Polished MVP, documentation, final project report |

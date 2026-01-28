@@ -2,4 +2,4 @@
 source: mux-compiler/tests/source_integration.rs
 expression: "format!(\"{:#?}\", expected)"
 ---
-"// Test void return lambdas\nauto void_lambda = func() returns void {\n    println(\"Hello from void lambda\")\n    return\n}\n\nauto void_lambda_with_params = func(string message) returns void {\n    println(\"Message: \" + message)\n    return\n}\n\n// Test calling them\nvoid_lambda()\nvoid_lambda_with_params(\"Test message\")\n\nprintln(\"Void lambda test completed\")\n"
+"// Variable declarations and type inference\nconst int MAX = 100\nint explicit = 42\nauto inferred = 4.89\nauto name = \"Mux\"\n\nauto flag = true\nauto otherflag = false\n\nprintln(\"MAX: 100\")\nprintln(\"explicit: 42\")\nprintln(\"inferred: 4.89\")\nprintln(\"name: Mux\")\nprintln(\"flag: true\")\nprintln(\"otherflag: false\")\n\nint counter = 0\nprintln(\"counter: 0\")\ncounter++\nprintln(\"counter: 1\")\ncounter++\nprintln(\"counter: 2\")\n\nint countdown = 5\nprintln(\"countdown: 5\")\ncountdown--\nprintln(\"countdown: 4\")\ncountdown--\nprintln(\"countdown: 3\")\n"

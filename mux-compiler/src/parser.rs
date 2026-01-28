@@ -2762,7 +2762,7 @@ impl PrimitiveType {
                 "float" => Ok(PrimitiveType::Float),
                 "bool" => Ok(PrimitiveType::Bool),
                 "char" => Ok(PrimitiveType::Char),
-                "str" | "string" => Ok(PrimitiveType::Str),
+                "string" => Ok(PrimitiveType::Str),
                 "void" => Ok(PrimitiveType::Void),
                 "auto" => Ok(PrimitiveType::Auto),
                 _ => Err(ParserError::new(
