@@ -2200,6 +2200,34 @@ impl SemanticAnalyzer {
         // add fields to class scope.
         for field in fields {
             let field_type = self.resolve_type(&field.type_)?;
+
+            // Type-check default value if present
+            if let Some(default_expr) = &field.default_value {
+                let default_type = self.get_expression_type(default_expr)?;
+
+                // Check that default type matches field type
+                if default_type != field_type {
+                    return Err(SemanticError {
+                        message: format!(
+                            "Field '{}' has type {:?} but default value has type {:?}",
+                            field.name, field_type, default_type
+                        ),
+                        span: default_expr.span,
+                    });
+                }
+
+                // Check that generic type parameters don't have default values
+                if field.is_generic_param {
+                    return Err(SemanticError {
+                        message: format!(
+                            "Generic type parameter field '{}' cannot have a default value",
+                            field.name
+                        ),
+                        span: default_expr.span,
+                    });
+                }
+            }
+
             self.symbol_table.add_symbol(
                 &field.name,
                 Symbol {

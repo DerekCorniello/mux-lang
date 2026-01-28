@@ -6,4 +6,4 @@ add(3,4): 7
 Hello World
 Hello World
 square(5): 25
-doubled(3.5): 7
+doubled(3.5): 7.0

@@ -9,10 +9,10 @@ Big number
 maybeNum created
 Large value: 15
 nums: [1, 2, 3]
-c1.radius set to: 2
+c1.radius set to: 2.0
 c2.radius set to: 3.5
 cirs created with 2 circles
-Circle radius=2
+Circle radius=2.0
 Circle radius=3.5
 stack created
 pushed 99 to stack

@@ -4,10 +4,10 @@ expression: full_output
 ---
 in draw
 In Circ arm
-Drawing circle with radius: 5
+Drawing circle with radius: 5.0
 in draw
 In Rect arm
-Drawing rectangle with width: 10 height: 20
+Drawing rectangle with width: 10.0 height: 20.0
 1
 9
 status successful

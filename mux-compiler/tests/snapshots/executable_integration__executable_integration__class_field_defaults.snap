@@ -1,0 +1,29 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+=== Test 1: User's Original Example ===
+5.0
+Circle radius=5.0
+=== Test 2: Override and Instance Independence ===
+Modified c.radius: 10.0
+New instance c2.radius: 5.0
+=== Test 3: All Primitive Types ===
+int: 42
+float: 3.14
+string: MuxLang
+bool: true
+=== Test 4: Mixed Fields ===
+with_default: 100
+no_default (should be 0): 0.0
+another: test
+=== Test 5: Const Fields ===
+MAX_SIZE: 1000
+VERSION: 1.0.0
+current: 0
+=== Test 6: Multiple Instances ===
+circle1: 1.0
+circle2: 2.0
+circle3: 3.0
+circle4 (new, should be 5.0): 5.0
+=== All Tests Passed! ===
