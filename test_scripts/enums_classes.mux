@@ -1,10 +1,16 @@
 // Enums and Classes - Extended Shapes Example
 enum Shape { Circ(float r), Rect(float w, float h) }  // Tagged union for shape data
 
-interface DrawableShape { func draw() returns void }  // Interface for drawable behavior
+interface DrawableShape { 
+    string color  // Interface field: implementing classes must have a color
+    const string category = "shape"  // Interface const field with default value
+    func draw() returns void
+}
 
 class GenericShape is DrawableShape {
     Shape shape  // Class contains enum for data
+    string color  // Required by DrawableShape interface
+    const string category = "shape"  // Required const field from interface
     func draw() returns void {
         print("in draw")
         match self.shape {
@@ -25,6 +31,7 @@ class GenericShape is DrawableShape {
     common func from(Shape init_shape) returns GenericShape {
         GenericShape new_shape = GenericShape.new()
         new_shape.shape = init_shape
+        new_shape.color = "blue"  // Set interface field
         return new_shape
     }
 }
@@ -59,6 +66,12 @@ auto shapes = [circle, rect]
 for GenericShape s in shapes {
     s.draw()  // Polymorphic call via interface
 }
+
+// Test interface fields
+print("Circle color: " + circle.color)
+print("Circle category: " + circle.category)
+circle.color = "red"
+print("Circle color after change: " + circle.color)
 
 auto homogenous_pair = Pair<int, int>.from(1, 9)
 auto heterogenous_pair = Pair<string, bool>.from("status successful", true)

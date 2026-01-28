@@ -8,6 +8,9 @@ Drawing circle with radius: 5.0
 in draw
 In Rect arm
 Drawing rectangle with width: 10.0 height: 20.0
+Circle color: blue
+Circle category: shape
+Circle color after change: red
 1
 9
 status successful

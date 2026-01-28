@@ -1967,6 +1967,50 @@ impl SemanticAnalyzer {
                                 });
                             }
                         }
+
+                        // Validate interface field requirements
+                        if let Some(interface_symbol) = self.symbol_table.lookup(interface_name) {
+                            for (field_name, (interface_field_type, interface_is_const)) in
+                                &interface_symbol.fields
+                            {
+                                if let Some((class_field_type, class_is_const)) =
+                                    fields_map.get(field_name)
+                                {
+                                    // Check type compatibility
+                                    if !self
+                                        .types_compatible(class_field_type, interface_field_type)
+                                    {
+                                        self.errors.push(SemanticError {
+                                            message: format!(
+                                                "Field '{}' type mismatch in class '{}': class has {:?}, interface '{}' requires {:?}",
+                                                field_name, name, class_field_type, interface_name, interface_field_type
+                                            ),
+                                            span: *node.span(),
+                                        });
+                                    }
+
+                                    // Check const compatibility
+                                    if *interface_is_const && !*class_is_const {
+                                        self.errors.push(SemanticError {
+                                            message: format!(
+                                                "Field '{}' must be const in class '{}' to implement interface '{}'",
+                                                field_name, name, interface_name
+                                            ),
+                                            span: *node.span(),
+                                        });
+                                    }
+                                } else {
+                                    // Field missing in class
+                                    self.errors.push(SemanticError {
+                                        message: format!(
+                                            "Class '{}' missing required field '{}' from interface '{}'",
+                                            name, field_name, interface_name
+                                        ),
+                                        span: *node.span(),
+                                    });
+                                }
+                            }
+                        }
                     }
 
                     if let Err(e) = self.symbol_table.add_symbol(
@@ -2022,6 +2066,7 @@ impl SemanticAnalyzer {
                 AstNode::Interface {
                     name,
                     type_params,
+                    fields,
                     methods,
                     ..
                 } => {
@@ -2040,6 +2085,29 @@ impl SemanticAnalyzer {
                         };
                         interface_methods.insert(method.name.clone(), method_sig);
                     }
+
+                    // Process interface fields
+                    let mut interface_fields = std::collections::HashMap::new();
+                    for field in fields {
+                        let field_type = self.resolve_type(&field.type_)?;
+
+                        // Validate default value type if present
+                        if let Some(default_expr) = &field.default_value {
+                            let default_type = self.infer_literal_type(default_expr)?;
+                            if !self.types_compatible(&default_type, &field_type) {
+                                self.errors.push(SemanticError {
+                                    message: format!(
+                                        "Default value type mismatch for field '{}': expected {:?}, got {:?}",
+                                        field.name, field_type, default_type
+                                    ),
+                                    span: default_expr.span,
+                                });
+                            }
+                        }
+
+                        interface_fields.insert(field.name.clone(), (field_type, field.is_const));
+                    }
+
                     let mut interfaces_map = std::collections::HashMap::new();
                     interfaces_map.insert(name.clone(), interface_methods);
                     if let Err(e) = self.symbol_table.add_symbol(
@@ -2050,7 +2118,7 @@ impl SemanticAnalyzer {
                             type_: None,
                             interfaces: interfaces_map,
                             methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
+                            fields: interface_fields,
                             type_params: type_params
                                 .iter()
                                 .map(|(p, b)| {
@@ -2962,6 +3030,28 @@ impl SemanticAnalyzer {
                 Ok(())
             }
         }
+    }
+
+    fn infer_literal_type(&self, expr: &ExpressionNode) -> Result<Type, SemanticError> {
+        match &expr.kind {
+            ExpressionKind::Literal(lit) => match lit {
+                LiteralNode::Integer(_) => Ok(Type::Primitive(PrimitiveType::Int)),
+                LiteralNode::Float(_) => Ok(Type::Primitive(PrimitiveType::Float)),
+                LiteralNode::String(_) => Ok(Type::Primitive(PrimitiveType::Str)),
+                LiteralNode::Boolean(_) => Ok(Type::Primitive(PrimitiveType::Bool)),
+                LiteralNode::Char(_) => Ok(Type::Primitive(PrimitiveType::Char)),
+            },
+            _ => Err(SemanticError {
+                message: "Expected literal expression".to_string(),
+                span: expr.span,
+            }),
+        }
+    }
+
+    fn types_compatible(&self, type1: &Type, type2: &Type) -> bool {
+        // Simple type compatibility check
+        // For now, require exact match. Can be enhanced later for covariance/contravariance
+        type1 == type2
     }
 }
 
