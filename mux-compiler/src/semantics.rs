@@ -27,6 +27,8 @@ pub struct Symbol {
     pub methods: std::collections::HashMap<String, MethodSig>,
     pub fields: std::collections::HashMap<String, (Type, bool)>, // (Type, is_const)
     pub type_params: Vec<(String, Vec<String>)>,
+    pub original_name: Option<String>, // For imported symbols with aliases, stores the original source name
+    pub llvm_name: Option<String>,     // For imported symbols, stores the mangled LLVM name
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +56,7 @@ pub enum Type {
     // i am using it in codegen
     #[allow(dead_code)]
     Instantiated(String, Vec<Type>), // Concrete instantiation like "Pair<string, bool>"
+    Module(String), // Module namespace (e.g., "shapes" from "import shapes")
 }
 
 #[derive(Debug, Clone)]
@@ -435,6 +438,12 @@ pub struct SemanticAnalyzer {
     errors: Vec<SemanticError>,
     is_in_static_method: bool,
     pub current_self_type: Option<Type>,
+    pub module_resolver: Option<Rc<RefCell<crate::module_resolver::ModuleResolver>>>,
+    pub imported_symbols:
+        std::collections::HashMap<String, std::collections::HashMap<String, Symbol>>,
+    pub all_module_asts: std::collections::HashMap<String, Vec<AstNode>>,
+    pub module_dependencies: Vec<String>,
+    current_file: Option<std::path::PathBuf>, // Track current file for relative imports
 }
 
 impl Default for SemanticAnalyzer {
@@ -444,6 +453,11 @@ impl Default for SemanticAnalyzer {
 }
 
 impl SemanticAnalyzer {
+    // Helper function to sanitize module paths for use in identifiers
+    fn sanitize_module_path(module_path: &str) -> String {
+        module_path.replace(['.', '/'], "_")
+    }
+
     pub fn new() -> Self {
         let symbol_table = SymbolTable::new();
         Self {
@@ -452,6 +466,49 @@ impl SemanticAnalyzer {
             errors: Vec::new(),
             is_in_static_method: false,
             current_self_type: None,
+            module_resolver: None,
+            imported_symbols: std::collections::HashMap::new(),
+            all_module_asts: std::collections::HashMap::new(),
+            module_dependencies: Vec::new(),
+            current_file: None,
+        }
+    }
+
+    pub fn new_with_resolver(
+        resolver: Rc<RefCell<crate::module_resolver::ModuleResolver>>,
+    ) -> Self {
+        let symbol_table = SymbolTable::new();
+        Self {
+            symbol_table,
+            current_bounds: std::collections::HashMap::new(),
+            errors: Vec::new(),
+            is_in_static_method: false,
+            current_self_type: None,
+            module_resolver: Some(resolver),
+            imported_symbols: std::collections::HashMap::new(),
+            all_module_asts: std::collections::HashMap::new(),
+            module_dependencies: Vec::new(),
+            current_file: None,
+        }
+    }
+
+    pub fn set_current_file(&mut self, file: std::path::PathBuf) {
+        self.current_file = Some(file);
+    }
+
+    fn new_for_module(resolver: Rc<RefCell<crate::module_resolver::ModuleResolver>>) -> Self {
+        let symbol_table = SymbolTable::new();
+        Self {
+            symbol_table,
+            current_bounds: std::collections::HashMap::new(),
+            errors: Vec::new(),
+            is_in_static_method: false,
+            current_self_type: None,
+            module_resolver: Some(resolver),
+            imported_symbols: std::collections::HashMap::new(),
+            all_module_asts: std::collections::HashMap::new(),
+            module_dependencies: Vec::new(),
+            current_file: None,
         }
     }
 
@@ -462,6 +519,16 @@ impl SemanticAnalyzer {
 
     pub fn all_symbols(&self) -> &std::collections::HashMap<String, Symbol> {
         &self.symbol_table.all_symbols
+    }
+
+    pub fn imported_symbols(
+        &self,
+    ) -> &std::collections::HashMap<String, std::collections::HashMap<String, Symbol>> {
+        &self.imported_symbols
+    }
+
+    pub fn all_module_asts(&self) -> &std::collections::HashMap<String, Vec<AstNode>> {
+        &self.all_module_asts
     }
 
     // check if a name is a built-in function and return its signature
@@ -540,6 +607,8 @@ impl SemanticAnalyzer {
                         methods: std::collections::HashMap::new(),
                         fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
                     },
                 )
                 .unwrap();
@@ -1022,7 +1091,36 @@ impl SemanticAnalyzer {
             }
             ExpressionKind::FieldAccess { expr, field } => {
                 let expr_type = self.get_expression_type(expr)?;
-                if let Some(method_sig) = self.get_method_sig(&expr_type, field) {
+
+                // Handle module.symbol access (e.g., shapes.create_shape)
+                if let Type::Module(module_name) = &expr_type {
+                    // Look up the imported symbols for this module
+                    if let Some(module_symbols) = self.imported_symbols.get(module_name) {
+                        if let Some(symbol) = module_symbols.get(field) {
+                            // Return the type of the symbol from the imported module
+                            symbol.type_.clone().ok_or_else(|| SemanticError {
+                                message: format!(
+                                    "Symbol '{}' in module '{}' has no type information",
+                                    field, module_name
+                                ),
+                                span: expr.span,
+                            })
+                        } else {
+                            Err(SemanticError {
+                                message: format!(
+                                    "Module '{}' has no exported symbol '{}'",
+                                    module_name, field
+                                ),
+                                span: expr.span,
+                            })
+                        }
+                    } else {
+                        Err(SemanticError {
+                            message: format!("Module '{}' not found in imports", module_name),
+                            span: expr.span,
+                        })
+                    }
+                } else if let Some(method_sig) = self.get_method_sig(&expr_type, field) {
                     Ok(Type::Function {
                         params: method_sig.params,
                         returns: Box::new(method_sig.return_type),
@@ -1134,6 +1232,8 @@ impl SemanticAnalyzer {
                             methods: std::collections::HashMap::new(),
                             fields: std::collections::HashMap::new(),
                             type_params: Vec::new(),
+                            original_name: None,
+                            llvm_name: None,
                         },
                     )?;
                 }
@@ -1823,6 +1923,8 @@ impl SemanticAnalyzer {
                                     (p.clone(), b.iter().map(|tb| tb.name.clone()).collect())
                                 })
                                 .collect::<Vec<(String, Vec<String>)>>(),
+                            original_name: None,
+                            llvm_name: None,
                         },
                     ) {
                         self.errors.push(e);
@@ -2023,6 +2125,8 @@ impl SemanticAnalyzer {
                             methods: methods_map,
                             fields: fields_map,
                             type_params: type_param_bounds,
+                            original_name: None,
+                            llvm_name: None,
                         },
                     ) {
                         self.errors.push(e);
@@ -2058,6 +2162,8 @@ impl SemanticAnalyzer {
                             methods,
                             fields: std::collections::HashMap::new(),
                             type_params: Vec::new(),
+                            original_name: None,
+                            llvm_name: None,
                         },
                     ) {
                         self.errors.push(e);
@@ -2125,6 +2231,8 @@ impl SemanticAnalyzer {
                                     (p.clone(), b.iter().map(|tb| tb.name.clone()).collect())
                                 })
                                 .collect::<Vec<(String, Vec<String>)>>(),
+                            original_name: None,
+                            llvm_name: None,
                         },
                     ) {
                         self.errors.push(e);
@@ -2207,6 +2315,8 @@ impl SemanticAnalyzer {
                     methods: std::collections::HashMap::new(),
                     fields: std::collections::HashMap::new(),
                     type_params: Vec::new(),
+                    original_name: None,
+                    llvm_name: None,
                 },
             )?;
         }
@@ -2223,6 +2333,8 @@ impl SemanticAnalyzer {
                     methods: std::collections::HashMap::new(),
                     fields: std::collections::HashMap::new(),
                     type_params: Vec::new(),
+                    original_name: None,
+                    llvm_name: None,
                 },
             )?;
         }
@@ -2240,6 +2352,8 @@ impl SemanticAnalyzer {
                     methods: std::collections::HashMap::new(),
                     fields: std::collections::HashMap::new(),
                     type_params: Vec::new(),
+                    original_name: None,
+                    llvm_name: None,
                 },
             )?;
         }
@@ -2306,6 +2420,8 @@ impl SemanticAnalyzer {
                     methods: std::collections::HashMap::new(),
                     fields: std::collections::HashMap::new(),
                     type_params: Vec::new(),
+                    original_name: None,
+                    llvm_name: None,
                 },
             )?;
         }
@@ -2349,6 +2465,8 @@ impl SemanticAnalyzer {
                     methods: std::collections::HashMap::new(),
                     fields: std::collections::HashMap::new(),
                     type_params: Vec::new(),
+                    original_name: None,
+                    llvm_name: None,
                 },
             )?;
             let self_type = if method.is_common {
@@ -2389,6 +2507,8 @@ impl SemanticAnalyzer {
                         methods: std::collections::HashMap::new(),
                         fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
                     },
                 )?;
             }
@@ -2431,6 +2551,8 @@ impl SemanticAnalyzer {
                         methods: std::collections::HashMap::new(),
                         fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
                     },
                 )?;
             }
@@ -2448,6 +2570,8 @@ impl SemanticAnalyzer {
                         methods: std::collections::HashMap::new(),
                         fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
                     },
                 )?;
             }
@@ -2473,6 +2597,8 @@ impl SemanticAnalyzer {
                         methods: std::collections::HashMap::new(),
                         fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
                     },
                 )?;
             }
@@ -2520,6 +2646,8 @@ impl SemanticAnalyzer {
                         methods: std::collections::HashMap::new(),
                         fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
                     },
                 )?;
                 self.analyze_block(body)?;
@@ -2550,52 +2678,135 @@ impl SemanticAnalyzer {
             StatementKind::Return(Some(expr)) => {
                 self.analyze_expression(expr)?;
             }
-            StatementKind::Import { module_path, alias } => {
-                // in a real implementation, we would resolve the module path, analyze the imported module, and add its symbols to the current scope.
-                // for now, we'll just track the import for later resolution.
+            StatementKind::Import { module_path, spec } => {
+                use crate::parser::ImportSpec;
 
-                let symbol_name = if let Some(alias) = alias {
-                    alias
-                } else {
-                    // if no alias, use the last component of the module path as the symbol name.
-                    module_path.split('.').last().unwrap_or(module_path)
-                };
+                // Handle std library specially
+                if module_path.starts_with("std.") {
+                    self.handle_std_import(module_path, spec, stmt.span)?;
+                    return Ok(());
+                }
 
-                // TODO: implement proper stdlib resolution instead of faking imports.
-                // fake stdlib: if importing from std, treat as predefined symbol.
-                let (kind, type_) = if module_path.starts_with("std.") {
-                    if let Some(sig) = self.get_builtin_sig(symbol_name) {
-                        (
-                            SymbolKind::Function,
-                            Some(Type::Function {
-                                params: sig.params.clone(),
-                                returns: Box::new(sig.return_type.clone()),
-                            }),
-                        )
-                    } else if symbol_name == "None" {
-                        (
-                            SymbolKind::Constant,
-                            Some(Type::Optional(Box::new(Type::Void))),
-                        )
-                    } else {
-                        (SymbolKind::Variable, None) // treat as variables/constants for simplicity.
-                    }
-                } else {
-                    (SymbolKind::Import, None)
-                };
+                // Clone the resolver early to avoid borrow issues
+                let resolver = self.module_resolver.clone().ok_or_else(|| SemanticError {
+                    message: "Module resolver not available".to_string(),
+                    span: stmt.span,
+                })?;
 
-                self.symbol_table.add_symbol(
-                    symbol_name,
-                    Symbol {
-                        kind,
+                let module_nodes = resolver
+                    .borrow_mut()
+                    .resolve_import_path(module_path, self.current_file.as_deref())
+                    .map_err(|e| SemanticError {
+                        message: format!("Import error: {}", e),
                         span: stmt.span,
-                        type_,
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                    },
-                )?;
+                    })?;
+
+                // Analyze the imported module
+                let mut module_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+                module_analyzer.set_current_file(std::path::PathBuf::from(
+                    module_path.replace('.', "/") + ".mux",
+                ));
+                let errors = module_analyzer.analyze(&module_nodes);
+                if !errors.is_empty() {
+                    return Err(SemanticError {
+                        message: format!("Errors in imported module {}: {:?}", module_path, errors),
+                        span: stmt.span,
+                    });
+                }
+
+                // Get all symbols from the module
+                let module_symbols = module_analyzer.symbol_table.all_symbols.clone();
+
+                // Compute mangled LLVM names for functions in this module
+                let module_name_for_mangling = Self::sanitize_module_path(module_path);
+
+                // Merge ALL symbols from the imported module into the main symbol table
+                // This is needed for codegen to work properly
+                for (name, symbol) in &module_symbols {
+                    // Skip built-in functions to avoid conflicts
+                    if !matches!(symbol.kind, SymbolKind::Function)
+                        || !name.starts_with("print")
+                            && !name.starts_with("read_line")
+                            && !name.starts_with("range")
+                            && !name.starts_with("Some")
+                            && !name.starts_with("None")
+                            && !name.starts_with("Ok")
+                            && !name.starts_with("Err")
+                    {
+                        // Add symbol to main symbol table if it doesn't already exist
+                        if !self.symbol_table.all_symbols.contains_key(name) {
+                            let mut mangled_symbol = symbol.clone();
+                            // For functions, set the mangled LLVM name
+                            if matches!(symbol.kind, SymbolKind::Function) {
+                                mangled_symbol.llvm_name =
+                                    Some(format!("{}_{}", module_name_for_mangling, name));
+                            }
+                            self.symbol_table
+                                .all_symbols
+                                .insert(name.clone(), mangled_symbol);
+                        }
+                    }
+                }
+
+                // Process import specification
+                match spec {
+                    ImportSpec::Module { alias } => {
+                        if let Some(namespace) = alias {
+                            // import logger (as ns) - add as namespaced module
+                            self.add_module_namespace(
+                                namespace,
+                                module_symbols,
+                                module_path,
+                                stmt.span,
+                            )?;
+                        }
+                        // if alias is None, it's a side-effect import (as _) - don't add symbols
+                    }
+
+                    ImportSpec::Item { item, alias } => {
+                        // import logger.log (as lg)
+                        let symbol_name = alias.as_ref().unwrap_or(item);
+                        self.import_single_symbol(
+                            &module_symbols,
+                            item,
+                            symbol_name,
+                            module_path,
+                            stmt.span,
+                        )?;
+                    }
+
+                    ImportSpec::Items { items } => {
+                        // import logger.(log, error as err)
+                        for (item, alias) in items {
+                            let symbol_name = alias.as_ref().unwrap_or(item);
+                            self.import_single_symbol(
+                                &module_symbols,
+                                item,
+                                symbol_name,
+                                module_path,
+                                stmt.span,
+                            )?;
+                        }
+                    }
+
+                    ImportSpec::Wildcard => {
+                        // import logger.* - import all symbols without namespace
+                        self.import_all_symbols(&module_symbols, module_path, stmt.span)?;
+                    }
+                }
+
+                // Cache module and track dependencies
+                resolver
+                    .borrow_mut()
+                    .cache_module(module_path, module_nodes.clone());
+                resolver.borrow_mut().finish_import(module_path);
+
+                self.all_module_asts
+                    .insert(module_path.to_string(), module_nodes);
+
+                if !self.module_dependencies.contains(&module_path.to_string()) {
+                    self.module_dependencies.push(module_path.to_string());
+                }
             }
             _ => {} // handle other statement types
         }
@@ -2621,6 +2832,8 @@ impl SemanticAnalyzer {
                         methods: std::collections::HashMap::new(),
                         fields: std::collections::HashMap::new(),
                         type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
                     },
                 )?;
             }
@@ -3011,6 +3224,8 @@ impl SemanticAnalyzer {
                             methods: std::collections::HashMap::new(),
                             fields: std::collections::HashMap::new(),
                             type_params: Vec::new(),
+                            original_name: None,
+                            llvm_name: None,
                         },
                     )?;
                 }
@@ -3052,6 +3267,191 @@ impl SemanticAnalyzer {
         // Simple type compatibility check
         // For now, require exact match. Can be enhanced later for covariance/contravariance
         type1 == type2
+    }
+
+    // Add module as namespace (import logger as log)
+    fn add_module_namespace(
+        &mut self,
+        namespace: &str,
+        symbols: std::collections::HashMap<String, Symbol>,
+        module_path: &str,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        // Mangle function names in the symbols before storing
+        let module_name_for_mangling = module_path.replace(['.', '/'], "_");
+        let mut mangled_symbols = std::collections::HashMap::new();
+
+        for (name, symbol) in symbols {
+            let mut mangled_symbol = symbol.clone();
+            // Set llvm_name for functions
+            if matches!(symbol.kind, SymbolKind::Function) {
+                mangled_symbol.llvm_name = Some(format!("{}_{}", module_name_for_mangling, name));
+            }
+            mangled_symbols.insert(name, mangled_symbol);
+        }
+
+        // Store module symbols for namespaced access
+        self.imported_symbols
+            .insert(namespace.to_string(), mangled_symbols);
+
+        // Add module symbol to symbol table
+        self.symbol_table.add_symbol(
+            namespace,
+            Symbol {
+                kind: SymbolKind::Import,
+                span,
+                type_: Some(Type::Module(namespace.to_string())),
+                interfaces: std::collections::HashMap::new(),
+                methods: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                type_params: Vec::new(),
+                original_name: None,
+                llvm_name: None,
+            },
+        )?;
+
+        Ok(())
+    }
+
+    // Import single symbol (import logger.log)
+    fn import_single_symbol(
+        &mut self,
+        module_symbols: &std::collections::HashMap<String, Symbol>,
+        item_name: &str,
+        local_name: &str,
+        module_path: &str,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let symbol = module_symbols.get(item_name).ok_or_else(|| SemanticError {
+            message: format!("Symbol '{}' not found in module", item_name),
+            span,
+        })?;
+
+        // Clone the symbol and set original_name/llvm_name if needed
+        let mut imported_symbol = symbol.clone();
+
+        // Set original_name if it's an alias
+        if item_name != local_name {
+            imported_symbol.original_name = Some(item_name.to_string());
+        }
+
+        // Set llvm_name for functions (mangled with module path)
+        if matches!(symbol.kind, SymbolKind::Function) {
+            let module_name_for_mangling = module_path.replace(['.', '/'], "_");
+            imported_symbol.llvm_name = Some(format!("{}_{}", module_name_for_mangling, item_name));
+        }
+
+        self.symbol_table.add_symbol(local_name, imported_symbol)?;
+        Ok(())
+    }
+
+    // Import all symbols (import logger.*)
+    fn import_all_symbols(
+        &mut self,
+        module_symbols: &std::collections::HashMap<String, Symbol>,
+        module_path: &str,
+        _span: Span,
+    ) -> Result<(), SemanticError> {
+        let module_name_for_mangling = module_path.replace(['.', '/'], "_");
+
+        for (name, symbol) in module_symbols {
+            // Import all symbols directly into current namespace
+            // Skip if already exists in current scope to avoid conflicts
+            if self.symbol_table.get_cloned(name).is_none() {
+                let mut imported_symbol = symbol.clone();
+
+                // Set llvm_name for functions (mangled with module path)
+                if matches!(symbol.kind, SymbolKind::Function) {
+                    imported_symbol.llvm_name =
+                        Some(format!("{}_{}", module_name_for_mangling, name));
+                }
+
+                // Try to add, but ignore duplicate errors since we already checked
+                let _ = self.symbol_table.add_symbol(name, imported_symbol);
+            }
+        }
+        Ok(())
+    }
+
+    // Handle std library imports
+    fn handle_std_import(
+        &mut self,
+        module_path: &str,
+        spec: &crate::parser::ImportSpec,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        use crate::parser::ImportSpec;
+
+        match spec {
+            ImportSpec::Module { alias } => {
+                let symbol_name = alias
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or_else(|| module_path.split('.').last().unwrap());
+
+                if let Some(sig) = self.get_builtin_sig(symbol_name) {
+                    self.symbol_table.add_symbol(
+                        symbol_name,
+                        Symbol {
+                            kind: SymbolKind::Function,
+                            span,
+                            type_: Some(Type::Function {
+                                params: sig.params.clone(),
+                                returns: Box::new(sig.return_type.clone()),
+                            }),
+                            interfaces: std::collections::HashMap::new(),
+                            methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
+                            type_params: Vec::new(),
+                            original_name: None,
+                            llvm_name: None,
+                        },
+                    )?;
+                } else if symbol_name == "None" {
+                    self.symbol_table.add_symbol(
+                        symbol_name,
+                        Symbol {
+                            kind: SymbolKind::Constant,
+                            span,
+                            type_: Some(Type::Optional(Box::new(Type::Void))),
+                            interfaces: std::collections::HashMap::new(),
+                            methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
+                            type_params: Vec::new(),
+                            original_name: None,
+                            llvm_name: None,
+                        },
+                    )?;
+                }
+            }
+            ImportSpec::Item { item, alias } => {
+                // Support selective std imports: import std.io.print
+                let symbol_name = alias.as_ref().unwrap_or(item);
+                if let Some(sig) = self.get_builtin_sig(item) {
+                    self.symbol_table.add_symbol(
+                        symbol_name,
+                        Symbol {
+                            kind: SymbolKind::Function,
+                            span,
+                            type_: Some(Type::Function {
+                                params: sig.params.clone(),
+                                returns: Box::new(sig.return_type.clone()),
+                            }),
+                            interfaces: std::collections::HashMap::new(),
+                            methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
+                            type_params: Vec::new(),
+                            original_name: None,
+                            llvm_name: None,
+                        },
+                    )?;
+                }
+            }
+            _ => {
+                // Items and Wildcard can be supported similarly if needed
+            }
+        }
+        Ok(())
     }
 }
 

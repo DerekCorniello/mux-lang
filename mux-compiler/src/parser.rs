@@ -749,37 +749,142 @@ impl<'a> Parser<'a> {
 
     fn import_declaration(&mut self) -> ParserResult<AstNode> {
         let start_span = self.consume_token(TokenType::Import, "Expected 'import' keyword")?;
-        // parse module path, can be dotted like utils.logger.
-        let mut module_path_parts = Vec::new();
-        let first_part = self.consume_identifier("Expected module path after 'import'")?;
-        module_path_parts.push(first_part);
 
-        // handle dotted paths like utils.logger.
-        while self.matches(&[TokenType::Dot]) {
-            module_path_parts.push(self.consume_identifier("Expected module name after '.'")?);
-        }
+        // Parse module path (supports dots, relative ./, absolute /)
+        let module_path = self.parse_module_path()?;
 
-        // calculate end span for the full module path.
-        let end_span = if module_path_parts.len() > 1 {
-            // for multi-part paths, use current position span.
-            self.peek().span
+        // Parse import specification
+        let spec = if self.matches(&[TokenType::Dot]) {
+            // After dot: could be .item, .(items), or .*
+            if self.matches(&[TokenType::Star]) {
+                // import module.*
+                ImportSpec::Wildcard
+            } else if self.matches(&[TokenType::OpenParen]) {
+                // import module.(item1, item2 as alias, item3)
+                self.parse_import_items()?
+            } else {
+                // import module.item (as alias)
+                let item = self.consume_identifier("Expected item name after '.'")?;
+                let alias = if self.matches(&[TokenType::As]) {
+                    Some(self.consume_identifier("Expected alias after 'as'")?)
+                } else {
+                    None
+                };
+                ImportSpec::Item { item, alias }
+            }
         } else {
-            start_span
+            // import module (as alias or as _)
+            let alias = if self.matches(&[TokenType::As]) {
+                let alias_name = self.consume_identifier("Expected alias after 'as'")?;
+                // Check for side-effect import (as _)
+                if alias_name == "_" {
+                    None // Side-effect only, don't add symbols
+                } else {
+                    Some(alias_name)
+                }
+            } else {
+                // No alias, use module basename as namespace
+                Some(
+                    module_path
+                        .split('.')
+                        .last()
+                        .unwrap_or(&module_path)
+                        .to_string(),
+                )
+            };
+            ImportSpec::Module { alias }
         };
 
-        // join the parts with dots to create the full module path.
-        let module_path = module_path_parts.join(".");
-
-        let alias = if self.matches(&[TokenType::As]) {
-            Some(self.consume_identifier("Expected alias after 'as'")?)
-        } else {
-            None
-        };
+        let end_span = self.previous().span;
 
         Ok(AstNode::Statement(StatementNode {
-            kind: StatementKind::Import { module_path, alias },
+            kind: StatementKind::Import { module_path, spec },
             span: start_span.combine(&end_span),
         }))
+    }
+
+    // Parse module path with support for dots, relative (./, ../), and absolute (/)
+    fn parse_module_path(&mut self) -> ParserResult<String> {
+        let mut parts = Vec::new();
+
+        // Handle relative/absolute paths
+        if self.matches(&[TokenType::Dot]) {
+            parts.push(".".to_string());
+            // Could be ./ or ../
+            if self.matches(&[TokenType::Slash]) {
+                // ./module
+                parts.push("".to_string()); // Will join as ./
+            } else if self.matches(&[TokenType::Dot]) {
+                // ../module
+                parts.push(".".to_string());
+                self.consume_token(TokenType::Slash, "Expected '/' after '..'")?;
+                parts.push("".to_string());
+            }
+        } else if self.matches(&[TokenType::Slash]) {
+            // Absolute path /module
+            parts.push("".to_string()); // Leading slash
+        }
+
+        // Parse first identifier
+        parts.push(self.consume_identifier("Expected module path")?);
+
+        // Parse remaining dotted parts (utils.logger.helpers)
+        // Stop if we see:
+        // - .* (wildcard import)
+        // - .( (multiple items import)
+        // - .identifier followed by end/as/newline (single item import)
+        while self.check(TokenType::Dot) {
+            let next = self.peek_ahead(1);
+
+            // Stop if next token after dot is * or (
+            if next.is_some_and(|t| matches!(t.token_type, TokenType::Star | TokenType::OpenParen))
+            {
+                break;
+            }
+
+            // Stop if next is identifier but there's no dot after it (single item import)
+            if next.is_some_and(|t| matches!(t.token_type, TokenType::Id(_))) {
+                let after_identifier = self.peek_ahead(2);
+                if !after_identifier.is_some_and(|t| matches!(t.token_type, TokenType::Dot)) {
+                    // This is .identifier at end - it's an item import, not part of module path
+                    break;
+                }
+            }
+
+            self.advance(); // consume dot
+            parts.push(self.consume_identifier("Expected module name after '.'")?);
+        }
+
+        Ok(parts.join("."))
+    }
+
+    // Parse (item1, item2 as alias, item3)
+    fn parse_import_items(&mut self) -> ParserResult<ImportSpec> {
+        let mut items = Vec::new();
+
+        if !self.check(TokenType::CloseParen) {
+            loop {
+                let item = self.consume_identifier("Expected item name")?;
+                let alias = if self.matches(&[TokenType::As]) {
+                    Some(self.consume_identifier("Expected alias after 'as'")?)
+                } else {
+                    None
+                };
+                items.push((item, alias));
+
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+
+        self.consume_token(TokenType::CloseParen, "Expected ')' after import items")?;
+        Ok(ImportSpec::Items { items })
+    }
+
+    // Look ahead n tokens without consuming
+    fn peek_ahead(&self, n: usize) -> Option<&Token> {
+        self.tokens.get(self.current + n).copied()
     }
 
     fn function_declaration(&mut self, is_common: bool) -> ParserResult<AstNode> {
@@ -2644,6 +2749,25 @@ impl AstNode {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum ImportSpec {
+    // import logger (as alias)
+    Module {
+        alias: Option<String>,
+    },
+    // import logger.log (as alias)
+    Item {
+        item: String,
+        alias: Option<String>,
+    },
+    // import logger.(log, error, warn as w)
+    Items {
+        items: Vec<(String, Option<String>)>,
+    },
+    // import logger.*
+    Wildcard,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum StatementKind {
     AutoDecl(String, TypeNode, ExpressionNode),
     TypedDecl(String, TypeNode, ExpressionNode),
@@ -2651,7 +2775,7 @@ pub enum StatementKind {
     Function(FunctionNode),
     Import {
         module_path: String,
-        alias: Option<String>,
+        spec: ImportSpec,
     },
     Return(Option<ExpressionNode>),
     If {

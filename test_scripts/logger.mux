@@ -1,0 +1,16 @@
+// Simple logger module for testing new import syntax
+func write_log(string message) returns void {
+    print("LOG: " + message)
+}
+
+func write_error(string message) returns void {
+    print("ERROR: " + message)
+}
+
+func write_warn(string message) returns void {
+    print("WARN: " + message)
+}
+
+func write_debug(string message) returns void {
+    print("DEBUG: " + message)
+}

@@ -1,3 +1,0 @@
-// Imports test
-auto pi = 3.14159
-print("PI = " + pi.to_string())

@@ -1,5 +1,3 @@
-import utils.logger as _
-
 const int MAX = 100
 auto flt = 7.82
 auto message = "Mux Parser Test"

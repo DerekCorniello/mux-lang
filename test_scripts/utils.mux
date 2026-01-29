@@ -1,0 +1,12 @@
+// Utility module for testing imports and name mangling
+func init() returns void {
+    print("Utils initialized")
+}
+
+func add(int a, int b) returns int {
+    return a + b
+}
+
+func multiply(int a, int b) returns int {
+    return a * b
+}

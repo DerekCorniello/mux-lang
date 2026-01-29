@@ -1,0 +1,11 @@
+// Module with global state
+auto count = 0
+
+func increment() returns int {
+    count = count + 1
+    return count
+}
+
+func get_count() returns int {
+    return count
+}

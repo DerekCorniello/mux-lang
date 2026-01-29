@@ -43,6 +43,11 @@ pub struct CodeGenerator<'a> {
 }
 
 impl<'a> CodeGenerator<'a> {
+    // Helper function to sanitize module paths for use in LLVM identifiers
+    fn sanitize_module_path(module_path: &str) -> String {
+        module_path.replace(['.', '/'], "_")
+    }
+
     pub fn new(context: &'a Context, analyzer: &'a mut SemanticAnalyzer) -> Self {
         let module = context.create_module("mux_module");
         let builder = context.create_builder();
@@ -738,8 +743,12 @@ impl<'a> CodeGenerator<'a> {
         for node in nodes {
             match node {
                 AstNode::Class { name, fields, .. } => {
-                    let symbol = self.analyzer.all_symbols().get(name).unwrap();
-                    let interfaces = symbol.interfaces.clone();
+                    let interfaces = self
+                        .analyzer
+                        .all_symbols()
+                        .get(name)
+                        .map(|sym| sym.interfaces.clone())
+                        .unwrap_or_default();
                     self.classes.insert(name.clone(), fields.clone());
                     self.generate_class_type(name, fields, &interfaces)?;
                 }
@@ -865,8 +874,15 @@ impl<'a> CodeGenerator<'a> {
     fn generate_interface_type(&mut self, name: &str) -> Result<(), String> {
         // generate LLVM struct for interface: { *mut vtable, field1, field2, ... }
         // for simplicity, vtable is struct of void* function pointers
-        let symbol = self.analyzer.all_symbols().get(name).unwrap();
-        let interface_methods = symbol.interfaces.get(name).unwrap();
+        let symbol = self
+            .analyzer
+            .all_symbols()
+            .get(name)
+            .ok_or_else(|| format!("Interface symbol '{}' not found in symbol table", name))?;
+        let interface_methods = symbol
+            .interfaces
+            .get(name)
+            .ok_or_else(|| format!("Interface methods for '{}' not found", name))?;
 
         // create vtable as struct of function pointers (all (void*) -> void* for now)
         let ptr_type = self.context.ptr_type(AddressSpace::default());
@@ -1605,17 +1621,71 @@ impl<'a> CodeGenerator<'a> {
     }
 
     pub fn generate(&mut self, nodes: &[AstNode]) -> Result<(), String> {
+        // Keep reference to main module nodes (for getting module name later)
+        let main_module_nodes = nodes;
+
+        // Collect all nodes including imported modules
+        let mut all_nodes = Vec::new();
+
+        // Add imported module nodes first (so they're available for main module)
+        for module_nodes in self.analyzer.all_module_asts().values() {
+            all_nodes.extend(module_nodes.clone());
+        }
+
+        // Add main module nodes last
+        all_nodes.extend(nodes.to_vec());
+
+        // Now process all nodes together for type generation and function declarations
+        let nodes = &all_nodes;
+
         // zero pass: generate LLVM types for user-defined types
         self.generate_user_defined_types(nodes)?;
 
         // first pass: declare all non-generic functions
-        for node in nodes {
+        // Process imported modules first, then main module
+        // This ensures we know which module each function belongs to for proper name mangling
+
+        // Collect imported module functions first to avoid borrow issues
+        let imported_functions: Vec<(String, FunctionNode)> = self
+            .analyzer
+            .all_module_asts()
+            .iter()
+            .flat_map(|(module_path, module_nodes)| {
+                let module_name_for_mangling = Self::sanitize_module_path(module_path);
+                module_nodes
+                    .iter()
+                    .filter_map(|node| {
+                        if let AstNode::Function(func) = node {
+                            if func.type_params.is_empty() {
+                                Some((module_name_for_mangling.clone(), func.clone()))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        // Declare functions from imported modules with mangled names
+        for (module_name, func) in &imported_functions {
+            // Store function nodes
+            self.function_nodes.insert(func.name.clone(), func.clone());
+
+            // Declare with mangled name
+            let mangled_name = format!("{}_{}", module_name, func.name);
+            self.declare_function_with_name(func, &mangled_name)?;
+        }
+
+        // Declare functions from main module (no mangling needed)
+        for node in main_module_nodes {
             if let AstNode::Function(func) = node {
-                // store function nodes for both generic and non-generic functions
+                // Store function nodes
                 self.function_nodes.insert(func.name.clone(), func.clone());
 
-                // only declare non-generic functions in first pass
-                // generic functions will be declared when instantiated
+                // Declare non-generic functions
                 if func.type_params.is_empty() {
                     self.declare_function(func)?;
                 }
@@ -1637,8 +1707,12 @@ impl<'a> CodeGenerator<'a> {
         // generate vtables after all functions are declared
         for node in nodes {
             if let AstNode::Class { name, .. } = node {
-                let symbol = self.analyzer.all_symbols().get(name).unwrap();
-                let interfaces = symbol.interfaces.clone();
+                let interfaces = self
+                    .analyzer
+                    .all_symbols()
+                    .get(name)
+                    .map(|sym| sym.interfaces.clone())
+                    .unwrap_or_default();
                 self.generate_class_vtables(name, &interfaces)?;
             }
         }
@@ -1650,8 +1724,12 @@ impl<'a> CodeGenerator<'a> {
                     self.generate_enum_constructors(name, variants)?;
                 }
                 AstNode::Class { name, fields, .. } => {
-                    let symbol = self.analyzer.all_symbols().get(name).unwrap();
-                    let interfaces = symbol.interfaces.clone();
+                    let interfaces = self
+                        .analyzer
+                        .all_symbols()
+                        .get(name)
+                        .map(|sym| sym.interfaces.clone())
+                        .unwrap_or_default();
                     self.generate_class_constructors(name, fields, &interfaces)?;
                 }
                 _ => {}
@@ -1659,26 +1737,38 @@ impl<'a> CodeGenerator<'a> {
         }
 
         // second pass: collect top-level statements and function nodes
+        // Note: collect from ALL nodes for top_level_statements (for globals),
+        // but only from main module for user_functions
         let mut top_level_statements = vec![];
-        let mut user_functions = vec![];
         for node in nodes {
-            match node {
-                AstNode::Function(func) => {
-                    // collect non-generic functions for later generation
-                    // generic functions will be generated when instantiated
-                    if func.type_params.is_empty() {
-                        user_functions.push(func.clone());
-                    }
+            if let AstNode::Statement(stmt) = node {
+                top_level_statements.push(stmt.clone());
+            }
+        }
+
+        // Collect user functions from main module only
+        let mut user_functions = vec![];
+        for node in main_module_nodes {
+            if let AstNode::Function(func) = node {
+                // collect non-generic functions for later generation
+                if func.type_params.is_empty() {
+                    user_functions.push(func.clone());
                 }
-                AstNode::Statement(stmt) => {
-                    top_level_statements.push(stmt.clone());
-                }
-                _ => {} // skip classes, interfaces, enums for now
+            }
+        }
+
+        // Collect main module's top-level statements separately
+        // These will be used for main_init() to avoid re-initializing imported modules' globals
+        let mut main_top_level_statements = vec![];
+        for node in main_module_nodes {
+            if let AstNode::Statement(stmt) = node {
+                main_top_level_statements.push(stmt.clone());
             }
         }
 
         // First, analyze top-level statements to identify global variable declarations
         // and create LLVM global variables for them
+        // Use top_level_statements (from all modules) because LLVM globals must be declared at module scope
         for stmt in &top_level_statements {
             match &stmt.kind {
                 StatementKind::TypedDecl(name, type_, _)
@@ -1746,23 +1836,47 @@ impl<'a> CodeGenerator<'a> {
             }
         }
 
-        // generate main function to initialize global variables
-        if !top_level_statements.is_empty() {
-            let main_type = self.context.void_type().fn_type(&[], false);
-            let main_func = self.module.add_function("main", main_type, None);
-            let entry = self.context.append_basic_block(main_func, "entry");
-            self.builder.position_at_end(entry);
+        // Generate module initialization functions for all imported modules
+        // First collect all module data to avoid borrowing conflicts
+        let modules_data: Vec<(String, Vec<StatementNode>)> = self
+            .analyzer
+            .all_module_asts()
+            .iter()
+            .map(|(module_path, module_nodes)| {
+                let mut module_top_level_statements = vec![];
 
-            // copy global_variables to variables so statements can access/initialize them
-            self.variables = self.global_variables.clone();
+                // Extract top-level statements from this module
+                for node in module_nodes {
+                    if let AstNode::Statement(stmt) = node {
+                        module_top_level_statements.push(stmt.clone());
+                    }
+                }
 
-            for stmt in top_level_statements {
-                self.generate_statement(&stmt, Some(&main_func))?;
-            }
-            self.builder.build_return(None).map_err(|e| e.to_string())?;
+                (module_path.replace('/', "_"), module_top_level_statements)
+            })
+            .collect();
+
+        // Now generate init functions for each module
+        for (module_name, module_top_level_statements) in modules_data {
+            self.generate_module_init(&module_top_level_statements, &module_name)?;
         }
 
-        // now generate user-defined functions (they can access globals)
+        // Generate module initialization function for the main module
+        // Use main_top_level_statements (only from main module) to avoid re-initializing imported globals
+        let module_name = self.get_module_name(main_module_nodes);
+        self.generate_module_init(&main_top_level_statements, &module_name)?;
+
+        // Always generate main function (even for modules without top-level statements)
+        // This allows class-only files to be compiled and executed directly
+        self.generate_main_function(&module_name)?;
+
+        // Generate user-defined functions for imported modules
+        for (module_name_mangled, func) in imported_functions {
+            let mangled_name = format!("{}_{}", module_name_mangled, func.name);
+            self.generate_function_with_llvm_name(&func, &mangled_name)?;
+        }
+
+        // Generate user-defined functions for main module (no mangling)
         for func in user_functions {
             self.generate_function(&func)?;
         }
@@ -1849,11 +1963,162 @@ impl<'a> CodeGenerator<'a> {
             return_type.fn_type(&param_types, false)
         };
 
-        let function = self.module.add_function(&func.name, fn_type, None);
+        // Check if this function has a mangled LLVM name
+        // First check the main symbol table (for functions in current module)
+        let llvm_name = if let Some(symbol) = self.analyzer.symbol_table().lookup(&func.name) {
+            if let Some(mangled_name) = &symbol.llvm_name {
+                mangled_name.clone()
+            } else {
+                func.name.clone()
+            }
+        } else {
+            // Not in main symbol table - check if it's from an imported module
+            // Search through all imported modules to find this function
+            let mut found_name = None;
+            for module_syms in self.analyzer.imported_symbols().values() {
+                if let Some(func_symbol) = module_syms.get(&func.name) {
+                    if let Some(mangled) = &func_symbol.llvm_name {
+                        found_name = Some(mangled.clone());
+                        break;
+                    }
+                }
+            }
+            found_name.unwrap_or_else(|| func.name.clone())
+        };
+
+        let function = self.module.add_function(&llvm_name, fn_type, None);
         self.functions.insert(func.name.clone(), function);
         self.function_nodes.insert(func.name.clone(), func.clone());
 
         Ok(())
+    }
+
+    // Declare a function with an explicit LLVM name (for imported module functions)
+    fn declare_function_with_name(
+        &mut self,
+        func: &FunctionNode,
+        llvm_name: &str,
+    ) -> Result<(), String> {
+        let mut param_types: Vec<BasicMetadataTypeEnum> = func
+            .params
+            .iter()
+            .map(|p| self.llvm_type_from_mux_type(&p.type_).map(|t| t.into()))
+            .collect::<Result<_, _>>()?;
+
+        // for class methods, add implicit 'self' parameter (unless static)
+        let is_class_method = func.name.contains('.');
+        if is_class_method && !func.is_common {
+            param_types.insert(0, self.context.ptr_type(AddressSpace::default()).into());
+        }
+
+        // for specialized methods (name contains $), wrap all parameters in pointers
+        let is_specialized = func.name.contains('$');
+        let is_static = func.is_common;
+        if is_specialized && !is_static {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            param_types = param_types
+                .into_iter()
+                .enumerate()
+                .map(|(i, param_type)| {
+                    if i == 0 && is_class_method && !func.is_common {
+                        param_type
+                    } else {
+                        ptr_type.into()
+                    }
+                })
+                .collect();
+        }
+
+        let fn_type = if matches!(
+            func.return_type.kind,
+            TypeKind::Primitive(PrimitiveType::Void)
+        ) {
+            self.context.void_type().fn_type(&param_types, false)
+        } else {
+            let return_type = self.llvm_type_from_mux_type(&func.return_type)?;
+            return_type.fn_type(&param_types, false)
+        };
+
+        let function = self.module.add_function(llvm_name, fn_type, None);
+        // Store by mangled name so we can find it later during generation
+        self.functions.insert(llvm_name.to_string(), function);
+
+        Ok(())
+    }
+
+    fn generate_module_init(
+        &mut self,
+        top_level_statements: &[StatementNode],
+        module_name: &str,
+    ) -> Result<(), String> {
+        // Use ! prefix to avoid conflicts with user-defined functions
+        // (! is used for module-level generated code, $ is used for generic specializations)
+        let init_name = format!("!{}!init", module_name.replace(['.', '/'], "_"));
+
+        let init_type = self.context.void_type().fn_type(&[], false);
+        let init_func = self.module.add_function(&init_name, init_type, None);
+        let entry = self.context.append_basic_block(init_func, "entry");
+        self.builder.position_at_end(entry);
+
+        // copy global_variables to variables so statements can access/initialize them
+        self.variables = self.global_variables.clone();
+
+        // Execute top-level statements as module initialization
+        for stmt in top_level_statements {
+            self.generate_statement(stmt, Some(&init_func))?;
+        }
+
+        self.builder.build_return(None).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn generate_main_function(&mut self, module_name: &str) -> Result<(), String> {
+        let main_type = self.context.void_type().fn_type(&[], false);
+        let main_func = self.module.add_function("main", main_type, None);
+        let entry = self.context.append_basic_block(main_func, "entry");
+        self.builder.position_at_end(entry);
+
+        // Call imported module init functions in dependency order
+        // This ensures modules are initialized before use
+        for module_path in &self.analyzer.module_dependencies {
+            let init_name = format!("!{}!init", Self::sanitize_module_path(module_path));
+            if let Some(init_func) = self.module.get_function(&init_name) {
+                self.builder
+                    .build_call(
+                        init_func,
+                        &[],
+                        &format!("{}_init_call", module_path.replace('.', "_")),
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        // Call main module init function
+        let init_name = format!("!{}!init", Self::sanitize_module_path(module_name));
+        if let Some(init_func) = self.module.get_function(&init_name) {
+            self.builder
+                .build_call(init_func, &[], "init_call")
+                .map_err(|e| e.to_string())?;
+        }
+
+        self.builder.build_return(None).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn get_module_name(&self, nodes: &[AstNode]) -> String {
+        // Try to get module name from first class or function
+        for node in nodes {
+            match node {
+                AstNode::Class { name, .. } => {
+                    return name.split('.').next().unwrap_or("main").to_string();
+                }
+                AstNode::Function(func) => {
+                    return func.name.split('.').next().unwrap_or("main").to_string();
+                }
+                _ => {}
+            }
+        }
+        "main".to_string()
     }
 
     fn generate_function(&mut self, func: &FunctionNode) -> Result<(), String> {
@@ -2003,6 +2268,36 @@ impl<'a> CodeGenerator<'a> {
         self.analyzer.current_self_type = None;
 
         Ok(())
+    }
+
+    // Generate function with explicit LLVM name (for imported module functions)
+    fn generate_function_with_llvm_name(
+        &mut self,
+        func: &FunctionNode,
+        llvm_name: &str,
+    ) -> Result<(), String> {
+        self.current_function_name = Some(func.name.clone());
+        self.current_function_return_type = Some(
+            self.analyzer
+                .resolve_type(&func.return_type)
+                .map_err(|e| e.to_string())?,
+        );
+
+        // Look up by LLVM name instead of source name
+        let function = *self.functions.get(llvm_name).ok_or_else(|| {
+            format!(
+                "Function {} not declared (LLVM name: {})",
+                func.name, llvm_name
+            )
+        })?;
+
+        // Rest is the same as generate_function - just delegate to the regular implementation
+        // but first we need to temporarily store it under the source name too
+        self.functions.insert(func.name.clone(), function);
+        let result = self.generate_function(func);
+        // Remove the temporary entry
+        self.functions.remove(&func.name);
+        result
     }
 
     fn generate_expression(&mut self, expr: &ExpressionNode) -> Result<BasicValueEnum<'a>, String> {
@@ -2162,16 +2457,35 @@ impl<'a> CodeGenerator<'a> {
                                     .is_some()
                                 {
                                     // extract the actual enum value from the object field
-                                    // self_ptr is an alloca containing the object data pointer, so load it first
-                                    let object_data_ptr_val = self
+                                    // self_ptr is an alloca containing a boxed Value, so load it first
+                                    let self_value_ptr = self
                                         .builder
                                         .build_load(
                                             self.context.ptr_type(AddressSpace::default()),
                                             *self_ptr,
-                                            "object_data_ptr",
+                                            "self_value",
+                                        )
+                                        .map_err(|e| e.to_string())?
+                                        .into_pointer_value();
+
+                                    // Call mux_get_object_ptr to unbox the Value and get the actual object data pointer
+                                    let get_ptr_func = self
+                                        .module
+                                        .get_function("mux_get_object_ptr")
+                                        .ok_or("mux_get_object_ptr not found")?;
+                                    let object_data_ptr_call = self
+                                        .builder
+                                        .build_call(
+                                            get_ptr_func,
+                                            &[self_value_ptr.into()],
+                                            "get_object_ptr_call",
                                         )
                                         .map_err(|e| e.to_string())?;
-                                    let object_data_ptr = object_data_ptr_val.into_pointer_value();
+                                    let object_data_ptr = object_data_ptr_call
+                                        .try_as_basic_value()
+                                        .left()
+                                        .ok_or("Invalid return from mux_get_object_ptr")?
+                                        .into_pointer_value();
 
                                     // cast to the class struct type (GenericShape)
                                     let class_type = self
@@ -2810,9 +3124,58 @@ impl<'a> CodeGenerator<'a> {
                                     args,
                                 );
                             } else {
-                                // not a variable, check if it's a class or enum
+                                // not a variable, check if it's a class, enum, or module import
                                 if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
-                                    if symbol.kind == crate::semantics::SymbolKind::Class {
+                                    if symbol.kind == crate::semantics::SymbolKind::Import {
+                                        // Handle module.function calls (e.g., logger.write_log(...))
+                                        // Look up the function symbol to get its mangled LLVM name
+                                        let function_symbol = self
+                                            .analyzer
+                                            .imported_symbols()
+                                            .get(name)
+                                            .and_then(|module_syms| module_syms.get(field));
+
+                                        let llvm_function_name =
+                                            if let Some(func_sym) = function_symbol {
+                                                func_sym
+                                                    .llvm_name
+                                                    .clone()
+                                                    .unwrap_or_else(|| field.to_string())
+                                            } else {
+                                                field.to_string()
+                                            };
+
+                                        if let Some(func) =
+                                            self.module.get_function(&llvm_function_name)
+                                        {
+                                            let mut call_args = vec![];
+                                            for arg in args {
+                                                call_args
+                                                    .push(self.generate_expression(arg)?.into());
+                                            }
+                                            let call = self
+                                                .builder
+                                                .build_call(
+                                                    func,
+                                                    &call_args,
+                                                    &format!("{}_call", field),
+                                                )
+                                                .map_err(|e| e.to_string())?;
+                                            return match call.try_as_basic_value().left() {
+                                                Some(val) => Ok(val),
+                                                None => Ok(self
+                                                    .context
+                                                    .i32_type()
+                                                    .const_int(0, false)
+                                                    .into()),
+                                            };
+                                        } else {
+                                            return Err(format!(
+                                                "Function {} not found in module {}",
+                                                field, name
+                                            ));
+                                        }
+                                    } else if symbol.kind == crate::semantics::SymbolKind::Class {
                                         // handle constructor/static method calls
                                         if let Some(method) = symbol.methods.get(field) {
                                             if !method.is_static {
@@ -3303,7 +3666,20 @@ impl<'a> CodeGenerator<'a> {
                                 }
 
                                 // not a generic function, try global function lookup
-                                if let Some(func) = self.module.get_function(name) {
+                                // First check if this name has a mangled LLVM name (imported function)
+                                let lookup_name = if let Some(symbol) =
+                                    self.analyzer.symbol_table().lookup(name)
+                                {
+                                    symbol
+                                        .llvm_name
+                                        .as_ref()
+                                        .unwrap_or(&name.to_string())
+                                        .clone()
+                                } else {
+                                    name.to_string()
+                                };
+
+                                if let Some(func) = self.module.get_function(&lookup_name) {
                                     let mut call_args = vec![];
                                     for arg in args {
                                         call_args.push(self.generate_expression(arg)?.into());
@@ -3319,7 +3695,10 @@ impl<'a> CodeGenerator<'a> {
                                         }
                                     }
                                 } else {
-                                    Err(format!("Undefined function: {}", name))
+                                    Err(format!(
+                                        "Undefined function: {} (looked for LLVM name: {})",
+                                        name, lookup_name
+                                    ))
                                 }
                             }
                         }
@@ -7371,6 +7750,9 @@ impl<'a> CodeGenerator<'a> {
                 Err(format!("Variable type '{}' should be resolved", name))
             }
             ResolvedType::Never => Err("Never type not allowed here".to_string()),
+            ResolvedType::Module(_) => {
+                panic!("Module types should not appear in codegen - they are compile-time only")
+            }
         }
     }
 
@@ -7557,6 +7939,9 @@ impl<'a> CodeGenerator<'a> {
                 ),
                 span: Span::new(0, 0),
             },
+            Type::Module(_) => {
+                panic!("Module types should not appear in codegen - they are compile-time only")
+            }
         }
     }
 
@@ -7665,6 +8050,9 @@ impl<'a> CodeGenerator<'a> {
                     .collect::<Result<Vec<_>, _>>()?,
                 returns: Box::new(self.resolve_type(returns)?),
             }),
+            Type::Module(_) => {
+                panic!("Module types should not appear in codegen - they are compile-time only")
+            }
         }
     }
 
@@ -7962,6 +8350,9 @@ impl<'a> CodeGenerator<'a> {
                 "Unresolved generic type {} for extraction from {}",
                 v, variant_name
             )),
+            Type::Module(_) => {
+                panic!("Module types should not appear in codegen - they are compile-time only")
+            }
         }
     }
 

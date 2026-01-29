@@ -1,0 +1,19 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+Test 1: Basic import with namespace
+1
+2
+2
+Test 2: Wildcard import
+LOG: Direct function call
+ERROR: No namespace needed
+Test 3: Selective import
+15
+Test 4: Module alias
+12
+Test 5: Name mangling
+Utils initialized
+Test 6: Module state
+3

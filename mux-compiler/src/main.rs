@@ -1,15 +1,20 @@
 mod codegen;
 mod lexer;
+mod module_resolver;
 mod parser;
 mod semantics;
 mod source;
 
 use lexer::Lexer;
+use module_resolver::ModuleResolver;
 use parser::Parser;
 use semantics::SemanticAnalyzer;
 use source::Source;
+use std::cell::RefCell;
 use std::env;
+use std::path::PathBuf;
 use std::process::{self, Command};
+use std::rc::Rc;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -31,7 +36,16 @@ fn main() {
             let mut this_parser = Parser::new(&tokens);
             match this_parser.parse() {
                 Ok(nodes) => {
-                    let mut analyzer = SemanticAnalyzer::new();
+                    // Create module resolver with base path (directory of the main file)
+                    let file_path_buf = PathBuf::from(file_path);
+                    let base_path = file_path_buf
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new("."))
+                        .to_path_buf();
+                    let resolver = Rc::new(RefCell::new(ModuleResolver::new(base_path)));
+
+                    // Create semantic analyzer with resolver
+                    let mut analyzer = SemanticAnalyzer::new_with_resolver(resolver);
                     let errors = analyzer.analyze(&nodes);
                     if !errors.is_empty() {
                         eprintln!("Semantic errors: {:?}", errors);
