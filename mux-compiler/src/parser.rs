@@ -2151,7 +2151,7 @@ impl<'a> Parser<'a> {
 
                 self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
 
-                if self.matches(&[TokenType::Returns]) {
+                let return_type = if self.matches(&[TokenType::Returns]) {
                     self.parse_type()?
                 } else {
                     return Err(ParserError::new(
@@ -2178,6 +2178,7 @@ impl<'a> Parser<'a> {
                 let expr = ExpressionNode {
                     kind: ExpressionKind::Lambda {
                         params,
+                        return_type,
                         body: body_statements,
                     },
                     span: start_span.combine(&end_span),
@@ -2852,6 +2853,7 @@ pub enum ExpressionKind {
     },
     Lambda {
         params: Vec<Param>,
+        return_type: TypeNode,
         body: Vec<StatementNode>,
     },
     GenericType(String, Vec<TypeNode>),

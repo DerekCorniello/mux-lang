@@ -1,0 +1,14 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+Simple capture: 15
+Mutation (3 increments): 3
+Multi-capture first: 30
+Multi-capture second: 60
+Returned closure add5(3): 8
+Returned closure add10(3): 13
+Closure as arg: 18
+Deep nested (3*2)+5: 11
+Non-capturing: 14
+All closure tests passed!

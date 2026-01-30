@@ -28,7 +28,7 @@ impl std::fmt::Display for LexerError {
 
 impl std::error::Error for LexerError {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     pub row_start: usize,
     pub row_end: Option<usize>,

@@ -1,0 +1,46 @@
+// Comprehensive nested functions test suite
+
+// Test 1: Simple nested function
+func test_simple() returns int {
+    func inner() returns int {
+        return 42
+    }
+    return inner()
+}
+
+// Test 2: Multiple nested functions with inter-calls
+func test_multiple() returns int {
+    func add(int a, int b) returns int {
+        return a + b
+    }
+    
+    func multiply(int a, int b) returns int {
+        return a * b
+    }
+    
+    func compute() returns int {
+        int x = add(5, 3)      // 8
+        int y = multiply(x, 2) // 16
+        return y
+    }
+    
+    return compute()
+}
+
+// Test 3: Recursive nested function
+func test_recursive() returns int {
+    func factorial(int n) returns int {
+        if n <= 1 {
+            return 1
+        }
+        return n * factorial(n - 1)
+    }
+    return factorial(5)
+}
+
+func main() returns void {
+    print("Simple nested: " + test_simple().to_string())           // 42
+    print("Multiple nested: " + test_multiple().to_string())       // 16
+    print("Recursive nested: " + test_recursive().to_string())     // 120
+    print("All nested function tests passed!")
+}
