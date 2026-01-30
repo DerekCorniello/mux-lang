@@ -1,18 +1,60 @@
 // Functions and lambdas
+
+// Basic function
 func add(int a, int b) returns int {
     return a + b
 }
 
+// Function with one default argument
 func greet(string name, int times = 1) returns void {
     for int i in range(0, times) { print("Hello " + name) }
     return
 }
 
-// Lambda examples
+// Function with all defaults
+func say_hello(string name = "world") returns void {
+    print("Hello " + name)
+    return
+}
+
+// Function with mixed required and default parameters
+func create_message(string greeting, string name = "friend", string punctuation = "!") returns string {
+    return greeting + " " + name + punctuation
+}
+
+// Function with multiple defaults
+func calculate(int a, int b = 10, int c = 100) returns int {
+    return a + b + c
+}
+
+// Lambda examples (no default args - not supported)
 auto square = func (int n) returns int { return n * n }
 auto doubled = func (float x) returns float { return x * 2.0 }
 
+// Test basic function
 print("add(3,4): " + add(3,4).to_string())
+
+// Test function with one default
 greet("World", 2)
+greet("Alice")  // Uses default times = 1
+
+// Test function with all defaults
+say_hello()
+say_hello("Mux")
+
+// Test mixed required and defaults
+print(create_message("Hi"))                      // Hi friend!
+print(create_message("Hello", "Bob"))            // Hello Bob!
+print(create_message("Hey", "Charlie", "?"))     // Hey Charlie?
+
+// Test multiple defaults
+auto result1 = calculate(1)        // 1 + 10 + 100 = 111
+auto result2 = calculate(1, 5)     // 1 + 5 + 100 = 106
+auto result3 = calculate(1, 5, 50) // 1 + 5 + 50 = 56
+print("calculate(1): " + result1.to_string())
+print("calculate(1, 5): " + result2.to_string())
+print("calculate(1, 5, 50): " + result3.to_string())
+
+// Test lambdas
 print("square(5): " + square(5).to_string())
 print("doubled(3.5): " + doubled(3.5).to_string())

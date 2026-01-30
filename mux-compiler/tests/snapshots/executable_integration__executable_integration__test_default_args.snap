@@ -1,0 +1,11 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+Hello world
+Hello Mux
+Hello Alice
+Hi Bob
+result1 (1+10+100): 111
+result2 (1+5+100): 106
+result3 (1+5+50): 56

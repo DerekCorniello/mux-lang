@@ -5,5 +5,14 @@ expression: full_output
 add(3,4): 7
 Hello World
 Hello World
+Hello Alice
+Hello world
+Hello Mux
+Hi friend!
+Hello Bob!
+Hey Charlie?
+calculate(1): 111
+calculate(1, 5): 106
+calculate(1, 5, 50): 56
 square(5): 25
 doubled(3.5): 7.0

@@ -577,6 +577,7 @@ impl<'a> Parser<'a> {
                             params.push(Param {
                                 name: param_name,
                                 type_: param_type,
+                                default_value: None,
                             });
                             if !self.matches(&[TokenType::Comma]) {
                                 break;
@@ -939,18 +940,37 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
 
         if !self.check(TokenType::CloseParen) {
+            let mut has_default = false;
             loop {
                 // parse param as: type name.
                 let param_type = self.parse_type()?;
                 let param_name = self.consume_identifier("Expected parameter name")?;
-                // optional default value, parsed but currently ignored in ast.
-                // TODO: this is not implemented and needs to be
-                if self.matches(&[TokenType::Eq]) {
-                    let _default_expr = self.parse_expression()?;
-                }
+                // optional default value
+                let default_value = if self.matches(&[TokenType::Eq]) {
+                    let default_expr = self.parse_expression()?;
+                    // Validate that default value is a literal
+                    if !Self::is_literal_expression(&default_expr) {
+                        return Err(ParserError::new(
+                            "Default parameter values must be literals (int, float, string, bool, or char)",
+                            default_expr.span,
+                        ));
+                    }
+                    has_default = true;
+                    Some(default_expr)
+                } else {
+                    // If we've already seen a default param, this one must also have a default
+                    if has_default {
+                        return Err(ParserError::new(
+                            "Parameters without default values cannot come after parameters with default values",
+                            self.previous().span,
+                        ));
+                    }
+                    None
+                };
                 params.push(Param {
                     name: param_name,
                     type_: param_type,
+                    default_value,
                 });
                 if !self.matches(&[TokenType::Comma]) {
                     break;
@@ -2140,9 +2160,17 @@ impl<'a> Parser<'a> {
                     loop {
                         let param_type = self.parse_type()?;
                         let param_name = self.consume_identifier("Expected parameter name")?;
+                        // Default arguments not supported in lambdas
+                        if self.matches(&[TokenType::Eq]) {
+                            return Err(ParserError::new(
+                                "Default arguments are not supported in lambda expressions. Use named functions instead.",
+                                self.previous().span,
+                            ));
+                        }
                         params.push(Param {
                             name: param_name,
                             type_: param_type,
+                            default_value: None,
                         });
 
                         if !self.matches(&[TokenType::Comma]) {
@@ -3033,6 +3061,7 @@ pub enum LiteralNode {
 pub struct Param {
     pub name: String,
     pub type_: TypeNode,
+    pub default_value: Option<ExpressionNode>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

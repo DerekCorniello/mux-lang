@@ -3810,7 +3810,10 @@ impl<'a> CodeGenerator<'a> {
 
                                     // Get function type from resolved type
                                     let (fn_type_with_captures, fn_type_without_captures) =
-                                        if let Type::Function { params, returns } = var_type_clone {
+                                        if let Type::Function {
+                                            params, returns, ..
+                                        } = var_type_clone
+                                        {
                                             // Parameter types for user params
                                             let mut param_types_without: Vec<
                                                 BasicMetadataTypeEnum,
@@ -3944,9 +3947,44 @@ impl<'a> CodeGenerator<'a> {
                                     if let Some(func) = self.module.get_function(name) {
                                         // print some info about the found function
                                         let mut call_args = vec![];
+
+                                        // Generate provided arguments
                                         for arg in args {
                                             call_args.push(self.generate_expression(arg)?.into());
                                         }
+
+                                        // Handle default parameters
+                                        // Clone default expressions first to avoid borrow issues
+                                        let default_exprs: Vec<Option<ExpressionNode>> = self
+                                            .function_nodes
+                                            .get(name)
+                                            .map(|func_node| {
+                                                let total_params = func_node.params.len();
+                                                let provided_args = args.len();
+                                                if provided_args < total_params {
+                                                    func_node.params[provided_args..total_params]
+                                                        .iter()
+                                                        .map(|p| p.default_value.clone())
+                                                        .collect()
+                                                } else {
+                                                    Vec::new()
+                                                }
+                                            })
+                                            .unwrap_or_default();
+
+                                        for default_expr_opt in default_exprs {
+                                            if let Some(default_expr) = default_expr_opt {
+                                                let default_val =
+                                                    self.generate_expression(&default_expr)?;
+                                                call_args.push(default_val.into());
+                                            } else {
+                                                return Err(format!(
+                                                    "Missing argument for parameter in function '{}'",
+                                                    name
+                                                ));
+                                            }
+                                        }
+
                                         let call = self
                                             .builder
                                             .build_call(func, &call_args, "user_func_call")
@@ -4040,9 +4078,45 @@ impl<'a> CodeGenerator<'a> {
 
                                 if let Some(func) = self.module.get_function(&lookup_name) {
                                     let mut call_args = vec![];
+
+                                    // Generate provided arguments
                                     for arg in args {
                                         call_args.push(self.generate_expression(arg)?.into());
                                     }
+
+                                    // Handle default parameters - look up FunctionNode to get param info
+                                    // Use original name for lookup (not mangled lookup_name)
+                                    // Clone default expressions first to avoid borrow issues
+                                    let default_exprs: Vec<Option<ExpressionNode>> = self
+                                        .function_nodes
+                                        .get(name)
+                                        .map(|func_node| {
+                                            let total_params = func_node.params.len();
+                                            let provided_args = args.len();
+                                            if provided_args < total_params {
+                                                func_node.params[provided_args..total_params]
+                                                    .iter()
+                                                    .map(|p| p.default_value.clone())
+                                                    .collect()
+                                            } else {
+                                                Vec::new()
+                                            }
+                                        })
+                                        .unwrap_or_default();
+
+                                    for default_expr_opt in default_exprs {
+                                        if let Some(default_expr) = default_expr_opt {
+                                            let default_val =
+                                                self.generate_expression(&default_expr)?;
+                                            call_args.push(default_val.into());
+                                        } else {
+                                            return Err(format!(
+                                                "Missing argument for parameter in function '{}'",
+                                                name
+                                            ));
+                                        }
+                                    }
+
                                     let call = self
                                         .builder
                                         .build_call(func, &call_args, "user_func_call")
@@ -4073,7 +4147,10 @@ impl<'a> CodeGenerator<'a> {
                         .get_expression_type(func)
                         .map_err(|e| e.to_string())?;
 
-                    if let Type::Function { params, returns } = func_type {
+                    if let Type::Function {
+                        params, returns, ..
+                    } = func_type
+                    {
                         // Use the closure calling mechanism (similar to function pointer variable calls)
                         let ptr_type = self.context.ptr_type(AddressSpace::default());
 
@@ -8360,6 +8437,7 @@ impl<'a> CodeGenerator<'a> {
             ResolvedType::Function {
                 params: _,
                 returns: _,
+                ..
             } => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             ResolvedType::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             ResolvedType::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
@@ -8539,7 +8617,9 @@ impl<'a> CodeGenerator<'a> {
                 })),
                 span: Span::new(0, 0),
             },
-            Type::Function { params, returns } => TypeNode {
+            Type::Function {
+                params, returns, ..
+            } => TypeNode {
                 kind: TypeKind::Function {
                     params: params.iter().map(|p| self.type_to_type_node(p)).collect(),
                     returns: Box::new(self.type_to_type_node(returns)),
@@ -8623,6 +8703,7 @@ impl<'a> CodeGenerator<'a> {
             TypeKind::Function { params, returns } => Type::Function {
                 params: params.iter().map(|p| self.type_node_to_type(p)).collect(),
                 returns: Box::new(self.type_node_to_type(returns)),
+                default_count: 0,
             },
             TypeKind::Auto => Type::Variable("auto".to_string()),
         }
@@ -8676,12 +8757,18 @@ impl<'a> CodeGenerator<'a> {
 
             Type::Optional(inner) => Ok(Type::Optional(Box::new(self.resolve_type(inner)?))),
             Type::Reference(inner) => Ok(Type::Reference(Box::new(self.resolve_type(inner)?))),
-            Type::Function { params, returns } => Ok(Type::Function {
+            Type::Function {
+                params,
+                returns,
+                default_count,
+                ..
+            } => Ok(Type::Function {
                 params: params
                     .iter()
                     .map(|p| self.resolve_type(p))
                     .collect::<Result<Vec<_>, _>>()?,
                 returns: Box::new(self.resolve_type(returns)?),
+                default_count: *default_count,
             }),
             Type::Module(_) => {
                 panic!("Module types should not appear in codegen - they are compile-time only")
@@ -9956,6 +10043,10 @@ impl<'a> CodeGenerator<'a> {
                     .map(|p| Param {
                         name: p.name.clone(),
                         type_: self.substitute_types_in_type_node(&p.type_, type_map),
+                        default_value: p
+                            .default_value
+                            .as_ref()
+                            .map(|dv| self.substitute_types_in_expression(dv, type_map)),
                     })
                     .collect();
                 // substitute return type
@@ -10059,6 +10150,7 @@ impl<'a> CodeGenerator<'a> {
                     Type::Function {
                         params: arg_params,
                         returns: arg_returns,
+                        ..
                     } => {
                         if param_params.len() != arg_params.len() {
                             return Err(format!(
