@@ -4,8 +4,8 @@ use std::os::raw::c_char;
 
 use ordered_float;
 
-use crate::Value;
 use crate::result::MuxResult;
+use crate::Value;
 
 #[derive(Clone, Debug)]
 pub struct MuxString(pub String);
@@ -99,6 +99,34 @@ pub extern "C" fn mux_string_length(s: *const c_char) -> i64 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_string_contains(haystack: *const Value, needle: *const Value) -> bool {
+    unsafe {
+        if let (Value::String(haystack_str), Value::String(needle_str)) = (&*haystack, &*needle) {
+            haystack_str.contains(needle_str)
+        } else {
+            false
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_string_contains_char(haystack: *const Value, needle: i64) -> bool {
+    unsafe {
+        if let Value::String(haystack_str) = &*haystack {
+            if let Some(ch) = char::from_u32(needle as u32) {
+                haystack_str.contains(ch)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_string_to_string(s: *const c_char) -> *mut c_char {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
@@ -130,7 +158,11 @@ pub extern "C" fn mux_string_equal(a: *const c_char, b: *const c_char) -> i32 {
     unsafe {
         let a_str = CStr::from_ptr(a);
         let b_str = CStr::from_ptr(b);
-        if a_str == b_str { 1 } else { 0 }
+        if a_str == b_str {
+            1
+        } else {
+            0
+        }
     }
 }
 
@@ -139,7 +171,11 @@ pub extern "C" fn mux_string_equal(a: *const c_char, b: *const c_char) -> i32 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_not_equal(a: *const c_char, b: *const c_char) -> i32 {
-    if mux_string_equal(a, b) == 1 { 0 } else { 1 }
+    if mux_string_equal(a, b) == 1 {
+        0
+    } else {
+        1
+    }
 }
 
 /// Convert a character to its integer value

@@ -325,3 +325,9 @@ pub extern "C" fn mux_list_concat(a: *const List, b: *const List) -> *mut List {
     result.extend(unsafe { (*b).0.clone() });
     Box::into_raw(Box::new(List(result)))
 }
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_contains(list: *const List, val: *const Value) -> bool {
+    unsafe { (*list).0.iter().any(|item| item == &*val) }
+}
