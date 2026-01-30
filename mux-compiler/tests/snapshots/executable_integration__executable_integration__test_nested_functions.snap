@@ -1,0 +1,8 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: full_output
+---
+Simple nested: 42
+Multiple nested: 16
+Recursive nested: 120
+All nested function tests passed!
