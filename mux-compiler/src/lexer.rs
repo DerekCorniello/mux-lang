@@ -104,6 +104,7 @@ pub enum TokenType {
     Plus,
     Minus,
     Star,
+    StarStar,
     Slash,
     Percent,
     Lt,
@@ -274,7 +275,11 @@ impl<'a> Lexer<'a> {
 
         match first_char {
             '*' => {
-                if self.source.peek() == Some('=') {
+                if self.source.peek() == Some('*') {
+                    self.source.next_char();
+                    start_span.complete(self.source.line, self.source.col);
+                    Ok(Token::new(TokenType::StarStar, start_span))
+                } else if self.source.peek() == Some('=') {
                     self.source.next_char();
                     start_span.complete(self.source.line, self.source.col);
                     Ok(Token::new(TokenType::StarEq, start_span))

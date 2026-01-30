@@ -24,6 +24,24 @@ pub extern "C" fn mux_math_pow(base: f64, exp: f64) -> f64 {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_int_pow(base: i64, exp: i64) -> i64 {
+    if exp < 0 {
+        return 0;
+    }
+    let mut result = 1i64;
+    let mut b = base;
+    let mut e = exp;
+    while e > 0 {
+        if e & 1 == 1 {
+            result = result.wrapping_mul(b);
+        }
+        b = b.wrapping_mul(b);
+        e >>= 1;
+    }
+    result
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_math_sqrt(x: f64) -> f64 {
     sqrt(x)
 }
