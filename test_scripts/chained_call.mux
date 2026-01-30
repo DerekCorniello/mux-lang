@@ -1,0 +1,8 @@
+func test_func() returns func() returns int {
+    return func() returns int { return 5 }
+}
+
+auto mytest = test_func()
+print("mytest(): " + mytest().to_string())
+
+print("test_func()(): " + test_func()().to_string())

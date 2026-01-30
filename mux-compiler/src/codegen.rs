@@ -4053,7 +4053,169 @@ impl<'a> CodeGenerator<'a> {
                         }
                     }
                 } else {
-                    Err("Unsupported function call type".to_string())
+                    // Handle arbitrary function expression (e.g., returned closure: test_func()())
+                    // Generate the function expression to get a closure pointer
+                    let closure_ptr = self.generate_expression(func)?.into_pointer_value();
+
+                    // Get the function type from semantic analysis
+                    let func_type = self
+                        .analyzer
+                        .get_expression_type(func)
+                        .map_err(|e| e.to_string())?;
+
+                    if let Type::Function { params, returns } = func_type {
+                        // Use the closure calling mechanism (similar to function pointer variable calls)
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+                        // Define closure struct type: { fn_ptr, captures_ptr }
+                        let closure_struct_type = self
+                            .context
+                            .struct_type(&[ptr_type.into(), ptr_type.into()], false);
+
+                        // Extract function pointer from closure
+                        let fn_ptr_field = self
+                            .builder
+                            .build_struct_gep(closure_struct_type, closure_ptr, 0, "fn_ptr_field")
+                            .map_err(|e| e.to_string())?;
+                        let func_ptr = self
+                            .builder
+                            .build_load(ptr_type, fn_ptr_field, "fn_ptr")
+                            .map_err(|e| e.to_string())?
+                            .into_pointer_value();
+
+                        // Extract captures pointer from closure
+                        let captures_field = self
+                            .builder
+                            .build_struct_gep(closure_struct_type, closure_ptr, 1, "captures_field")
+                            .map_err(|e| e.to_string())?;
+                        let captures_ptr = self
+                            .builder
+                            .build_load(ptr_type, captures_field, "captures_ptr")
+                            .map_err(|e| e.to_string())?
+                            .into_pointer_value();
+
+                        // Check if captures_ptr is null
+                        let is_null = self
+                            .builder
+                            .build_is_null(captures_ptr, "captures_is_null")
+                            .map_err(|e| e.to_string())?;
+
+                        // Generate user arguments
+                        let mut user_args: Vec<BasicMetadataValueEnum> = vec![];
+                        for arg in args {
+                            user_args.push(self.generate_expression(arg)?.into());
+                        }
+
+                        // Build function types
+                        let mut param_types_without: Vec<BasicMetadataTypeEnum> = Vec::new();
+                        for param in &params {
+                            let type_node = self.type_to_type_node(param);
+                            param_types_without
+                                .push(self.llvm_type_from_mux_type(&type_node)?.into());
+                        }
+
+                        let mut param_types_with: Vec<BasicMetadataTypeEnum> =
+                            vec![ptr_type.into()];
+                        param_types_with.extend(param_types_without.clone());
+
+                        let fn_type_with = if matches!(*returns, Type::Void) {
+                            self.context.void_type().fn_type(&param_types_with, false)
+                        } else {
+                            let return_type_node = self.type_to_type_node(&returns);
+                            let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
+                            return_type.fn_type(&param_types_with, false)
+                        };
+
+                        let fn_type_without = if matches!(*returns, Type::Void) {
+                            self.context
+                                .void_type()
+                                .fn_type(&param_types_without, false)
+                        } else {
+                            let return_type_node = self.type_to_type_node(&returns);
+                            let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
+                            return_type.fn_type(&param_types_without, false)
+                        };
+
+                        // Branch based on whether we have captures
+                        let current_fn = self
+                            .builder
+                            .get_insert_block()
+                            .and_then(|b| b.get_parent())
+                            .ok_or("No current function")?;
+                        let with_captures_bb =
+                            self.context.append_basic_block(current_fn, "with_captures");
+                        let without_captures_bb = self
+                            .context
+                            .append_basic_block(current_fn, "without_captures");
+                        let merge_bb = self.context.append_basic_block(current_fn, "call_merge");
+
+                        self.builder
+                            .build_conditional_branch(
+                                is_null,
+                                without_captures_bb,
+                                with_captures_bb,
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // With captures: call with captures_ptr as first arg
+                        self.builder.position_at_end(with_captures_bb);
+                        let mut args_with_captures: Vec<BasicMetadataValueEnum> =
+                            vec![captures_ptr.into()];
+                        args_with_captures.extend(user_args.clone());
+                        let call_with = self
+                            .builder
+                            .build_indirect_call(
+                                fn_type_with,
+                                func_ptr,
+                                &args_with_captures,
+                                "call_with_captures",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        let result_with = call_with.try_as_basic_value().left();
+                        self.builder
+                            .build_unconditional_branch(merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let with_captures_end_bb = self.builder.get_insert_block().unwrap();
+
+                        // Without captures: call directly
+                        self.builder.position_at_end(without_captures_bb);
+                        let call_without = self
+                            .builder
+                            .build_indirect_call(
+                                fn_type_without,
+                                func_ptr,
+                                &user_args,
+                                "call_without_captures",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        let result_without = call_without.try_as_basic_value().left();
+                        self.builder
+                            .build_unconditional_branch(merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let without_captures_end_bb = self.builder.get_insert_block().unwrap();
+
+                        // Merge block with phi
+                        self.builder.position_at_end(merge_bb);
+                        match (result_with, result_without) {
+                            (Some(r1), Some(r2)) => {
+                                let phi = self
+                                    .builder
+                                    .build_phi(r1.get_type(), "call_result")
+                                    .map_err(|e| e.to_string())?;
+                                phi.add_incoming(&[
+                                    (&r1, with_captures_end_bb),
+                                    (&r2, without_captures_end_bb),
+                                ]);
+                                Ok(phi.as_basic_value())
+                            }
+                            _ => {
+                                // Void return
+                                Ok(self.context.i32_type().const_int(0, false).into())
+                            }
+                        }
+                    } else {
+                        Err(format!("Cannot call non-function type: {:?}", func_type))
+                    }
                 }
             }
             ExpressionKind::ListAccess { expr, index } => {
