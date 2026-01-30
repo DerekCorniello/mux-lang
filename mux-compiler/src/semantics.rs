@@ -444,6 +444,7 @@ pub struct SemanticAnalyzer {
     pub all_module_asts: std::collections::HashMap<String, Vec<AstNode>>,
     pub module_dependencies: Vec<String>,
     current_file: Option<std::path::PathBuf>, // Track current file for relative imports
+    pub lambda_captures: std::collections::HashMap<Span, Vec<(String, Type)>>, // Track captured variables for each lambda
 }
 
 impl Default for SemanticAnalyzer {
@@ -471,6 +472,7 @@ impl SemanticAnalyzer {
             all_module_asts: std::collections::HashMap::new(),
             module_dependencies: Vec::new(),
             current_file: None,
+            lambda_captures: std::collections::HashMap::new(),
         }
     }
 
@@ -489,6 +491,7 @@ impl SemanticAnalyzer {
             all_module_asts: std::collections::HashMap::new(),
             module_dependencies: Vec::new(),
             current_file: None,
+            lambda_captures: std::collections::HashMap::new(),
         }
     }
 
@@ -509,6 +512,7 @@ impl SemanticAnalyzer {
             all_module_asts: std::collections::HashMap::new(),
             module_dependencies: Vec::new(),
             current_file: None,
+            lambda_captures: std::collections::HashMap::new(),
         }
     }
 
@@ -1218,7 +1222,17 @@ impl SemanticAnalyzer {
                     })
                 }
             }
-            ExpressionKind::Lambda { params, body } => {
+            ExpressionKind::Lambda {
+                params,
+                return_type: _,
+                body,
+            } => {
+                // Collect parameter names to identify what's local vs captured
+                let mut local_vars = std::collections::HashSet::new();
+                for param in params {
+                    local_vars.insert(param.name.clone());
+                }
+
                 self.symbol_table.push_scope()?;
                 for param in params {
                     let param_type = self.resolve_type(&param.type_)?;
@@ -1238,6 +1252,12 @@ impl SemanticAnalyzer {
                     )?;
                 }
                 self.analyze_block(body)?;
+
+                // Detect free variables (captured variables)
+                let captures = self.find_free_variables_in_block(body, &local_vars)?;
+
+                // Store captures for this lambda using its span as key
+                self.lambda_captures.insert(expr.span, captures);
 
                 let param_types = params
                     .iter()
@@ -2497,16 +2517,38 @@ impl SemanticAnalyzer {
         // first collect function declarations in this block.
         for stmt in stmts {
             if let StatementKind::Function(func) = &stmt.kind {
+                // resolve function type
+                let param_types = func
+                    .params
+                    .iter()
+                    .map(|p| self.resolve_type(&p.type_))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let return_type = self.resolve_type(&func.return_type)?;
+                let mut func_type = Type::Function {
+                    params: param_types,
+                    returns: Box::new(return_type),
+                };
+
+                // substitute type params with variables
+                for (type_param_name, _) in &func.type_params {
+                    let var = Type::Variable(type_param_name.clone());
+                    func_type = self.substitute_type_param(&func_type, type_param_name, &var);
+                }
+
                 self.symbol_table.add_symbol(
                     &func.name,
                     Symbol {
                         kind: SymbolKind::Function,
                         span: stmt.span,
-                        type_: None, // will be resolved later
+                        type_: Some(func_type),
                         interfaces: std::collections::HashMap::new(),
                         methods: std::collections::HashMap::new(),
                         fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
+                        type_params: func
+                            .type_params
+                            .iter()
+                            .map(|(n, b)| (n.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
+                            .collect(),
                         original_name: None,
                         llvm_name: None,
                     },
@@ -2807,6 +2849,10 @@ impl SemanticAnalyzer {
                 if !self.module_dependencies.contains(&module_path.to_string()) {
                     self.module_dependencies.push(module_path.to_string());
                 }
+            }
+            StatementKind::Function(func) => {
+                // Nested function - analyze its body
+                self.analyze_function(func, None)?;
             }
             _ => {} // handle other statement types
         }
@@ -3210,7 +3256,17 @@ impl SemanticAnalyzer {
                 }
                 Ok(())
             }
-            ExpressionKind::Lambda { params, body } => {
+            ExpressionKind::Lambda {
+                params,
+                return_type: _,
+                body,
+            } => {
+                // Collect parameter names to identify what's local vs captured
+                let mut local_vars = std::collections::HashSet::new();
+                for param in params {
+                    local_vars.insert(param.name.clone());
+                }
+
                 self.symbol_table.push_scope()?;
                 for param in params {
                     let param_type = self.resolve_type(&param.type_)?;
@@ -3230,6 +3286,12 @@ impl SemanticAnalyzer {
                     )?;
                 }
                 self.analyze_block(body)?;
+
+                // Detect free variables (captured variables)
+                let captures = self.find_free_variables_in_block(body, &local_vars)?;
+                // Store captures for this lambda using its span as key
+                self.lambda_captures.insert(expr.span, captures);
+
                 self.symbol_table.pop_scope()?;
                 Ok(())
             }
@@ -3450,6 +3512,172 @@ impl SemanticAnalyzer {
             _ => {
                 // Items and Wildcard can be supported similarly if needed
             }
+        }
+        Ok(())
+    }
+
+    // Helper to find free variables in a block of statements
+    // Returns variables that are used but not declared in the local scope
+    fn find_free_variables_in_block(
+        &self,
+        body: &[StatementNode],
+        local_vars: &std::collections::HashSet<String>,
+    ) -> Result<Vec<(String, Type)>, SemanticError> {
+        let mut free_vars = std::collections::HashMap::new();
+        let mut local_vars = local_vars.clone();
+
+        for stmt in body {
+            self.find_free_variables_in_statement(stmt, &mut local_vars, &mut free_vars)?;
+        }
+
+        Ok(free_vars.into_iter().collect())
+    }
+
+    fn find_free_variables_in_statement(
+        &self,
+        stmt: &StatementNode,
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        match &stmt.kind {
+            StatementKind::Expression(expr) | StatementKind::Return(Some(expr)) => {
+                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
+            }
+            StatementKind::AutoDecl(name, _, expr) => {
+                // First analyze the expression (uses happen before the decl is in scope)
+                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
+                // Then add the variable to local scope
+                local_vars.insert(name.clone());
+            }
+            StatementKind::TypedDecl(name, _, expr) => {
+                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
+                local_vars.insert(name.clone());
+            }
+            StatementKind::ConstDecl(name, _, expr) => {
+                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
+                local_vars.insert(name.clone());
+            }
+            StatementKind::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
+                for s in then_block {
+                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+                }
+                if let Some(else_stmts) = else_block {
+                    for s in else_stmts {
+                        self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+                    }
+                }
+            }
+            StatementKind::While { cond, body } => {
+                self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
+                for s in body {
+                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+                }
+            }
+            StatementKind::For {
+                var, iter, body, ..
+            } => {
+                self.find_free_variables_in_expression(iter, local_vars, free_vars)?;
+                // Iterator variable is local to the for loop
+                local_vars.insert(var.clone());
+                for s in body {
+                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+                }
+            }
+            StatementKind::Block(stmts) => {
+                for s in stmts {
+                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn find_free_variables_in_expression(
+        &self,
+        expr: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        match &expr.kind {
+            ExpressionKind::Identifier(name) => {
+                // Check if it's a local variable (parameter or declared in lambda body)
+                if !local_vars.contains(name) {
+                    // Check if it exists in outer scopes
+                    if let Some(symbol) = self.symbol_table.lookup(name) {
+                        if matches!(symbol.kind, SymbolKind::Variable) {
+                            if let Some(var_type) = &symbol.type_ {
+                                free_vars.insert(name.clone(), var_type.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            ExpressionKind::Binary { left, right, .. } => {
+                self.find_free_variables_in_expression(left, local_vars, free_vars)?;
+                self.find_free_variables_in_expression(right, local_vars, free_vars)?;
+            }
+            ExpressionKind::Unary { expr: inner, .. } => {
+                self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+            }
+            ExpressionKind::Call { func, args } => {
+                self.find_free_variables_in_expression(func, local_vars, free_vars)?;
+                for arg in args {
+                    self.find_free_variables_in_expression(arg, local_vars, free_vars)?;
+                }
+            }
+            ExpressionKind::FieldAccess { expr: inner, .. } => {
+                self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+            }
+            ExpressionKind::ListAccess { expr: inner, index } => {
+                self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+                self.find_free_variables_in_expression(index, local_vars, free_vars)?;
+            }
+            ExpressionKind::ListLiteral(elements) => {
+                for elem in elements {
+                    self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
+                }
+            }
+            ExpressionKind::MapLiteral { entries, .. } => {
+                for (key, val) in entries {
+                    self.find_free_variables_in_expression(key, local_vars, free_vars)?;
+                    self.find_free_variables_in_expression(val, local_vars, free_vars)?;
+                }
+            }
+            ExpressionKind::SetLiteral(elements) => {
+                for elem in elements {
+                    self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
+                }
+            }
+            ExpressionKind::If {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
+                self.find_free_variables_in_expression(then_expr, local_vars, free_vars)?;
+                self.find_free_variables_in_expression(else_expr, local_vars, free_vars)?;
+            }
+            ExpressionKind::Lambda { params, body, .. } => {
+                // For nested lambdas, we need to find free variables that escape to the outer scope
+                // The lambda's own parameters are local to it, so create a new local_vars set
+                let mut inner_local_vars = local_vars.clone();
+                for param in params {
+                    inner_local_vars.insert(param.name.clone());
+                }
+                // Recursively find free variables in the nested lambda's body
+                // Any variables found that aren't in our local_vars will be captured by us too
+                for stmt in body {
+                    self.find_free_variables_in_statement(stmt, &mut inner_local_vars, free_vars)?;
+                }
+            }
+            // Literals and other expressions don't have free variables
+            _ => {}
         }
         Ok(())
     }
