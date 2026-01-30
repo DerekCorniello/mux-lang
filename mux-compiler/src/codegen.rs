@@ -624,6 +624,16 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_result_data", fn_type, None);
 
+        // mux_int_pow: (i64, i64) -> i64
+        let params = &[i64_type.into(), i64_type.into()];
+        let fn_type = i64_type.fn_type(params, false);
+        module.add_function("mux_int_pow", fn_type, None);
+
+        // mux_math_pow: (f64, f64) -> f64
+        let params = &[f64_type.into(), f64_type.into()];
+        let fn_type = f64_type.fn_type(params, false);
+        module.add_function("mux_math_pow", fn_type, None);
+
         let mut type_map = HashMap::new();
         let mut enum_variants = HashMap::new();
 
@@ -7851,6 +7861,43 @@ impl<'a> CodeGenerator<'a> {
                         .map(|v| v.into())
                 } else {
                     Err("Unsupported div operands".to_string())
+                }
+            }
+            BinaryOp::Exponent => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    let pow_fn = self
+                        .module
+                        .get_function("mux_int_pow")
+                        .ok_or("mux_int_pow not found")?;
+                    let result = self
+                        .builder
+                        .build_call(pow_fn, &[left_int.into(), right_int.into()], "pow")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("Call returned no value")?;
+                    Ok(result)
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    let pow_fn = self
+                        .module
+                        .get_function("mux_math_pow")
+                        .ok_or("mux_math_pow not found")?;
+                    let result = self
+                        .builder
+                        .build_call(pow_fn, &[left_float.into(), right_float.into()], "pow")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("Call returned no value")?;
+                    Ok(result)
+                } else {
+                    Err("Unsupported pow operands".to_string())
                 }
             }
             BinaryOp::Equal => {

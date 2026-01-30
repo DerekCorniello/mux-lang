@@ -1,0 +1,14 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+assertion_line: 134
+expression: full_output
+---
+10 + 5: 15
+10 - 5: 5
+10 * 5: 50
+10 / 5: 2
+10 % 3: 1
+2 ** 3: 8
+2.0 ** 3.0: 8.0
+2 * 3 ** 2: 18
+2 ** 3 ** 2: 512

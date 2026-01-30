@@ -1852,7 +1852,11 @@ impl SemanticAnalyzer {
                         None
                     }
                 }
-                BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => {
+                BinaryOp::Subtract
+                | BinaryOp::Multiply
+                | BinaryOp::Divide
+                | BinaryOp::Modulo
+                | BinaryOp::Exponent => {
                     // built-in support for numeric primitives, or interface support for custom types
                     if matches!(
                         left_type,

@@ -18,6 +18,7 @@ pub enum Precedence {
     Comparison,
     Term,
     Factor,
+    Exponent,
     Unary,
     Call,
     Primary,
@@ -32,7 +33,8 @@ impl Precedence {
             Precedence::Equality => Precedence::Comparison,
             Precedence::Comparison => Precedence::Term,
             Precedence::Term => Precedence::Factor,
-            Precedence::Factor => Precedence::Unary,
+            Precedence::Factor => Precedence::Exponent,
+            Precedence::Exponent => Precedence::Unary,
             Precedence::Unary => Precedence::Call,
             Precedence::Call => Precedence::Primary,
             Precedence::Primary => Precedence::Primary,
@@ -2442,6 +2444,7 @@ impl<'a> Parser<'a> {
             TokenType::Star => Some(BinaryOp::Multiply),
             TokenType::Slash => Some(BinaryOp::Divide),
             TokenType::Percent => Some(BinaryOp::Modulo),
+            TokenType::StarStar => Some(BinaryOp::Exponent),
             TokenType::Eq => Some(BinaryOp::Assign),
             TokenType::EqEq => Some(BinaryOp::Equal),
             TokenType::NotEq => Some(BinaryOp::NotEqual),
@@ -2477,6 +2480,7 @@ impl<'a> Parser<'a> {
             TokenType::Star => Some(BinaryOp::Multiply),
             TokenType::Slash => Some(BinaryOp::Divide),
             TokenType::Percent => Some(BinaryOp::Modulo),
+            TokenType::StarStar => Some(BinaryOp::Exponent),
             TokenType::Eq => Some(BinaryOp::Assign),
             TokenType::EqEq => Some(BinaryOp::Equal),
             TokenType::NotEq => Some(BinaryOp::NotEqual),
@@ -2541,6 +2545,8 @@ impl<'a> Parser<'a> {
             BinaryOp::Add | BinaryOp::Subtract => Precedence::Term,
 
             BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => Precedence::Factor,
+
+            BinaryOp::Exponent => Precedence::Exponent,
         };
         Ok(precedence)
     }
@@ -3087,6 +3093,7 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Modulo,
+    Exponent,
 
     Equal,
     NotEqual,
@@ -3122,7 +3129,7 @@ impl BinaryOp {
     }
 
     pub fn is_right_associative(&self) -> bool {
-        self.is_assignment()
+        matches!(self, BinaryOp::Exponent) || self.is_assignment()
     }
 }
 
