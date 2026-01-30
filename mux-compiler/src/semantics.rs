@@ -29,6 +29,7 @@ pub struct Symbol {
     pub type_params: Vec<(String, Vec<String>)>,
     pub original_name: Option<String>, // For imported symbols with aliases, stores the original source name
     pub llvm_name: Option<String>,     // For imported symbols, stores the mangled LLVM name
+    pub default_param_count: usize, // Number of parameters with default values (must be at the end)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +49,7 @@ pub enum Type {
     Function {
         params: Vec<Type>,
         returns: Box<Type>,
+        default_count: usize, // Number of parameters with default values (must be at the end)
     },
     Named(String, Vec<Type>),
     Variable(String),
@@ -116,10 +118,12 @@ impl Unifier {
                 Type::Function {
                     params: p1,
                     returns: r1,
+                    ..
                 },
                 Type::Function {
                     params: p2,
                     returns: r2,
+                    ..
                 },
             ) if p1.len() == p2.len() => {
                 for (a1, a2) in p1.iter().zip(p2) {
@@ -161,9 +165,9 @@ impl Unifier {
         match t {
             Type::Variable(v) if v == var => true,
             Type::Named(_, args) => args.iter().any(|arg| self.occurs(var, arg)),
-            Type::Function { params, returns } => {
-                params.iter().any(|p| self.occurs(var, p)) || self.occurs(var, returns)
-            }
+            Type::Function {
+                params, returns, ..
+            } => params.iter().any(|p| self.occurs(var, p)) || self.occurs(var, returns),
             Type::Reference(inner)
             | Type::List(inner)
             | Type::Set(inner)
@@ -185,9 +189,14 @@ impl Unifier {
                 name.clone(),
                 args.iter().map(|arg| self.apply(arg)).collect(),
             ),
-            Type::Function { params, returns } => Type::Function {
+            Type::Function {
+                params,
+                returns,
+                default_count,
+            } => Type::Function {
                 params: params.iter().map(|p| self.apply(p)).collect(),
                 returns: Box::new(self.apply(returns)),
+                default_count: *default_count,
             },
             Type::Reference(inner) => Type::Reference(Box::new(self.apply(inner))),
             Type::List(inner) => Type::List(Box::new(self.apply(inner))),
@@ -599,6 +608,7 @@ impl SemanticAnalyzer {
             let func_type = Type::Function {
                 params,
                 returns: Box::new(ret),
+                default_count: 0,
             };
             self.symbol_table
                 .add_symbol(
@@ -613,6 +623,7 @@ impl SemanticAnalyzer {
                         type_params: Vec::new(),
                         original_name: None,
                         llvm_name: None,
+                        default_param_count: 0,
                     },
                 )
                 .unwrap();
@@ -676,6 +687,7 @@ impl SemanticAnalyzer {
                 Ok(Type::Function {
                     params: resolved_params,
                     returns: Box::new(resolved_return),
+                    default_count: 0,
                 })
             }
             TypeKind::Reference(inner) => {
@@ -745,6 +757,7 @@ impl SemanticAnalyzer {
                         Ok(Type::Function {
                             params: sig.params.clone(),
                             returns: Box::new(sig.return_type.clone()),
+                            default_count: 0,
                         })
                     } else {
                         Err(SemanticError {
@@ -1068,19 +1081,56 @@ impl SemanticAnalyzer {
                     _ => self.get_expression_type(func)?,
                 };
                 match func_type {
-                    Type::Function { params, returns } => {
-                        if args.len() != params.len() {
-                            return Err(SemanticError {
-                                message: format!(
-                                    "Function expects {} arguments, got {}",
-                                    params.len(),
-                                    args.len()
-                                ),
-                                span: expr.span,
-                            });
+                    Type::Function {
+                        params,
+                        returns,
+                        default_count,
+                        ..
+                    } => {
+                        // For named functions, verify the symbol's default_count matches
+                        let actual_default_count = match &func.kind {
+                            ExpressionKind::Identifier(name) => {
+                                // Use the greater of type default_count and symbol default_count
+                                // (they should be the same for functions, but type carries lambda defaults)
+                                let symbol_default = self
+                                    .symbol_table
+                                    .lookup(name)
+                                    .map(|s| s.default_param_count)
+                                    .unwrap_or(0);
+                                std::cmp::max(default_count, symbol_default)
+                            }
+                            _ => default_count, // For lambdas and other expressions, use type's default_count
+                        };
+
+                        let min_args = params.len() - actual_default_count;
+                        let max_args = params.len();
+
+                        if args.len() < min_args || args.len() > max_args {
+                            if actual_default_count > 0 {
+                                return Err(SemanticError {
+                                    message: format!(
+                                        "Function expects {} to {} arguments, got {}",
+                                        min_args,
+                                        max_args,
+                                        args.len()
+                                    ),
+                                    span: expr.span,
+                                });
+                            } else {
+                                return Err(SemanticError {
+                                    message: format!(
+                                        "Function expects {} arguments, got {}",
+                                        params.len(),
+                                        args.len()
+                                    ),
+                                    span: expr.span,
+                                });
+                            }
                         }
+
                         let mut unifier = Unifier::new();
-                        for (param, arg) in params.iter().zip(args) {
+                        // Only validate provided arguments, missing ones will use defaults
+                        for (param, arg) in params.iter().zip(args.iter()) {
                             let arg_type = self.get_expression_type(arg)?;
                             unifier.unify(param, &arg_type, expr.span)?;
                         }
@@ -1128,6 +1178,7 @@ impl SemanticAnalyzer {
                     Ok(Type::Function {
                         params: method_sig.params,
                         returns: Box::new(method_sig.return_type),
+                        default_count: 0,
                     })
                 } else if let Type::Named(name, args) = &expr_type {
                     if let Some(symbol) = self.symbol_table.lookup(name) {
@@ -1248,6 +1299,7 @@ impl SemanticAnalyzer {
                             type_params: Vec::new(),
                             original_name: None,
                             llvm_name: None,
+                            default_param_count: 0,
                         },
                     )?;
                 }
@@ -1273,9 +1325,12 @@ impl SemanticAnalyzer {
                     }
                 };
                 self.symbol_table.pop_scope()?;
+                // Count default parameters in lambda
+                let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
                 Ok(Type::Function {
                     params: param_types,
                     returns: Box::new(return_type),
+                    default_count,
                 })
             }
             ExpressionKind::SetLiteral(elements) => {
@@ -1349,12 +1404,17 @@ impl SemanticAnalyzer {
                 param,
                 replacement,
             ))),
-            Type::Function { params, returns } => Type::Function {
+            Type::Function {
+                params,
+                returns,
+                default_count,
+            } => Type::Function {
                 params: params
                     .iter()
                     .map(|p| self.substitute_type_param(p, param, replacement))
                     .collect(),
                 returns: Box::new(self.substitute_type_param(returns, param, replacement)),
+                default_count: *default_count,
             },
             Type::Reference(inner) => Type::Reference(Box::new(self.substitute_type_param(
                 inner,
@@ -1473,6 +1533,7 @@ impl SemanticAnalyzer {
         Ok(Type::Function {
             params: substituted_params,
             returns: Box::new(substituted_returns),
+            default_count: 0,
         })
     }
 
@@ -1923,6 +1984,7 @@ impl SemanticAnalyzer {
                     let mut func_type = Type::Function {
                         params: param_types,
                         returns: Box::new(return_type),
+                        default_count: 0,
                     };
 
                     // substitute type params with variables
@@ -1930,6 +1992,13 @@ impl SemanticAnalyzer {
                         let var = Type::Variable(type_param_name.clone());
                         func_type = self.substitute_type_param(&func_type, type_param_name, &var);
                     }
+
+                    // Count parameters with default values
+                    let default_count = func
+                        .params
+                        .iter()
+                        .filter(|p| p.default_value.is_some())
+                        .count();
 
                     if let Err(e) = self.symbol_table.add_symbol(
                         &func.name,
@@ -1949,6 +2018,7 @@ impl SemanticAnalyzer {
                                 .collect::<Vec<(String, Vec<String>)>>(),
                             original_name: None,
                             llvm_name: None,
+                            default_param_count: default_count,
                         },
                     ) {
                         self.errors.push(e);
@@ -2031,6 +2101,7 @@ impl SemanticAnalyzer {
                         Some(Type::Function {
                             params: field_types.clone(),
                             returns: Box::new(Type::Named(name.clone(), vec![])),
+                            default_count: 0,
                         })
                     };
 
@@ -2151,6 +2222,7 @@ impl SemanticAnalyzer {
                             type_params: type_param_bounds,
                             original_name: None,
                             llvm_name: None,
+                            default_param_count: 0,
                         },
                     ) {
                         self.errors.push(e);
@@ -2188,6 +2260,7 @@ impl SemanticAnalyzer {
                             type_params: Vec::new(),
                             original_name: None,
                             llvm_name: None,
+                            default_param_count: 0,
                         },
                     ) {
                         self.errors.push(e);
@@ -2257,6 +2330,7 @@ impl SemanticAnalyzer {
                                 .collect::<Vec<(String, Vec<String>)>>(),
                             original_name: None,
                             llvm_name: None,
+                            default_param_count: 0,
                         },
                     ) {
                         self.errors.push(e);
@@ -2341,6 +2415,7 @@ impl SemanticAnalyzer {
                     type_params: Vec::new(),
                     original_name: None,
                     llvm_name: None,
+                    default_param_count: 0,
                 },
             )?;
         }
@@ -2359,6 +2434,7 @@ impl SemanticAnalyzer {
                     type_params: Vec::new(),
                     original_name: None,
                     llvm_name: None,
+                    default_param_count: 0,
                 },
             )?;
         }
@@ -2378,6 +2454,7 @@ impl SemanticAnalyzer {
                     type_params: Vec::new(),
                     original_name: None,
                     llvm_name: None,
+                    default_param_count: 0,
                 },
             )?;
         }
@@ -2446,6 +2523,7 @@ impl SemanticAnalyzer {
                     type_params: Vec::new(),
                     original_name: None,
                     llvm_name: None,
+                    default_param_count: 0,
                 },
             )?;
         }
@@ -2477,7 +2555,15 @@ impl SemanticAnalyzer {
             let method_type = Type::Function {
                 params: param_types,
                 returns: Box::new(return_type),
+                default_count: 0,
             };
+
+            // Count parameters with default values
+            let default_count = method
+                .params
+                .iter()
+                .filter(|p| p.default_value.is_some())
+                .count();
 
             self.symbol_table.add_symbol(
                 &method.name,
@@ -2491,6 +2577,7 @@ impl SemanticAnalyzer {
                     type_params: Vec::new(),
                     original_name: None,
                     llvm_name: None,
+                    default_param_count: default_count,
                 },
             )?;
             let self_type = if method.is_common {
@@ -2531,6 +2618,7 @@ impl SemanticAnalyzer {
                 let mut func_type = Type::Function {
                     params: param_types,
                     returns: Box::new(return_type),
+                    default_count: 0,
                 };
 
                 // substitute type params with variables
@@ -2538,6 +2626,13 @@ impl SemanticAnalyzer {
                     let var = Type::Variable(type_param_name.clone());
                     func_type = self.substitute_type_param(&func_type, type_param_name, &var);
                 }
+
+                // Count parameters with default values
+                let default_count = func
+                    .params
+                    .iter()
+                    .filter(|p| p.default_value.is_some())
+                    .count();
 
                 self.symbol_table.add_symbol(
                     &func.name,
@@ -2555,6 +2650,7 @@ impl SemanticAnalyzer {
                             .collect(),
                         original_name: None,
                         llvm_name: None,
+                        default_param_count: default_count,
                     },
                 )?;
             }
@@ -2599,6 +2695,7 @@ impl SemanticAnalyzer {
                         type_params: Vec::new(),
                         original_name: None,
                         llvm_name: None,
+                        default_param_count: 0,
                     },
                 )?;
             }
@@ -2618,6 +2715,7 @@ impl SemanticAnalyzer {
                         type_params: Vec::new(),
                         original_name: None,
                         llvm_name: None,
+                        default_param_count: 0,
                     },
                 )?;
             }
@@ -2645,6 +2743,7 @@ impl SemanticAnalyzer {
                         type_params: Vec::new(),
                         original_name: None,
                         llvm_name: None,
+                        default_param_count: 0,
                     },
                 )?;
             }
@@ -2694,6 +2793,7 @@ impl SemanticAnalyzer {
                         type_params: Vec::new(),
                         original_name: None,
                         llvm_name: None,
+                        default_param_count: 0,
                     },
                 )?;
                 self.analyze_block(body)?;
@@ -2884,6 +2984,7 @@ impl SemanticAnalyzer {
                         type_params: Vec::new(),
                         original_name: None,
                         llvm_name: None,
+                        default_param_count: 0,
                     },
                 )?;
             }
@@ -3286,6 +3387,7 @@ impl SemanticAnalyzer {
                             type_params: Vec::new(),
                             original_name: None,
                             llvm_name: None,
+                            default_param_count: 0,
                         },
                     )?;
                 }
@@ -3373,6 +3475,7 @@ impl SemanticAnalyzer {
                 type_params: Vec::new(),
                 original_name: None,
                 llvm_name: None,
+                default_param_count: 0,
             },
         )?;
 
@@ -3464,6 +3567,7 @@ impl SemanticAnalyzer {
                             type_: Some(Type::Function {
                                 params: sig.params.clone(),
                                 returns: Box::new(sig.return_type.clone()),
+                                default_count: 0,
                             }),
                             interfaces: std::collections::HashMap::new(),
                             methods: std::collections::HashMap::new(),
@@ -3471,6 +3575,7 @@ impl SemanticAnalyzer {
                             type_params: Vec::new(),
                             original_name: None,
                             llvm_name: None,
+                            default_param_count: 0,
                         },
                     )?;
                 } else if symbol_name == "None" {
@@ -3486,6 +3591,7 @@ impl SemanticAnalyzer {
                             type_params: Vec::new(),
                             original_name: None,
                             llvm_name: None,
+                            default_param_count: 0,
                         },
                     )?;
                 }
@@ -3502,6 +3608,7 @@ impl SemanticAnalyzer {
                             type_: Some(Type::Function {
                                 params: sig.params.clone(),
                                 returns: Box::new(sig.return_type.clone()),
+                                default_count: 0,
                             }),
                             interfaces: std::collections::HashMap::new(),
                             methods: std::collections::HashMap::new(),
@@ -3509,6 +3616,7 @@ impl SemanticAnalyzer {
                             type_params: Vec::new(),
                             original_name: None,
                             llvm_name: None,
+                            default_param_count: 0,
                         },
                     )?;
                 }
