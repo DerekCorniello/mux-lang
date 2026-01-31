@@ -73131,7 +73131,7 @@ expression: actual_tokens
     },
     Token {
         token_type: Str(
-            "max of 1 and 2 is: ",
+            "max of 5 and 10 is: ",
         ),
         span: Span {
             row_start: 53,
@@ -73140,7 +73140,7 @@ expression: actual_tokens
             ),
             col_start: 7,
             col_end: Some(
-                28,
+                29,
             ),
         },
     },
@@ -73151,9 +73151,9 @@ expression: actual_tokens
             row_end: Some(
                 53,
             ),
-            col_start: 29,
+            col_start: 30,
             col_end: Some(
-                30,
+                31,
             ),
         },
     },
@@ -73166,9 +73166,9 @@ expression: actual_tokens
             row_end: Some(
                 53,
             ),
-            col_start: 31,
+            col_start: 32,
             col_end: Some(
-                34,
+                35,
             ),
         },
     },
@@ -73177,22 +73177,22 @@ expression: actual_tokens
         span: Span {
             row_start: 53,
             row_end: None,
-            col_start: 34,
+            col_start: 35,
             col_end: None,
         },
     },
     Token {
         token_type: Int(
-            1,
+            5,
         ),
         span: Span {
             row_start: 53,
             row_end: Some(
                 53,
             ),
-            col_start: 35,
+            col_start: 36,
             col_end: Some(
-                36,
+                37,
             ),
         },
     },
@@ -73201,22 +73201,22 @@ expression: actual_tokens
         span: Span {
             row_start: 53,
             row_end: None,
-            col_start: 36,
+            col_start: 37,
             col_end: None,
         },
     },
     Token {
         token_type: Int(
-            2,
+            10,
         ),
         span: Span {
             row_start: 53,
             row_end: Some(
                 53,
             ),
-            col_start: 38,
+            col_start: 39,
             col_end: Some(
-                39,
+                41,
             ),
         },
     },
@@ -73225,7 +73225,7 @@ expression: actual_tokens
         span: Span {
             row_start: 53,
             row_end: None,
-            col_start: 39,
+            col_start: 41,
             col_end: None,
         },
     },
@@ -73234,7 +73234,7 @@ expression: actual_tokens
         span: Span {
             row_start: 53,
             row_end: None,
-            col_start: 40,
+            col_start: 42,
             col_end: None,
         },
     },
@@ -73247,9 +73247,9 @@ expression: actual_tokens
             row_end: Some(
                 53,
             ),
-            col_start: 41,
+            col_start: 43,
             col_end: Some(
-                50,
+                52,
             ),
         },
     },
@@ -73258,25 +73258,25 @@ expression: actual_tokens
         span: Span {
             row_start: 53,
             row_end: None,
-            col_start: 50,
-            col_end: None,
-        },
-    },
-    Token {
-        token_type: CloseParen,
-        span: Span {
-            row_start: 53,
-            row_end: None,
-            col_start: 51,
-            col_end: None,
-        },
-    },
-    Token {
-        token_type: CloseParen,
-        span: Span {
-            row_start: 53,
-            row_end: None,
             col_start: 52,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 53,
+            row_end: None,
+            col_start: 53,
+            col_end: None,
+        },
+    },
+    Token {
+        token_type: CloseParen,
+        span: Span {
+            row_start: 53,
+            row_end: None,
+            col_start: 54,
             col_end: None,
         },
     },
@@ -73285,7 +73285,7 @@ expression: actual_tokens
         span: Span {
             row_start: 53,
             row_end: None,
-            col_start: 53,
+            col_start: 55,
             col_end: None,
         },
     },
@@ -73367,7 +73367,7 @@ expression: actual_tokens
     },
     Token {
         token_type: Int(
-            1,
+            -1,
         ),
         span: Span {
             row_start: 54,
@@ -73391,7 +73391,7 @@ expression: actual_tokens
     },
     Token {
         token_type: Int(
-            2,
+            -2,
         ),
         span: Span {
             row_start: 54,

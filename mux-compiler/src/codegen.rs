@@ -2944,6 +2944,7 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             } else if let ExpressionKind::Unary {
                                 op: UnaryOp::Deref,
+                                op_span: _,
                                 expr: deref_expr,
                                 postfix: _,
                             } = &left.kind
@@ -3172,6 +3173,7 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             } else if let ExpressionKind::Unary {
                                 op: UnaryOp::Deref,
+                                op_span: _,
                                 expr: deref_expr,
                                 postfix: _,
                             } = &left.kind
@@ -3229,6 +3231,7 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             } else if let ExpressionKind::Unary {
                                 op: UnaryOp::Deref,
+                                op_span: _,
                                 expr: deref_expr,
                                 postfix: _,
                             } = &left.kind
@@ -4977,6 +4980,7 @@ impl<'a> CodeGenerator<'a> {
             }
             ExpressionKind::Unary {
                 op,
+                op_span: _,
                 expr,
                 postfix: _,
             } => {

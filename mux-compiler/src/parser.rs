@@ -1643,6 +1643,7 @@ impl<'a> Parser<'a> {
         match &expr.kind {
             ExpressionKind::Unary {
                 op,
+                op_span: _,
                 expr: inner,
                 postfix,
             } => {
@@ -1993,6 +1994,7 @@ impl<'a> Parser<'a> {
             Ok(ExpressionNode {
                 kind: ExpressionKind::Unary {
                     op: UnaryOp::parse(op_token.clone())?,
+                    op_span: op_token.span,
                     expr: Box::new(expr),
                     postfix: false,
                 },
@@ -2408,23 +2410,27 @@ impl<'a> Parser<'a> {
                 }
             } else if self.matches(&[TokenType::Incr]) {
                 let expr_span = *expr.span();
+                let op_span = self.previous().span;
                 expr = ExpressionNode {
                     kind: ExpressionKind::Unary {
                         op: UnaryOp::Incr,
+                        op_span,
                         expr: Box::new(expr),
                         postfix: true,
                     },
-                    span: expr_span.combine(&self.previous().span),
+                    span: expr_span.combine(&op_span),
                 };
             } else if self.matches(&[TokenType::Decr]) {
                 let expr_span = *expr.span();
+                let op_span = self.previous().span;
                 expr = ExpressionNode {
                     kind: ExpressionKind::Unary {
                         op: UnaryOp::Decr,
+                        op_span,
                         expr: Box::new(expr),
                         postfix: true,
                     },
-                    span: expr_span.combine(&self.previous().span),
+                    span: expr_span.combine(&op_span),
                 };
             } else {
                 break;
@@ -2909,6 +2915,7 @@ pub enum ExpressionKind {
     },
     Unary {
         op: UnaryOp,
+        op_span: Span,
         expr: Box<ExpressionNode>,
         postfix: bool,
     },
@@ -3397,7 +3404,10 @@ mod tests {
         let expr = parse_expr(input);
 
         // The binary expression should span the entire input
-        if let ExpressionKind::Binary { left, op: _, right } = &expr.kind {
+        if let ExpressionKind::Binary {
+            left, op: _, right, ..
+        } = &expr.kind
+        {
             // The entire expression should span from the start of the first token to the end of the last token
             assert_eq!(expr.span.row_start, 1);
             assert_eq!(expr.span.col_start, 1);
@@ -3433,7 +3443,10 @@ mod tests {
             assert_eq!(args[0].span.col_start, 5);
 
             // The second argument is a binary expression
-            if let ExpressionKind::Binary { left, op: _, right } = &args[1].kind {
+            if let ExpressionKind::Binary {
+                left, op: _, right, ..
+            } = &args[1].kind
+            {
                 assert_eq!(left.span.row_start, 1);
                 assert_eq!(left.span.col_start, 8);
                 assert_eq!(right.span.row_start, 1);
@@ -3495,9 +3508,10 @@ mod tests {
             Err((_, errors)) => {
                 assert!(!errors.is_empty(), "Expected errors but got none");
                 let has_newline_error = errors.iter().any(|e| {
-                    e.message.contains("expected newline after statement")
-                        || e.message.contains("missing newline")
-                        || e.message.contains("expected newline")
+                    let msg_lower = e.message.to_lowercase();
+                    msg_lower.contains("expected newline after statement")
+                        || msg_lower.contains("missing newline")
+                        || msg_lower.contains("expected newline")
                 });
 
                 if !has_newline_error {
