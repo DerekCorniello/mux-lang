@@ -209,7 +209,11 @@ impl Unifier {
                     // occurs check, ensure var not in t
                     if self.occurs(var, t) {
                         return Err(SemanticError {
-                            message: format!("Recursive type: {} occurs in {:?}", var, t),
+                            message: format!(
+                                "Recursive type: {} occurs in {}",
+                                var,
+                                format_type(t)
+                            ),
                             span,
                         });
                     }
@@ -521,7 +525,7 @@ impl SymbolTable {
 
         if current_borrow.symbols.contains_key(name) {
             return Err(SemanticError {
-                message: format!("duplicate declaration of '{}'", name),
+                message: format!("Duplicate declaration of '{}'", name),
                 span: symbol.span,
             });
         }
@@ -1490,7 +1494,7 @@ impl SemanticAnalyzer {
                 // check if the generic type name exists.
                 if !self.symbol_table.exists(name) {
                     return Err(SemanticError {
-                        message: format!("undefined type '{}'", name),
+                        message: format!("Undefined type '{}'", name),
                         span: expr.span,
                     });
                 }
@@ -3009,8 +3013,14 @@ impl SemanticAnalyzer {
                 ));
                 let errors = module_analyzer.analyze(&module_nodes);
                 if !errors.is_empty() {
+                    let error_messages: Vec<String> =
+                        errors.iter().map(|e| e.message.clone()).collect();
                     return Err(SemanticError {
-                        message: format!("Errors in imported module {}: {:?}", module_path, errors),
+                        message: format!(
+                            "Errors in imported module {}:\n  {}",
+                            module_path,
+                            error_messages.join("\n  ")
+                        ),
                         span: stmt.span,
                     });
                 }
@@ -3563,7 +3573,7 @@ impl SemanticAnalyzer {
                 // check if the generic type name exists.
                 if !self.symbol_table.exists(name) {
                     return Err(SemanticError {
-                        message: format!("undefined type '{}'", name),
+                        message: format!("Undefined type '{}'", name),
                         span: expr.span,
                     });
                 }
