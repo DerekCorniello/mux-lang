@@ -6,6 +6,116 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+pub fn format_type(t: &Type) -> String {
+    match t {
+        Type::Primitive(p) => format_primitive_type(p),
+        Type::List(inner) => format!("[{}]", format_type(inner)),
+        Type::Map(k, v) => format!("{{{}: {}}}", format_type(k), format_type(v)),
+        Type::Set(inner) => format!("{{{}}}", format_type(inner)),
+        Type::Optional(inner) => format!("Optional<{}>", format_type(inner)),
+        Type::Reference(inner) => format!("&{}", format_type(inner)),
+        Type::Void => "void".to_string(),
+        Type::Never => "never".to_string(),
+        Type::EmptyList => "[?]".to_string(),
+        Type::EmptyMap => "{:}".to_string(),
+        Type::EmptySet => "{?}".to_string(),
+        Type::Function {
+            params,
+            returns,
+            default_count,
+        } => {
+            let params_str = params
+                .iter()
+                .map(|p| format_type(p))
+                .collect::<Vec<_>>()
+                .join(", ");
+            if *default_count > 0 {
+                format!("fn({params_str}) -> {}", format_type(returns))
+            } else {
+                format!("fn({params_str}) -> {}", format_type(returns))
+            }
+        }
+        Type::Named(name, args) => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                let args_str = args
+                    .iter()
+                    .map(|a| format_type(a))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{name}<{args_str}>")
+            }
+        }
+        Type::Variable(name) | Type::Generic(name) => name.clone(),
+        Type::Instantiated(name, args) => {
+            let args_str = args
+                .iter()
+                .map(|a| format_type(a))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{name}<{args_str}>")
+        }
+        Type::Module(name) => format!("module:{name}"),
+    }
+}
+
+fn format_primitive_type(p: &PrimitiveType) -> String {
+    match p {
+        PrimitiveType::Int => "int".to_string(),
+        PrimitiveType::Float => "float".to_string(),
+        PrimitiveType::Bool => "bool".to_string(),
+        PrimitiveType::Char => "char".to_string(),
+        PrimitiveType::Str => "string".to_string(),
+        PrimitiveType::Void => "void".to_string(),
+        PrimitiveType::Auto => "auto".to_string(),
+    }
+}
+
+pub fn format_binary_op(op: &BinaryOp) -> String {
+    match op {
+        BinaryOp::Add => "+".to_string(),
+        BinaryOp::Subtract => "-".to_string(),
+        BinaryOp::Multiply => "*".to_string(),
+        BinaryOp::Divide => "/".to_string(),
+        BinaryOp::Modulo => "%".to_string(),
+        BinaryOp::Exponent => "**".to_string(),
+        BinaryOp::Equal => "==".to_string(),
+        BinaryOp::NotEqual => "!=".to_string(),
+        BinaryOp::Less => "<".to_string(),
+        BinaryOp::LessEqual => "<=".to_string(),
+        BinaryOp::Greater => ">".to_string(),
+        BinaryOp::GreaterEqual => ">=".to_string(),
+        BinaryOp::LogicalAnd => "&&".to_string(),
+        BinaryOp::LogicalOr => "||".to_string(),
+        BinaryOp::In => "in".to_string(),
+        BinaryOp::Assign => "=".to_string(),
+        BinaryOp::AddAssign => "+=".to_string(),
+        BinaryOp::SubtractAssign => "-=".to_string(),
+        BinaryOp::MultiplyAssign => "*=".to_string(),
+        BinaryOp::DivideAssign => "/=".to_string(),
+        BinaryOp::ModuloAssign => "%=".to_string(),
+    }
+}
+
+#[allow(unused)]
+pub fn format_unary_op(op: &UnaryOp) -> String {
+    match op {
+        UnaryOp::Not => "!".to_string(),
+        UnaryOp::Neg => "-".to_string(),
+        UnaryOp::Ref => "&".to_string(),
+        UnaryOp::Deref => "*".to_string(),
+        UnaryOp::Incr => "++".to_string(),
+        UnaryOp::Decr => "--".to_string(),
+    }
+}
+
+pub fn format_span_location(span: &Span) -> String {
+    let row = span.row_start;
+    let col = span.col_start;
+    format!("{row}:{col}")
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolKind {
     Function,
@@ -99,7 +209,11 @@ impl Unifier {
                     // occurs check, ensure var not in t
                     if self.occurs(var, t) {
                         return Err(SemanticError {
-                            message: format!("Recursive type: {} occurs in {:?}", var, t),
+                            message: format!(
+                                "Recursive type: {} occurs in {}",
+                                var,
+                                format_type(t)
+                            ),
                             span,
                         });
                     }
@@ -151,10 +265,14 @@ impl Unifier {
             (Type::Never, _) => {}
             (_, Type::Never) => {}
             _ => {
-                return Err(SemanticError {
-                    message: format!("Type mismatch: {:?} vs {:?}", a, b),
+                return Err(SemanticError::new(
+                    format!(
+                        "Type mismatch: expected {}, got {}",
+                        format_type(a),
+                        format_type(b)
+                    ),
                     span,
-                });
+                ));
             }
         }
         Ok(())
@@ -373,7 +491,7 @@ impl SymbolTable {
     pub fn pop_scope(&mut self) -> Result<(), SemanticError> {
         if self.scopes.len() <= 1 {
             return Err(SemanticError {
-                message: "cannot pop the global scope".into(),
+                message: "Cannot pop the global scope".into(),
                 span: Span::new(0, 0), // Internal error, no user span available
             });
         }
@@ -397,7 +515,7 @@ impl SymbolTable {
     pub fn add_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {
         if self.scopes.is_empty() {
             return Err(SemanticError {
-                message: "no active scope".into(),
+                message: "No active scope".into(),
                 span: Span::new(0, 0), // Internal error, no user span available
             });
         }
@@ -407,7 +525,7 @@ impl SymbolTable {
 
         if current_borrow.symbols.contains_key(name) {
             return Err(SemanticError {
-                message: format!("duplicate declaration of '{}'", name),
+                message: format!("Duplicate declaration of '{}'", name),
                 span: symbol.span,
             });
         }
@@ -652,7 +770,7 @@ impl SemanticAnalyzer {
                 }
                 crate::parser::PrimitiveType::Void => Ok(Type::Void),
                 crate::parser::PrimitiveType::Auto => Err(SemanticError {
-                    message: "'auto' type not allowed in this context".into(),
+                    message: "The 'auto' type is not allowed in this context".into(),
                     span: type_node.span,
                 }),
             },
@@ -713,7 +831,7 @@ impl SemanticAnalyzer {
                 span: type_node.span,
             }),
             TypeKind::Auto => Err(SemanticError {
-                message: "'auto' type not allowed in this context".into(),
+                message: "The 'auto' type is not allowed in this context".into(),
                 span: type_node.span,
             }),
         }
@@ -761,13 +879,19 @@ impl SemanticAnalyzer {
                         })
                     } else {
                         Err(SemanticError {
-                            message: format!("undefined variable '{}'", name),
+                            message: format!("Undefined variable '{}'", name),
                             span: expr.span,
                         })
                     }
                 }
             }
-            ExpressionKind::Binary { left, right, op } => {
+            ExpressionKind::Binary {
+                left,
+                right,
+                op,
+                op_span,
+                ..
+            } => {
                 let left_type = self.get_expression_type(left)?;
                 let right_type = self.get_expression_type(right)?;
 
@@ -784,10 +908,11 @@ impl SemanticAnalyzer {
 
                         // Check if trying to assign to a constant
                         if symbol.kind == SymbolKind::Constant {
-                            return Err(SemanticError {
-                                message: format!("Cannot assign to constant '{}'", name),
-                                span: expr.span,
-                            });
+                            return Err(SemanticError::with_help(
+                                format!("Cannot assign to constant '{}'", name),
+                                expr.span,
+                                "Constants cannot be modified after initialization",
+                            ));
                         }
 
                         let var_type = symbol.type_.as_ref().ok_or_else(|| SemanticError {
@@ -849,7 +974,7 @@ impl SemanticAnalyzer {
                         // No const checking needed - you can't have a const pointer target
                     } else {
                         return Err(SemanticError {
-                            message: "Assignment to non-identifier not supported".into(),
+                            message: "Assignment to non-identifier is not supported".into(),
                             span: expr.span,
                         });
                     }
@@ -874,10 +999,11 @@ impl SemanticAnalyzer {
 
                         // Check if trying to modify a constant
                         if symbol.kind == SymbolKind::Constant {
-                            return Err(SemanticError {
-                                message: format!("Cannot modify constant '{}'", name),
-                                span: expr.span,
-                            });
+                            return Err(SemanticError::with_help(
+                                format!("Cannot modify constant '{}'", name),
+                                expr.span,
+                                "Constants cannot be modified after initialization",
+                            ));
                         }
                     } else if let crate::parser::ExpressionKind::FieldAccess {
                         expr: obj_expr,
@@ -924,10 +1050,12 @@ impl SemanticAnalyzer {
                                     self.resolve_binary_operator(&left_type, &right_type, &base_op)
                                         .ok_or_else(|| SemanticError {
                                             message: format!(
-                                                "Binary operator {:?} not supported for types {:?} and {:?}",
-                                                base_op, left_type, right_type
+                                                "Binary operator '{}' is not supported for types {} and {}",
+                                                format_binary_op(&base_op),
+                                                format_type(&left_type),
+                                                format_type(&right_type)
                                             ),
-                                            span: expr.span,
+                                            span: *op_span,
                                         })?;
                                 } else {
                                     return Err(SemanticError {
@@ -971,10 +1099,12 @@ impl SemanticAnalyzer {
                     } else {
                         Err(SemanticError {
                             message: format!(
-                                "Binary operator {:?} not supported for types {:?} and {:?}",
-                                base_op, left_type, right_type
+                                "Binary operator '{}' is not supported for types {} and {}",
+                                format_binary_op(&base_op),
+                                format_type(&left_type),
+                                format_type(&right_type)
                             ),
-                            span: expr.span,
+                            span: *op_span,
                         })
                     }
                 } else if let Some(result_type) =
@@ -984,10 +1114,12 @@ impl SemanticAnalyzer {
                 } else {
                     Err(SemanticError {
                         message: format!(
-                            "Binary operator {:?} not supported for types {:?} and {:?}",
-                            op, left_type, right_type
+                            "Binary operator '{}' is not supported for types {} and {}",
+                            format_binary_op(op),
+                            format_type(&left_type),
+                            format_type(&right_type)
                         ),
-                        span: expr.span,
+                        span: *op_span,
                     })
                 }
             }
@@ -999,7 +1131,7 @@ impl SemanticAnalyzer {
                         Type::Primitive(crate::parser::PrimitiveType::Int)
                         | Type::Primitive(crate::parser::PrimitiveType::Float) => Ok(operand_type),
                         _ => Err(SemanticError {
-                            message: "Negation operator requires numeric operand".into(),
+                            message: "Negation operator requires a numeric operand".into(),
                             span: expr.span,
                         }),
                     }
@@ -1014,7 +1146,7 @@ impl SemanticAnalyzer {
                         Ok(*inner)
                     } else {
                         Err(SemanticError {
-                            message: "Cannot dereference non-reference type".into(),
+                            message: "Cannot dereference a non-reference type".into(),
                             span: expr.span,
                         })
                     }
@@ -1024,10 +1156,11 @@ impl SemanticAnalyzer {
                     if let crate::parser::ExpressionKind::Identifier(name) = &expr.kind {
                         if let Some(symbol) = self.symbol_table.lookup(name) {
                             if symbol.kind == SymbolKind::Constant {
-                                return Err(SemanticError {
-                                    message: format!("Cannot modify constant '{}'", name),
-                                    span: expr.span,
-                                });
+                                return Err(SemanticError::with_help(
+                                    format!("Cannot modify constant '{}'", name),
+                                    expr.span,
+                                    "Constants cannot be modified after initialization",
+                                ));
                             }
                         }
                     } else if let crate::parser::ExpressionKind::FieldAccess {
@@ -1066,7 +1199,7 @@ impl SemanticAnalyzer {
                     match operand_type {
                         Type::Primitive(crate::parser::PrimitiveType::Int) => Ok(operand_type),
                         _ => Err(SemanticError {
-                            message: "Increment/Decrement operators require int operand".into(),
+                            message: "Increment/decrement operators require an int operand".into(),
                             span: expr.span,
                         }),
                     }
@@ -1137,10 +1270,11 @@ impl SemanticAnalyzer {
                         let unified_returns = unifier.apply(&returns);
                         Ok(unified_returns)
                     }
-                    _ => Err(SemanticError {
-                        message: "Cannot call non-function type".into(),
-                        span: expr.span,
-                    }),
+                    _ => Err(SemanticError::with_help(
+                        "Cannot call non-function type",
+                        expr.span,
+                        "Only functions can be called with '()'. Did you forget to use '()'?",
+                    )),
                 }
             }
             ExpressionKind::FieldAccess { expr, field } => {
@@ -1189,21 +1323,30 @@ impl SemanticAnalyzer {
                         } else {
                             Err(SemanticError {
                                 message: format!(
-                                    "Unknown field '{}' on type {:?}",
-                                    field, expr_type
+                                    "Unknown field '{}' on type {}",
+                                    field,
+                                    format_type(&expr_type)
                                 ),
                                 span: expr.span,
                             })
                         }
                     } else {
                         Err(SemanticError {
-                            message: format!("Unknown method '{}' on type {:?}", field, expr_type),
+                            message: format!(
+                                "Unknown method '{}' on type {}",
+                                field,
+                                format_type(&expr_type)
+                            ),
                             span: expr.span,
                         })
                     }
                 } else {
                     Err(SemanticError {
-                        message: format!("Unknown method '{}' on type {:?}", field, expr_type),
+                        message: format!(
+                            "Unknown method '{}' on type {}",
+                            field,
+                            format_type(&expr_type)
+                        ),
                         span: expr.span,
                     })
                 }
@@ -1214,10 +1357,11 @@ impl SemanticAnalyzer {
                 let list_type = self.get_expression_type(expr)?;
                 match list_type {
                     Type::List(elem_type) => Ok(*elem_type),
-                    _ => Err(SemanticError {
-                        message: "Cannot index non-list type".into(),
-                        span: expr.span,
-                    }),
+                    _ => Err(SemanticError::with_help(
+                        "Cannot index non-list type",
+                        expr.span,
+                        "Only lists can be indexed with '[]'. Example: my_list[0]",
+                    )),
                 }
             }
             ExpressionKind::ListLiteral(elements) => {
@@ -1236,8 +1380,8 @@ impl SemanticAnalyzer {
                         {
                             return Err(SemanticError {
                                 message: format!(
-                                    "Heterogeneous list: expected all elements to be of type {:?}, but element at index {} has type {:?}",
-                                    first_type, index, element_type
+                                    "Heterogeneous list: expected all elements to be of type {}, but element at index {} has type {}",
+                                    format_type(&first_type), index, format_type(&element_type)
                                 ),
                                 span: element.span,
                             });
@@ -1267,10 +1411,15 @@ impl SemanticAnalyzer {
                 if then_type == else_type {
                     Ok(then_type)
                 } else {
-                    Err(SemanticError {
-                        message: "If expression branches must have the same type".into(),
-                        span: expr.span,
-                    })
+                    Err(SemanticError::with_help(
+                        "If expression branches must have the same type",
+                        expr.span,
+                        format!(
+                            "Then branch has type {}, else branch has type {}",
+                            format_type(&then_type),
+                            format_type(&else_type)
+                        ),
+                    ))
                 }
             }
             ExpressionKind::Lambda {
@@ -1345,7 +1494,7 @@ impl SemanticAnalyzer {
                 // check if the generic type name exists.
                 if !self.symbol_table.exists(name) {
                     return Err(SemanticError {
-                        message: format!("undefined type '{}'", name),
+                        message: format!("Undefined type '{}'", name),
                         span: expr.span,
                     });
                 }
@@ -1366,12 +1515,16 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         let mut temp_unifier = Unifier::new();
-        temp_unifier
-            .unify(expected, actual, span)
-            .map_err(|_| SemanticError {
-                message: format!("Type mismatch: expected {:?}, got {:?}", expected, actual),
+        temp_unifier.unify(expected, actual, span).map_err(|_| {
+            SemanticError::new(
+                format!(
+                    "Type mismatch: expected {}, got {}",
+                    format_type(expected),
+                    format_type(actual)
+                ),
                 span,
-            })
+            )
+        })
     }
 
     #[allow(clippy::only_used_in_recursion)]
@@ -1970,7 +2123,7 @@ impl SemanticAnalyzer {
                 AstNode::Function(func) => {
                     if func.is_common {
                         return Err(SemanticError {
-                            message: "common methods are only allowed in classes".to_string(),
+                            message: "Common methods are only allowed in classes".to_string(),
                             span: func.span,
                         });
                     }
@@ -2179,8 +2332,12 @@ impl SemanticAnalyzer {
                                     {
                                         self.errors.push(SemanticError {
                                             message: format!(
-                                                "Field '{}' type mismatch in class '{}': class has {:?}, interface '{}' requires {:?}",
-                                                field_name, name, class_field_type, interface_name, interface_field_type
+                                                "Field '{}' type mismatch in class '{}': class has {}, interface '{}' requires {}",
+                                                field_name,
+                                                name,
+                                                format_type(class_field_type),
+                                                interface_name,
+                                                format_type(interface_field_type)
                                             ),
                                             span: *node.span(),
                                         });
@@ -2300,8 +2457,10 @@ impl SemanticAnalyzer {
                             if !self.types_compatible(&default_type, &field_type) {
                                 self.errors.push(SemanticError {
                                     message: format!(
-                                        "Default value type mismatch for field '{}': expected {:?}, got {:?}",
-                                        field.name, field_type, default_type
+                                        "Default value type mismatch for field '{}': expected {}, got {}",
+                                        field.name,
+                                        format_type(&field_type),
+                                        format_type(&default_type)
                                     ),
                                     span: default_expr.span,
                                 });
@@ -2356,7 +2515,7 @@ impl SemanticAnalyzer {
             AstNode::Function(func) => {
                 if func.is_common {
                     return Err(SemanticError {
-                        message: "common methods are only allowed in classes".to_string(),
+                        message: "Common methods are only allowed in classes".to_string(),
                         span: func.span,
                     });
                 }
@@ -2492,8 +2651,10 @@ impl SemanticAnalyzer {
                 if default_type != field_type {
                     return Err(SemanticError {
                         message: format!(
-                            "Field '{}' has type {:?} but default value has type {:?}",
-                            field.name, field_type, default_type
+                            "Field '{}' has type {} but default value has type {}",
+                            field.name,
+                            format_type(&field_type),
+                            format_type(&default_type)
                         ),
                         span: default_expr.span,
                     });
@@ -2854,8 +3015,14 @@ impl SemanticAnalyzer {
                 ));
                 let errors = module_analyzer.analyze(&module_nodes);
                 if !errors.is_empty() {
+                    let error_messages: Vec<String> =
+                        errors.iter().map(|e| e.message.clone()).collect();
                     return Err(SemanticError {
-                        message: format!("Errors in imported module {}: {:?}", module_path, errors),
+                        message: format!(
+                            "Errors in imported module {}:\n  {}",
+                            module_path,
+                            error_messages.join("\n  ")
+                        ),
                         span: stmt.span,
                     });
                 }
@@ -2998,8 +3165,9 @@ impl SemanticAnalyzer {
                         } else {
                             return Err(SemanticError {
                                 message: format!(
-                                    "Pattern {} does not match type {:?}",
-                                    name, expected_type
+                                    "Pattern {} does not match type {}",
+                                    name,
+                                    format_type(expected_type)
                                 ),
                                 span,
                             });
@@ -3017,8 +3185,9 @@ impl SemanticAnalyzer {
                         } else {
                             return Err(SemanticError {
                                 message: format!(
-                                    "Pattern {} does not match type {:?}",
-                                    name, expected_type
+                                    "Pattern {} does not match type {}",
+                                    name,
+                                    format_type(expected_type)
                                 ),
                                 span,
                             });
@@ -3061,8 +3230,8 @@ impl SemanticAnalyzer {
                     _ => {
                         return Err(SemanticError {
                             message: format!(
-                                "Enum variant patterns are not supported for type {:?}",
-                                expected_type
+                                "Enum variant patterns are not supported for type {}",
+                                format_type(expected_type)
                             ),
                             span,
                         });
@@ -3098,14 +3267,14 @@ impl SemanticAnalyzer {
                 if name == "self" {
                     if self.is_in_static_method {
                         return Err(SemanticError {
-                            message: "cannot use 'self' in common method".to_string(),
+                            message: "Cannot use 'self' in a common method".to_string(),
                             span: expr.span,
                         });
                     }
                     // For 'self', check if we have a current self type
                     if self.current_self_type.is_none() {
                         return Err(SemanticError {
-                            message: "cannot use 'self' outside of method".to_string(),
+                            message: "Cannot use 'self' outside of a method".to_string(),
                             span: expr.span,
                         });
                     }
@@ -3113,7 +3282,7 @@ impl SemanticAnalyzer {
                 }
                 if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
                     return Err(SemanticError {
-                        message: format!("undefined variable '{}'", name),
+                        message: format!("Undefined variable '{}'", name),
                         span: expr.span,
                     });
                 }
@@ -3121,7 +3290,7 @@ impl SemanticAnalyzer {
             }
             ExpressionKind::Literal(_) => Ok(()), // literals are fine
             ExpressionKind::None => Ok(()),       // None is fine
-            ExpressionKind::Binary { left, right, op: _ } => {
+            ExpressionKind::Binary { left, right, .. } => {
                 self.analyze_expression(left)?;
                 self.analyze_expression(right)?;
                 // type checking is handled in get_expression_type via resolve_binary_operator
@@ -3141,7 +3310,7 @@ impl SemanticAnalyzer {
                             Type::Primitive(crate::parser::PrimitiveType::Bool)
                         ) {
                             return Err(SemanticError {
-                                message: "Logical not operator requires boolean operand".into(),
+                                message: "Logical 'not' operator requires a boolean operand".into(),
                                 span: expr.span,
                             });
                         }
@@ -3153,7 +3322,7 @@ impl SemanticAnalyzer {
                                 | Type::Primitive(crate::parser::PrimitiveType::Float)
                         ) {
                             return Err(SemanticError {
-                                message: "Negation operator requires numeric operand".into(),
+                                message: "Negation operator requires a numeric operand".into(),
                                 span: expr.span,
                             });
                         }
@@ -3167,7 +3336,7 @@ impl SemanticAnalyzer {
                             Type::Primitive(crate::parser::PrimitiveType::Int)
                         ) {
                             return Err(SemanticError {
-                                message: "Increment/Decrement operators require int operand".into(),
+                                message: "Increment/decrement operators require an int operand".into(),
                                 span: expr.span,
                             });
                         }
@@ -3176,10 +3345,11 @@ impl SemanticAnalyzer {
                         if let crate::parser::ExpressionKind::Identifier(name) = &expr.kind {
                             if let Some(symbol) = self.symbol_table.lookup(name) {
                                 if symbol.kind == SymbolKind::Constant {
-                                    return Err(SemanticError {
-                                        message: format!("Cannot modify constant '{}'", name),
-                                        span: expr.span,
-                                    });
+                                    return Err(SemanticError::with_help(
+                                        format!("Cannot modify constant '{}'", name),
+                                        expr.span,
+                                        "Constants cannot be modified after initialization",
+                                    ));
                                 }
                             }
                         }
@@ -3253,10 +3423,11 @@ impl SemanticAnalyzer {
                 match list_type {
                     Type::List(_) => {}
                     _ => {
-                        return Err(SemanticError {
-                            message: "Cannot index non-list type".into(),
-                            span: expr.span,
-                        });
+                        return Err(SemanticError::with_help(
+                            "Cannot index non-list type",
+                            expr.span,
+                            "Only lists can be indexed with '[]'. Example: my_list[0]",
+                        ));
                     }
                 }
                 let index_type = self.get_expression_type(index)?;
@@ -3406,7 +3577,7 @@ impl SemanticAnalyzer {
                 // check if the generic type name exists.
                 if !self.symbol_table.exists(name) {
                     return Err(SemanticError {
-                        message: format!("undefined type '{}'", name),
+                        message: format!("Undefined type '{}'", name),
                         span: expr.span,
                     });
                 }
@@ -3796,15 +3967,44 @@ impl SemanticAnalyzer {
 }
 
 // represents a semantic error with location information
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SemanticError {
     pub message: String,
     pub span: Span,
 }
 
+impl SemanticError {
+    pub fn new(message: impl Into<String>, span: Span) -> Self {
+        Self {
+            message: message.into(),
+            span,
+        }
+    }
+
+    pub fn with_help(message: impl Into<String>, span: Span, help: impl Into<String>) -> Self {
+        Self {
+            message: format!("{}\n  = help: {}", message.into(), help.into()),
+            span,
+        }
+    }
+
+    #[allow(unused)]
+    pub fn with_suggestion(message: impl Into<String>, span: Span, suggestion: &str) -> Self {
+        Self {
+            message: format!("{}\n  = help: {}", message.into(), suggestion),
+            span,
+        }
+    }
+}
+
 impl std::fmt::Display for SemanticError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "semantic error: {} at {:?}", self.message, self.span)
+        write!(
+            f,
+            "Semantic error at {}: {}",
+            format_span_location(&self.span),
+            self.message
+        )
     }
 }
 

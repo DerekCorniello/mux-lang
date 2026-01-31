@@ -2829,7 +2829,9 @@ impl<'a> CodeGenerator<'a> {
                     }
                 }
             }
-            ExpressionKind::Binary { left, op, right } => {
+            ExpressionKind::Binary {
+                left, op, right, ..
+            } => {
                 if op.is_assignment() {
                     match op {
                         BinaryOp::Assign => {

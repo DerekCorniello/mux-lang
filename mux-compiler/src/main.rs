@@ -5,16 +5,73 @@ mod parser;
 mod semantics;
 mod source;
 
-use lexer::Lexer;
+use lexer::{Lexer, LexerError, Span};
 use module_resolver::ModuleResolver;
-use parser::Parser;
+use parser::{Parser, ParserError};
 use semantics::SemanticAnalyzer;
+use semantics::SemanticError;
 use source::Source;
 use std::cell::RefCell;
 use std::env;
 use std::path::PathBuf;
 use std::process::{self, Command};
 use std::rc::Rc;
+
+fn print_error_with_location(
+    file_path: &str,
+    source: &str,
+    message: &str,
+    span: Span,
+    help: Option<&str>,
+) {
+    let lines: Vec<&str> = source.lines().collect();
+    let row = span.row_start.saturating_sub(1);
+    let col = span.col_start.saturating_sub(1);
+
+    eprintln!();
+    if row < lines.len() {
+        eprintln!("In {}, line {}:", file_path, span.row_start);
+        eprintln!("    {}", lines[row].trim_end());
+
+        let indicator = if span.col_end.map_or(false, |end| end > span.col_start) {
+            let width = span.col_end.unwrap_or(span.col_start) - span.col_start;
+            format!("^{}", "-".repeat(width))
+        } else {
+            "^".to_string()
+        };
+
+        eprint!("    ");
+        for _ in 0..col {
+            eprint!(" ");
+        }
+        eprintln!("{}", indicator);
+
+        eprintln!("{}", message);
+        if let Some(help_text) = help {
+            eprintln!("Help: {}", help_text);
+        }
+    } else {
+        eprintln!("In {}, line {}:", file_path, span.row_start);
+        eprintln!("{}", message);
+    }
+    eprintln!();
+}
+
+fn handle_lexer_error(file_path: &str, source: &str, error: &LexerError) {
+    print_error_with_location(file_path, source, &error.message, error.span, None);
+}
+
+fn handle_parser_errors(file_path: &str, source: &str, errors: &[ParserError]) {
+    for error in errors {
+        print_error_with_location(file_path, source, &error.message, error.span, None);
+    }
+}
+
+fn handle_semantic_errors(file_path: &str, source: &str, errors: &[SemanticError]) {
+    for error in errors {
+        print_error_with_location(file_path, source, &error.message, error.span, None);
+    }
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -48,7 +105,13 @@ fn main() {
                     let mut analyzer = SemanticAnalyzer::new_with_resolver(resolver);
                     let errors = analyzer.analyze(&nodes);
                     if !errors.is_empty() {
-                        eprintln!("Semantic errors: {:?}", errors);
+                        if let Ok(source) = std::fs::read_to_string(file_path) {
+                            handle_semantic_errors(file_path, &source, &errors);
+                        } else {
+                            for error in &errors {
+                                eprintln!("{}", error);
+                            }
+                        }
                         process::exit(1);
                     }
 
@@ -106,47 +169,22 @@ fn main() {
                     }
                 }
                 Err((_, errors)) => {
-                    if let Some(first_error) = errors.first() {
-                        eprintln!("Parsing failed: {}", first_error.message);
-                        // Print error location if available
-                        if let Ok(source) = std::fs::read_to_string(file_path) {
-                            let lines: Vec<&str> = source.lines().collect();
-                            if first_error.span.row_start > 0
-                                && first_error.span.row_start <= lines.len()
-                            {
-                                let line = lines[first_error.span.row_start - 1];
-                                eprintln!("  --> {}:{}", file_path, first_error.span.row_start);
-                                eprintln!("   |");
-                                eprintln!("{:4} | {}", first_error.span.row_start, line);
-                                eprint!("   | ");
-                                for _ in 0..(first_error.span.col_start.saturating_sub(1)) {
-                                    eprint!(" ");
-                                }
-                                eprintln!("^--- {}", first_error.message);
-                            }
-                        }
+                    if let Ok(source) = std::fs::read_to_string(file_path) {
+                        handle_parser_errors(file_path, &source, &errors);
                     } else {
-                        eprintln!("Parsing failed: unknown error");
+                        for error in &errors {
+                            eprintln!("{}", error);
+                        }
                     }
                     process::exit(1);
                 }
             }
         }
         Err(e) => {
-            eprintln!("Lexer error: {}", e);
             if let Ok(source) = std::fs::read_to_string(file_path) {
-                let lines: Vec<&str> = source.lines().collect();
-                if e.span.row_start > 0 && e.span.row_start <= lines.len() {
-                    let line = lines[e.span.row_start - 1];
-                    eprintln!("  --> {}:{}", file_path, e.span.row_start);
-                    eprintln!("   |");
-                    eprintln!("{:4} | {}", e.span.row_start, line);
-                    eprint!("   | ");
-                    for _ in 0..(e.span.col_start - 1) {
-                        eprint!(" ");
-                    }
-                    eprintln!("^--- {}", e.message);
-                }
+                handle_lexer_error(file_path, &source, &e);
+            } else {
+                eprintln!("Lexer error: {}", e);
             }
             process::exit(1);
         }
