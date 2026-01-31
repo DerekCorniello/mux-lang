@@ -3397,7 +3397,10 @@ mod tests {
         let expr = parse_expr(input);
 
         // The binary expression should span the entire input
-        if let ExpressionKind::Binary { left, op: _, right } = &expr.kind {
+        if let ExpressionKind::Binary {
+            left, op: _, right, ..
+        } = &expr.kind
+        {
             // The entire expression should span from the start of the first token to the end of the last token
             assert_eq!(expr.span.row_start, 1);
             assert_eq!(expr.span.col_start, 1);
@@ -3433,7 +3436,10 @@ mod tests {
             assert_eq!(args[0].span.col_start, 5);
 
             // The second argument is a binary expression
-            if let ExpressionKind::Binary { left, op: _, right } = &args[1].kind {
+            if let ExpressionKind::Binary {
+                left, op: _, right, ..
+            } = &args[1].kind
+            {
                 assert_eq!(left.span.row_start, 1);
                 assert_eq!(left.span.col_start, 8);
                 assert_eq!(right.span.row_start, 1);
@@ -3495,9 +3501,10 @@ mod tests {
             Err((_, errors)) => {
                 assert!(!errors.is_empty(), "Expected errors but got none");
                 let has_newline_error = errors.iter().any(|e| {
-                    e.message.contains("expected newline after statement")
-                        || e.message.contains("missing newline")
-                        || e.message.contains("expected newline")
+                    let msg_lower = e.message.to_lowercase();
+                    msg_lower.contains("expected newline after statement")
+                        || msg_lower.contains("missing newline")
+                        || msg_lower.contains("expected newline")
                 });
 
                 if !has_newline_error {

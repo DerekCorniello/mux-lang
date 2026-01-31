@@ -50,7 +50,7 @@ print("instantiated stack")
 print("stack has: " + test.items.to_string())
 print(test.to_string())
 
-print("max of 1 and 2 is: " + max(1, 2).to_string())
+print("max of 5 and 10 is: " + max(5, 10).to_string())
 print("max of -1 and -2 is: " + max(-1, -2).to_string())
 print(name("derek"))
 print(name(123))

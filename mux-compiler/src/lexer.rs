@@ -674,8 +674,11 @@ impl<'a> Lexer<'a> {
                 ));
             }
         } else {
-            // handle numbers starting with a digit (or we already have the minus sign)
-            if first_char != '-' {
+            // handle numbers starting with a digit (or with a minus sign for negative numbers)
+            if first_char == '-' {
+                // Add the minus sign for negative numbers
+                num.push('-');
+            } else {
                 num.push(first_char);
             }
 
@@ -869,7 +872,7 @@ mod tests {
         let input = "auto x = \"invalid \\z escape\"";
         let mut source = Source::from_test_str(input);
         let result = Lexer::new(&mut source).lex_all();
-        assert_lexer_error(result, "unknown escape sequence", 1, 20);
+        assert_lexer_error(result, "Unknown escape sequence", 1, 20);
     }
 
     #[test]
@@ -893,8 +896,8 @@ auto y = 42"#;
             }
             Err(e) => {
                 assert!(
-                    e.message.contains("unknown escape sequence: \\z"),
-                    "Expected 'unknown escape sequence: \\z' error, got: {}",
+                    e.message.contains("Unknown escape sequence: \\z"),
+                    "Expected 'Unknown escape sequence: \\z' error, got: {}",
                     e.message
                 );
                 assert_eq!(e.span.row_start, 1);

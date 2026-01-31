@@ -22,38 +22,26 @@ pub fn format_type(t: &Type) -> String {
         Type::Function {
             params,
             returns,
-            default_count,
+            default_count: _,
         } => {
             let params_str = params
                 .iter()
-                .map(|p| format_type(p))
+                .map(format_type)
                 .collect::<Vec<_>>()
                 .join(", ");
-            if *default_count > 0 {
-                format!("fn({params_str}) -> {}", format_type(returns))
-            } else {
-                format!("fn({params_str}) -> {}", format_type(returns))
-            }
+            format!("fn({params_str}) -> {}", format_type(returns))
         }
         Type::Named(name, args) => {
             if args.is_empty() {
                 name.clone()
             } else {
-                let args_str = args
-                    .iter()
-                    .map(|a| format_type(a))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let args_str = args.iter().map(format_type).collect::<Vec<_>>().join(", ");
                 format!("{name}<{args_str}>")
             }
         }
         Type::Variable(name) | Type::Generic(name) => name.clone(),
         Type::Instantiated(name, args) => {
-            let args_str = args
-                .iter()
-                .map(|a| format_type(a))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let args_str = args.iter().map(format_type).collect::<Vec<_>>().join(", ");
             format!("{name}<{args_str}>")
         }
         Type::Module(name) => format!("module:{name}"),
@@ -572,6 +560,7 @@ pub struct SemanticAnalyzer {
     pub module_dependencies: Vec<String>,
     current_file: Option<std::path::PathBuf>, // Track current file for relative imports
     pub lambda_captures: std::collections::HashMap<Span, Vec<(String, Type)>>, // Track captured variables for each lambda
+    pub current_return_type: Option<Type>, // Track current function/lambda return type
 }
 
 impl Default for SemanticAnalyzer {
@@ -600,6 +589,7 @@ impl SemanticAnalyzer {
             module_dependencies: Vec::new(),
             current_file: None,
             lambda_captures: std::collections::HashMap::new(),
+            current_return_type: None,
         }
     }
 
@@ -619,6 +609,7 @@ impl SemanticAnalyzer {
             module_dependencies: Vec::new(),
             current_file: None,
             lambda_captures: std::collections::HashMap::new(),
+            current_return_type: None,
         }
     }
 
@@ -640,6 +631,7 @@ impl SemanticAnalyzer {
             module_dependencies: Vec::new(),
             current_file: None,
             lambda_captures: std::collections::HashMap::new(),
+            current_return_type: None,
         }
     }
 
@@ -1273,7 +1265,7 @@ impl SemanticAnalyzer {
                     _ => Err(SemanticError::with_help(
                         "Cannot call non-function type",
                         expr.span,
-                        "Only functions can be called with '()'. Did you forget to use '()'?",
+                        "Only functions can be called with '()'. Ensure the expression before '()' is a function.",
                     )),
                 }
             }
@@ -1424,9 +1416,26 @@ impl SemanticAnalyzer {
             }
             ExpressionKind::Lambda {
                 params,
-                return_type: _,
+                return_type,
                 body,
             } => {
+                // Check if this lambda has already been analyzed (captures detected)
+                // If so, just return its type without re-analyzing to avoid scope issues
+                if self.lambda_captures.contains_key(&expr.span) {
+                    let param_types = params
+                        .iter()
+                        .map(|p| self.resolve_type(&p.type_))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let resolved_return_type = self.resolve_type(return_type)?;
+                    let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
+                    return Ok(Type::Function {
+                        params: param_types,
+                        returns: Box::new(resolved_return_type),
+                        default_count,
+                    });
+                }
+
+                // First time analyzing this lambda - do full analysis
                 // Collect parameter names to identify what's local vs captured
                 let mut local_vars = std::collections::HashSet::new();
                 for param in params {
@@ -1464,7 +1473,7 @@ impl SemanticAnalyzer {
                     .iter()
                     .map(|p| self.resolve_type(&p.type_))
                     .collect::<Result<Vec<_>, _>>()?;
-                let return_type = if body.is_empty() {
+                let return_type_resolved = if body.is_empty() {
                     Type::Void
                 } else {
                     match &body.last().unwrap().kind {
@@ -1478,7 +1487,7 @@ impl SemanticAnalyzer {
                 let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
                 Ok(Type::Function {
                     params: param_types,
-                    returns: Box::new(return_type),
+                    returns: Box::new(return_type_resolved),
                     default_count,
                 })
             }
@@ -2547,8 +2556,13 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         let was_static = self.is_in_static_method;
         let old_self_type = self.current_self_type.clone();
+        let old_return_type = self.current_return_type.clone();
         self.is_in_static_method = func.is_common;
         self.current_self_type = self_type.clone();
+
+        // Set return type context
+        let return_type = self.resolve_type(&func.return_type)?;
+        self.current_return_type = Some(return_type.clone());
 
         // set current bounds
         self.current_bounds.clear();
@@ -2619,149 +2633,53 @@ impl SemanticAnalyzer {
         }
 
         // analyze function body with new scope.
-        let result = self.analyze_block(&func.body);
+        let _result = self.analyze_block(&func.body);
 
         // clean up function scope.
         self.symbol_table.pop_scope()?;
         self.current_bounds.clear();
         self.is_in_static_method = was_static;
         self.current_self_type = old_self_type;
-        result
+        self.current_return_type = old_return_type;
+        Ok(())
     }
 
     fn analyze_class(
         &mut self,
-        name_: &str,
-        fields: &[Field],
+        name: &str,
+        _fields: &[Field],
         methods: &[FunctionNode],
         type_params: &[(String, Vec<String>)],
     ) -> Result<(), SemanticError> {
-        // create new scope for class members.
-        self.symbol_table.push_scope()?;
+        // Methods were already added to the class symbol during first pass (collect_hoistable_declarations)
+        // Here we just need to analyze method bodies with proper self type
 
-        // add fields to class scope.
-        for field in fields {
-            let field_type = self.resolve_type(&field.type_)?;
+        // Create self type for this class
+        let self_type = if type_params.is_empty() {
+            Type::Named(name.to_string(), vec![])
+        } else {
+            // For generic classes, use type variables for self
+            Type::Named(
+                name.to_string(),
+                type_params
+                    .iter()
+                    .map(|(param_name, _)| Type::Variable(param_name.clone()))
+                    .collect(),
+            )
+        };
 
-            // Type-check default value if present
-            if let Some(default_expr) = &field.default_value {
-                let default_type = self.get_expression_type(default_expr)?;
-
-                // Check that default type matches field type
-                if default_type != field_type {
-                    return Err(SemanticError {
-                        message: format!(
-                            "Field '{}' has type {} but default value has type {}",
-                            field.name,
-                            format_type(&field_type),
-                            format_type(&default_type)
-                        ),
-                        span: default_expr.span,
-                    });
-                }
-
-                // Check that generic type parameters don't have default values
-                if field.is_generic_param {
-                    return Err(SemanticError {
-                        message: format!(
-                            "Generic type parameter field '{}' cannot have a default value",
-                            field.name
-                        ),
-                        span: default_expr.span,
-                    });
-                }
-            }
-
-            self.symbol_table.add_symbol(
-                &field.name,
-                Symbol {
-                    kind: SymbolKind::Variable,
-                    span: field.type_.span,
-                    type_: Some(field_type),
-                    interfaces: std::collections::HashMap::new(),
-                    methods: std::collections::HashMap::new(),
-                    fields: std::collections::HashMap::new(),
-                    type_params: Vec::new(),
-                    original_name: None,
-                    llvm_name: None,
-                    default_param_count: 0,
-                },
-            )?;
-        }
-
-        // add methods to class scope and analyze their bodies.
+        // Analyze each method body with proper self type
         for method in methods {
-            // Validate: reject method type parameters that shadow class type parameters
-            let class_type_param_names: Vec<&str> =
-                type_params.iter().map(|(p, _)| p.as_str()).collect();
-            for (method_type_param, _) in &method.type_params {
-                if class_type_param_names.contains(&method_type_param.as_str()) {
-                    return Err(SemanticError {
-                        message: format!(
-                            "Type parameter '{}' in method '{}' shadows class type parameter '{}'; methods implicitly use class type parameters and should not re-declare them",
-                            method_type_param, method.name, method_type_param
-                        ),
-                        span: method.span,
-                    });
-                }
-            }
-
-            // resolve method type
-            let param_types = method
-                .params
-                .iter()
-                .map(|p| self.resolve_type(&p.type_))
-                .collect::<Result<Vec<_>, _>>()?;
-            let return_type = self.resolve_type(&method.return_type)?;
-            let method_type = Type::Function {
-                params: param_types,
-                returns: Box::new(return_type),
-                default_count: 0,
-            };
-
-            // Count parameters with default values
-            let default_count = method
-                .params
-                .iter()
-                .filter(|p| p.default_value.is_some())
-                .count();
-
-            self.symbol_table.add_symbol(
-                &method.name,
-                Symbol {
-                    kind: SymbolKind::Function,
-                    span: method.span,
-                    type_: Some(method_type),
-                    interfaces: std::collections::HashMap::new(),
-                    methods: std::collections::HashMap::new(),
-                    fields: std::collections::HashMap::new(),
-                    type_params: Vec::new(),
-                    original_name: None,
-                    llvm_name: None,
-                    default_param_count: default_count,
-                },
-            )?;
-            let self_type = if method.is_common {
+            // Static methods (common) don't have self
+            let method_self_type = if method.is_common {
                 None
             } else {
-                Some(Type::Named(
-                    name_.to_string(),
-                    type_params
-                        .iter()
-                        .map(|(p, _)| Type::Variable(p.clone()))
-                        .collect(),
-                ))
+                Some(self_type.clone())
             };
-            // Set current_self_type for method body analysis
-            let old_self_type = self.current_self_type.clone();
-            self.current_self_type = self_type.clone();
-            self.analyze_function(method, self_type)?;
-            // Restore previous self type
-            self.current_self_type = old_self_type;
+
+            self.analyze_function(method, method_self_type)?;
         }
 
-        // clean up class scope.
-        self.symbol_table.pop_scope()?;
         Ok(())
     }
 
@@ -2828,6 +2746,7 @@ impl SemanticAnalyzer {
     fn analyze_statement(&mut self, stmt: &StatementNode) -> Result<(), SemanticError> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
+                self.analyze_expression(expr)?;
                 let expr_type = self.get_expression_type(expr)?;
                 if matches!(expr_type, Type::EmptyList | Type::EmptyMap | Type::EmptySet) {
                     let collection_type = match expr_type {
@@ -2862,6 +2781,7 @@ impl SemanticAnalyzer {
             }
             StatementKind::TypedDecl(name, type_node, expr) => {
                 let declared_type = self.resolve_type(type_node)?;
+                self.analyze_expression(expr)?;
                 let expr_type = self.get_expression_type(expr)?;
                 self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
                 self.symbol_table.add_symbol(
@@ -2890,6 +2810,7 @@ impl SemanticAnalyzer {
             }
             StatementKind::ConstDecl(name, type_node, expr) => {
                 let declared_type = self.resolve_type(type_node)?;
+                self.analyze_expression(expr)?;
                 let expr_type = self.get_expression_type(expr)?;
                 self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
                 self.symbol_table.add_symbol(
@@ -2970,6 +2891,12 @@ impl SemanticAnalyzer {
             StatementKind::Match { expr, arms } => {
                 self.analyze_expression(expr)?;
                 let expr_type = self.get_expression_type(expr)?;
+
+                // Track return types from each arm if we're in a non-void function context
+                let expecting_return = self.current_return_type.is_some()
+                    && !matches!(self.current_return_type, Some(Type::Void));
+                let mut arm_return_types = Vec::new();
+
                 for arm in arms {
                     self.symbol_table.push_scope()?;
                     // set types for pattern variables based on expr_type
@@ -2979,11 +2906,86 @@ impl SemanticAnalyzer {
                         self.analyze_expression(guard)?;
                     }
                     self.analyze_block(&arm.body)?;
+
+                    // Check for return in this arm
+                    if expecting_return {
+                        let mut has_return = false;
+                        for stmt in &arm.body {
+                            if let StatementKind::Return(Some(ret_expr)) = &stmt.kind {
+                                let ret_type = self.get_expression_type(ret_expr)?;
+                                arm_return_types.push((ret_type, stmt.span));
+                                has_return = true;
+                                break;
+                            } else if let StatementKind::Return(None) = &stmt.kind {
+                                has_return = true;
+                                // Void return in non-void context - will be caught by Return validation
+                            }
+                        }
+                        if !has_return {
+                            return Err(SemanticError {
+                                message: "Match arm must return a value in a function with non-void return type".into(),
+                                span: arm.body.first().map(|s| s.span).unwrap_or(expr.span),
+                            });
+                        }
+                    }
+
                     self.symbol_table.pop_scope()?;
                 }
+
+                // Validate all arms return compatible types
+                if !arm_return_types.is_empty() {
+                    let (first_type, _first_span) = &arm_return_types[0];
+                    for (i, (arm_type, arm_span)) in arm_return_types.iter().enumerate().skip(1) {
+                        if self
+                            .check_type_compatibility(first_type, arm_type, *arm_span)
+                            .is_err()
+                        {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "Match arms have incompatible return types: first arm returns '{}', but arm {} returns '{}'",
+                                    format_type(first_type),
+                                    i + 1,
+                                    format_type(arm_type)
+                                ),
+                                span: *arm_span,
+                            });
+                        }
+                    }
+                }
+                return Ok(());
             }
             StatementKind::Return(Some(expr)) => {
                 self.analyze_expression(expr)?;
+
+                // Check if we're in a void function
+                if matches!(self.current_return_type, Some(Type::Void)) {
+                    return Err(SemanticError {
+                        message: "Cannot return a value from a void function".into(),
+                        span: expr.span,
+                    });
+                }
+
+                // Validate return type matches function return type
+                if let Some(expected_type) = self.current_return_type.clone() {
+                    let actual_type = self.get_expression_type(expr)?;
+                    self.check_type_compatibility(&expected_type, &actual_type, expr.span)?;
+                }
+                return Ok(());
+            }
+            StatementKind::Return(None) => {
+                // Check if we're NOT in a void function (missing return value)
+                if !matches!(self.current_return_type, Some(Type::Void)) {
+                    if let Some(expected_type) = &self.current_return_type {
+                        return Err(SemanticError {
+                            message: format!(
+                                "Missing return value; function expects '{}', but return has no value",
+                                format_type(expected_type)
+                            ),
+                            span: stmt.span,
+                        });
+                    }
+                }
+                return Ok(());
             }
             StatementKind::Import { module_path, spec } => {
                 use crate::parser::ImportSpec;
@@ -3293,7 +3295,8 @@ impl SemanticAnalyzer {
             ExpressionKind::Binary { left, right, .. } => {
                 self.analyze_expression(left)?;
                 self.analyze_expression(right)?;
-                // type checking is handled in get_expression_type via resolve_binary_operator
+                // Trigger comprehensive type checking (const, binary operators, etc.)
+                let _ = self.get_expression_type(expr)?;
                 Ok(())
             }
             ExpressionKind::Unary {
@@ -3336,7 +3339,8 @@ impl SemanticAnalyzer {
                             Type::Primitive(crate::parser::PrimitiveType::Int)
                         ) {
                             return Err(SemanticError {
-                                message: "Increment/decrement operators require an int operand".into(),
+                                message: "Increment/decrement operators require an int operand"
+                                    .into(),
                                 span: expr.span,
                             });
                         }
@@ -3408,11 +3412,14 @@ impl SemanticAnalyzer {
                         }
                     }
                 }
-                // type check is done in get_expression_type when called
+                // Trigger comprehensive type checking (callable, method existence, args)
+                let _ = self.get_expression_type(expr)?;
                 Ok(())
             }
             ExpressionKind::FieldAccess { expr, .. } => {
                 self.analyze_expression(expr)?;
+                // Trigger comprehensive type checking (field/method existence)
+                let _ = self.get_expression_type(expr)?;
                 Ok(())
             }
             ExpressionKind::ListAccess { expr, index } => {
@@ -3534,7 +3541,7 @@ impl SemanticAnalyzer {
             }
             ExpressionKind::Lambda {
                 params,
-                return_type: _,
+                return_type,
                 body,
             } => {
                 // Collect parameter names to identify what's local vs captured
@@ -3544,6 +3551,13 @@ impl SemanticAnalyzer {
                 }
 
                 self.symbol_table.push_scope()?;
+
+                // Set up return type context for lambda
+                let lambda_return_type = self.resolve_type(return_type)?;
+                let prev_return_type = self.current_return_type.clone();
+
+                self.current_return_type = Some(lambda_return_type.clone());
+
                 for param in params {
                     let param_type = self.resolve_type(&param.type_)?;
                     self.symbol_table.add_symbol(
@@ -3562,7 +3576,40 @@ impl SemanticAnalyzer {
                         },
                     )?;
                 }
+
                 self.analyze_block(body)?;
+
+                // Validate that the body returns the correct type
+                if !matches!(self.current_return_type, Some(Type::Void)) {
+                    // Find the last statement to check if it's a return
+                    let mut found_return = false;
+                    if let Some(last_stmt) = body.last() {
+                        if let StatementKind::Return(Some(ret_expr)) = &last_stmt.kind {
+                            let actual_type = self.get_expression_type(ret_expr)?;
+                            self.check_type_compatibility(
+                                &lambda_return_type,
+                                &actual_type,
+                                ret_expr.span,
+                            )?;
+                            found_return = true;
+                        } else if let StatementKind::Return(None) = &last_stmt.kind {
+                            found_return = true;
+                        }
+                    }
+
+                    if !found_return && !body.is_empty() {
+                        return Err(SemanticError {
+                            message: format!(
+                                "Lambda must return a value of type '{}'",
+                                format_type(&lambda_return_type)
+                            ),
+                            span: expr.span,
+                        });
+                    }
+                }
+
+                // Restore previous return type context
+                self.current_return_type = prev_return_type;
 
                 // Detect free variables (captured variables)
                 let captures = self.find_free_variables_in_block(body, &local_vars)?;

@@ -33,7 +33,7 @@ fn print_error_with_location(
         eprintln!("In {}, line {}:", file_path, span.row_start);
         eprintln!("    {}", lines[row].trim_end());
 
-        let indicator = if span.col_end.map_or(false, |end| end > span.col_start) {
+        let indicator = if span.col_end.is_some_and(|end| end > span.col_start) {
             let width = span.col_end.unwrap_or(span.col_start) - span.col_start;
             format!("^{}", "-".repeat(width))
         } else {
