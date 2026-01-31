@@ -14,6 +14,13 @@ impl LexerError {
             span,
         }
     }
+
+    pub fn with_help(message: impl Into<String>, span: Span, help: impl Into<String>) -> Self {
+        Self {
+            message: format!("{}\n  = help: {}", message.into(), help.into()),
+            span,
+        }
+    }
 }
 
 impl std::fmt::Display for LexerError {
@@ -502,6 +509,7 @@ impl<'a> Lexer<'a> {
         let mut s = String::new();
         let mut escaped = false;
         let is_triple = self.is_triple_quote();
+        let start_col = start_span.col_start; // remember where string starts
 
         // Skip the next two quotes if this is a triple-quoted string
         if is_triple {
@@ -543,9 +551,10 @@ impl<'a> Lexer<'a> {
                     '\'' => s.push('\''),
                     '"' => s.push('"'),
                     _ => {
-                        return Err(LexerError::new(
-                            format!("unknown escape sequence: \\{}", c),
+                        return Err(LexerError::with_help(
+                            format!("Unknown escape sequence: \\{}", c),
                             Span::new(self.source.line, self.source.col - 1),
+                            "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\', \\\"",
                         ));
                     }
                 }
@@ -556,8 +565,20 @@ impl<'a> Lexer<'a> {
         }
 
         // If we get here, the string wasn't properly terminated
-        start_span.complete(self.source.line, self.source.col);
-        Err(LexerError::new("Unterminated string", start_span))
+        // We read until EOF, so s contains all content including newlines
+        // The string content before the first newline is what we care about
+        let string_content = s.as_str();
+        let first_newline = string_content.find('\n').unwrap_or(string_content.len());
+        let error_col = start_col + first_newline;
+
+        // Complete span at the end of the string content (where the unterminated part ends)
+        start_span.complete(self.source.line, error_col);
+
+        Err(LexerError::with_help(
+            "Unterminated string",
+            start_span,
+            "Make sure to close the string with a matching quote",
+        ))
     }
 
     fn read_char(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
@@ -574,9 +595,10 @@ impl<'a> Lexer<'a> {
             if c == '\'' && !escaped {
                 // end of char literal
                 if chars.len() != 1 {
-                    return Err(LexerError::new(
+                    return Err(LexerError::with_help(
                         "Char literal must be exactly one character",
                         Span::new(start_span.row_start, start_col + 1),
+                        "Example: 'a', '\\n', '\\''",
                     ));
                 }
                 start_span.complete(self.source.line, self.source.col);
@@ -593,9 +615,10 @@ impl<'a> Lexer<'a> {
                     '\'' => chars.push('\''),
                     '"' => chars.push('"'),
                     _ => {
-                        return Err(LexerError::new(
-                            format!("unknown escape sequence: \\{}", c),
+                        return Err(LexerError::with_help(
+                            format!("Unknown escape sequence: \\{}", c),
                             Span::new(self.source.line, self.source.col - 1),
+                            "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\'",
                         ));
                     }
                 }
@@ -605,16 +628,18 @@ impl<'a> Lexer<'a> {
             }
 
             if chars.len() > 1 && !escaped {
-                return Err(LexerError::new(
+                return Err(LexerError::with_help(
                     "Char literal must be exactly one character",
                     Span::new(start_span.row_start, start_col + 1),
+                    "Example: 'a', '\\n', '\\''",
                 ));
             }
         }
 
-        Err(LexerError::new(
+        Err(LexerError::with_help(
             "Unterminated character literal",
             start_span,
+            "Make sure to close the character with a matching quote",
         ))
     }
 

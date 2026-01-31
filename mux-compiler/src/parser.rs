@@ -1944,10 +1944,12 @@ impl<'a> Parser<'a> {
             let left_span = *value.span();
             let right_span = *right.span();
             let left_expr = value.clone();
+            let op_span = self.previous().span;
             let new_value = ExpressionNode {
                 kind: ExpressionKind::Binary {
                     left: left_expr,
                     op: op_token,
+                    op_span,
                     right: Box::new(right),
                 },
                 span: left_span.combine(&right_span),
@@ -2676,6 +2678,14 @@ impl ParserError {
             span: token.span,
         }
     }
+
+    #[allow(unused)]
+    pub fn with_help(message: impl Into<String>, span: Span, help: impl Into<String>) -> Self {
+        Self {
+            message: format!("{}\n  = help: {}", message.into(), help.into()),
+            span,
+        }
+    }
 }
 
 impl std::fmt::Display for ParserError {
@@ -2854,6 +2864,7 @@ pub enum ExpressionKind {
     Binary {
         left: Box<ExpressionNode>,
         op: BinaryOp,
+        op_span: Span,
         right: Box<ExpressionNode>,
     },
     Unary {
