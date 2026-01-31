@@ -491,7 +491,7 @@ impl SymbolTable {
     pub fn pop_scope(&mut self) -> Result<(), SemanticError> {
         if self.scopes.len() <= 1 {
             return Err(SemanticError {
-                message: "cannot pop the global scope".into(),
+                message: "Cannot pop the global scope".into(),
                 span: Span::new(0, 0), // Internal error, no user span available
             });
         }
@@ -515,7 +515,7 @@ impl SymbolTable {
     pub fn add_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {
         if self.scopes.is_empty() {
             return Err(SemanticError {
-                message: "no active scope".into(),
+                message: "No active scope".into(),
                 span: Span::new(0, 0), // Internal error, no user span available
             });
         }
@@ -770,7 +770,7 @@ impl SemanticAnalyzer {
                 }
                 crate::parser::PrimitiveType::Void => Ok(Type::Void),
                 crate::parser::PrimitiveType::Auto => Err(SemanticError {
-                    message: "'auto' type not allowed in this context".into(),
+                    message: "The 'auto' type is not allowed in this context".into(),
                     span: type_node.span,
                 }),
             },
@@ -831,7 +831,7 @@ impl SemanticAnalyzer {
                 span: type_node.span,
             }),
             TypeKind::Auto => Err(SemanticError {
-                message: "'auto' type not allowed in this context".into(),
+                message: "The 'auto' type is not allowed in this context".into(),
                 span: type_node.span,
             }),
         }
@@ -974,7 +974,7 @@ impl SemanticAnalyzer {
                         // No const checking needed - you can't have a const pointer target
                     } else {
                         return Err(SemanticError {
-                            message: "Assignment to non-identifier not supported".into(),
+                            message: "Assignment to non-identifier is not supported".into(),
                             span: expr.span,
                         });
                     }
@@ -1131,7 +1131,7 @@ impl SemanticAnalyzer {
                         Type::Primitive(crate::parser::PrimitiveType::Int)
                         | Type::Primitive(crate::parser::PrimitiveType::Float) => Ok(operand_type),
                         _ => Err(SemanticError {
-                            message: "Negation operator requires numeric operand".into(),
+                            message: "Negation operator requires a numeric operand".into(),
                             span: expr.span,
                         }),
                     }
@@ -1146,7 +1146,7 @@ impl SemanticAnalyzer {
                         Ok(*inner)
                     } else {
                         Err(SemanticError {
-                            message: "Cannot dereference non-reference type".into(),
+                            message: "Cannot dereference a non-reference type".into(),
                             span: expr.span,
                         })
                     }
@@ -1199,7 +1199,7 @@ impl SemanticAnalyzer {
                     match operand_type {
                         Type::Primitive(crate::parser::PrimitiveType::Int) => Ok(operand_type),
                         _ => Err(SemanticError {
-                            message: "Increment/Decrement operators require int operand".into(),
+                            message: "Increment/decrement operators require an int operand".into(),
                             span: expr.span,
                         }),
                     }
@@ -1380,8 +1380,8 @@ impl SemanticAnalyzer {
                         {
                             return Err(SemanticError {
                                 message: format!(
-                                    "Heterogeneous list: expected all elements to be of type {:?}, but element at index {} has type {:?}",
-                                    first_type, index, element_type
+                                    "Heterogeneous list: expected all elements to be of type {}, but element at index {} has type {}",
+                                    format_type(&first_type), index, format_type(&element_type)
                                 ),
                                 span: element.span,
                             });
@@ -2123,7 +2123,7 @@ impl SemanticAnalyzer {
                 AstNode::Function(func) => {
                     if func.is_common {
                         return Err(SemanticError {
-                            message: "common methods are only allowed in classes".to_string(),
+                            message: "Common methods are only allowed in classes".to_string(),
                             span: func.span,
                         });
                     }
@@ -2515,7 +2515,7 @@ impl SemanticAnalyzer {
             AstNode::Function(func) => {
                 if func.is_common {
                     return Err(SemanticError {
-                        message: "common methods are only allowed in classes".to_string(),
+                        message: "Common methods are only allowed in classes".to_string(),
                         span: func.span,
                     });
                 }
@@ -2651,8 +2651,10 @@ impl SemanticAnalyzer {
                 if default_type != field_type {
                     return Err(SemanticError {
                         message: format!(
-                            "Field '{}' has type {:?} but default value has type {:?}",
-                            field.name, field_type, default_type
+                            "Field '{}' has type {} but default value has type {}",
+                            field.name,
+                            format_type(&field_type),
+                            format_type(&default_type)
                         ),
                         span: default_expr.span,
                     });
@@ -3163,8 +3165,9 @@ impl SemanticAnalyzer {
                         } else {
                             return Err(SemanticError {
                                 message: format!(
-                                    "Pattern {} does not match type {:?}",
-                                    name, expected_type
+                                    "Pattern {} does not match type {}",
+                                    name,
+                                    format_type(expected_type)
                                 ),
                                 span,
                             });
@@ -3182,8 +3185,9 @@ impl SemanticAnalyzer {
                         } else {
                             return Err(SemanticError {
                                 message: format!(
-                                    "Pattern {} does not match type {:?}",
-                                    name, expected_type
+                                    "Pattern {} does not match type {}",
+                                    name,
+                                    format_type(expected_type)
                                 ),
                                 span,
                             });
@@ -3226,8 +3230,8 @@ impl SemanticAnalyzer {
                     _ => {
                         return Err(SemanticError {
                             message: format!(
-                                "Enum variant patterns are not supported for type {:?}",
-                                expected_type
+                                "Enum variant patterns are not supported for type {}",
+                                format_type(expected_type)
                             ),
                             span,
                         });
@@ -3263,14 +3267,14 @@ impl SemanticAnalyzer {
                 if name == "self" {
                     if self.is_in_static_method {
                         return Err(SemanticError {
-                            message: "cannot use 'self' in common method".to_string(),
+                            message: "Cannot use 'self' in a common method".to_string(),
                             span: expr.span,
                         });
                     }
                     // For 'self', check if we have a current self type
                     if self.current_self_type.is_none() {
                         return Err(SemanticError {
-                            message: "cannot use 'self' outside of method".to_string(),
+                            message: "Cannot use 'self' outside of a method".to_string(),
                             span: expr.span,
                         });
                     }
@@ -3306,7 +3310,7 @@ impl SemanticAnalyzer {
                             Type::Primitive(crate::parser::PrimitiveType::Bool)
                         ) {
                             return Err(SemanticError {
-                                message: "Logical not operator requires boolean operand".into(),
+                                message: "Logical 'not' operator requires a boolean operand".into(),
                                 span: expr.span,
                             });
                         }
@@ -3318,7 +3322,7 @@ impl SemanticAnalyzer {
                                 | Type::Primitive(crate::parser::PrimitiveType::Float)
                         ) {
                             return Err(SemanticError {
-                                message: "Negation operator requires numeric operand".into(),
+                                message: "Negation operator requires a numeric operand".into(),
                                 span: expr.span,
                             });
                         }
@@ -3332,7 +3336,7 @@ impl SemanticAnalyzer {
                             Type::Primitive(crate::parser::PrimitiveType::Int)
                         ) {
                             return Err(SemanticError {
-                                message: "Increment/Decrement operators require int operand".into(),
+                                message: "Increment/decrement operators require an int operand".into(),
                                 span: expr.span,
                             });
                         }

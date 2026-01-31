@@ -121,7 +121,7 @@ impl<'a> Parser<'a> {
                 // skip error if at eof
                 if next_token.token_type != TokenType::Eof {
                     return Err(ParserError::new(
-                        "expected newline before statement".to_string(),
+                        "Expected newline before statement".to_string(),
                         next_token.span,
                     ));
                 }
@@ -283,7 +283,7 @@ impl<'a> Parser<'a> {
                     // error if not at newline.
                     if !matches!(self.tokens[self.current - 1].token_type, TokenType::NewLine) {
                         return Err(ParserError::new(
-                            "expected newline after statement".to_string(),
+                            "Expected newline after statement".to_string(),
                             next_token.span,
                         ));
                     }
@@ -457,8 +457,27 @@ impl<'a> Parser<'a> {
                     self.consume_token(TokenType::NewLine, "Expected newline")?;
                 }
                 _ => {
+                    let token_desc = match &self.peek().token_type {
+                        TokenType::Func => "'func' keyword".to_string(),
+                        TokenType::Class => "'class' keyword".to_string(),
+                        TokenType::Interface => "'interface' keyword".to_string(),
+                        TokenType::If => "'if' keyword".to_string(),
+                        TokenType::For => "'for' keyword".to_string(),
+                        TokenType::While => "'while' keyword".to_string(),
+                        TokenType::Return => "'return' keyword".to_string(),
+                        TokenType::OpenBrace => "'{'".to_string(),
+                        TokenType::CloseBrace => "'}'".to_string(),
+                        TokenType::OpenParen => "'('".to_string(),
+                        TokenType::CloseParen => "')'".to_string(),
+                        TokenType::Id(name) => format!("identifier '{}'", name),
+                        TokenType::Int(n) => format!("integer literal '{}'", n),
+                        TokenType::Float(n) => format!("float literal '{}'", n),
+                        TokenType::Str(s) => format!("string literal '\"{}\"'", s),
+                        TokenType::Eof => "end of file".to_string(),
+                        t => format!("'{:?}'", t),
+                    };
                     return Err(ParserError::new(
-                        format!("Expected field declaration in class: {:?}", self.peek()),
+                        format!("Expected field declaration in class, found {}", token_desc),
                         start_span,
                     ));
                 }
@@ -1590,7 +1609,7 @@ impl<'a> Parser<'a> {
             let next_token = &self.tokens[self.current];
             if self.is_statement_starter(&next_token.token_type) {
                 return Err(ParserError::new(
-                    "expected newline before statement".to_string(),
+                    "Expected newline before statement".to_string(),
                     next_token.span,
                 ));
             }
@@ -2248,13 +2267,34 @@ impl<'a> Parser<'a> {
                 self.parse_postfix_operators(expr)
             }
 
-            _ => Err(ParserError::from_token(
-                format!("Expected expression, got {:?}", token_type),
-                &Token {
-                    token_type,
-                    span: token_span,
-                },
-            )),
+            _ => {
+                let token_desc = match &token_type {
+                    TokenType::Func => "'func' keyword".to_string(),
+                    TokenType::Class => "'class' keyword".to_string(),
+                    TokenType::Interface => "'interface' keyword".to_string(),
+                    TokenType::If => "'if' keyword".to_string(),
+                    TokenType::For => "'for' keyword".to_string(),
+                    TokenType::While => "'while' keyword".to_string(),
+                    TokenType::Return => "'return' keyword".to_string(),
+                    TokenType::OpenBrace => "'{'".to_string(),
+                    TokenType::CloseBrace => "'}'".to_string(),
+                    TokenType::OpenParen => "'('".to_string(),
+                    TokenType::CloseParen => "')'".to_string(),
+                    TokenType::Id(name) => format!("identifier '{}'", name),
+                    TokenType::Int(n) => format!("integer literal '{}'", n),
+                    TokenType::Float(n) => format!("float literal '{}'", n),
+                    TokenType::Str(s) => format!("string literal '\"{}\"'", s),
+                    TokenType::Eof => "end of file".to_string(),
+                    t => format!("'{:?}'", t),
+                };
+                Err(ParserError::from_token(
+                    format!("Expected expression, found {}", token_desc),
+                    &Token {
+                        token_type,
+                        span: token_span,
+                    },
+                ))
+            }
         }
     }
 
