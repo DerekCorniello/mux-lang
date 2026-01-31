@@ -1,4 +1,5 @@
 use crate::semantics::SymbolKind;
+use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -7,7 +8,6 @@ use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, IntValue,
     PointerValue,
 };
-use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 use crate::lexer::Span;
@@ -2281,7 +2281,7 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn generate_main_function(&mut self, module_name: &str) -> Result<(), String> {
-        let main_type = self.context.void_type().fn_type(&[], false);
+        let main_type = self.context.i32_type().fn_type(&[], false);
         let main_func = self.module.add_function("main", main_type, None);
         let entry = self.context.append_basic_block(main_func, "entry");
         self.builder.position_at_end(entry);
@@ -2309,7 +2309,10 @@ impl<'a> CodeGenerator<'a> {
                 .map_err(|e| e.to_string())?;
         }
 
-        self.builder.build_return(None).map_err(|e| e.to_string())?;
+        // return 0 from main
+        self.builder
+            .build_return(Some(&self.context.i32_type().const_int(0, false)))
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -6392,9 +6395,12 @@ impl<'a> CodeGenerator<'a> {
                                         self.type_kind_to_llvm_type(&field_types_clone[i].kind)?
                                     } else {
                                         return Err(format!(
-                                                "Field index {} out of bounds for enum variant {}.{} (has {} fields)",
-                                                i, enum_name, name, field_types_clone.len()
-                                            ));
+                                            "Field index {} out of bounds for enum variant {}.{} (has {} fields)",
+                                            i,
+                                            enum_name,
+                                            name,
+                                            field_types_clone.len()
+                                        ));
                                     };
 
                                     let data_val = self
@@ -6419,7 +6425,10 @@ impl<'a> CodeGenerator<'a> {
                                     } else {
                                         return Err(format!(
                                             "Field index {} out of bounds for enum variant {}.{} during type resolution (has {} fields)",
-                                            i, enum_name, name, field_types_clone.len()
+                                            i,
+                                            enum_name,
+                                            name,
+                                            field_types_clone.len()
                                         ));
                                     };
 
