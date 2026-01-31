@@ -1643,6 +1643,7 @@ impl<'a> Parser<'a> {
         match &expr.kind {
             ExpressionKind::Unary {
                 op,
+                op_span: _,
                 expr: inner,
                 postfix,
             } => {
@@ -1993,6 +1994,7 @@ impl<'a> Parser<'a> {
             Ok(ExpressionNode {
                 kind: ExpressionKind::Unary {
                     op: UnaryOp::parse(op_token.clone())?,
+                    op_span: op_token.span,
                     expr: Box::new(expr),
                     postfix: false,
                 },
@@ -2408,23 +2410,27 @@ impl<'a> Parser<'a> {
                 }
             } else if self.matches(&[TokenType::Incr]) {
                 let expr_span = *expr.span();
+                let op_span = self.previous().span;
                 expr = ExpressionNode {
                     kind: ExpressionKind::Unary {
                         op: UnaryOp::Incr,
+                        op_span,
                         expr: Box::new(expr),
                         postfix: true,
                     },
-                    span: expr_span.combine(&self.previous().span),
+                    span: expr_span.combine(&op_span),
                 };
             } else if self.matches(&[TokenType::Decr]) {
                 let expr_span = *expr.span();
+                let op_span = self.previous().span;
                 expr = ExpressionNode {
                     kind: ExpressionKind::Unary {
                         op: UnaryOp::Decr,
+                        op_span,
                         expr: Box::new(expr),
                         postfix: true,
                     },
-                    span: expr_span.combine(&self.previous().span),
+                    span: expr_span.combine(&op_span),
                 };
             } else {
                 break;
@@ -2909,6 +2915,7 @@ pub enum ExpressionKind {
     },
     Unary {
         op: UnaryOp,
+        op_span: Span,
         expr: Box<ExpressionNode>,
         postfix: bool,
     },

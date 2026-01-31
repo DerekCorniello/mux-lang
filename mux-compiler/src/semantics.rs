@@ -957,6 +957,7 @@ impl SemanticAnalyzer {
                         }
                     } else if let crate::parser::ExpressionKind::Unary {
                         op: crate::parser::UnaryOp::Deref,
+                        op_span: _,
                         expr: _,
                         postfix: _,
                     } = &left.kind
@@ -1062,6 +1063,7 @@ impl SemanticAnalyzer {
                         }
                     } else if let crate::parser::ExpressionKind::Unary {
                         op: crate::parser::UnaryOp::Deref,
+                        op_span: _,
                         expr: _,
                         postfix: _,
                     } = &left.kind
@@ -1115,7 +1117,9 @@ impl SemanticAnalyzer {
                     })
                 }
             }
-            ExpressionKind::Unary { expr, op, .. } => match op {
+            ExpressionKind::Unary {
+                expr, op, op_span, ..
+            } => match op {
                 UnaryOp::Not => Ok(Type::Primitive(crate::parser::PrimitiveType::Bool)),
                 UnaryOp::Neg => {
                     let operand_type = self.get_expression_type(expr)?;
@@ -1124,7 +1128,7 @@ impl SemanticAnalyzer {
                         | Type::Primitive(crate::parser::PrimitiveType::Float) => Ok(operand_type),
                         _ => Err(SemanticError {
                             message: "Negation operator requires a numeric operand".into(),
-                            span: expr.span,
+                            span: *op_span,
                         }),
                     }
                 }
@@ -1139,7 +1143,7 @@ impl SemanticAnalyzer {
                     } else {
                         Err(SemanticError {
                             message: "Cannot dereference a non-reference type".into(),
-                            span: expr.span,
+                            span: *op_span,
                         })
                     }
                 }
@@ -1150,7 +1154,7 @@ impl SemanticAnalyzer {
                             if symbol.kind == SymbolKind::Constant {
                                 return Err(SemanticError::with_help(
                                     format!("Cannot modify constant '{}'", name),
-                                    expr.span,
+                                    *op_span,
                                     "Constants cannot be modified after initialization",
                                 ));
                             }
@@ -1171,7 +1175,7 @@ impl SemanticAnalyzer {
                                                 "Cannot modify const field '{}'",
                                                 field
                                             ),
-                                            span: expr.span,
+                                            span: *op_span,
                                         });
                                     }
                                 }
@@ -1179,6 +1183,7 @@ impl SemanticAnalyzer {
                         }
                     } else if let crate::parser::ExpressionKind::Unary {
                         op: crate::parser::UnaryOp::Deref,
+                        op_span: _,
                         expr: _,
                         postfix: _,
                     } = &expr.kind
@@ -1192,7 +1197,7 @@ impl SemanticAnalyzer {
                         Type::Primitive(crate::parser::PrimitiveType::Int) => Ok(operand_type),
                         _ => Err(SemanticError {
                             message: "Increment/decrement operators require an int operand".into(),
-                            span: expr.span,
+                            span: *op_span,
                         }),
                     }
                 }
@@ -3302,6 +3307,7 @@ impl SemanticAnalyzer {
             ExpressionKind::Unary {
                 expr,
                 op,
+                op_span,
                 postfix: _,
             } => {
                 self.analyze_expression(expr)?;
@@ -3314,7 +3320,7 @@ impl SemanticAnalyzer {
                         ) {
                             return Err(SemanticError {
                                 message: "Logical 'not' operator requires a boolean operand".into(),
-                                span: expr.span,
+                                span: *op_span,
                             });
                         }
                     }
@@ -3326,7 +3332,7 @@ impl SemanticAnalyzer {
                         ) {
                             return Err(SemanticError {
                                 message: "Negation operator requires a numeric operand".into(),
-                                span: expr.span,
+                                span: *op_span,
                             });
                         }
                     }
@@ -3341,7 +3347,7 @@ impl SemanticAnalyzer {
                             return Err(SemanticError {
                                 message: "Increment/decrement operators require an int operand"
                                     .into(),
-                                span: expr.span,
+                                span: *op_span,
                             });
                         }
 
@@ -3351,7 +3357,7 @@ impl SemanticAnalyzer {
                                 if symbol.kind == SymbolKind::Constant {
                                     return Err(SemanticError::with_help(
                                         format!("Cannot modify constant '{}'", name),
-                                        expr.span,
+                                        *op_span,
                                         "Constants cannot be modified after initialization",
                                     ));
                                 }
@@ -3375,7 +3381,7 @@ impl SemanticAnalyzer {
                                                     "Cannot modify const field '{}'",
                                                     field
                                                 ),
-                                                span: expr.span,
+                                                span: *op_span,
                                             });
                                         }
                                     }
@@ -3952,7 +3958,11 @@ impl SemanticAnalyzer {
                 self.find_free_variables_in_expression(left, local_vars, free_vars)?;
                 self.find_free_variables_in_expression(right, local_vars, free_vars)?;
             }
-            ExpressionKind::Unary { expr: inner, .. } => {
+            ExpressionKind::Unary {
+                expr: inner,
+                op_span: _,
+                ..
+            } => {
                 self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
             }
             ExpressionKind::Call { func, args } => {
