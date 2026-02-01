@@ -2013,27 +2013,23 @@ impl<'a> CodeGenerator<'a> {
                         (global.as_pointer_value(), llvm_type, resolved_type),
                     );
                 }
-                StatementKind::AutoDecl(name, _, _) => {
-                    // for auto declarations, get the inferred type from the symbol table
-                    let symbol = self
+                StatementKind::AutoDecl(name, _, expr) => {
+                    // for auto declarations, get the inferred type from the expression
+                    // (not from symbol table, since variables are not stored there to avoid collisions)
+                    let resolved_type = self
                         .analyzer
-                        .symbol_table()
-                        .lookup(name)
-                        .ok_or_else(|| format!("Symbol {} not found", name))?;
-                    let resolved_type = symbol
-                        .type_
-                        .as_ref()
-                        .ok_or_else(|| format!("Type not inferred for {}", name))?;
+                        .get_expression_type(expr)
+                        .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
 
                     // determine correct LLVM type based on whether value is boxed
-                    let llvm_type = match resolved_type {
+                    let llvm_type = match &resolved_type {
                         Type::Primitive(_) => {
                             // primitives are boxed, use ptr type
                             self.context.ptr_type(AddressSpace::default()).into()
                         }
                         _ => {
                             // enums, classes, etc. use their actual struct type
-                            let type_node = self.type_to_type_node(resolved_type);
+                            let type_node = self.type_to_type_node(&resolved_type);
                             self.llvm_type_from_mux_type(&type_node)?
                         }
                     };
@@ -2364,6 +2360,11 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn generate_function(&mut self, func: &FunctionNode) -> Result<(), String> {
+        // Save state that might be overwritten by nested function generation
+        // (e.g., when generating specialized methods for generic classes used in this function)
+        let saved_function_name = self.current_function_name.take();
+        let saved_return_type = self.current_function_return_type.take();
+
         self.current_function_name = Some(func.name.clone());
         self.current_function_return_type = Some(
             self.analyzer
@@ -2409,7 +2410,31 @@ impl<'a> CodeGenerator<'a> {
             self.builder
                 .build_store(alloca, arg)
                 .map_err(|e| e.to_string())?;
-            let self_type = Type::Named(base_class_name.to_string(), vec![]);
+
+            // For specialized methods, reconstruct the full type including type arguments
+            // from the generic context. For example, in Wrapper$string.set, self should be
+            // Type::Named("Wrapper", [Type::Primitive(Str)]) not Type::Named("Wrapper", [])
+            let self_type = if let Some(ref context) = self.generic_context {
+                // For specialized methods, reconstruct type args from generic context
+                if let Some(class_symbol) = self.analyzer.symbol_table().lookup(base_class_name) {
+                    // Build type args by looking up each class type parameter in the context
+                    let type_args: Vec<Type> = class_symbol
+                        .type_params
+                        .iter()
+                        .filter_map(|(param_name, _bounds)| {
+                            context.type_params.get(param_name).cloned()
+                        })
+                        .collect();
+                    Type::Named(base_class_name.to_string(), type_args)
+                } else {
+                    // Fallback if class not found
+                    Type::Named(base_class_name.to_string(), vec![])
+                }
+            } else {
+                // Non-specialized methods have no type args
+                Type::Named(base_class_name.to_string(), vec![])
+            };
+
             self.variables
                 .insert("self".to_string(), (alloca, *class_type, self_type.clone()));
             // also set current_self_type in the analyzer for type checking
@@ -2509,6 +2534,10 @@ impl<'a> CodeGenerator<'a> {
         // clear current_self_type
         self.analyzer.current_self_type = None;
 
+        // Restore previous function context
+        self.current_function_name = saved_function_name;
+        self.current_function_return_type = saved_return_type;
+
         Ok(())
     }
 
@@ -2518,13 +2547,6 @@ impl<'a> CodeGenerator<'a> {
         func: &FunctionNode,
         llvm_name: &str,
     ) -> Result<(), String> {
-        self.current_function_name = Some(func.name.clone());
-        self.current_function_return_type = Some(
-            self.analyzer
-                .resolve_type(&func.return_type)
-                .map_err(|e| e.to_string())?,
-        );
-
         // Look up by LLVM name instead of source name
         let function = *self.functions.get(llvm_name).ok_or_else(|| {
             format!(
@@ -2533,7 +2555,7 @@ impl<'a> CodeGenerator<'a> {
             )
         })?;
 
-        // Rest is the same as generate_function - just delegate to the regular implementation
+        // Delegate to the regular implementation
         // but first we need to temporarily store it under the source name too
         self.functions.insert(func.name.clone(), function);
         let result = self.generate_function(func);
@@ -3096,40 +3118,119 @@ impl<'a> CodeGenerator<'a> {
                                                             )
                                                             .map_err(|e| e.to_string())?;
                                                         // check if this is an enum field - don't box enum values
-                                                        let field_type_node = self
+                                                        // also check if it's a generic field that resolves to a class
+                                                        let field_info = self
                                                             .classes
                                                             .get(class_name.as_str())
                                                             .and_then(|fields| {
                                                                 fields
                                                                     .iter()
                                                                     .find(|f| f.name == *field)
-                                                            })
-                                                            .map(|f| &f.type_);
+                                                            });
 
-                                                        let value_to_store = if let Some(
-                                                            field_type,
-                                                        ) = field_type_node
+                                                        let value_to_store = if let Some(field) =
+                                                            field_info
                                                         {
-                                                            if let TypeNode {
-                                                                kind:
-                                                                    TypeKind::Named(field_type_name, _),
-                                                                ..
-                                                            } = field_type
-                                                            {
-                                                                let is_enum = self.analyzer.symbol_table()
-                                                                       .lookup(field_type_name)
-                                                                       .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
-                                                                       .unwrap_or(false);
-                                                                if is_enum {
-                                                                    // for enum fields, store struct value directly
-                                                                    right_val
+                                                            let field_type = &field.type_;
+                                                            let is_generic_param =
+                                                                field.is_generic_param;
+
+                                                            // For generic parameters, resolve to concrete type
+                                                            if is_generic_param {
+                                                                if let TypeNode {
+                                                                    kind:
+                                                                        TypeKind::Named(param_name, _),
+                                                                    ..
+                                                                } = field_type
+                                                                {
+                                                                    // Try to resolve the generic parameter
+                                                                    if let Some(context) =
+                                                                        &self.generic_context
+                                                                    {
+                                                                        if let Some(concrete_type) =
+                                                                            context
+                                                                                .type_params
+                                                                                .get(param_name)
+                                                                        {
+                                                                            // Check what the concrete type is
+                                                                            match concrete_type {
+                                                                                Type::Primitive(
+                                                                                    _,
+                                                                                ) => {
+                                                                                    // Primitives need boxing
+                                                                                    self.box_value(
+                                                                                        right_val,
+                                                                                    )
+                                                                                    .into()
+                                                                                }
+                                                                                Type::Named(
+                                                                                    type_name,
+                                                                                    _,
+                                                                                ) => {
+                                                                                    // Check if it's an enum
+                                                                                    let is_enum = self.analyzer.symbol_table()
+                                                                                        .lookup(type_name)
+                                                                                        .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
+                                                                                        .unwrap_or(false);
+                                                                                    if is_enum {
+                                                                                        // Enums store directly
+                                                                                        right_val
+                                                                                    } else {
+                                                                                        // Classes are already pointers - don't box
+                                                                                        right_val
+                                                                                    }
+                                                                                }
+                                                                                _ => {
+                                                                                    // Other types: box
+                                                                                    self.box_value(
+                                                                                        right_val,
+                                                                                    )
+                                                                                    .into()
+                                                                                }
+                                                                            }
+                                                                        } else {
+                                                                            // Generic param not in context, box it
+                                                                            self.box_value(
+                                                                                right_val,
+                                                                            )
+                                                                            .into()
+                                                                        }
+                                                                    } else {
+                                                                        // No generic context, box it
+                                                                        self.box_value(right_val)
+                                                                            .into()
+                                                                    }
                                                                 } else {
-                                                                    // for other fields, box the value
+                                                                    // Non-named generic param, box it
                                                                     self.box_value(right_val).into()
                                                                 }
                                                             } else {
-                                                                // for non-named types, box the value
-                                                                self.box_value(right_val).into()
+                                                                // Not a generic parameter - use existing logic
+                                                                if let TypeNode {
+                                                                    kind:
+                                                                        TypeKind::Named(
+                                                                            field_type_name,
+                                                                            _,
+                                                                        ),
+                                                                    ..
+                                                                } = field_type
+                                                                {
+                                                                    let is_enum = self.analyzer.symbol_table()
+                                                                           .lookup(field_type_name)
+                                                                           .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
+                                                                           .unwrap_or(false);
+                                                                    if is_enum {
+                                                                        // for enum fields, store struct value directly
+                                                                        right_val
+                                                                    } else {
+                                                                        // for other fields, box the value
+                                                                        self.box_value(right_val)
+                                                                            .into()
+                                                                    }
+                                                                } else {
+                                                                    // for non-named types, box the value
+                                                                    self.box_value(right_val).into()
+                                                                }
                                                             }
                                                         } else {
                                                             // fallback: box the value
@@ -4352,8 +4453,11 @@ impl<'a> CodeGenerator<'a> {
                     }
                 }
             }
-            ExpressionKind::ListAccess { expr, index } => {
-                let list_val = self.generate_expression(expr)?;
+            ExpressionKind::ListAccess {
+                expr: list_expr,
+                index,
+            } => {
+                let list_val = self.generate_expression(list_expr)?;
                 let index_val = self.generate_expression(index)?;
 
                 // extract raw List pointer from Value
@@ -4432,22 +4536,20 @@ impl<'a> CodeGenerator<'a> {
                     .build_unreachable()
                     .map_err(|e| e.to_string())?;
 
-                // continue block: extract the actual primitive value from the Value pointer
+                // continue block: extract the value based on its actual type
                 self.builder.position_at_end(continue_bb);
 
-                // assumes Int type for now, should infer from context
-                let get_int_func = self
-                    .module
-                    .get_function("mux_value_get_int")
-                    .ok_or("mux_value_get_int not found")?;
-                let int_val = self
-                    .builder
-                    .build_call(get_int_func, &[result_ptr.into()], "extracted_int")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .unwrap();
-                Ok(int_val)
+                // Get the element type from the semantic analyzer
+                // (expr is the full ListAccess expression, so get_expression_type returns the element type)
+                let element_type = self
+                    .analyzer
+                    .get_expression_type(expr)
+                    .map_err(|e| e.message)?;
+
+                // Use extract_value_from_ptr to properly extract based on type
+                let (extracted_val, _) =
+                    self.extract_value_from_ptr(result_ptr, &element_type, "list_element")?;
+                Ok(extracted_val)
             }
             ExpressionKind::ListLiteral(elements) => {
                 let list_ptr = self
@@ -4656,7 +4758,64 @@ impl<'a> CodeGenerator<'a> {
                                                 .build_load(*field_type_node, field_ptr, field)
                                                 .map_err(|e| e.to_string())?;
 
-                                            // handle unboxing for primitive fields
+                                            // For generic parameters, resolve to concrete type first
+                                            let is_generic_param = field_def.is_generic_param;
+                                            if is_generic_param {
+                                                if let TypeNode {
+                                                    kind: TypeKind::Named(param_name, _),
+                                                    ..
+                                                } = &field_def.type_
+                                                {
+                                                    // Try to resolve the generic parameter
+                                                    if let Some(context) = &self.generic_context {
+                                                        if let Some(concrete_type) =
+                                                            context.type_params.get(param_name)
+                                                        {
+                                                            // Match on the CONCRETE type to decide unboxing
+                                                            match concrete_type {
+                                                                Type::Primitive(
+                                                                    PrimitiveType::Int,
+                                                                ) => {
+                                                                    let raw_int = self
+                                                                        .get_raw_int_value(
+                                                                            loaded,
+                                                                        )?;
+                                                                    return Ok(raw_int.into());
+                                                                }
+                                                                Type::Primitive(
+                                                                    PrimitiveType::Float,
+                                                                ) => {
+                                                                    let raw_float = self
+                                                                        .get_raw_float_value(
+                                                                            loaded,
+                                                                        )?;
+                                                                    return Ok(raw_float.into());
+                                                                }
+                                                                Type::Primitive(
+                                                                    PrimitiveType::Bool,
+                                                                ) => {
+                                                                    let raw_bool = self
+                                                                        .get_raw_bool_value(
+                                                                            loaded,
+                                                                        )?;
+                                                                    return Ok(raw_bool.into());
+                                                                }
+                                                                Type::Named(_type_name, _) => {
+                                                                    // For both enums and classes, return pointer directly (no unboxing)
+                                                                    return Ok(loaded);
+                                                                }
+                                                                _ => {
+                                                                    // Other types: return loaded pointer as-is
+                                                                    return Ok(loaded);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                // If we can't resolve, fall through to regular logic
+                                            }
+
+                                            // handle unboxing for primitive fields (non-generic case)
                                             match &resolved_field_type {
                                                 Type::Primitive(PrimitiveType::Int) => {
                                                     let raw_int = self.get_raw_int_value(loaded)?;
@@ -5278,16 +5437,29 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<(), String> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
-                let value = self.generate_expression(expr)?;
-                let symbol = self
-                    .analyzer
-                    .symbol_table()
-                    .lookup(name)
-                    .ok_or("Symbol not found")?;
-                let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+                // Check if variable already exists BEFORE generating expression
+                // (generate_expression may modify self.variables)
+                let existing_var = self.variables.get(name).cloned();
 
-                // check if this variable already exists in current scope (e.g., pre-created global)
-                if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
+                let value = self.generate_expression(expr)?;
+
+                // Get the type from the expression directly using semantic analyzer
+                // (not from symbol table, since local variables are not stored there to avoid collisions)
+                let resolved_type = self
+                    .analyzer
+                    .get_expression_type(expr)
+                    .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
+
+                // Resolve type variables using the current generic context
+                // For example, in a specialized method Chain$string.box_value, when we see
+                // auto b = Box<T>.new(), the type from expression is Box<Variable("T")>
+                // but we need to resolve it to Box<Primitive(Str)] using generic_context
+                let concrete_type = self
+                    .resolve_type(&resolved_type)
+                    .unwrap_or_else(|_| resolved_type.clone());
+
+                // Use the existing variable if we found one before expression generation
+                if let Some((existing_ptr, _, _)) = existing_var {
                     // variable already exists - just store to it (this handles globals in main)
                     if value.is_struct_value() {
                         self.builder
@@ -5316,7 +5488,7 @@ impl<'a> CodeGenerator<'a> {
                             .build_store(alloca, value)
                             .map_err(|e| e.to_string())?;
                         self.variables
-                            .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
+                            .insert(name.clone(), (alloca, var_type, concrete_type.clone()));
                     } else {
                         let boxed = self.box_value(value);
                         let ptr_type = self.context.ptr_type(AddressSpace::default());
@@ -5337,7 +5509,7 @@ impl<'a> CodeGenerator<'a> {
                             (
                                 alloca,
                                 BasicTypeEnum::PointerType(ptr_type),
-                                resolved_type.clone(),
+                                concrete_type.clone(),
                             ),
                         );
                     }
@@ -5346,12 +5518,13 @@ impl<'a> CodeGenerator<'a> {
             StatementKind::TypedDecl(name, type_node, expr) => {
                 let var_type = self.llvm_type_from_mux_type(type_node)?;
                 let value = self.generate_expression(expr)?;
-                let symbol = self
+
+                // Get the declared type from the type_node directly using semantic analyzer
+                // (not from symbol table, since local variables are not stored there to avoid collisions)
+                let resolved_type = self
                     .analyzer
-                    .symbol_table()
-                    .lookup(name)
-                    .ok_or("Symbol not found")?;
-                let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+                    .resolve_type(type_node)
+                    .map_err(|e| format!("Failed to resolve type for {}: {}", name, e.message))?;
 
                 // check if this variable already exists in current scope (e.g., pre-created global)
                 if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
@@ -5413,12 +5586,13 @@ impl<'a> CodeGenerator<'a> {
                 let value = self.generate_expression(expr)?;
                 let boxed = self.box_value(value);
                 let ptr_type = self.context.ptr_type(AddressSpace::default());
-                let symbol = self
+
+                // Get the type from the expression directly using semantic analyzer
+                // (not from symbol table, since local variables are not stored there to avoid collisions)
+                let resolved_type = self
                     .analyzer
-                    .symbol_table()
-                    .lookup(name)
-                    .ok_or("Symbol not found")?;
-                let resolved_type = symbol.type_.as_ref().ok_or("Type not resolved")?;
+                    .get_expression_type(expr)
+                    .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
 
                 // check if this constant already exists in current scope (e.g., pre-created global)
                 if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
@@ -6079,7 +6253,17 @@ impl<'a> CodeGenerator<'a> {
                             } else {
                                 return Err(format!("Temporary variable {} not found", name));
                             }
+                        } else if let Some((_, _, var_type)) = self.variables.get(name) {
+                            // Check local variables first (they're not in all_symbols anymore)
+                            match var_type {
+                                Type::Named(n, _) => n.clone(),
+                                Type::Optional(_) => "Optional".to_string(),
+                                _ => {
+                                    return Err("Match expression must be an enum type".to_string());
+                                }
+                            }
                         } else if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+                            // Fall back to symbol table for globals (enums, classes, etc.)
                             if let Some(symbol_type) = &symbol.type_ {
                                 match symbol_type {
                                     Type::Named(n, _) => n.clone(),
@@ -9719,6 +9903,11 @@ impl<'a> CodeGenerator<'a> {
                 let old_context = self.generic_context.take();
                 self.generic_context = Some(specialized_context);
 
+                // IMPORTANT: Save the current variables table before generating the specialized method
+                // because generate_function clears self.variables, which would lose the current function's
+                // parameters if we're generating this specialized method from within another function
+                let saved_variables = self.variables.clone();
+
                 // declare the specialized method first
                 self.declare_function(&specialized_method)?;
 
@@ -9728,8 +9917,9 @@ impl<'a> CodeGenerator<'a> {
                 // mark as generated
                 self.generated_methods.insert(specialized_method_name, true);
 
-                // restore original context
+                // restore original context and variables
                 self.generic_context = old_context;
+                self.variables = saved_variables;
             }
         }
 

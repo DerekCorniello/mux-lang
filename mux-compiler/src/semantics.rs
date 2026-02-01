@@ -297,10 +297,10 @@ impl Unifier {
                 .get(var)
                 .cloned()
                 .unwrap_or_else(|| t.clone()),
-            Type::Named(name, args) => Type::Named(
-                name.clone(),
-                args.iter().map(|arg| self.apply(arg)).collect(),
-            ),
+            Type::Named(name, args) => {
+                let applied_args: Vec<Type> = args.iter().map(|arg| self.apply(arg)).collect();
+                Type::Named(name.clone(), applied_args)
+            }
             Type::Function {
                 params,
                 returns,
@@ -314,7 +314,6 @@ impl Unifier {
             Type::List(inner) => Type::List(Box::new(self.apply(inner))),
             Type::Map(k, v) => Type::Map(Box::new(self.apply(k)), Box::new(self.apply(v))),
             Type::Set(inner) => Type::Set(Box::new(self.apply(inner))),
-
             Type::Optional(inner) => Type::Optional(Box::new(self.apply(inner))),
             _ => t.clone(),
         }
@@ -527,8 +526,10 @@ impl SymbolTable {
         current_borrow
             .symbols
             .insert(name.to_string(), symbol.clone());
-        // Add everything to global symbol table (needed for codegen to look up variables)
-        // Out-of-scope access is prevented by the proper exists() check during semantics
+        // Add all symbols to all_symbols for codegen lookups
+        // Note: This can cause name collisions for local variables across different functions,
+        // but it's needed because codegen calls get_expression_type after scopes are popped.
+        // For the collision case in generic methods, codegen should use expression types directly.
         if name != "self" {
             self.all_symbols.insert(name.to_string(), symbol);
         }

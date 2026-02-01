@@ -1,0 +1,253 @@
+// Comprehensive test for generic methods on generic classes
+// Tests methods with their own type parameters on classes that also have type parameters
+
+interface Stringable {
+    func to_string() returns string
+}
+
+// ===== Helper Classes =====
+
+class Box<T> {
+    T value
+    
+    func set(T val) returns void {
+        self.value = val
+    }
+    
+    func get() returns T {
+        return self.value
+    }
+}
+
+class Pair<T, U> {
+    T first
+    U second
+    
+    common func from(T f, U s) returns Pair<T, U> {
+        auto pair = Pair<T, U>.new()
+        pair.first = f
+        pair.second = s
+        return pair
+    }
+    
+    func get_first() returns T {
+        return self.first
+    }
+    
+    func get_second() returns U {
+        return self.second
+    }
+}
+
+// ===== Test 1: Generic Method Creating Pairs =====
+print("=== Test 1: Generic method creating pairs ===")
+
+class Container<T> {
+    T item
+    
+    func set_item(T val) returns void {
+        self.item = val
+    }
+    
+    // Generic method that pairs the class type param with a new type param
+    func pair_with_string(string other) returns Pair<T, string> {
+        return Pair<T, string>.from(self.item, other)
+    }
+    
+    func pair_with_int(int other) returns Pair<T, int> {
+        return Pair<T, int>.from(self.item, other)
+    }
+}
+
+auto int_container = Container<int>.new()
+int_container.set_item(42)
+
+auto paired_str = int_container.pair_with_string("hello")
+print("Paired first: " + paired_str.get_first().to_string())
+print("Paired second: " + paired_str.get_second())
+
+auto str_container = Container<string>.new()
+str_container.set_item("key")
+
+auto paired_int = str_container.pair_with_int(99)
+print("Paired first: " + paired_int.get_first())
+print("Paired second: " + paired_int.get_second().to_string())
+
+// ===== Test 2: Generic Method with Bounds =====
+print("=== Test 2: Generic method with bounds ===")
+
+class Holder<T is Stringable> {
+    T value
+    
+    func set(T val) returns void {
+        self.value = val
+    }
+    
+    // Method combining class param (which has bounds) with another stringable
+    func combine_with_string(string other) returns string {
+        return self.value.to_string() + " and " + other
+    }
+    
+    func combine_with_int(int other) returns string {
+        return self.value.to_string() + " and " + other.to_string()
+    }
+}
+
+auto str_holder = Holder<string>.new()
+str_holder.set("first")
+auto combined = str_holder.combine_with_string("second")
+print("Combined: " + combined)
+
+auto int_holder = Holder<int>.new()
+int_holder.set(100)
+auto combined_int = int_holder.combine_with_int(200)
+print("Combined ints: " + combined_int)
+
+// ===== Test 3: Common/Static Methods =====
+print("=== Test 3: Static methods on generic class ===")
+
+class Factory<T> {
+    T value
+    
+    // Static method creating a pair with the class type param
+    common func create_pair_str(T first_val, string second_val) returns Pair<T, string> {
+        return Pair<T, string>.from(first_val, second_val)
+    }
+    
+    common func create_pair_int(T first_val, int second_val) returns Pair<T, int> {
+        return Pair<T, int>.from(first_val, second_val)
+    }
+}
+
+auto static_pair = Factory<string>.create_pair_int("count", 5)
+print("Static pair: " + static_pair.get_first() + " = " + static_pair.get_second().to_string())
+
+// ===== Test 4: Method Creating Nested Generics =====
+print("=== Test 4: Method returning nested generic ===")
+
+class Builder<T> {
+    T base
+    
+    func set_base(T val) returns void {
+        self.base = val
+    }
+    
+    // Method that returns nested generic type
+    func box_it() returns Box<T> {
+        auto result = Box<T>.new()
+        result.set(self.base)
+        return result
+    }
+    
+    // Method creating box of a different type
+    func box_string(string str_val) returns Box<string> {
+        auto result = Box<string>.new()
+        result.set(str_val)
+        return result
+    }
+    
+    func box_int(int int_val) returns Box<int> {
+        auto result = Box<int>.new()
+        result.set(int_val)
+        return result
+    }
+}
+
+auto builder = Builder<int>.new()
+builder.set_base(99)
+
+auto boxed = builder.box_it()
+print("Boxed value: " + boxed.get().to_string())
+
+auto boxed_str = builder.box_string("nested")
+print("Boxed string: " + boxed_str.get())
+
+auto boxed_int = builder.box_int(42)
+print("Boxed int: " + boxed_int.get().to_string())
+
+// ===== Test 5: Methods Returning Pairs of Class Type =====
+print("=== Test 5: Multiple methods with different return types ===")
+
+class Wrapper<T> {
+    T data
+    
+    func set(T val) returns void {
+        self.data = val
+    }
+    
+    // Method creating pair of two different types
+    func pair_int_str(int left, string right) returns Pair<int, string> {
+        return Pair<int, string>.from(left, right)
+    }
+    
+    // Method using class param in pair
+    func pair_with_str(string other) returns Pair<T, string> {
+        return Pair<T, string>.from(self.data, other)
+    }
+    
+    func pair_with_int(int other) returns Pair<T, int> {
+        return Pair<T, int>.from(self.data, other)
+    }
+}
+
+auto wrapper = Wrapper<string>.new()
+wrapper.set("key")
+
+auto new_pair = wrapper.pair_int_str(1, "value")
+print("Created pair: " + new_pair.get_first().to_string() + ", " + new_pair.get_second())
+
+auto wrapped_str = wrapper.pair_with_str("value")
+print("Wrapped with str: " + wrapped_str.get_first() + ", " + wrapped_str.get_second())
+
+auto wrapped_int = wrapper.pair_with_int(42)
+print("Wrapped with int: " + wrapped_int.get_first() + ", " + wrapped_int.get_second().to_string())
+
+// ===== Test 6: Chaining Method Calls =====
+print("=== Test 6: Chaining method calls ===")
+
+class Chain<T> {
+    T val
+    
+    func set(T value) returns void {
+        self.val = value
+    }
+    
+    func get() returns T {
+        return self.val
+    }
+    
+    func box_value() returns Box<T> {
+        auto b = Box<T>.new()
+        b.set(self.val)
+        return b
+    }
+}
+
+auto chain = Chain<string>.new()
+chain.set("chained")
+auto chained_result = chain.box_value().get()
+print("Chained result: " + chained_result)
+
+// ===== Test 7: Method with Multiple Uses of Class Type Param =====
+print("=== Test 7: Method using class type param multiple times ===")
+
+class Duplicator<T> {
+    T first
+    T second
+    
+    func set_both(T a, T b) returns void {
+        self.first = a
+        self.second = b
+    }
+    
+    func create_pair() returns Pair<T, T> {
+        return Pair<T, T>.from(self.first, self.second)
+    }
+}
+
+auto dup = Duplicator<int>.new()
+dup.set_both(10, 20)
+auto dup_pair = dup.create_pair()
+print("Duplicator pair: " + dup_pair.get_first().to_string() + ", " + dup_pair.get_second().to_string())
+
+print("=== All generic method tests passed! ===")

@@ -1,0 +1,201 @@
+// Comprehensive test for nested generic types
+// Tests generic types nested up to 3 levels deep
+
+// ===== Helper Classes =====
+
+class Box<T> {
+    T value
+    
+    common func from(T val) returns Box<T> {
+        auto box = Box<T>.new()
+        box.value = val
+        return box
+    }
+    
+    func get() returns T {
+        return self.value
+    }
+    
+    func set(T val) returns void {
+        self.value = val
+    }
+}
+
+class Stack<T> {
+    list<T> items
+    
+    func push(T item) returns void {
+        self.items.push_back(item)
+    }
+    
+    func pop() returns Optional<T> {
+        if self.items.is_empty() {
+            return None
+        }
+        return self.items.pop_back()
+    }
+    
+    func get_size() returns int {
+        return self.items.length()
+    }
+}
+
+class Pair<T, U> {
+    T first
+    U second
+    
+    common func from(T f, U s) returns Pair<T, U> {
+        auto pair = Pair<T, U>.new()
+        pair.first = f
+        pair.second = s
+        return pair
+    }
+    
+    func get_first() returns T {
+        return self.first
+    }
+    
+    func get_second() returns U {
+        return self.second
+    }
+}
+
+// ===== Test 1: Level 2 - Same Generic Class =====
+print("=== Test 1: Box<Box<int>> ===")
+auto inner_box = Box<int>.from(42)
+auto outer_box = Box<Box<int>>.from(inner_box)
+auto retrieved = outer_box.get()
+print("Nested box value: " + retrieved.get().to_string())
+
+print("=== Test 2: Stack<Stack<string>> ===")
+auto inner_stack1 = Stack<string>.new()
+inner_stack1.push("hello")
+inner_stack1.push("world")
+
+auto inner_stack2 = Stack<string>.new()
+inner_stack2.push("foo")
+inner_stack2.push("bar")
+
+auto stack_of_stacks = Stack<Stack<string>>.new()
+stack_of_stacks.push(inner_stack1)
+stack_of_stacks.push(inner_stack2)
+print("Stack of stacks size: " + stack_of_stacks.get_size().to_string())
+
+match stack_of_stacks.pop() {
+    Some(inner) {
+        match inner.pop() {
+            Some(val) {
+                print("Popped from nested stack: " + val)
+            }
+            None {
+                print("Inner stack empty")
+            }
+        }
+    }
+    None {
+        print("Outer stack empty")
+    }
+}
+
+// ===== Test 2: Level 2 - Different Generic Classes =====
+print("=== Test 3: Box<Stack<int>> ===")
+auto int_stack = Stack<int>.new()
+int_stack.push(1)
+int_stack.push(2)
+int_stack.push(3)
+
+auto box_with_stack = Box<Stack<int>>.from(int_stack)
+auto retrieved_stack = box_with_stack.get()
+print("Stack in box size: " + retrieved_stack.get_size().to_string())
+
+print("=== Test 4: Pair<Box<int>, Stack<string>> ===")
+auto int_box = Box<int>.from(100)
+auto str_stack = Stack<string>.new()
+str_stack.push("test")
+
+auto complex_pair = Pair<Box<int>, Stack<string>>.from(int_box, str_stack)
+print("Pair first (box): " + complex_pair.get_first().get().to_string())
+print("Pair second (stack) size: " + complex_pair.get_second().get_size().to_string())
+
+print("=== Test 5: Stack<Pair<string, int>> ===")
+auto pair1 = Pair<string, int>.from("age", 25)
+auto pair2 = Pair<string, int>.from("score", 95)
+
+auto stack_of_pairs = Stack<Pair<string, int>>.new()
+stack_of_pairs.push(pair1)
+stack_of_pairs.push(pair2)
+
+match stack_of_pairs.pop() {
+    Some(p) {
+        print("Popped pair: " + p.get_first() + " = " + p.get_second().to_string())
+    }
+    None {
+        print("Stack empty")
+    }
+}
+
+// ===== Test 3: Level 2 - With Built-in Collections =====
+print("=== Test 6: list<Box<int>> ===")
+auto box1 = Box<int>.from(10)
+auto box2 = Box<int>.from(20)
+auto box3 = Box<int>.from(30)
+
+auto boxes = [box1, box2, box3]
+auto boxes_len = boxes.length()
+print("List of boxes size: " + boxes_len.to_string())
+print("First box value: " + boxes[0].get().to_string())
+
+print("=== Test 7: Box<list<int>> ===")
+auto int_list = [1, 2, 3, 4, 5]
+auto box_with_list = Box<list<int>>.from(int_list)
+auto retrieved_list = box_with_list.get()
+auto list_len = retrieved_list.length()
+print("List in box size: " + list_len.to_string())
+print("List in box first element: " + retrieved_list[0].to_string())
+
+// ===== Test 4: Level 3 Nesting =====
+print("=== Test 8: Box<Box<Box<int>>> ===")
+auto level1 = Box<int>.from(999)
+auto level2 = Box<Box<int>>.from(level1)
+auto level3 = Box<Box<Box<int>>>.from(level2)
+
+auto unwrap1 = level3.get()
+auto unwrap2 = unwrap1.get()
+auto unwrap3 = unwrap2.get()
+print("Triple nested value: " + unwrap3.to_string())
+
+print("=== Test 9: Stack<Box<Pair<int, string>>> ===")
+auto inner_pair = Pair<int, string>.from(42, "answer")
+auto boxed_pair = Box<Pair<int, string>>.from(inner_pair)
+
+auto complex_stack = Stack<Box<Pair<int, string>>>.new()
+complex_stack.push(boxed_pair)
+
+match complex_stack.pop() {
+    Some(box) {
+        auto pair = box.get()
+        print("Triple nested - first: " + pair.get_first().to_string() + ", second: " + pair.get_second())
+    }
+    None {
+        print("Complex stack empty")
+    }
+}
+
+print("=== Test 10: list<Stack<Box<int>>> ===")
+auto box_in_stack = Box<int>.from(777)
+auto stack_with_box = Stack<Box<int>>.new()
+stack_with_box.push(box_in_stack)
+
+auto list_of_stacks = [stack_with_box]
+print("List of stacks size: " + list_of_stacks.length().to_string())
+
+match list_of_stacks[0].pop() {
+    Some(b) {
+        print("Value from list->stack->box: " + b.get().to_string())
+    }
+    None {
+        print("Empty")
+    }
+}
+
+print("=== All nested generic tests passed! ===")
