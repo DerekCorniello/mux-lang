@@ -1,16 +1,16 @@
 // Generics func
-func max<T>(T a, T b) returns T { 
+func max<T is Comparable>(T a, T b) returns T { 
     if a > b { 
         return a
     }
     return b 
 }
 
-func hello<T>(T s) returns void {
+func hello<T is Stringable>(T s) returns void {
     print("hello " + s.to_string())
 }
 
-func name<T>(T s) returns string {
+func name<T is Stringable>(T s) returns string {
     return "hi im " + s.to_string()
 }
 
@@ -57,4 +57,3 @@ print(name(123))
 hello("derek")
 hello(123)
 print("generics ran successfully")
-

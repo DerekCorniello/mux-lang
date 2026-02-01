@@ -182,84 +182,117 @@ map<K,V>
 
 ### 3.4 Generics
 
-Mux supports Go-style generics with type parameters:
+Mux supports Go/Rust-style generics with type parameters and interface bounds using the `is` keyword:
 
-```
+```mux
 // Generic function with type constraints
-func max<T comparable>(T a, T b) returns T {
+func max<T is Comparable>(T a, T b) returns T {
     if a > b {
         return a
     }
     return b
 }
 
-// Generic function with multiple type parameters
-func zip<T, U>(list<T> first, list<U> second) returns list<(T, U)> {
-    auto result = list<(T, U)>()
-    int minLen = min(first.length(), second.length())
-    for int in range(minLen) {
-        result.append((first[i], second[i]))
+// Generic function with Stringable bound for to_string()
+func greet<T is Stringable>(T value) returns string {
+    return "Hello, " + value.to_string()
+}
+
+// Generic function with Add bound for + operator
+func add<T is Add>(T a, T b) returns T {
+    return a.add(b)
+}
+
+// Generic class
+class Stack<T> {
+    list<T> items
+    
+    func push(T item) returns void {
+        self.items.push_back(item)
+    }
+    
+    func pop() returns Optional<T> {
+        if self.items.is_empty() { return None }
+        return self.items.pop_back()
+    }
+}
+```
+
+### 3.5 Built-in Interfaces
+
+Mux provides built-in interfaces for common operations on generic types:
+
+| Interface | Methods | Description |
+|-----------|---------|-------------|
+| `Stringable` | `to_string() -> string` | Types that can be converted to string |
+| `Add` | `add(Self) -> Self` | Types that support `+` operator |
+| `Sub` | `sub(Self) -> Self` | Types that support `-` operator |
+| `Mul` | `mul(Self) -> Self` | Types that support `*` operator |
+| `Div` | `div(Self) -> Self` | Types that support `/` operator |
+| `Arithmetic` | `add`, `sub`, `mul`, `div` | Types that support all arithmetic operators |
+| `Equatable` | `eq(Self) -> bool` | Types that support `==` and `!=` operators |
+| `Comparable` | `cmp(Self) -> int` | Types that support `<`, `<=`, `>`, `>=` operators |
+
+**Operator Mapping:**
+- `a + b` uses `Add.add()` when type doesn't natively support `+`
+- `a > b` uses `Comparable.cmp()` returning -1, 0, or 1
+- `a == b` uses `Equatable.eq()`
+
+**Primitives and Interfaces:**
+- `int`: Implements `Stringable`, `Add`, `Sub`, `Mul`, `Div`, `Arithmetic`, `Equatable`, `Comparable`
+- `float`: Implements `Stringable`, `Add`, `Sub`, `Mul`, `Div`, `Arithmetic`, `Equatable`, `Comparable`
+- `string`: Implements `Stringable`, `Add`, `Equatable`, `Comparable`
+- `bool`: Implements `Stringable`, `Equatable`
+
+**Example: Custom Type Implementing Interfaces**
+```mux
+interface Add {
+    func add(Self) returns Self
+}
+
+class Point {
+    int x
+    int y
+    
+    func add(Point other) returns Point {
+        return Point.new(self.x + other.x, self.y + other.y)
+    }
+}
+
+func sum_points<T is Add>(list<T> points) returns T {
+    auto result = points[0]
+    for i in range(1, points.length()) {
+        result = result.add(points[i])
     }
     return result
 }
 
-// Generic struct
-struct Pair<T, U> {
-    T first
-    U second
-}
-
-// Generic interface with type constraints
-interface Container<T> {
-    func add(T item) returns void
-    func get(int index) returns T
-    func size() returns int
-}
-
-// Type constraints
-interface Ordered {
-    func compare(Self other) returns int
-}
-
-interface Numeric {
-    func add(Self other) returns Self
-    func multiply(Self other) returns Self
-}
-
-// Built-in constraint aliases
-// comparable - types that support == and !=
+auto points = [Point.new(1, 2), Point.new(3, 4), Point.new(5, 6)]
+auto total = sum_points(points)  // Point(9, 12)
 ```
 
-### 3.5 Generic Type Constraints
+### 3.6 Generic Type Constraints
 
-```
-// Using built-in constraints
-func sort<T comparable>(list<T> items) returns void {
-    // sorting implementation
-}
-
-// Using custom constraints
-func sum<T Numeric>(list<T> numbers) returns T {
-    int result = numbers[0]
-    for int i = 1; i < numbers.length(); i += 1 {
-        result = result.add(numbers[i])
+```mux
+// Using built-in interfaces
+func process<T is Stringable>(list<T> items) returns void {
+    for item in items {
+        print(item.to_string())
     }
-    return result
 }
 
-// Multiple constraints
-func processOrdered<T Ordered & Numeric>(T value) returns T {
-    // T must implement both Ordered and Numeric
-    return value.multiply(value)
+// Multiple bounds (AND semantics - type must implement all)
+func combine<T is Add & Stringable>(T a, T b) returns string {
+    return (a.add(b)).to_string()
 }
 
-// Type inference with generics
-Vec<int> numbers = [1, 2, 3, 4, 5]
-int maximum = max(3, 7)        // Generic T inferred as int
-auto pairs = zip(numbers, ["a", "b", "c"])  // T=int, U=string inferred
+// Type parameters must be explicitly specified
+auto max_int = max<int>(3, 7)           // T = int, Comparable bound satisfied
+auto names = ["apple", "banana"]
+print(greet<string>(names[0]))          // T = string, Stringable bound satisfied
 ```
 
-### 3.6 User-Defined Types
+### 3.7 User-Defined Types
 
 - **Structs**: simple aggregates
 - **Enums**: tagged unions (see §8)

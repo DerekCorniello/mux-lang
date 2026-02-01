@@ -1,5 +1,4 @@
 use crate::semantics::SymbolKind;
-use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -8,6 +7,7 @@ use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, IntValue,
     PointerValue,
 };
+use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 use crate::lexer::Span;
@@ -1895,7 +1895,13 @@ impl<'a> CodeGenerator<'a> {
 
                 // Declare non-generic functions
                 if func.type_params.is_empty() {
-                    self.declare_function(func)?;
+                    // Mangled name to avoid conflict with entry point if function is named "main"
+                    let llvm_name = if func.name == "main" {
+                        "!user!main".to_string()
+                    } else {
+                        func.name.clone()
+                    };
+                    self.declare_function_with_name(func, &llvm_name)?;
                 }
             }
         }
@@ -2084,9 +2090,13 @@ impl<'a> CodeGenerator<'a> {
             self.generate_function_with_llvm_name(&func, &mangled_name)?;
         }
 
-        // Generate user-defined functions for main module (no mangling)
+        // Generate user-defined functions for main module (no mangling except for "main")
         for func in user_functions {
-            self.generate_function(&func)?;
+            if func.name == "main" {
+                self.generate_function_with_llvm_name(&func, "!user!main")?;
+            } else {
+                self.generate_function(&func)?;
+            }
         }
 
         // generate class methods with prefixed names
@@ -2306,6 +2316,13 @@ impl<'a> CodeGenerator<'a> {
         if let Some(init_func) = self.module.get_function(&init_name) {
             self.builder
                 .build_call(init_func, &[], "init_call")
+                .map_err(|e| e.to_string())?;
+        }
+
+        // Call user-defined main function if it exists
+        if let Some(user_main) = self.module.get_function("!user!main") {
+            self.builder
+                .build_call(user_main, &[], "user_main_call")
                 .map_err(|e| e.to_string())?;
         }
 
@@ -10017,11 +10034,20 @@ impl<'a> CodeGenerator<'a> {
         let saved_current_function_return_type = self.current_function_return_type.take();
         let saved_builder_position = self.builder.get_insert_block();
 
+        // set up generic context for the instantiated function
+        let context = GenericContext {
+            type_params: type_map.clone(),
+        };
+        self.generic_context = Some(context);
+
         // declare the instantiated function
         self.declare_function(&substituted_func)?;
 
         // generate the instantiated function
         self.generate_function(&substituted_func)?;
+
+        // clear generic context
+        self.generic_context = None;
 
         // restore context (back to calling context)
         self.variables = saved_variables;

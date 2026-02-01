@@ -1,7 +1,7 @@
 ---
 source: mux-compiler/tests/executable_integration.rs
+assertion_line: 134
 expression: full_output
 ---
-Box with: 42
 Box with: hello
 Generic class test completed

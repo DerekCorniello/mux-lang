@@ -215,7 +215,7 @@ fn main() {
     }
 
     // build executable
-    let exe_file = if let Some(out) = &cli.output {
+    let exe_file = if let Some(out) = &output {
         out.to_path_buf()
     } else {
         PathBuf::from(file_path.to_string_lossy().trim_end_matches(".mux"))
@@ -262,7 +262,7 @@ fn main() {
     }
 
     // remove IR if requested to not keep
-    if !cli.intermediate {
+    if !intermediate {
         Command::new("rm")
             .arg(&ir_file)
             .status()

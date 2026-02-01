@@ -9,7 +9,7 @@ interface Drawable { func draw() returns void }
 class Circle is Drawable, ShapeLike {
     float radius
     func draw() returns void { print("Circle radius=" + self.radius.to_string()) }
-    func resize(float newRadius, string _) returns void { radius = newRadius }
+    func resize(float newRadius, string _) returns void { self.radius = newRadius }
 }
 
 class Stack<T> {
