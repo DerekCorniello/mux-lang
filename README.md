@@ -33,7 +33,7 @@ Mux (fully "MuxLang") is a statically-typed, garbage-collected language that com
 - **Statement termination**: by end-of-line only (no semicolons)
 - **Underscore placeholder**: `_` can be used for unused parameters, variables, or pattern matching wildcards
 - **Keywords**:
-  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `Some`, `None`, `Ok`, `Err`
+  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `Some`, `None`, `Ok`, `Err`, `common`
 
 ---
 
@@ -171,7 +171,42 @@ auto good4 = (true).to_int() + (false).to_int()  // OK: 1
 | `string` | `.to_int()` | `Result<int, string>` | Parses string as integer |
 | `string` | `.to_float()` | `Result<float, string>` | Parses string as float |
 
-### 3.3 Composite Types
+### 3.3 Built-in Functions
+
+Mux provides essential built-in functions for output and utility operations. These are always available without imports.
+
+#### Output Functions
+
+**`print(string message)`** - Prints a string to standard output without a trailing newline.
+
+```mux
+print("Hello, ")
+print("World")  // Output: Hello, World
+```
+
+**`println(string message)`** - Prints a string to standard output with a trailing newline.
+
+```mux
+println("Hello, World")  // Output: Hello, World\n
+```
+
+#### Utility Functions
+
+**`range(int start, int end) -> list<int>`** - Returns a list of integers from `start` (inclusive) to `end` (exclusive). The result is always a `list<int>`.
+
+```mux
+// Generate indices for iteration
+for i in range(0, 5) {
+    print(i.to_string())  // Prints 0, 1, 2, 3, 4
+}
+
+// Create a list of numbers
+auto numbers = range(10, 15)  // [10, 11, 12, 13, 14]
+```
+
+**Design Note:** `range()` is the primary way to create numeric sequences for iteration, as Mux does not support C-style `for (int i = 0; i < n; i++)` loops.
+
+### 3.4 Composite Types
 
 ```
 Optional<T>
@@ -420,7 +455,164 @@ func callback(string event, int timestamp, string _) returns void {
 
 ---
 
-## 6. Lambdas & Closures
+## 6. Operators
+
+### 6.1 Arithmetic Operators
+
+Mux supports standard arithmetic operations with strict type requirements (no implicit conversions):
+
+| Operator | Description | Types | Example |
+|----------|-------------|-------|---------|
+| `+` | Addition | `int`, `float`, `string` | `5 + 3`, `"a" + "b"` |
+| `-` | Subtraction | `int`, `float` | `10 - 4` |
+| `*` | Multiplication | `int`, `float` | `6 * 7` |
+| `/` | Division | `int`, `float` | `15 / 3` |
+| `%` | Modulo | `int`, `float` | `10 % 3` // 1 |
+| `**` | Exponentiation | `int`, `float` | `2 ** 3` // 8 |
+
+**Exponentiation Operator (`**`):**
+- Right-associative: `2 ** 3 ** 2` equals `2 ** (3 ** 2)` = 512
+- Higher precedence than `*` and `/`: `2 * 3 ** 2` equals `2 * 9` = 18
+- Works on both `int` and `float` types
+
+```mux
+auto squared = 5 ** 2        // 25
+auto cubed = 2.0 ** 3.0      // 8.0
+auto complex = 2 ** 3 ** 2   // 512 (right-associative)
+```
+
+### 6.2 Increment and Decrement Operators
+
+Mux provides postfix increment (`++`) and decrement (`--`) operators with specific design constraints:
+
+**Design Constraints:**
+- **Postfix only**: `counter++` is valid, `++counter` is not supported
+- **Standalone only**: Must appear on their own statement line, not within expressions
+- **Only on mutable variables**: Cannot be used on `const` declarations or literals
+- **Type preservation**: Operates on `int` types only
+
+```mux
+auto counter = 0
+counter++         // Valid: counter is now 1
+counter--         // Valid: counter is now 0
+
+// INVALID - cannot use in expressions:
+// auto x = counter++    // ERROR: ++ cannot be used in expressions
+// auto y = (counter++) + 5  // ERROR: standalone only
+
+// INVALID - prefix not supported:
+// ++counter            // ERROR: prefix increment not supported
+
+// INVALID - cannot modify const:
+const int MAX = 100
+// MAX++               // ERROR: cannot modify const
+```
+
+**Rationale:** The postfix-only, standalone-only design prevents ambiguity and side-effect confusion that can occur with prefix operators or expression-embedded increments.
+
+### 6.3 Comparison and Logical Operators
+
+| Operator | Description | Types | Example |
+|----------|-------------|-------|---------|
+| `==` | Equality | All comparable types | `a == b` |
+| `!=` | Inequality | All comparable types | `a != b` |
+| `<` | Less than | `int`, `float`, `string` | `5 < 10` |
+| `<=` | Less than or equal | `int`, `float`, `string` | `x <= 100` |
+| `>` | Greater than | `int`, `float`, `string` | `y > 0` |
+| `>=` | Greater than or equal | `int`, `float`, `string` | `age >= 18` |
+| `&&` | Logical AND | `bool` | `a && b` (short-circuit) |
+| `\|\|` | Logical OR | `bool` | `a \|\| b` (short-circuit) |
+| `!` | Logical NOT | `bool` | `!flag` |
+
+**Short-circuit Evaluation:**
+- `&&` only evaluates right side if left is `true`
+- `||` only evaluates right side if left is `false`
+
+### 6.4 The `in` Operator
+
+The `in` operator tests for membership/containment with strict type requirements:
+
+| Left Operand | Right Operand | Description |
+|--------------|---------------|-------------|
+| `T` | `list<T>` | Check if value exists in list |
+| `T` | `set<T>` | Check if value exists in set |
+| `string` | `string` | Check if substring exists |
+| `char` | `string` | Check if character exists in string |
+
+**Type Constraints:**
+- Both operands must have compatible element types
+- No implicit type conversions allowed
+- Returns `bool`
+
+```mux
+// List containment
+auto nums = [1, 2, 3, 4, 5]
+auto hasThree = 3 in nums     // true
+auto hasTen = 10 in nums      // false
+
+// Set containment
+auto tags = {"urgent", "important"}
+auto isUrgent = "urgent" in tags    // true
+
+// String containment
+auto msg = "hello world"
+auto hasWorld = "world" in msg      // true
+auto hasFoo = "foo" in msg          // false
+
+// Character in string
+auto hasO = 'o' in msg              // true
+auto hasZ = 'z' in msg              // false
+
+// INVALID - type mismatch:
+// auto bad = "1" in nums           // ERROR: string not in list<int>
+// auto bad2 = 1 in msg             // ERROR: int not in string
+```
+
+### 6.5 Collection Operators
+
+#### Concatenation with `+`
+
+The `+` operator is overloaded for collection types with type-specific semantics:
+
+| Types | Operation | Result |
+|-------|-----------|--------|
+| `list<T> + list<T>` | Concatenation | Combined list |
+| `map<K,V> + map<K,V>` | Merge | Combined map (latter overwrites former on key collision) |
+| `set<T> + set<T>` | Union | Set containing all unique elements |
+| `string + string` | Concatenation | Combined string |
+
+**Type Constraints:**
+- Both operands must be the exact same collection type
+- No mixing of collection types (e.g., `list + set` is an error)
+- No implicit element type conversions
+
+```mux
+// List concatenation
+auto list1 = [1, 2]
+auto list2 = [3, 4]
+auto combined = list1 + list2    // [1, 2, 3, 4]
+
+// Map merge (latter wins on key collision)
+auto map1 = {"a": 1, "b": 2}
+auto map2 = {"b": 3, "c": 4}     // Note: key "b" exists in both
+auto merged = map1 + map2        // {"a": 1, "b": 3, "c": 4}
+
+// Set union
+auto set1 = {1, 2, 3}
+auto set2 = {3, 4, 5}
+auto unioned = set1 + set2       // {1, 2, 3, 4, 5}
+
+// String concatenation
+auto greeting = "Hello, " + "World"  // "Hello, World"
+
+// INVALID - type mismatch:
+// auto bad = [1, 2] + {3, 4}       // ERROR: cannot add list and set
+// auto bad2 = [1, 2] + [3.0, 4.0]  // ERROR: list<int> + list<float>
+```
+
+---
+
+## 7. Lambdas & Closures
 
 ```
 // Block-form lambda with explicit types
@@ -619,17 +811,79 @@ class Stack<T> {
 }
 
 // Usage with inference
-auto circle = Circle(5.0)  // type inferred as Circle
+auto circle = Circle.new(5.0)  // type inferred as Circle
 list<Drawable> shapes = [circle]
-Stack<int> intStack = Stack<int>()  // explicit generic instantiation
-Stack<string> stringStack = Stack<str>()  // alternative syntax
+Stack<int> intStack = Stack<int>.new()  // explicit generic instantiation with .new()
 ```
 
-- `is TraitA, TraitB` declares implemented traits; compiler enforces required methods
-- No `implements` keyword, no `@Override`
-- Class fields must be explicitly typed
-- Local variables in methods can use `auto` inference
-- Use `_` for unused method parameters
+### 9.3 Static Methods with `common`
+
+Mux uses the `common` keyword to declare static (class-level) methods that can be called without an instance. This is distinct from `const` which declares immutable values.
+
+**`common` vs `const`:**
+
+| Keyword | Purpose | Usage | Example |
+|---------|---------|-------|---------|
+| `common` | Static methods and factory functions | Called on the class itself, not instances | `ClassName.method()` |
+| `const` | Immutable constants | Values that cannot change after initialization | `const int MAX = 100` |
+
+```mux
+class Stack<T> {
+    list<T> items
+    
+    // Instance method - called on instances
+    func push(T item) returns void {
+        self.items.push_back(item)
+    }
+    
+    // Static method - called on the class
+    common func who_am_i() returns string {
+        return "I'm a Stack!"
+    }
+    
+    // Factory pattern - static method that creates instances
+    common func from(list<T> init_list) returns Stack<T> {
+        auto new_stack = Stack<T>.new()
+        new_stack.items = init_list
+        return new_stack
+    }
+}
+
+// Calling static methods
+print(Stack.who_am_i())                    // "I'm a Stack!"
+auto s = Stack<int>.from([1, 2, 3])        // Factory method
+
+// Calling instance methods
+auto stack = Stack<int>.new()
+stack.push(42)                             // Instance method
+```
+
+**Key Differences:**
+- **Instance methods** (no keyword) operate on `self` and require an instance
+- **Static methods** (`common`) have no `self` and are called on the class
+- **Const fields** are immutable instance/class fields, not methods
+- Static methods cannot access instance fields (no `self` context)
+- Factory patterns commonly use `common func from(...)` to create instances with pre-populated data
+
+### 9.4 Class Instantiation
+
+Classes are instantiated using the `.new()` method pattern:
+
+```mux
+// Basic instantiation
+auto circle = Circle.new()           // No constructor arguments
+auto circle2 = Circle.new(5.0)       // With constructor arguments
+
+// Generic class instantiation
+auto int_stack = Stack<int>.new()
+auto string_stack = Stack<string>.new()
+
+// Using factory methods
+auto prebuilt = Stack<int>.from([1, 2, 3])
+auto pair = Pair<string, int>.from("key", 42)
+```
+
+**Design Note:** Mux uses explicit `.new()` rather than direct constructor calls to distinguish class instantiation from function calls and enum variant construction.
 
 ---
 
@@ -664,6 +918,84 @@ auto data = {
 list<Pair<int, string>> pairs = [Pair(1, "one"), Pair(2, "two")]
 list<Container<int>> containers = list<Container<int>>()
 ```
+
+### 10.1 Collection Methods
+
+All collections provide a consistent API for access, mutation, and inspection.
+
+#### List Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.length()` | `int` | Returns the number of elements in the list |
+| `.is_empty()` | `bool` | Returns `true` if list has no elements |
+| `.get(int index)` | `Optional<T>` | Safe access; returns `Some(value)` or `None` if out of bounds |
+| `[int index]` | `T` | Direct access; runtime error if out of bounds |
+| `.push_back(T item)` | `void` | Appends item to the end of the list |
+| `.pop_back()` | `Optional<T>` | Removes and returns last item, or `None` if empty |
+
+```mux
+auto nums = [1, 2, 3]
+
+// Safe access with Optional
+match nums.get(0) {
+    Some(first) { print(first.to_string()) }  // "1"
+    None { print("Index out of bounds") }
+}
+
+// Direct access (runtime error if index invalid)
+auto second = nums[1]  // 2
+
+// Mutation
+nums.push_back(4)      // [1, 2, 3, 4]
+match nums.pop_back() {
+    Some(last) { print(last.to_string()) }  // "4"
+    None { }
+}
+
+// Inspection
+print(nums.length().to_string())     // "3"
+print(nums.is_empty().to_string())   // "false"
+```
+
+#### Map Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.length()` | `int` | Returns the number of key-value pairs |
+| `.is_empty()` | `bool` | Returns `true` if map has no entries |
+| `.get(K key)` | `Optional<V>` | Safe lookup; returns `Some(value)` or `None` if key not found |
+| `[K key]` | `V` | Direct access; runtime error if key not found |
+
+```mux
+auto scores = {"Alice": 90, "Bob": 85}
+
+// Safe access
+match scores.get("Alice") {
+    Some(score) { print(score.to_string()) }  // "90"
+    None { print("Student not found") }
+}
+
+// Direct access
+auto bobScore = scores["Bob"]  // 85
+
+// Map entries are immutable; reassign to update
+scores["Alice"] = 95  // Updates existing key
+```
+
+#### Set Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.length()` | `int` | Returns the number of elements |
+| `.is_empty()` | `bool` | Returns `true` if set is empty |
+
+```mux
+auto tags = {"urgent", "important", "review"}
+print(tags.length().to_string())  // "3"
+```
+
+**Design Note:** Collections use consistent method naming across all types. Safe access via `.get()` returns `Optional<T>`, while direct access with `[]` provides unchecked access with runtime bounds checking.
 
 ---
 
@@ -766,47 +1098,37 @@ Mux uses references for safe memory access and manipulation:
 - References are non-nullable by default
 - Use `Option<&T>` for nullable references
 
-```
+```mux
 // Basic reference usage
 int x = 10
-let r = &x      // r is of type &int
-print(r)        // 10 - automatic dereferencing
-r = 20          // Changes x to 20
-print(x)        // 20
+auto r = &x      // r is of type &int
+print("ref value: " + (*r).to_string())  // 10 - explicit dereference with *
+
+*r = 20          // Changes x to 20 via dereference
+print("val after ref update: " + (*r).to_string())  // 20
+print("x is now: " + x.to_string())  // 20
 
 // References to list elements
-let numbers = [1, 2, 3, 4, 5]
-let first = &numbers[0]  // &int
-print(first)            // 1
+auto numbers = [1, 2, 3, 4, 5]
+auto first = &numbers[0]  // &int
+print("first element: " + (*first).to_string())  // 1
 
 // Function taking a reference
-fn increment(ref: &int) {
-    ref = ref + 1  // Changes the value being referenced
+func update(&int ref) returns void {
+    *ref = *ref + 1  // Must explicitly dereference to modify
 }
 
-increment(&x)
-print(x)  // 21
-
-// Reference safety - this would be a compile-time error:
-// let bad_ref = &x
-// let y = x         // Error: x is borrowed
-// print(bad_ref)    // Can't use x while borrowed
-
-// Proper scope for references
-{
-    let temp = 42
-    let temp_ref = &temp
-    print(temp_ref)  // 42
-} // temp_ref goes out of scope here, temp can be used again
-
-// Using Option for nullable references
-let maybe_ref: Option<&int> = if condition { &x } else { None }
-
-match maybe_ref {
-    Some(val) => print("Got value: ", val),
-    None => print("No value")
-}
+update(&x)
+print("val after update: " + x.to_string())  // 21
 ```
+
+**Reference Syntax:**
+- Create reference: `&variable` or `&expression`
+- Dereference: `*reference` (required for both reading and writing)
+- Pass to functions: `func(&int ref)` declares parameter, `update(&x)` passes reference
+- References to references: Not supported
+
+**Design Note:** Unlike some languages with automatic dereferencing, Mux requires explicit `*` for all reference operations. This makes memory access patterns explicit and prevents accidental mutation bugs.
 
 ---
 
@@ -867,7 +1189,6 @@ auto pairs = zip<int, string>(numbers, names)  // when inference is ambiguous
 
 ```
 // Good uses of underscore
-// auto (first, _) = getTuple()           // ignore second element - tuples not supported
 func process(int data, string _) { }  // ignore second parameter
 for _ in range(0, 10) { }            // ignore loop counter
 match result { Ok(_) { } }           // ignore success value
@@ -970,34 +1291,6 @@ The compiler will warn about unused variables unless they are explicitly marked 
 
 ## 18. License
 
-Mux will be licensed inder the MIT license.
+Mux will be licensed under the MIT license.
 
 ---
-
-# MuxLang 16-Week Plan (MVP)
-
-This document outlines a week-by-week schedule for the development of MuxLang's Minimum Viable Product.
-
-| Week | Focus | Tasks | Deliverables |
-|------|-------|-------|-------------|
-| 1 | **Language Design** | Finalize syntax & grammar; sketch AST; plan modules | Grammar document, AST outline |
-| 2 | **Lexer Implementation** | Implement lexer; test tokenization | Working lexer |
-| 3 | **Parser Implementation** | Parse expressions & statements; build AST | Working parser |
-| 4 | **REPL Prototype** | Minimal REPL to test parsing/evaluation; parser tests | REPL prototype, parser test cases |
-| 5 | **Type System – Core Types** | Implement int, float, bool, string, arrays; AST integration | Core type checker functional |
-| 6 | **Type System – Functions & Scope** | Type checking for functions, variables, scopes | Type checker integrated with function support |
-| 7 | **Type System – Traits/Interfaces** | Implement `is Trait` system; write tests | Trait system functional, test suite |
-| 8 | **Memory Management Design** | Decide GC vs manual; design allocator/GC; integrate AST/runtime | Memory management design doc, skeleton allocator/GC |
-| 9 | **Memory Management Implementation** | Implement basic GC/manual allocator; test memory correctness | Working memory management system |
-| 10 | **LLVM Setup & Expression Codegen** | Install/setup LLVM; codegen for simple expressions | LLVM backend running simple expression programs |
-| 11 | **LLVM Statement & Function Codegen** | Extend codegen to statements, loops, functions | Core constructs codegen functional |
-| 12 | **Integration Testing** | Combine type checker, memory system, LLVM codegen; debug integration | MVP programs running end-to-end |
-| 13 | **Standard Library – Core Types** | Implement I/O, collections, string utilities | Minimal stdlib working |
-| 14 | **Compiler CLI & REPL Improvements** | Implement `mux run/build`; improve REPL; debugging | Usable compiler CLI with REPL |
-| 15 | **Testing & Examples** | Write example programs; test edge cases; fix remaining bugs | Test suite, example programs |
-| 16 | **Polish & Documentation** | Expand stdlib, improve error reporting, finalize docs | Polished MVP, documentation, final project report |
-
-**Notes:**
-- Hours per week: ~9–15
-- Buffer is included in weeks 12–16 for testing, debugging, and polishing.
-- The plan ensures a gradual progression from language design to a fully integrated MVP.
