@@ -664,6 +664,27 @@ impl SemanticAnalyzer {
         &self.all_module_asts
     }
 
+    /// Set class-level type parameters and their bounds for method analysis.
+    /// This should be called before analyzing/generating methods of a generic class.
+    pub fn set_class_type_params(&mut self, params: Vec<(String, Vec<String>)>) {
+        self.current_class_type_params = Some(params.clone());
+        // Also add to current_bounds for immediate use in type checking
+        for (param, bounds) in params {
+            self.current_bounds.insert(param, bounds);
+        }
+    }
+
+    /// Clear class-level type parameters after finishing with a class.
+    pub fn clear_class_type_params(&mut self) {
+        // Remove class type params from current_bounds
+        if let Some(params) = &self.current_class_type_params {
+            for (param, _) in params {
+                self.current_bounds.remove(param);
+            }
+        }
+        self.current_class_type_params = None;
+    }
+
     // check if a name is a built-in function and return its signature
     fn get_builtin_sig(&self, name: &str) -> Option<&BuiltInSig> {
         BUILT_IN_FUNCTIONS.get(name)
@@ -1569,6 +1590,7 @@ impl SemanticAnalyzer {
     fn substitute_type_param(&self, type_: &Type, param: &str, replacement: &Type) -> Type {
         match type_ {
             Type::Variable(var) if var == param => replacement.clone(),
+            Type::Generic(var) if var == param => replacement.clone(),
             Type::Named(name, args) if name == param && args.is_empty() => replacement.clone(),
             Type::Named(name, args) => Type::Named(
                 name.clone(),
@@ -2170,6 +2192,11 @@ impl SemanticAnalyzer {
                 "is_empty" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "length" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
                     is_static: false,
                 }),
                 "to_string" => Some(MethodSig {
@@ -2948,7 +2975,7 @@ impl SemanticAnalyzer {
         };
 
         // Set current class type params for method analysis
-        self.current_class_type_params = Some(type_params.to_vec());
+        self.set_class_type_params(type_params.to_vec());
 
         // Analyze each method body with proper self type
         for method in methods {
@@ -2963,7 +2990,7 @@ impl SemanticAnalyzer {
         }
 
         // Clear class type params after analyzing class methods
-        self.current_class_type_params = None;
+        self.clear_class_type_params();
 
         Ok(())
     }

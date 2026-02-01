@@ -375,7 +375,7 @@ impl<'a> Parser<'a> {
                             type_params: type_args,
                         });
 
-                        if !self.matches(&[TokenType::Comma]) {
+                        if !self.matches(&[TokenType::Ref]) {
                             break;
                         }
                     }
@@ -387,7 +387,6 @@ impl<'a> Parser<'a> {
                     break;
                 }
             }
-
             self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
             params
         } else {
@@ -937,7 +936,7 @@ impl<'a> Parser<'a> {
                                 type_params: type_args,
                             });
 
-                            if !self.matches(&[TokenType::Comma]) {
+                            if !self.matches(&[TokenType::Ref]) {
                                 break;
                             }
                         }

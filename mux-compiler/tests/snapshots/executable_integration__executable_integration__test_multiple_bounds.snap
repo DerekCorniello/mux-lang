@@ -2,6 +2,4 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
-Box with: hello
-test : value
-Generic class test completed
+Multiple bounds syntax test passed!

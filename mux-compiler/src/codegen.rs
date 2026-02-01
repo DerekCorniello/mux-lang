@@ -2108,6 +2108,15 @@ impl<'a> CodeGenerator<'a> {
                 ..
             } = node
             {
+                // Set class-level type parameter bounds for method generation
+                if !type_params.is_empty() {
+                    let bounds: Vec<(String, Vec<String>)> = type_params
+                        .iter()
+                        .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
+                        .collect();
+                    self.analyzer.set_class_type_params(bounds);
+                }
+
                 for method in methods {
                     let prefixed_name = format!("{}.{}", name, method.name);
                     // generate non-generic class methods, OR
@@ -2129,6 +2138,11 @@ impl<'a> CodeGenerator<'a> {
                             self.generate_function(&method_copy)?;
                         }
                     }
+                }
+
+                // Clear class-level type params after generating all methods for this class
+                if !type_params.is_empty() {
+                    self.analyzer.clear_class_type_params();
                 }
             }
         }
@@ -9640,6 +9654,12 @@ impl<'a> CodeGenerator<'a> {
             .lookup(class_name)
             .ok_or(format!("Class {} not found", class_name))?;
 
+        // Set class-level type parameter bounds for specialized method generation
+        if !class_symbol.type_params.is_empty() {
+            self.analyzer
+                .set_class_type_params(class_symbol.type_params.clone());
+        }
+
         // generate specialized methods (including static methods)
         for (method_name, method_sig) in &class_symbol.methods {
             let specialized_method_name =
@@ -9717,6 +9737,9 @@ impl<'a> CodeGenerator<'a> {
         if let Some(block) = saved_insert_block {
             self.builder.position_at_end(block);
         }
+
+        // Clear class-level type params after generating specialized methods
+        self.analyzer.clear_class_type_params();
 
         Ok(())
     }

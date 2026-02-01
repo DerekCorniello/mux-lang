@@ -1,8 +1,13 @@
-// Simple generic class test
+// Generic class test with various constraint scenarios
 interface Stringable {
     func to_string() returns string
 }
 
+interface Printable {
+    func print_value() returns void
+}
+
+// Test 1: Single constraint (existing functionality)
 class Box<T is Stringable> {
     T value
     
@@ -19,9 +24,55 @@ class Box<T is Stringable> {
     }
 }
 
-// Note: int doesn't implement Stringable, so we can only use Box with string-compatible types
+// Test 2: Multiple bounds on single type parameter (using & separator)
+class Container<T is Stringable & Printable> {
+    T value
+
+    func set(T val) returns void {
+        self.value = val
+    }
+
+    func show_string() returns string {
+        return self.value.to_string()
+    }
+}
+
+// Test 3: Multiple type parameters each with their own constraints
+// This was the bug that was fixed - parser couldn't handle this before!
+class Pair<K is Stringable, V is Stringable> {
+    K key
+    V value
+
+    func set_key(K k) returns void {
+        self.key = k
+    }
+
+    func set_value(V v) returns void {
+        self.value = v
+    }
+
+    func to_string() returns string {
+        return self.key.to_string() + " : " + self.value.to_string()
+    }
+}
+
+// Test 4: Three type parameters with constraints
+class Triple<A is Stringable, B is Stringable, C is Stringable> {
+    A first
+    B second
+    C third
+}
+
+// Run tests
 auto string_box = Box<string>.new()
 string_box.set("hello")
 print(string_box.to_string())
+
+auto pair = Pair<string, string>.new()
+pair.set_key("test")
+pair.set_value("value")
+print(pair.to_string())
+
+auto triple = Triple<string, int, string>.new()
 
 print("Generic class test completed")
