@@ -1738,20 +1738,127 @@ impl SemanticAnalyzer {
                     false
                 }
             }
-            Type::Primitive(prim) => {
-                // built-in types implement certain interfaces
-                match prim {
-                    PrimitiveType::Str => interface_name == "Add",
-                    PrimitiveType::Int => {
-                        matches!(interface_name, "Add" | "Sub" | "Mul" | "Div" | "Arithmetic")
-                    }
-                    PrimitiveType::Float => {
-                        matches!(interface_name, "Add" | "Sub" | "Mul" | "Div" | "Arithmetic")
-                    }
-                    _ => false,
+            Type::Primitive(prim) => match prim {
+                PrimitiveType::Str => {
+                    interface_name == "Add"
+                        || interface_name == "Stringable"
+                        || interface_name == "Equatable"
+                        || interface_name == "Comparable"
+                }
+                PrimitiveType::Int => {
+                    matches!(
+                        interface_name,
+                        "Add"
+                            | "Sub"
+                            | "Mul"
+                            | "Div"
+                            | "Arithmetic"
+                            | "Stringable"
+                            | "Equatable"
+                            | "Comparable"
+                    )
+                }
+                PrimitiveType::Float => {
+                    matches!(
+                        interface_name,
+                        "Add"
+                            | "Sub"
+                            | "Mul"
+                            | "Div"
+                            | "Arithmetic"
+                            | "Stringable"
+                            | "Equatable"
+                            | "Comparable"
+                    )
+                }
+                PrimitiveType::Bool => {
+                    matches!(interface_name, "Stringable" | "Equatable")
+                }
+                _ => false,
+            },
+            Type::Variable(var) | Type::Generic(var) => {
+                if let Some(bounds) = self.current_bounds.get(var) {
+                    bounds.contains(&interface_name.to_string())
+                } else {
+                    false
                 }
             }
             _ => false,
+        }
+    }
+
+    // get method signature for built-in interfaces (used by generic type parameters)
+    fn get_builtin_interface_method(
+        &self,
+        interface_name: &str,
+        method_name: &str,
+    ) -> Option<MethodSig> {
+        match interface_name {
+            "Stringable" => match method_name {
+                "to_string" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Add" => match method_name {
+                "add" => Some(MethodSig {
+                    params: vec![Type::Generic("Self".to_string())],
+                    return_type: Type::Generic("Self".to_string()),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Sub" => match method_name {
+                "sub" => Some(MethodSig {
+                    params: vec![Type::Generic("Self".to_string())],
+                    return_type: Type::Generic("Self".to_string()),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Mul" => match method_name {
+                "mul" => Some(MethodSig {
+                    params: vec![Type::Generic("Self".to_string())],
+                    return_type: Type::Generic("Self".to_string()),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Div" => match method_name {
+                "div" => Some(MethodSig {
+                    params: vec![Type::Generic("Self".to_string())],
+                    return_type: Type::Generic("Self".to_string()),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Arithmetic" => match method_name {
+                "add" | "sub" | "mul" | "div" => Some(MethodSig {
+                    params: vec![Type::Generic("Self".to_string())],
+                    return_type: Type::Generic("Self".to_string()),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Equatable" => match method_name {
+                "eq" => Some(MethodSig {
+                    params: vec![Type::Generic("Self".to_string())],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Comparable" => match method_name {
+                "cmp" => Some(MethodSig {
+                    params: vec![Type::Generic("Self".to_string())],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            _ => None,
         }
     }
 
@@ -1792,10 +1899,15 @@ impl SemanticAnalyzer {
                 }
                 None
             }
-            Type::Variable(var) => {
+            Type::Variable(var) | Type::Generic(var) => {
                 // for generics, check bounds
                 if let Some(bounds) = self.current_bounds.get(var) {
                     for bound in bounds {
+                        // First check if it's a built-in interface
+                        if let Some(sig) = self.get_builtin_interface_method(bound, method_name) {
+                            return Some(sig);
+                        }
+                        // Then check the symbol table
                         if let Some(interface_symbol) = self.symbol_table.lookup(bound) {
                             if let Some(interface_methods) = interface_symbol.interfaces.get(bound)
                             {
@@ -1823,6 +1935,42 @@ impl SemanticAnalyzer {
                             },
                             is_static: false,
                         }),
+                        // Add interface
+                        "add" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Int)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
+                        // Sub interface
+                        "sub" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Int)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
+                        // Mul interface
+                        "mul" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Int)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
+                        // Div interface
+                        "div" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Int)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
+                        // Equatable interface
+                        "eq" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Int)],
+                            return_type: Type::Primitive(PrimitiveType::Bool),
+                            is_static: false,
+                        }),
+                        // Comparable interface
+                        "cmp" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Int)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
                         _ => None,
                     },
                     PrimitiveType::Float => match method_name {
@@ -1835,6 +1983,42 @@ impl SemanticAnalyzer {
                             } else {
                                 Type::Primitive(PrimitiveType::Float)
                             },
+                            is_static: false,
+                        }),
+                        // Add interface
+                        "add" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Float)],
+                            return_type: Type::Primitive(PrimitiveType::Float),
+                            is_static: false,
+                        }),
+                        // Sub interface
+                        "sub" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Float)],
+                            return_type: Type::Primitive(PrimitiveType::Float),
+                            is_static: false,
+                        }),
+                        // Mul interface
+                        "mul" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Float)],
+                            return_type: Type::Primitive(PrimitiveType::Float),
+                            is_static: false,
+                        }),
+                        // Div interface
+                        "div" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Float)],
+                            return_type: Type::Primitive(PrimitiveType::Float),
+                            is_static: false,
+                        }),
+                        // Equatable interface
+                        "eq" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Float)],
+                            return_type: Type::Primitive(PrimitiveType::Bool),
+                            is_static: false,
+                        }),
+                        // Comparable interface
+                        "cmp" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Float)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
                             is_static: false,
                         }),
                         _ => None,
@@ -1872,6 +2056,24 @@ impl SemanticAnalyzer {
                             ),
                             is_static: false,
                         }),
+                        // Add interface (string concatenation)
+                        "add" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Str)],
+                            return_type: Type::Primitive(PrimitiveType::Str),
+                            is_static: false,
+                        }),
+                        // Equatable interface
+                        "eq" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Str)],
+                            return_type: Type::Primitive(PrimitiveType::Bool),
+                            is_static: false,
+                        }),
+                        // Comparable interface (lexicographic comparison)
+                        "cmp" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Str)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
                         _ => None,
                     },
                     PrimitiveType::Bool => match method_name {
@@ -1884,6 +2086,12 @@ impl SemanticAnalyzer {
                             } else {
                                 Type::Primitive(PrimitiveType::Float)
                             },
+                            is_static: false,
+                        }),
+                        // Equatable interface
+                        "eq" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Bool)],
+                            return_type: Type::Primitive(PrimitiveType::Bool),
                             is_static: false,
                         }),
                         _ => None,
@@ -1903,6 +2111,18 @@ impl SemanticAnalyzer {
                                     Type::Primitive(PrimitiveType::Str),
                                 ],
                             ),
+                            is_static: false,
+                        }),
+                        // Equatable interface
+                        "eq" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Char)],
+                            return_type: Type::Primitive(PrimitiveType::Bool),
+                            is_static: false,
+                        }),
+                        // Comparable interface
+                        "cmp" => Some(MethodSig {
+                            params: vec![Type::Primitive(PrimitiveType::Char)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
                             is_static: false,
                         }),
                         _ => None,
@@ -2134,7 +2354,8 @@ impl SemanticAnalyzer {
                         Type::Primitive(
                             PrimitiveType::Int | PrimitiveType::Float | PrimitiveType::Str
                         )
-                    ) {
+                    ) || self.type_implements_interface(left_type, "Comparable")
+                    {
                         Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
                     } else {
                         None

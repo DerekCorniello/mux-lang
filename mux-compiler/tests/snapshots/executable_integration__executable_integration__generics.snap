@@ -2,6 +2,18 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
-STDOUT:
- 
-STDERR:
+Popped: 42
+im a stack!
+trying to instantiate stack
+init new obj
+init items
+instantiated stack
+stack has: [1, 2, 3]
+Stack with: [1, 2, 3]
+max of 5 and 10 is: 10
+max of -1 and -2 is: -1
+hi im derek
+hi im 123
+hello derek
+hello 123
+generics ran successfully
