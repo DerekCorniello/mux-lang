@@ -1,0 +1,31 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+assertion_line: 134
+expression: full_output
+---
+=== Test 1: Box<Box<int>> ===
+Nested box value: 42
+=== Test 2: Stack<Stack<string>> ===
+Stack of stacks size: 2
+Popped from nested stack: bar
+=== Test 3: Box<Stack<int>> ===
+Stack in box size: 3
+=== Test 4: Pair<Box<int>, Stack<string>> ===
+Pair first (box): 100
+Pair second (stack) size: 1
+=== Test 5: Stack<Pair<string, int>> ===
+Popped pair: score = 95
+=== Test 6: list<Box<int>> ===
+List of boxes size: 3
+First box value: 10
+=== Test 7: Box<list<int>> ===
+List in box size: 5
+List in box first element: 1
+=== Test 8: Box<Box<Box<int>>> ===
+Triple nested value: 999
+=== Test 9: Stack<Box<Pair<int, string>>> ===
+Triple nested - first: 42, second: answer
+=== Test 10: list<Stack<Box<int>>> ===
+List of stacks size: 1
+Value from list->stack->box: 777
+=== All nested generic tests passed! ===

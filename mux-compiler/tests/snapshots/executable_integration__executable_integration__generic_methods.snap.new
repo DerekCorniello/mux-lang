@@ -1,0 +1,28 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+assertion_line: 134
+expression: full_output
+---
+=== Test 1: Generic method creating pairs ===
+Paired first: 42
+Paired second: hello
+Paired first: key
+Paired second: 99
+=== Test 2: Generic method with bounds ===
+Combined: first and second
+Combined ints: 100 and 200
+=== Test 3: Static methods on generic class ===
+Static pair: count = 5
+=== Test 4: Method returning nested generic ===
+Boxed value: 99
+Boxed string: nested
+Boxed int: 42
+=== Test 5: Multiple methods with different return types ===
+Created pair: 1, value
+Wrapped with str: key, value
+Wrapped with int: key, 42
+=== Test 6: Chaining method calls ===
+Chained result: chained
+=== Test 7: Method using class type param multiple times ===
+Duplicator pair: 10, 20
+=== All generic method tests passed! ===

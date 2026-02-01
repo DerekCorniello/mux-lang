@@ -297,10 +297,10 @@ impl Unifier {
                 .get(var)
                 .cloned()
                 .unwrap_or_else(|| t.clone()),
-            Type::Named(name, args) => Type::Named(
-                name.clone(),
-                args.iter().map(|arg| self.apply(arg)).collect(),
-            ),
+            Type::Named(name, args) => {
+                let applied_args: Vec<Type> = args.iter().map(|arg| self.apply(arg)).collect();
+                Type::Named(name.clone(), applied_args)
+            }
             Type::Function {
                 params,
                 returns,
@@ -314,7 +314,6 @@ impl Unifier {
             Type::List(inner) => Type::List(Box::new(self.apply(inner))),
             Type::Map(k, v) => Type::Map(Box::new(self.apply(k)), Box::new(self.apply(v))),
             Type::Set(inner) => Type::Set(Box::new(self.apply(inner))),
-
             Type::Optional(inner) => Type::Optional(Box::new(self.apply(inner))),
             _ => t.clone(),
         }
@@ -527,8 +526,10 @@ impl SymbolTable {
         current_borrow
             .symbols
             .insert(name.to_string(), symbol.clone());
-        // Add everything to global symbol table (needed for codegen to look up variables)
-        // Out-of-scope access is prevented by the proper exists() check during semantics
+        // Add all symbols to all_symbols for codegen lookups
+        // Note: This can cause name collisions for local variables across different functions,
+        // but it's needed because codegen calls get_expression_type after scopes are popped.
+        // For the collision case in generic methods, codegen should use expression types directly.
         if name != "self" {
             self.all_symbols.insert(name.to_string(), symbol);
         }
@@ -662,6 +663,27 @@ impl SemanticAnalyzer {
 
     pub fn all_module_asts(&self) -> &std::collections::HashMap<String, Vec<AstNode>> {
         &self.all_module_asts
+    }
+
+    /// Set class-level type parameters and their bounds for method analysis.
+    /// This should be called before analyzing/generating methods of a generic class.
+    pub fn set_class_type_params(&mut self, params: Vec<(String, Vec<String>)>) {
+        self.current_class_type_params = Some(params.clone());
+        // Also add to current_bounds for immediate use in type checking
+        for (param, bounds) in params {
+            self.current_bounds.insert(param, bounds);
+        }
+    }
+
+    /// Clear class-level type parameters after finishing with a class.
+    pub fn clear_class_type_params(&mut self) {
+        // Remove class type params from current_bounds
+        if let Some(params) = &self.current_class_type_params {
+            for (param, _) in params {
+                self.current_bounds.remove(param);
+            }
+        }
+        self.current_class_type_params = None;
     }
 
     // check if a name is a built-in function and return its signature
@@ -1569,6 +1591,7 @@ impl SemanticAnalyzer {
     fn substitute_type_param(&self, type_: &Type, param: &str, replacement: &Type) -> Type {
         match type_ {
             Type::Variable(var) if var == param => replacement.clone(),
+            Type::Generic(var) if var == param => replacement.clone(),
             Type::Named(name, args) if name == param && args.is_empty() => replacement.clone(),
             Type::Named(name, args) => Type::Named(
                 name.clone(),
@@ -2170,6 +2193,11 @@ impl SemanticAnalyzer {
                 "is_empty" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "length" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
                     is_static: false,
                 }),
                 "to_string" => Some(MethodSig {
@@ -2948,7 +2976,7 @@ impl SemanticAnalyzer {
         };
 
         // Set current class type params for method analysis
-        self.current_class_type_params = Some(type_params.to_vec());
+        self.set_class_type_params(type_params.to_vec());
 
         // Analyze each method body with proper self type
         for method in methods {
@@ -2963,7 +2991,7 @@ impl SemanticAnalyzer {
         }
 
         // Clear class type params after analyzing class methods
-        self.current_class_type_params = None;
+        self.clear_class_type_params();
 
         Ok(())
     }
