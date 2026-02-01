@@ -1,36 +1,81 @@
 use ::std::cmp;
+use ::std::rc::Rc;
 use ::std::collections::{BTreeMap, BTreeSet};
 use ::std::ffi::c_void;
 use ::std::fmt;
 use ::std::hash;
 use ::std::mem;
-use ::std::sync::Arc;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type TypeId = u32;
 
+/// Internal data that needs cleanup when all ObjectRefs are dropped.
+/// This is stored in an Arc so it's shared across clones.
+struct ObjectData {
+    ptr: *mut c_void,
+    type_id: TypeId,
+    size: usize,
+    ref_count: AtomicUsize,
+}
+
+impl Drop for ObjectData {
+    fn drop(&mut self) {
+        // When the Arc holding this ObjectData is dropped (all ObjectRefs gone),
+        // free the underlying object memory
+        if !self.ptr.is_null() && self.size > 0 {
+            let layout =
+                ::std::alloc::Layout::from_size_align(self.size, ::std::mem::align_of::<u8>())
+                    .expect("Invalid layout for object");
+            unsafe {
+                ::std::alloc::dealloc(self.ptr as *mut u8, layout);
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ObjectRef {
-    pub ptr: *mut c_void,
-    pub type_id: TypeId,
-    pub ref_count: Arc<AtomicUsize>,
+    data: Rc<ObjectData>,
+}
+
+// Manual Debug since ObjectData doesn't derive it
+impl ::std::fmt::Debug for ObjectData {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.debug_struct("ObjectData")
+            .field("ptr", &self.ptr)
+            .field("type_id", &self.type_id)
+            .field("size", &self.size)
+            .field("ref_count", &self.ref_count.load(Ordering::Relaxed))
+            .finish()
+    }
 }
 
 impl ObjectRef {
-    pub fn new(ptr: *mut c_void, type_id: TypeId) -> Self {
+    pub fn new(ptr: *mut c_void, type_id: TypeId, size: usize) -> Self {
         ObjectRef {
-            ptr,
-            type_id,
-            ref_count: Arc::new(AtomicUsize::new(1)),
+            data: Rc::new(ObjectData {
+                ptr,
+                type_id,
+                size,
+                ref_count: AtomicUsize::new(1),
+            }),
         }
     }
 
+    pub fn ptr(&self) -> *mut c_void {
+        self.data.ptr
+    }
+
+    pub fn type_id(&self) -> TypeId {
+        self.data.type_id
+    }
+
     pub fn inc_ref(&self) {
-        self.ref_count.fetch_add(1, Ordering::Relaxed);
+        self.data.ref_count.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn dec_ref(&self) -> usize {
-        self.ref_count.fetch_sub(1, Ordering::Relaxed)
+        self.data.ref_count.fetch_sub(1, Ordering::Relaxed)
     }
 }
 
@@ -61,7 +106,9 @@ impl PartialEq for Value {
             (Value::Set(a), Value::Set(b)) => a == b,
             (Value::Optional(a), Value::Optional(b)) => a == b,
             (Value::Result(a), Value::Result(b)) => a == b,
-            (Value::Object(a), Value::Object(b)) => a.ptr == b.ptr && a.type_id == b.type_id,
+            (Value::Object(a), Value::Object(b)) => {
+                a.ptr() == b.ptr() && a.type_id() == b.type_id()
+            }
             _ => false,
         }
     }
@@ -92,8 +139,8 @@ impl hash::Hash for Value {
             Value::Optional(o) => o.hash(state),
             Value::Result(r) => r.hash(state),
             Value::Object(obj) => {
-                (obj.ptr as usize).hash(state);
-                obj.type_id.hash(state);
+                (obj.ptr() as usize).hash(state);
+                obj.type_id().hash(state);
             }
         }
     }
@@ -119,7 +166,7 @@ impl Ord for Value {
             (Value::Optional(a), Value::Optional(b)) => a.cmp(b),
             (Value::Result(a), Value::Result(b)) => a.cmp(b),
             (Value::Object(a), Value::Object(b)) => {
-                (a.type_id, a.ptr as usize).cmp(&(b.type_id, b.ptr as usize))
+                (a.type_id(), a.ptr() as usize).cmp(&(b.type_id(), b.ptr() as usize))
             }
             // Different types - arbitrary ordering by variant index
             (a, b) => {
@@ -199,7 +246,7 @@ impl fmt::Display for Value {
                 Err(val) => write!(f, "Err({})", val),
             },
             Value::Object(obj) => {
-                write!(f, "<Object at {:p} type_id={}>", obj.ptr, obj.type_id)
+                write!(f, "<Object at {:p} type_id={}>", obj.ptr(), obj.type_id())
             }
         }
     }
@@ -215,6 +262,7 @@ pub mod map;
 pub mod math;
 pub mod object;
 pub mod optional;
+pub mod refcount;
 pub mod result;
 pub mod set;
 pub mod std;
@@ -225,5 +273,5 @@ pub use std::{mux_value_list_get_value, mux_value_list_length};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_value(f: f64) -> *mut Value {
-    Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(f))))
+    refcount::mux_rc_alloc(Value::Float(ordered_float::OrderedFloat(f)))
 }

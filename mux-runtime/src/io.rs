@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::raw::c_char;
 
+use crate::refcount::mux_rc_alloc;
 use crate::Value;
 
 #[derive(Debug)]
@@ -47,7 +48,7 @@ pub extern "C" fn mux_value_from_string(s: *const c_char) -> *mut crate::Value {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy().to_string();
     let value = crate::Value::String(rust_str);
-    Box::into_raw(Box::new(value))
+    mux_rc_alloc(value)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

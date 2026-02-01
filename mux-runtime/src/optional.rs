@@ -1,3 +1,4 @@
+use crate::refcount::mux_rc_alloc;
 use crate::Value;
 use std::fmt;
 
@@ -48,7 +49,7 @@ pub extern "C" fn mux_optional_data(opt: *mut Optional) -> *mut Value {
     }
     unsafe {
         match &*opt {
-            Optional::Some(v) => Box::into_raw(Box::new(*v.clone())),
+            Optional::Some(v) => mux_rc_alloc(*v.clone()),
             Optional::None => std::ptr::null_mut(),
         }
     }

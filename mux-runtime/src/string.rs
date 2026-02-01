@@ -4,6 +4,7 @@ use std::os::raw::c_char;
 
 use ordered_float;
 
+use crate::refcount::mux_rc_alloc;
 use crate::result::MuxResult;
 use crate::Value;
 
@@ -144,7 +145,7 @@ pub extern "C" fn mux_new_string_from_cstr(s: *const c_char) -> *mut Value {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy().to_string();
     let value = Value::String(rust_str);
-    Box::into_raw(Box::new(value))
+    mux_rc_alloc(value)
 }
 
 /// Compare two C strings for equality

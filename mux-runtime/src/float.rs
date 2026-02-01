@@ -2,8 +2,9 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::Value;
+use crate::refcount::mux_rc_alloc;
 use crate::result::MuxResult;
+use crate::Value;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Float(pub ordered_float::OrderedFloat<f64>);
@@ -91,7 +92,7 @@ pub unsafe extern "C" fn mux_float_from_value(v: *mut Value) -> f64 {
 pub unsafe extern "C" fn mux_int_to_float(v: *mut Value) -> *mut Value {
     if let Value::Int(i) = unsafe { &*v } {
         let f = *i as f64;
-        Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(f))))
+        mux_rc_alloc(Value::Float(ordered_float::OrderedFloat(f)))
     } else {
         panic!("Expected Int value");
     }
@@ -102,7 +103,7 @@ pub unsafe extern "C" fn mux_int_to_float(v: *mut Value) -> *mut Value {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_float_to_int(v: *mut Value) -> *mut Value {
     if let Value::Float(f) = unsafe { &*v } {
-        Box::into_raw(Box::new(Value::Int(f.into_inner() as i64)))
+        mux_rc_alloc(Value::Int(f.into_inner() as i64))
     } else {
         panic!("Expected Float value");
     }
