@@ -2,7 +2,6 @@
 
 ## Critical Rules
 - **MOST IMPORTANT: No hacks or workarounds** - write clean, production-ready code. No hardcoding, no temporary solutions, no fighting the type system. If something is hard, ask for clarification. Then, do it the right way.
-- **Use concrete LLVM types only** - no `*mut Value` boxing. All types must be statically known at compile time.
 - **Thoroughly understand existing code** - read relevant modules before implementing anything new. Follow existing patterns.
 - **Ensure edits are small and tested often** - build and test frequently during development.
 - **Follow Rust best practices** - idiomatic code, proper error handling, clear naming.
@@ -13,7 +12,7 @@
 - **Old Comments** - remove outdated comments, ensure comments reflect current code
 
 ## Critical Understanding
-This project is a complete rewrite of the compiler's codegen system from a `*mut Value` boxing architecture to concrete LLVM types. The goal is a clean, statically-typed language implementation with zero-cost abstractions.
+The project is a compiler for a programming langauge, mux. The goal of this language is creating a clean, strongly and statically-typed language implementation with zero-cost abstractions. It is meant to be a clean and modern language, with ease of use and learning as a priority.
 
 ## Quick Reference Commands
 
@@ -41,18 +40,21 @@ cargo fmt
 
 # Run clippy (no errors allowed)
 cargo clippy
-
-# Accept insta snapshot updates (only when intentionally updating snapshots)
-INSTA_UPDATE=always cargo test
 ```
 
 ### Running Tests (User Will Do These)
 ```bash
 # Run all tests - user handles this
 cargo test
+```
 
+### Do not do these test commands (user will handle):
+```bash
 # Run insta tests - user handles this
-cargo test --doc
+cargo insta test
+
+# Review insta snapshots - user handles this
+cargo insta review
 ```
 
 ## Testing Approach
@@ -60,6 +62,12 @@ cargo test --doc
 When testing a feature, the agent should:
 1. Run `cargo build` to verify compilation succeeds
 2. Run `cargo run -- test_scripts/test_file.mux` to execute and test functionality
+    a. You may create test files that cover the new feature
+    b. After creating these test files, you may either
+         i. add them to existing test files,
+         ii. remove them if they were only for ad-hoc testing, or
+         iii. leave them if they are useful and do not fit into existing tests. this will require tests to be reviewed manually by the user later.
+
 3. Use best understanding based on test file contents to verify correctness
 4. Run `cargo clippy` to ensure no warnings or errors
 
@@ -71,11 +79,11 @@ The Mux compiler is organized as a workspace with two main crates:
 
 ### mux-compiler (Rust)
 Responsible for parsing, semantic analysis, and code generation:
-- **lexer/** - Tokenizes source code into tokens
-- **parser/** - Builds AST from tokens  
-- **semantics/** - Type checking and symbol resolution
-- **codegen/** - LLVM IR generation (this is being rewritten)
-- **source/** - File handling utilities
+- **lexer** - Tokenizes source code into tokens
+- **parser** - Builds AST from tokens  
+- **semantics** - Type checking and symbol resolution
+- **codegen** - LLVM IR generation (this is being rewritten)
+- **source** - File handling utilities
 
 The compiler generates LLVM IR which is compiled to a .ll file, then linked with clang against the runtime.
 
@@ -91,7 +99,7 @@ The compiler generates calls to runtime functions. Understanding this interface 
 ### Compilation Pipeline
 ```
 .mux source → Lexer → Parser → Semantic Analyzer → CodeGen → .ll file
-                                                                          ↓
+                                                                ↓
                                                               clang + mux_runtime → executable
 ```
 
@@ -147,7 +155,7 @@ When working on any feature:
 - Use `///` for public API documentation
 - Use `//` for implementation notes
 - Document WHY not WHAT
-- Add TODO comments with issue references: `// TODO(#123): description`
+- DO NOT ADD STUPID COMMENTS THAT STATE THE OBVIOUS
 
 ### Testing
 - Write tests alongside implementation using `#[cfg(test)]` modules
@@ -163,16 +171,47 @@ When working on any feature:
 
 ## Project Structure
 ```
-mux-compiler/src/
-├── codegen/      # LLVM IR generation (being rewritten)
-├── lexer/        # Tokenization
-├── parser/       # AST construction
-├── semantics/    # Type checking
-└── source/       # File handling
+mux-compiler/
+├── Cargo.lock
+├── Cargo.toml
+├── src
+│   ├── codegen.rs
+│   ├── lexer.rs
+│   ├── lib.rs
+│   ├── main.rs
+│   ├── module_resolver.rs
+│   ├── parser.rs
+│   ├── semantics.rs
+│   └── source.rs
+└── tests
+    ├── executable_integration.rs
+    ├── lexer_integration.rs
+    ├── parser_integration.rs
+    ├── semantics_integration.rs
+    └── snapshots
+        └── ...
+mux-runtime/
+├── Cargo.toml
+└── src
+    ├── bool.rs
+    ├── boxing.rs
+    ├── float.rs
+    ├── int.rs
+    ├── io.rs
+    ├── lib.rs
+    ├── list.rs
+    ├── map.rs
+    ├── math.rs
+    ├── object.rs
+    ├── optional.rs
+    ├── result.rs
+    ├── set.rs
+    ├── std.rs
+    └── string.rs
 ```
 
 ## Key Constraints
-- NO dynamic typing or *mut Value boxing
+- NO dynamic typing
 - NO implicit type conversions
 - NO runtime reflection
 - All generics must monomorphize at compile time
