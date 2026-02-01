@@ -1,3 +1,4 @@
+use crate::refcount::mux_rc_alloc;
 use crate::Value;
 use std::collections::BTreeMap;
 use std::ffi::CString;
@@ -39,9 +40,10 @@ impl fmt::Display for Map {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_map_value(map: *mut Map) -> *mut Value {
-    let map = unsafe { Box::from_raw(map) };
-    let value = Value::Map(map.0);
-    Box::into_raw(Box::new(value))
+    // Borrow instead of taking ownership to avoid double-free
+    let map = unsafe { &*map };
+    let value = Value::Map(map.0.clone());
+    mux_rc_alloc(value)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -61,9 +63,9 @@ pub extern "C" fn mux_map_get(
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_map_put(map: *mut Map, key: *mut Value, val: *mut Value) {
     let map = unsafe { &mut *map };
-    let key = unsafe { Box::from_raw(key) };
-    let val = unsafe { Box::from_raw(val) };
-    map.insert(*key, *val);
+    let key = unsafe { (*key).clone() };
+    let val = unsafe { (*val).clone() };
+    map.insert(key, val);
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

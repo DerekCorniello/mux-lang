@@ -40,6 +40,11 @@ pub struct CodeGenerator<'a> {
     generic_context: Option<GenericContext>,
     context_stack: Vec<GenericContext>,
     generated_methods: HashMap<String, bool>,
+    /// Stack of scopes tracking RC-allocated variables that need cleanup.
+    /// Each scope is a list of (variable_name, alloca_ptr) pairs.
+    /// Inner Vec represents variables in the current scope.
+    /// When a scope ends, we call mux_rc_dec on all variables in that scope.
+    rc_scope_stack: Vec<Vec<(String, PointerValue<'a>)>>,
 }
 
 impl<'a> CodeGenerator<'a> {
@@ -649,6 +654,17 @@ impl<'a> CodeGenerator<'a> {
         let fn_type = f64_type.fn_type(params, false);
         module.add_function("mux_math_pow", fn_type, None);
 
+        // Reference counting functions
+        // mux_rc_inc: (*mut Value) -> void
+        let params = &[i8_ptr.into()];
+        let fn_type = context.void_type().fn_type(params, false);
+        module.add_function("mux_rc_inc", fn_type, None);
+
+        // mux_rc_dec: (*mut Value) -> bool
+        let params = &[i8_ptr.into()];
+        let fn_type = context.bool_type().fn_type(params, false);
+        module.add_function("mux_rc_dec", fn_type, None);
+
         let mut type_map = HashMap::new();
         let mut enum_variants = HashMap::new();
 
@@ -713,6 +729,7 @@ impl<'a> CodeGenerator<'a> {
             generic_context: None,
             context_stack: Vec::new(),
             generated_methods: HashMap::new(),
+            rc_scope_stack: Vec::new(),
         }
     }
 
@@ -754,6 +771,106 @@ impl<'a> CodeGenerator<'a> {
         self.builder
             .build_alloca(ty, name)
             .map_err(|e| e.to_string())
+    }
+
+    /// Push a new RC scope onto the stack. Call this when entering a new scope
+    /// (function, if/else block, loop body, match arm, etc.)
+    fn push_rc_scope(&mut self) {
+        self.rc_scope_stack.push(Vec::new());
+    }
+    /// Generate cleanup code for all scopes (used before return statements).
+    /// This doesn't pop the scopes - just generates the cleanup code.
+    fn generate_all_scopes_cleanup(&mut self) -> Result<(), String> {
+        // Collect all variables from all scopes to avoid borrow issues
+        let all_vars: Vec<(String, PointerValue<'a>)> = self
+            .rc_scope_stack
+            .iter()
+            .rev()
+            .flat_map(|scope| scope.iter().cloned())
+            .collect();
+
+        self.generate_cleanup_for_vars(&all_vars)
+    }
+
+    /// Generate mux_rc_dec calls for a list of variables.
+    fn generate_cleanup_for_vars(
+        &mut self,
+        vars: &[(String, PointerValue<'a>)],
+    ) -> Result<(), String> {
+        let rc_dec = self
+            .module
+            .get_function("mux_rc_dec")
+            .ok_or("mux_rc_dec not found")?;
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+        for (name, alloca) in vars {
+            // Load the pointer value from the alloca
+            let value = self
+                .builder
+                .build_load(ptr_type, *alloca, &format!("rc_load_{}", name))
+                .map_err(|e| e.to_string())?;
+
+            // Call mux_rc_dec
+            self.builder
+                .build_call(rc_dec, &[value.into()], &format!("rc_dec_{}", name))
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// Track an RC-allocated variable in the current scope.
+    /// The variable will have mux_rc_dec called on it when the scope ends.
+    fn track_rc_variable(&mut self, name: &str, alloca: PointerValue<'a>) {
+        if let Some(current_scope) = self.rc_scope_stack.last_mut() {
+            current_scope.push((name.to_string(), alloca));
+        }
+    }
+
+    /// Check if a type requires RC tracking.
+    /// Currently all boxed values (primitives, strings, objects) use RC.
+    fn type_needs_rc_tracking(&self, ty: &ResolvedType) -> bool {
+        match ty {
+            // Primitives are boxed, so they need RC tracking
+            Type::Primitive(_) => true,
+            // Named types (classes) are RC-allocated
+            Type::Named(_, _) => true,
+            // Generic types that resolve to RC types
+            Type::Generic(_) | Type::Variable(_) => true,
+            // Collections contain Values which are RC-allocated
+            Type::List(_) | Type::Map(_, _) | Type::Set(_) => true,
+            // Optional contains boxed values
+            Type::Optional(_) => true,
+            // References are pointers to RC values
+            Type::Reference(_) => true,
+            // Function types are pointers, not RC
+            Type::Function { .. } => false,
+            // Void doesn't need tracking
+            Type::Void | Type::Never => false,
+            // Empty collections don't need tracking
+            Type::EmptyList | Type::EmptyMap | Type::EmptySet => false,
+            // Instantiated types (like Pair<string, bool>) need RC
+            Type::Instantiated(_, _) => true,
+            // Module references don't need RC
+            Type::Module(_) => false,
+        }
+    }
+
+    /// Increment the RC of a value if it's an RC-allocated pointer.
+    /// Returns the same value. Use this before cleanup when returning a value.
+    fn rc_inc_if_pointer(
+        &mut self,
+        value: BasicValueEnum<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if value.is_pointer_value() {
+            let rc_inc = self
+                .module
+                .get_function("mux_rc_inc")
+                .ok_or("mux_rc_inc not found")?;
+            self.builder
+                .build_call(rc_inc, &[value.into()], "rc_inc_return")
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(value)
     }
 
     fn generate_user_defined_types(&mut self, nodes: &[AstNode]) -> Result<(), String> {
@@ -1534,6 +1651,12 @@ impl<'a> CodeGenerator<'a> {
         let old_variables = self.variables.clone();
         self.variables.clear();
 
+        // Save the parent's RC scope stack and start fresh for this lambda.
+        // Lambdas are separate functions and should not clean up the enclosing
+        // function's variables when they return.
+        let saved_rc_scope_stack = std::mem::take(&mut self.rc_scope_stack);
+        self.push_rc_scope();
+
         // If we have captures, extract them from the capture struct
         // The capture struct layout is: [ptr0, ptr1, ptr2, ...] where each ptr points to the captured variable's storage
         if has_captures {
@@ -1592,8 +1715,16 @@ impl<'a> CodeGenerator<'a> {
                 .map_err(|e| e.to_string())?;
             self.variables.insert(
                 param.name.clone(),
-                (alloca, BasicTypeEnum::PointerType(ptr_type), resolved_type),
+                (
+                    alloca,
+                    BasicTypeEnum::PointerType(ptr_type),
+                    resolved_type.clone(),
+                ),
             );
+
+            // Note: We do NOT track lambda parameters for RC cleanup.
+            // The caller owns the parameter values and is responsible for their lifetime.
+            // If a parameter is stored into a field, the field assignment will increment RC.
         }
 
         // generate all statements
@@ -1605,10 +1736,16 @@ impl<'a> CodeGenerator<'a> {
         if return_type_opt.is_none() {
             if let Some(block) = self.builder.get_insert_block() {
                 if block.get_terminator().is_none() {
+                    // Generate RC cleanup before void return
+                    self.generate_all_scopes_cleanup()?;
                     self.builder.build_return(None).map_err(|e| e.to_string())?;
                 }
             }
         }
+
+        // Pop the lambda's RC scope and restore the parent's stack
+        self.rc_scope_stack.pop();
+        self.rc_scope_stack = saved_rc_scope_stack;
 
         // restore variables - but keep a copy for looking up captured vars
         self.variables = old_variables;
@@ -2365,6 +2502,12 @@ impl<'a> CodeGenerator<'a> {
         let saved_function_name = self.current_function_name.take();
         let saved_return_type = self.current_function_return_type.take();
 
+        // Save the RC scope stack from any parent function context.
+        // Each function has its own isolated RC scope - nested function generation
+        // (specialized methods, generic instantiation, etc.) should not see or clean up
+        // variables from the calling function's scope.
+        let saved_rc_scope_stack = std::mem::take(&mut self.rc_scope_stack);
+
         self.current_function_name = Some(func.name.clone());
         self.current_function_return_type = Some(
             self.analyzer
@@ -2382,6 +2525,9 @@ impl<'a> CodeGenerator<'a> {
 
         // clear variables for new scope
         self.variables.clear();
+
+        // Push RC scope for this function (on a fresh stack)
+        self.push_rc_scope();
 
         // set up parameter variables
         let is_class_method = func.name.contains('.');
@@ -2510,8 +2656,16 @@ impl<'a> CodeGenerator<'a> {
 
             self.variables.insert(
                 param.name.clone(),
-                (alloca, BasicTypeEnum::PointerType(ptr_type), resolved_type),
+                (
+                    alloca,
+                    BasicTypeEnum::PointerType(ptr_type),
+                    resolved_type.clone(),
+                ),
             );
+
+            // Note: We do NOT track function parameters for RC cleanup.
+            // The caller owns the parameter values and is responsible for their lifetime.
+            // If a parameter is stored into a field, the field assignment will increment RC.
         }
 
         // generate function body
@@ -2526,10 +2680,16 @@ impl<'a> CodeGenerator<'a> {
         ) {
             if let Some(block) = self.builder.get_insert_block() {
                 if block.get_terminator().is_none() {
+                    // Generate cleanup for all RC variables before returning
+                    self.generate_all_scopes_cleanup()?;
                     self.builder.build_return(None).map_err(|e| e.to_string())?;
                 }
             }
         }
+
+        // Pop the function's RC scope (no cleanup needed here since we already
+        // cleaned up before returns, and non-void functions must have explicit returns)
+        self.rc_scope_stack.pop();
 
         // clear current_self_type
         self.analyzer.current_self_type = None;
@@ -2537,6 +2697,9 @@ impl<'a> CodeGenerator<'a> {
         // Restore previous function context
         self.current_function_name = saved_function_name;
         self.current_function_return_type = saved_return_type;
+
+        // Restore the parent function's RC scope stack
+        self.rc_scope_stack = saved_rc_scope_stack;
 
         Ok(())
     }
@@ -2951,6 +3114,9 @@ impl<'a> CodeGenerator<'a> {
                                                     )
                                                     .map_err(|e| e.to_string())?;
 
+                                                // Increment RC on the value being stored (field takes ownership)
+                                                self.rc_inc_if_pointer(right_val)?;
+
                                                 // store the value
                                                 self.builder
                                                     .build_store(field_ptr, right_val)
@@ -3236,6 +3402,9 @@ impl<'a> CodeGenerator<'a> {
                                                             // fallback: box the value
                                                             self.box_value(right_val).into()
                                                         };
+
+                                                        // Increment RC on the value being stored (field takes ownership)
+                                                        self.rc_inc_if_pointer(value_to_store)?;
 
                                                         self.builder
                                                             .build_store(field_ptr, value_to_store)
@@ -5512,6 +5681,10 @@ impl<'a> CodeGenerator<'a> {
                                 concrete_type.clone(),
                             ),
                         );
+                        // Track for RC cleanup
+                        if function.is_some() && self.type_needs_rc_tracking(&concrete_type) {
+                            self.track_rc_variable(name, alloca);
+                        }
                     }
                 }
             }
@@ -5579,6 +5752,10 @@ impl<'a> CodeGenerator<'a> {
                                 resolved_type.clone(),
                             ),
                         );
+                        // Track for RC cleanup
+                        if function.is_some() && self.type_needs_rc_tracking(&resolved_type) {
+                            self.track_rc_variable(name, alloca);
+                        }
                     }
                 }
             }
@@ -5622,6 +5799,10 @@ impl<'a> CodeGenerator<'a> {
                             resolved_type.clone(),
                         ),
                     );
+                    // Track for RC cleanup
+                    if function.is_some() && self.type_needs_rc_tracking(&resolved_type) {
+                        self.track_rc_variable(name, alloca);
+                    }
                 }
             }
             StatementKind::Return(Some(expr)) => {
@@ -5630,6 +5811,8 @@ impl<'a> CodeGenerator<'a> {
                     if let Some(ResolvedType::Primitive(PrimitiveType::Bool)) =
                         &self.current_function_return_type
                     {
+                        // Generate cleanup before returning bool literal
+                        self.generate_all_scopes_cleanup()?;
                         // return boolean literal directly as i1
                         let bool_val = self
                             .context
@@ -5649,6 +5832,8 @@ impl<'a> CodeGenerator<'a> {
                         ResolvedType::Primitive(PrimitiveType::Int) => {
                             // for int, unbox if necessary
                             let raw_int = self.get_raw_int_value(value)?;
+                            // Cleanup before return (int is unboxed, cleanup frees the box)
+                            self.generate_all_scopes_cleanup()?;
                             self.builder
                                 .build_return(Some(&raw_int))
                                 .map_err(|e| e.to_string())?;
@@ -5656,6 +5841,8 @@ impl<'a> CodeGenerator<'a> {
                         ResolvedType::Primitive(PrimitiveType::Float) => {
                             // for float, unbox if necessary
                             let raw_float = self.get_raw_float_value(value)?;
+                            // Cleanup before return (float is unboxed, cleanup frees the box)
+                            self.generate_all_scopes_cleanup()?;
                             self.builder
                                 .build_return(Some(&raw_float))
                                 .map_err(|e| e.to_string())?;
@@ -5664,11 +5851,13 @@ impl<'a> CodeGenerator<'a> {
                             // for bool, unbox if necessary and return i1
                             if value.is_int_value() {
                                 let int_val = value.into_int_value();
+                                // Cleanup before return
+                                self.generate_all_scopes_cleanup()?;
                                 // check if we need to truncate i32/i64 to i1
                                 if int_val.get_type().get_bit_width() == 1 {
                                     // already i1, return directly
                                     self.builder
-                                        .build_return(Some(&value))
+                                        .build_return(Some(&int_val))
                                         .map_err(|e| e.to_string())?;
                                 } else {
                                     // truncate i32/i64 to i1
@@ -5698,6 +5887,8 @@ impl<'a> CodeGenerator<'a> {
                                     .try_as_basic_value()
                                     .left()
                                     .ok_or("Call returned no value")?;
+                                // Cleanup before return (bool is unboxed)
+                                self.generate_all_scopes_cleanup()?;
                                 // convert i32 to i1 for return
                                 let bool_val = self
                                     .builder
@@ -5718,6 +5909,9 @@ impl<'a> CodeGenerator<'a> {
                             // for list types, return the wrapped Value* directly
                             // the function signature should expect wrapped pointers for lists
                             if value.is_pointer_value() {
+                                // Increment RC before cleanup since we're returning a pointer
+                                self.rc_inc_if_pointer(value)?;
+                                self.generate_all_scopes_cleanup()?;
                                 self.builder
                                     .build_return(Some(&value))
                                     .map_err(|e| e.to_string())?;
@@ -5731,6 +5925,9 @@ impl<'a> CodeGenerator<'a> {
                                 BasicValueEnum::PointerValue(_) => value, // already boxed
                                 _ => self.box_value(value).into(), // box it and convert to BasicValueEnum
                             };
+                            // Increment RC before cleanup since we're returning a pointer
+                            self.rc_inc_if_pointer(boxed)?;
+                            self.generate_all_scopes_cleanup()?;
                             self.builder
                                 .build_return(Some(&boxed))
                                 .map_err(|e| e.to_string())?;
@@ -5739,12 +5936,17 @@ impl<'a> CodeGenerator<'a> {
                 } else {
                     // fallback: assume boxed
                     let boxed = self.box_value(value);
+                    // Increment RC before cleanup since we're returning a pointer
+                    self.rc_inc_if_pointer(boxed.into())?;
+                    self.generate_all_scopes_cleanup()?;
                     self.builder
                         .build_return(Some(&boxed))
                         .map_err(|e| e.to_string())?;
                 }
             }
             StatementKind::Return(None) => {
+                // Cleanup before void return
+                self.generate_all_scopes_cleanup()?;
                 self.builder.build_return(None).map_err(|e| e.to_string())?;
             }
             StatementKind::If {
@@ -9912,6 +10114,8 @@ impl<'a> CodeGenerator<'a> {
                 self.declare_function(&specialized_method)?;
 
                 // generate the specialized method
+                // Note: generate_function now handles its own RC scope stack isolation internally,
+                // so we don't need to save/restore it here
                 self.generate_function(&specialized_method)?;
 
                 // mark as generated

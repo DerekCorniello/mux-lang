@@ -2,6 +2,7 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
+use crate::refcount::mux_rc_alloc;
 use crate::Value;
 
 #[derive(Clone, Debug)]
@@ -9,7 +10,11 @@ pub struct Bool(pub bool);
 
 impl Bool {
     pub fn to_int(&self) -> i64 {
-        if self.0 { 1 } else { 0 }
+        if self.0 {
+            1
+        } else {
+            0
+        }
     }
 }
 
@@ -30,7 +35,11 @@ pub extern "C" fn mux_bool_to_string(b: i32) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_bool_from_value(v: *mut Value) -> i32 {
     if let Value::Bool(b) = unsafe { &*v } {
-        if *b { 1 } else { 0 }
+        if *b {
+            1
+        } else {
+            0
+        }
     } else {
         0
     }
@@ -41,7 +50,7 @@ pub unsafe extern "C" fn mux_bool_from_value(v: *mut Value) -> i32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_bool_to_int(v: *mut Value) -> *mut Value {
     if let Value::Bool(b) = unsafe { &*v } {
-        Box::into_raw(Box::new(Value::Int(Bool(*b).to_int())))
+        mux_rc_alloc(Value::Int(Bool(*b).to_int()))
     } else {
         panic!("Expected Bool value");
     }
@@ -52,9 +61,9 @@ pub unsafe extern "C" fn mux_bool_to_int(v: *mut Value) -> *mut Value {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_bool_to_float(v: *mut Value) -> *mut Value {
     if let Value::Bool(b) = unsafe { &*v } {
-        Box::into_raw(Box::new(Value::Float(ordered_float::OrderedFloat(
-            Bool(*b).to_int() as f64,
-        ))))
+        mux_rc_alloc(Value::Float(ordered_float::OrderedFloat(
+            Bool(*b).to_int() as f64
+        )))
     } else {
         panic!("Expected Bool value");
     }

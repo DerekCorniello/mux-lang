@@ -1,6 +1,7 @@
+use crate::refcount::{mux_rc_alloc, mux_rc_dec};
 use crate::{ObjectRef, TypeId, Value};
 use std::collections::HashMap;
-use std::ffi::{CStr, c_char, c_void};
+use std::ffi::{c_char, c_void, CStr};
 use std::sync::Mutex;
 
 lazy_static::lazy_static! {
@@ -44,55 +45,36 @@ pub fn register_object_type(name: &str, size: usize) -> TypeId {
 pub fn alloc_object(type_id: TypeId) -> *mut Value {
     let registry = TYPE_REGISTRY.lock().unwrap();
     let obj_type = registry.get(&type_id).expect("Invalid type ID");
+    let size = obj_type.size;
 
     // Allocate memory for the object
-    let layout =
-        std::alloc::Layout::from_size_align(obj_type.size, std::mem::align_of::<u8>()).unwrap();
+    let layout = std::alloc::Layout::from_size_align(size, std::mem::align_of::<u8>()).unwrap();
     let ptr = unsafe { std::alloc::alloc(layout) };
 
     if ptr.is_null() {
         panic!("Failed to allocate object");
     }
 
-    // Create ObjectRef
-    let obj_ref = ObjectRef::new(ptr as *mut c_void, type_id);
+    // Create ObjectRef with size for proper cleanup
+    let obj_ref = ObjectRef::new(ptr as *mut c_void, type_id, size);
 
     // Create Value::Object
-    let value = Value::Object(obj_ref.clone());
+    let value = Value::Object(obj_ref);
 
-    // Return boxed value
-    Box::into_raw(Box::new(value))
+    // Return ref-counted value
+    mux_rc_alloc(value)
 }
 
 /// # Safety
 /// The `obj` pointer must be valid and obtained from `alloc_object` or similar.
-/// After calling this function, the pointer becomes invalid.
+/// After calling this function if the ref count reaches 0, the pointer becomes invalid.
+///
+/// This function decrements the reference count of the Value. When the count
+/// reaches 0, the Value is dropped, which drops the ObjectRef, which (via Arc)
+/// drops the ObjectData, which frees the underlying object memory.
 pub unsafe fn free_object(obj: *mut Value) {
-    if obj.is_null() {
-        return;
-    }
-
-    let value = unsafe { Box::from_raw(obj) };
-    if let Value::Object(obj_ref) = *value {
-        // Decrement ref count
-        let ref_count = obj_ref.dec_ref();
-        if ref_count == 0 {
-            // Get object type for cleanup
-            if let Some(obj_type) = TYPE_REGISTRY.lock().unwrap().get(&obj_ref.type_id) {
-                // Call destructor if present
-                if let Some(destructor) = obj_type.destructor {
-                    destructor(obj_ref.ptr);
-                }
-
-                // Free the object memory
-                let layout =
-                    std::alloc::Layout::from_size_align(obj_type.size, std::mem::align_of::<u8>())
-                        .unwrap();
-                unsafe { std::alloc::dealloc(obj_ref.ptr as *mut u8, layout) };
-            }
-        }
-    }
-    // value is dropped here
+    // Simply decrement the RC - cleanup is automatic via Drop
+    mux_rc_dec(obj);
 }
 
 /// # Safety
@@ -104,7 +86,7 @@ pub unsafe fn get_object_ptr(obj: *const Value) -> *mut c_void {
 
     let value = unsafe { &*obj };
     if let Value::Object(obj_ref) = value {
-        obj_ref.ptr
+        obj_ref.ptr()
     } else {
         std::ptr::null_mut()
     }
@@ -119,7 +101,7 @@ pub unsafe fn get_object_type_id(obj: *const Value) -> TypeId {
 
     let value = unsafe { &*obj };
     if let Value::Object(obj_ref) = value {
-        obj_ref.type_id
+        obj_ref.type_id()
     } else {
         0
     }

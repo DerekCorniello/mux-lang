@@ -1,3 +1,4 @@
+use crate::refcount::mux_rc_alloc;
 use crate::Value;
 use std::ffi::CString;
 use std::fmt;
@@ -41,7 +42,8 @@ impl fmt::Display for List {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_back(list: *mut List, val: *mut Value) {
-    let value = unsafe { *Box::from_raw(val) };
+    // Clone the value instead of taking ownership
+    let value = unsafe { (*val).clone() };
     unsafe { (*list).push_back(value) }
 }
 
@@ -58,7 +60,8 @@ pub extern "C" fn mux_list_pop_back(list: *mut List) -> *mut crate::optional::Op
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push(list: *mut List, val: *mut Value) {
-    let value = unsafe { *Box::from_raw(val) };
+    // Clone the value instead of taking ownership
+    let value = unsafe { (*val).clone() };
     unsafe { (*list).push_back(value) }
 }
 
@@ -79,7 +82,8 @@ pub extern "C" fn mux_list_pop(list: *mut List) -> *mut crate::optional::Optiona
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_front(list: *mut List, val: *mut Value) {
-    let value = unsafe { *Box::from_raw(val) };
+    // Clone the value instead of taking ownership
+    let value = unsafe { (*val).clone() };
     unsafe {
         (*list).0.insert(0, value);
     }
@@ -123,7 +127,8 @@ pub unsafe extern "C" fn mux_list_length(list: *const List) -> i64 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_back_value(list_val: *mut Value, val: *mut Value) {
-    let value = unsafe { *Box::from_raw(val) };
+    // Clone the value instead of taking ownership
+    let value = unsafe { (*val).clone() };
     unsafe {
         // Extract list, modify it, and update the original Value
         if let Value::List(list_data) = &*list_val {
@@ -137,7 +142,8 @@ pub extern "C" fn mux_list_push_back_value(list_val: *mut Value, val: *mut Value
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_value(list_val: *mut Value, val: *mut Value) {
-    let value = unsafe { *Box::from_raw(val) };
+    // Clone the value instead of taking ownership
+    let value = unsafe { (*val).clone() };
     unsafe {
         // Extract list, modify it, and update the original Value
         if let Value::List(list_data) = &*list_val {
@@ -151,7 +157,8 @@ pub extern "C" fn mux_list_push_value(list_val: *mut Value, val: *mut Value) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_front_value(list_val: *mut Value, val: *mut Value) {
-    let value = unsafe { *Box::from_raw(val) };
+    // Clone the value instead of taking ownership
+    let value = unsafe { (*val).clone() };
     unsafe {
         // Extract list, modify it, and update the original Value
         if let Value::List(list_data) = &*list_val {
@@ -271,14 +278,14 @@ pub extern "C" fn mux_list_get_value(list: *const List, index: i64) -> *mut Valu
         std::ptr::null_mut()
     } else {
         let val = unsafe { (*list).0[index as usize].clone() };
-        Box::into_raw(Box::new(val))
+        mux_rc_alloc(val)
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_set(list: *mut List, index: i64, val: *mut Value) {
-    let value = unsafe { *Box::from_raw(val) };
+    let value = unsafe { (*val).clone() };
     let len = unsafe { (*list).length() };
     if index >= 0 && index < len {
         unsafe {
@@ -291,7 +298,7 @@ pub extern "C" fn mux_list_set(list: *mut List, index: i64, val: *mut Value) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_insert(list: *mut List, index: i64, val: *mut Value) {
-    let value = unsafe { *Box::from_raw(val) };
+    let value = unsafe { (*val).clone() };
     let len = unsafe { (*list).length() as usize };
     let idx = if index < 0 {
         0

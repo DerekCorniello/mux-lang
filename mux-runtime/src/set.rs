@@ -1,3 +1,4 @@
+use crate::refcount::mux_rc_alloc;
 use crate::Value;
 use std::collections::BTreeSet;
 use std::ffi::CString;
@@ -30,17 +31,18 @@ impl fmt::Display for Set {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_set_value(set: *mut Set) -> *mut Value {
-    let set = unsafe { Box::from_raw(set) };
-    let value = Value::Set(set.0);
-    Box::into_raw(Box::new(value))
+    // Borrow instead of taking ownership to avoid double-free
+    let set = unsafe { &*set };
+    let value = Value::Set(set.0.clone());
+    mux_rc_alloc(value)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_set_add(set: *mut Set, val: *mut Value) {
     let set = unsafe { &mut *set };
-    let val = unsafe { Box::from_raw(val) };
-    set.add(*val);
+    let val = unsafe { (*val).clone() };
+    set.add(val);
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

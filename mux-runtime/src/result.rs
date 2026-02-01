@@ -1,3 +1,4 @@
+use crate::refcount::mux_rc_alloc;
 use crate::Value;
 use std::ffi::CStr;
 use std::fmt;
@@ -108,8 +109,8 @@ pub extern "C" fn mux_result_data(res: *mut MuxResult) -> *mut Value {
     }
     unsafe {
         match &*res {
-            MuxResult::Ok(v) => Box::into_raw(Box::new(*v.clone())),
-            MuxResult::Err(e) => Box::into_raw(Box::new(Value::String(e.clone()))),
+            MuxResult::Ok(v) => mux_rc_alloc(*v.clone()),
+            MuxResult::Err(e) => mux_rc_alloc(Value::String(e.clone())),
         }
     }
 }

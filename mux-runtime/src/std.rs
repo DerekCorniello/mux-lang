@@ -1,4 +1,7 @@
-use crate::{Value, list::List, map::Map, optional::Optional, result::MuxResult, set::Set};
+use crate::{
+    list::List, map::Map, optional::Optional, refcount::mux_rc_alloc, result::MuxResult, set::Set,
+    Value,
+};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -15,19 +18,20 @@ pub extern "C" fn mux_range(start: i64, end: i64) -> *mut List {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_some(val: *mut Value) -> *mut Optional {
-    let value = unsafe { *Box::from_raw(val) };
+    // Clone the value instead of taking ownership
+    let value = unsafe { (*val).clone() };
     Box::into_raw(Box::new(Optional::some(value)))
 }
 
-// Value creation functions for codegen
+// Value creation functions for codegen - using reference counting
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_int_value(i: i64) -> *mut Value {
-    Box::into_raw(Box::new(Value::Int(i)))
+    mux_rc_alloc(Value::Int(i))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_bool_value(b: i32) -> *mut Value {
-    Box::into_raw(Box::new(Value::Bool(b != 0)))
+    mux_rc_alloc(Value::Bool(b != 0))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -35,7 +39,7 @@ pub extern "C" fn mux_bool_value(b: i32) -> *mut Value {
 pub extern "C" fn mux_string_value(s: *const c_char) -> *mut Value {
     let c_str = unsafe { CStr::from_ptr(s) };
     let string = c_str.to_string_lossy().into_owned();
-    Box::into_raw(Box::new(Value::String(string)))
+    mux_rc_alloc(Value::String(string))
 }
 
 #[unsafe(no_mangle)]
@@ -46,7 +50,8 @@ pub extern "C" fn mux_none() -> *mut Optional {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_ok(val: *mut Value) -> *mut MuxResult {
-    let value = unsafe { *Box::from_raw(val) };
+    // Clone the value instead of taking ownership
+    let value = unsafe { (*val).clone() };
     Box::into_raw(Box::new(MuxResult::ok(value)))
 }
 
@@ -92,14 +97,14 @@ pub extern "C" fn mux_value_add(a: *mut Value, b: *mut Value) -> *mut Value {
         (Value::Bool(a), Value::String(b)) => Value::String(a.to_string() + b),
         _ => Value::Int(0), // error
     };
-    Box::into_raw(Box::new(result))
+    mux_rc_alloc(result)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_value(list: *mut List) -> *mut Value {
     let list_ref = unsafe { &*list };
-    Box::into_raw(Box::new(Value::List(list_ref.0.clone())))
+    mux_rc_alloc(Value::List(list_ref.0.clone()))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -175,7 +180,7 @@ pub extern "C" fn mux_value_list_get_value(val: *const Value, index: i64) -> *mu
     if let Value::List(vec) = val {
         if index >= 0 && (index as usize) < vec.len() {
             let cloned = vec[index as usize].clone();
-            Box::into_raw(Box::new(cloned))
+            mux_rc_alloc(cloned)
         } else {
             std::ptr::null_mut()
         }
@@ -186,7 +191,8 @@ pub extern "C" fn mux_value_list_get_value(val: *const Value, index: i64) -> *mu
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn mux_value_to_list(val: *mut Value) -> *mut crate::list::List {
-    let val = unsafe { *Box::from_raw(val) };
+    // Clone the value instead of taking ownership
+    let val = unsafe { (*val).clone() };
     if let Value::List(vec) = val {
         Box::into_raw(Box::new(crate::list::List(vec)))
     } else {
@@ -321,7 +327,13 @@ pub extern "C" fn mux_value_equal(a: *const Value, b: *const Value) -> i32 {
     if a.is_null() || b.is_null() {
         return if a == b { 1 } else { 0 };
     }
-    unsafe { if *a == *b { 1 } else { 0 } }
+    unsafe {
+        if *a == *b {
+            1
+        } else {
+            0
+        }
+    }
 }
 
 /// Compare two Value pointers for inequality
@@ -329,7 +341,11 @@ pub extern "C" fn mux_value_equal(a: *const Value, b: *const Value) -> i32 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_not_equal(a: *const Value, b: *const Value) -> i32 {
-    if mux_value_equal(a, b) == 1 { 0 } else { 1 }
+    if mux_value_equal(a, b) == 1 {
+        0
+    } else {
+        1
+    }
 }
 
 // Proper Value cleanup function
