@@ -31,7 +31,7 @@ Executable's output seems to be cutoff -> this is likely a segfault due to incor
 cargo build
 
 # Test a Mux file (primary test method)
-cargo run -- test_scripts/test_file.mux
+cargo run -- run test_scripts/test_file.mux
 
 # Check for errors (no build)
 cargo check

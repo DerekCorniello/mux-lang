@@ -191,10 +191,16 @@ impl Unifier {
     pub fn unify(&mut self, a: &Type, b: &Type, span: Span) -> Result<(), SemanticError> {
         match (a, b) {
             (Type::Variable(var), t) | (t, Type::Variable(var)) => {
+                // If t is the same type variable, they're compatible
+                if let Type::Variable(tvar) = t {
+                    if tvar == var {
+                        return Ok(());
+                    }
+                }
                 if let Some(existing) = self.substitutions.get(var).cloned() {
                     self.unify(&existing, t, span)?;
                 } else {
-                    // occurs check, ensure var not in t
+                    // occurs check, ensure var not in t (but not if t is the same variable)
                     if self.occurs(var, t) {
                         return Err(SemanticError {
                             message: format!(
@@ -561,6 +567,7 @@ pub struct SemanticAnalyzer {
     current_file: Option<std::path::PathBuf>, // Track current file for relative imports
     pub lambda_captures: std::collections::HashMap<Span, Vec<(String, Type)>>, // Track captured variables for each lambda
     pub current_return_type: Option<Type>, // Track current function/lambda return type
+    pub current_class_type_params: Option<Vec<(String, Vec<String>)>>, // Track class-level type params with bounds for method analysis
 }
 
 impl Default for SemanticAnalyzer {
@@ -590,6 +597,7 @@ impl SemanticAnalyzer {
             current_file: None,
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
+            current_class_type_params: None,
         }
     }
 
@@ -610,6 +618,7 @@ impl SemanticAnalyzer {
             current_file: None,
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
+            current_class_type_params: None,
         }
     }
 
@@ -632,6 +641,7 @@ impl SemanticAnalyzer {
             current_file: None,
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
+            current_class_type_params: None,
         }
     }
 
@@ -767,6 +777,15 @@ impl SemanticAnalyzer {
                 }),
             },
             TypeKind::Named(name, type_args) => {
+                // Handle type parameters (generic type variables)
+                if type_args.is_empty() {
+                    if let Some(symbol) = self.symbol_table.lookup(name) {
+                        if matches!(symbol.kind, SymbolKind::Type) {
+                            return Ok(Type::Variable(name.clone()));
+                        }
+                    }
+                }
+
                 // Handle built-in generic types
                 if name == "Optional" && type_args.len() == 1 {
                     let resolved_arg = self.resolve_type(&type_args[0])?;
@@ -861,6 +880,11 @@ impl SemanticAnalyzer {
                             message: format!("Symbol '{}' has no type information", name),
                             span: expr.span,
                         })?;
+                        // For type parameters, return Type::Variable instead of Type::Generic
+                        let type_ = match &type_ {
+                            Type::Generic(n) if n == name => Type::Variable(name.clone()),
+                            _ => type_,
+                        };
                         // Return the actual type of the variable (including Reference types)
                         Ok(type_)
                     } else if let Some(sig) = self.get_builtin_sig(name) {
@@ -2250,6 +2274,25 @@ impl SemanticAnalyzer {
                         .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
                         .collect();
 
+                    // Add class type parameters to symbol table so they can be resolved in field types
+                    for (param_name, _) in type_params {
+                        let _ = self.symbol_table.add_symbol(
+                            param_name,
+                            Symbol {
+                                kind: SymbolKind::Type,
+                                span: *node.span(),
+                                type_: Some(Type::Generic(param_name.clone())),
+                                interfaces: std::collections::HashMap::new(),
+                                methods: std::collections::HashMap::new(),
+                                fields: std::collections::HashMap::new(),
+                                type_params: Vec::new(),
+                                original_name: None,
+                                llvm_name: None,
+                                default_param_count: 0,
+                            },
+                        );
+                    }
+
                     // collect field types for constructor and fields map
                     let mut field_types = Vec::new();
                     let mut fields_map = std::collections::HashMap::new();
@@ -2576,6 +2619,16 @@ impl SemanticAnalyzer {
             self.current_bounds.insert(param.clone(), bound_names);
         }
 
+        // Also add class-level type params (for methods in generic classes)
+        if let Some(class_type_params) = &self.current_class_type_params {
+            for (param, bounds) in class_type_params {
+                // Don't override function-level type params
+                if !self.current_bounds.contains_key(param) {
+                    self.current_bounds.insert(param.clone(), bounds.clone());
+                }
+            }
+        }
+
         // create new scope for function parameters and body.
         self.symbol_table.push_scope()?;
 
@@ -2638,7 +2691,7 @@ impl SemanticAnalyzer {
         }
 
         // analyze function body with new scope.
-        let _result = self.analyze_block(&func.body);
+        self.analyze_block(&func.body)?;
 
         // clean up function scope.
         self.symbol_table.pop_scope()?;
@@ -2673,6 +2726,9 @@ impl SemanticAnalyzer {
             )
         };
 
+        // Set current class type params for method analysis
+        self.current_class_type_params = Some(type_params.to_vec());
+
         // Analyze each method body with proper self type
         for method in methods {
             // Static methods (common) don't have self
@@ -2684,6 +2740,9 @@ impl SemanticAnalyzer {
 
             self.analyze_function(method, method_self_type)?;
         }
+
+        // Clear class type params after analyzing class methods
+        self.current_class_type_params = None;
 
         Ok(())
     }
@@ -3656,9 +3715,12 @@ impl SemanticAnalyzer {
     }
 
     fn types_compatible(&self, type1: &Type, type2: &Type) -> bool {
-        // Simple type compatibility check
-        // For now, require exact match. Can be enhanced later for covariance/contravariance
-        type1 == type2
+        // Handle type variables - same name means compatible
+        match (type1, type2) {
+            (Type::Variable(v1), Type::Variable(v2)) => v1 == v2,
+            (Type::Generic(g1), Type::Generic(g2)) => g1 == g2,
+            _ => type1 == type2,
+        }
     }
 
     // Add module as namespace (import logger as log)
