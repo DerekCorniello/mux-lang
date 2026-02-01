@@ -3587,7 +3587,7 @@ mod tests {
 
     #[test]
     fn test_function_declaration() {
-        let mut test_parser = create_parser("fn add(int a, int b) returns int {\n  a + b\n}\n");
+        let mut test_parser = create_parser("func add(int a, int b) returns int {\n  a + b\n}\n");
         let result = test_parser.parse();
 
         match result {

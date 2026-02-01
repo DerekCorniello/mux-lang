@@ -1,5 +1,5 @@
 // Test forward referencing: mutual recursion
-fn even(int n) returns bool {
+func even(int n) returns bool {
     if n == 0 {
         return true
     } else {
@@ -7,7 +7,7 @@ fn even(int n) returns bool {
     }
 }
 
-fn odd(int n) returns bool {
+func odd(int n) returns bool {
     if n == 0 {
         return false
     } else {
@@ -15,7 +15,7 @@ fn odd(int n) returns bool {
     }
 }
 
-fn main() returns void {
+func main() returns void {
     print(even(4).to_string())
     print(odd(5).to_string())
     print(even(7).to_string())

@@ -464,7 +464,6 @@ impl<'a> Lexer<'a> {
                 start_span.complete(self.source.line, self.source.col);
                 let token_type = match ident.as_str() {
                     "auto" => TokenType::Auto,
-                    "fn" => TokenType::Func,
                     "func" => TokenType::Func,
                     "return" => TokenType::Return,
                     "returns" => TokenType::Returns,
@@ -1413,7 +1412,7 @@ world"
         let input = r#"
         auto x = 42
         auto y = "hello"
-        fn add(a: int, b: int) -> int { a + b }
+        func add(a: int, b: int) -> int { a + b }
         "#;
 
         let mut source = Source::from_test_str(input);
@@ -1447,7 +1446,7 @@ world"
         let fn_token = tokens
             .iter()
             .position(|t| t.token_type == TokenType::Func)
-            .expect("'fn' token not found");
+            .expect("'func' token not found");
 
         // The function should span multiple tokens until the closing brace
         let mut i = fn_token;

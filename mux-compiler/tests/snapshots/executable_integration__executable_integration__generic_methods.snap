@@ -1,6 +1,5 @@
 ---
 source: mux-compiler/tests/executable_integration.rs
-assertion_line: 134
 expression: full_output
 ---
 === Test 1: Generic method creating pairs ===
