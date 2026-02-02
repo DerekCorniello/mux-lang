@@ -111,11 +111,17 @@ pub extern "C" fn mux_optional_none() -> *mut Optional {
 pub extern "C" fn mux_optional_to_string(opt: *const Optional) -> *mut std::ffi::c_char {
     use std::ffi::CString;
     if opt.is_null() {
-        return CString::new("null".to_string()).unwrap().into_raw();
+        // Safe: "null" is valid UTF-8 without null bytes
+        return CString::new("null".to_string())
+            .expect("'null' string should be valid UTF-8")
+            .into_raw();
     }
     unsafe {
         let s = (*opt).to_string();
-        CString::new(s).unwrap().into_raw()
+        // Safe: to_string produces valid UTF-8 without null bytes
+        CString::new(s)
+            .expect("to_string should produce valid UTF-8")
+            .into_raw()
     }
 }
 

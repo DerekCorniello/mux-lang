@@ -11,7 +11,7 @@ pub struct MuxFile(pub std::fs::File);
 
 pub fn print(s: &str) {
     print!("{}", s);
-    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+    std::io::Write::flush(&mut std::io::stdout()).expect("stdout flush should not fail");
 }
 
 pub fn read_line() -> Result<String, String> {
@@ -56,7 +56,7 @@ pub extern "C" fn mux_value_from_string(s: *const c_char) -> *mut crate::Value {
 pub extern "C" fn mux_print_cstr(s: *const c_char) {
     let s = unsafe { CStr::from_ptr(s).to_string_lossy() };
     print!("{}", s);
-    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+    std::io::Write::flush(&mut std::io::stdout()).expect("stdout flush should not fail");
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -70,7 +70,10 @@ pub extern "C" fn mux_print(val: *mut Value) {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_read_line() -> *mut c_char {
     match read_line() {
-        Ok(s) => CString::new(s).unwrap().into_raw(),
+        // Safe: read_line returns valid UTF-8, no null bytes in user input
+        Ok(s) => CString::new(s)
+            .expect("read_line should return valid UTF-8")
+            .into_raw(),
         Err(_) => std::ptr::null_mut(),
     }
 }

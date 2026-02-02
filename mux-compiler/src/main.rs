@@ -143,7 +143,11 @@ fn main() {
         process::exit(1);
     }
 
-    let mut src = match Source::new(file_path.to_str().unwrap()) {
+    let mut src = match Source::new(
+        file_path
+            .to_str()
+            .expect("file path should be valid Unicode"),
+    ) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error opening file: {}", e);
@@ -156,7 +160,13 @@ fn main() {
         Ok(t) => t,
         Err(e) => {
             if let Ok(source_str) = std::fs::read_to_string(file_path) {
-                handle_lexer_error(file_path.to_str().unwrap(), &source_str, &e);
+                handle_lexer_error(
+                    file_path
+                        .to_str()
+                        .expect("file path should be valid Unicode"),
+                    &source_str,
+                    &e,
+                );
             } else {
                 eprintln!("Lexer error: {}", e);
             }
@@ -169,7 +179,13 @@ fn main() {
         Ok(n) => n,
         Err((_, errors)) => {
             if let Ok(source_str) = std::fs::read_to_string(file_path) {
-                handle_parser_errors(file_path.to_str().unwrap(), &source_str, &errors);
+                handle_parser_errors(
+                    file_path
+                        .to_str()
+                        .expect("file path should be valid Unicode"),
+                    &source_str,
+                    &errors,
+                );
             } else {
                 for error in &errors {
                     eprintln!("{}", error);
@@ -189,7 +205,13 @@ fn main() {
     let errors = analyzer.analyze(&nodes);
     if !errors.is_empty() {
         if let Ok(source_str) = std::fs::read_to_string(file_path) {
-            handle_semantic_errors(file_path.to_str().unwrap(), &source_str, &errors);
+            handle_semantic_errors(
+                file_path
+                    .to_str()
+                    .expect("file path should be valid Unicode"),
+                &source_str,
+                &errors,
+            );
         } else {
             for error in &errors {
                 eprintln!("{}", error);
@@ -221,17 +243,19 @@ fn main() {
         PathBuf::from(file_path.to_string_lossy().trim_end_matches(".mux"))
     };
 
-    let exe_path = std::env::current_exe().unwrap();
+    let exe_path = std::env::current_exe().expect("current executable path should exist");
     let lib_path = exe_path
         .parent()
-        .unwrap()
+        .expect("executable should be in a directory")
         .parent()
-        .unwrap()
+        .expect("parent directory should exist (expected target/debug structure)")
         .parent()
-        .unwrap()
+        .expect("grandparent directory should exist (expected workspace structure)")
         .join("target")
         .join("debug");
-    let lib_path_str = lib_path.to_str().unwrap();
+    let lib_path_str = lib_path
+        .to_str()
+        .expect("library path should be valid Unicode");
 
     let clang_output = Command::new("clang")
         .args([
@@ -242,7 +266,9 @@ fn main() {
             lib_path_str,
             "-lmux_runtime",
             "-o",
-            exe_file.to_str().unwrap(),
+            exe_file
+                .to_str()
+                .expect("executable path should be valid Unicode"),
         ])
         .output();
 

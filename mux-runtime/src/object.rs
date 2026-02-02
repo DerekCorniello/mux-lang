@@ -20,7 +20,7 @@ pub struct ObjectType {
 impl ObjectType {
     pub fn new(name: String, size: usize) -> Self {
         let id = {
-            let mut next_id = NEXT_TYPE_ID.lock().unwrap();
+            let mut next_id = NEXT_TYPE_ID.lock().expect("mutex lock should not fail");
             let id = *next_id;
             *next_id += 1;
             id
@@ -38,17 +38,21 @@ impl ObjectType {
 pub fn register_object_type(name: &str, size: usize) -> TypeId {
     let obj_type = ObjectType::new(name.to_string(), size);
     let id = obj_type.id;
-    TYPE_REGISTRY.lock().unwrap().insert(id, obj_type);
+    TYPE_REGISTRY
+        .lock()
+        .expect("mutex lock should not fail")
+        .insert(id, obj_type);
     id
 }
 
 pub fn alloc_object(type_id: TypeId) -> *mut Value {
-    let registry = TYPE_REGISTRY.lock().unwrap();
+    let registry = TYPE_REGISTRY.lock().expect("mutex lock should not fail");
     let obj_type = registry.get(&type_id).expect("Invalid type ID");
     let size = obj_type.size;
 
     // Allocate memory for the object
-    let layout = std::alloc::Layout::from_size_align(size, std::mem::align_of::<u8>()).unwrap();
+    let layout = std::alloc::Layout::from_size_align(size, std::mem::align_of::<u8>())
+        .expect("memory layout should be valid");
     let ptr = unsafe { std::alloc::alloc(layout) };
 
     if ptr.is_null() {
@@ -112,8 +116,8 @@ pub unsafe fn get_object_type_id(obj: *const Value) -> TypeId {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_register_object_type(name: *const c_char, size: usize) -> TypeId {
     let c_str = unsafe { CStr::from_ptr(name) };
-    let name_str = c_str.to_str().unwrap();
-    register_object_type(name_str, size)
+    let name_str = c_str.to_string_lossy().into_owned();
+    register_object_type(&name_str, size)
 }
 
 #[unsafe(no_mangle)]

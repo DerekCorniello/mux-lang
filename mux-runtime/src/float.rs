@@ -68,7 +68,8 @@ pub extern "C" fn mux_float_to_string(f: f64) -> *mut c_char {
     } else {
         format!("{}", f)
     };
-    let c_str = CString::new(s).unwrap();
+    // Safe: format! produces valid UTF-8 without null bytes
+    let c_str = CString::new(s).expect("format output should be valid UTF-8");
     c_str.into_raw()
 }
 

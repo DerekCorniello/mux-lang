@@ -143,7 +143,7 @@ impl<'a> Parser<'a> {
 
                     // check statement termination for top-level, non-control flow statements.
                     let should_check_termination = matches!(
-                        nodes.last().unwrap(),
+                        nodes.last().expect("nodes should not be empty after push"),
                         AstNode::Statement(stmt) if !matches!(
                             stmt.kind,
                             StatementKind::If { .. } | StatementKind::While { .. } |

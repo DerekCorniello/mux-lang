@@ -472,7 +472,7 @@ impl SymbolTable {
         let new_scope = Rc::new(RefCell::new(Scope::default()));
         self.scopes
             .last()
-            .unwrap()
+            .expect("at least global scope should exist")
             .borrow_mut()
             .children
             .push(Rc::clone(&new_scope));
@@ -512,7 +512,10 @@ impl SymbolTable {
             });
         }
 
-        let current = self.scopes.last().unwrap();
+        let current = self
+            .scopes
+            .last()
+            .expect("at least global scope should exist");
         let mut current_borrow = current.borrow_mut();
 
         if current_borrow.symbols.contains_key(name) {
@@ -763,7 +766,7 @@ impl SemanticAnalyzer {
                         default_param_count: 0,
                     },
                 )
-                .unwrap();
+                .expect("builtin function registration should not fail");
         }
     }
 
@@ -1506,7 +1509,11 @@ impl SemanticAnalyzer {
                 let return_type_resolved = if body.is_empty() {
                     Type::Void
                 } else {
-                    match &body.last().unwrap().kind {
+                    match &body
+                        .last()
+                        .expect("body is not empty (checked above), so last() should return Some")
+                        .kind
+                    {
                         StatementKind::Expression(expr) => self.get_expression_type(expr)?,
                         StatementKind::Return(Some(expr)) => self.get_expression_type(expr)?,
                         _ => Type::Void,
@@ -4054,10 +4061,12 @@ impl SemanticAnalyzer {
 
         match spec {
             ImportSpec::Module { alias } => {
-                let symbol_name = alias
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| module_path.split('.').last().unwrap());
+                let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or_else(|| {
+                    module_path
+                        .split('.')
+                        .last()
+                        .expect("module path should have at least one component")
+                });
 
                 if let Some(sig) = self.get_builtin_sig(symbol_name) {
                     self.symbol_table.add_symbol(

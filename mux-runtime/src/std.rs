@@ -151,7 +151,8 @@ pub extern "C" fn mux_value_get_set(val: *mut Value) -> *mut Set {
 pub extern "C" fn mux_value_to_string(val: *mut Value) -> *mut c_char {
     let value = unsafe { &*val };
     let s = value.to_string();
-    let c_str = CString::new(s).unwrap();
+    // Safe: to_string produces valid UTF-8 without null bytes
+    let c_str = CString::new(s).expect("to_string should produce valid UTF-8");
     c_str.into_raw()
 }
 

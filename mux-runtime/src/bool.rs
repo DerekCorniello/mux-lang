@@ -27,7 +27,10 @@ impl fmt::Display for Bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_bool_to_string(b: i32) -> *mut c_char {
     let s = format!("{}", Bool(b != 0));
-    CString::new(s).unwrap().into_raw()
+    // Safe: format! produces valid UTF-8 without null bytes
+    CString::new(s)
+        .expect("format output should be valid UTF-8")
+        .into_raw()
 }
 
 /// # Safety

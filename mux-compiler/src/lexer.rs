@@ -639,7 +639,11 @@ impl<'a> Lexer<'a> {
             let mut has_digit = false;
             while let Some(c) = self.source.peek() {
                 if c.is_ascii_digit() {
-                    num.push(self.source.next_char().unwrap());
+                    num.push(
+                        self.source
+                            .next_char()
+                            .expect("peek returned Some, so next_char should return Some"),
+                    );
                     has_digit = true;
                 } else if c == '_' {
                     self.source.next_char(); // skip underscores
@@ -663,7 +667,11 @@ impl<'a> Lexer<'a> {
 
             while let Some(c) = self.source.peek() {
                 if c.is_ascii_digit() {
-                    num.push(self.source.next_char().unwrap());
+                    num.push(
+                        self.source
+                            .next_char()
+                            .expect("peek returned Some, so next_char should return Some"),
+                    );
                 } else if c == '_' {
                     self.source.next_char(); // skip underscores
                 } else {
@@ -673,12 +681,20 @@ impl<'a> Lexer<'a> {
 
             if let Some('.') = self.source.peek() {
                 is_float = true;
-                num.push(self.source.next_char().unwrap());
+                num.push(
+                    self.source
+                        .next_char()
+                        .expect("peek returned Some, so next_char should return Some"),
+                );
 
                 // read digits after decimal point (optional for numbers like 42.)
                 while let Some(c) = self.source.peek() {
                     if c.is_ascii_digit() {
-                        num.push(self.source.next_char().unwrap());
+                        num.push(
+                            self.source
+                                .next_char()
+                                .expect("peek returned Some, so next_char should return Some"),
+                        );
                     } else if c == '_' {
                         self.source.next_char(); // skip underscores
                     } else {
@@ -691,17 +707,29 @@ impl<'a> Lexer<'a> {
         // handle scientific notation (e.g., 1.23e4, 1e-10, 1.23e+10)
         if let Some('e') | Some('E') = self.source.peek() {
             is_float = true;
-            num.push(self.source.next_char().unwrap());
+            num.push(
+                self.source
+                    .next_char()
+                    .expect("peek returned Some, so next_char should return Some"),
+            );
 
             if let Some('+') | Some('-') = self.source.peek() {
-                num.push(self.source.next_char().unwrap());
+                num.push(
+                    self.source
+                        .next_char()
+                        .expect("peek returned Some, so next_char should return Some"),
+                );
             }
 
             // Require at least one digit after 'e' and optional sign
             let mut has_exponent_digit = false;
             while let Some(c) = self.source.peek() {
                 if c.is_ascii_digit() {
-                    num.push(self.source.next_char().unwrap());
+                    num.push(
+                        self.source
+                            .next_char()
+                            .expect("peek returned Some, so next_char should return Some"),
+                    );
                     has_exponent_digit = true;
                 } else if c == '_' {
                     self.source.next_char(); // skip underscores

@@ -40,10 +40,6 @@ pub struct CodeGenerator<'a> {
     generic_context: Option<GenericContext>,
     context_stack: Vec<GenericContext>,
     generated_methods: HashMap<String, bool>,
-    /// Stack of scopes tracking RC-allocated variables that need cleanup.
-    /// Each scope is a list of (variable_name, alloca_ptr) pairs.
-    /// Inner Vec represents variables in the current scope.
-    /// When a scope ends, we call mux_rc_dec on all variables in that scope.
     rc_scope_stack: Vec<Vec<(String, PointerValue<'a>)>>,
 }
 
@@ -863,7 +859,9 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<PointerValue<'a>, String> {
         let builder = self.context.create_builder();
 
-        let entry = function.get_first_basic_block().unwrap();
+        let entry = function
+            .get_first_basic_block()
+            .expect("function should have entry block after creation");
         match entry.get_first_instruction() {
             Some(first_instr) => builder.position_before(&first_instr),
             None => builder.position_at_end(entry),
@@ -1107,7 +1105,10 @@ impl<'a> CodeGenerator<'a> {
                 vtable_values.push(func.as_global_value().as_basic_value_enum());
             }
             // get vtable struct type
-            let vtable_type = self.vtable_type_map.get(interface_name).unwrap();
+            let vtable_type = self
+                .vtable_type_map
+                .get(interface_name)
+                .expect("vtable_type should be registered during interface generation");
             let vtable_const = vtable_type.const_named_struct(&vtable_values);
             // create global
             let vtable_name = format!("{}_{}_vtable", class_name, interface_name);
@@ -1239,7 +1240,9 @@ impl<'a> CodeGenerator<'a> {
                 .build_store(tag_ptr, tag_val)
                 .map_err(|e| e.to_string())?;
             for (i, _) in data_types.iter().enumerate() {
-                let arg = function.get_nth_param(i as u32).unwrap();
+                let arg = function
+                    .get_nth_param(i as u32)
+                    .expect("function parameter should exist at expected index");
                 let data_ptr = self
                     .builder
                     .build_struct_gep(struct_type, temp_ptr, (i + 1) as u32, "data_ptr")
@@ -1317,7 +1320,7 @@ impl<'a> CodeGenerator<'a> {
         let type_id_val = type_id
             .try_as_basic_value()
             .left()
-            .unwrap()
+            .expect("type_id call should return a basic value")
             .into_int_value();
 
         // allocate the object
@@ -1332,7 +1335,7 @@ impl<'a> CodeGenerator<'a> {
         let obj_value_ptr = obj_ptr
             .try_as_basic_value()
             .left()
-            .unwrap()
+            .expect("alloc_object call should return a pointer value")
             .into_pointer_value();
 
         // get the object data pointer
@@ -1347,7 +1350,7 @@ impl<'a> CodeGenerator<'a> {
         let struct_ptr = data_ptr
             .try_as_basic_value()
             .left()
-            .unwrap()
+            .expect("mux_get_object_ptr should return a basic value")
             .into_pointer_value();
 
         // cast to class struct pointer
@@ -1364,7 +1367,12 @@ impl<'a> CodeGenerator<'a> {
 
         // set fields to default (zero) values
         for field in fields.iter() {
-            let field_index = self.field_map.get(name).unwrap().get(&field.name).unwrap();
+            let field_index = self
+                .field_map
+                .get(name)
+                .expect("class should be in field_map after type generation")
+                .get(&field.name)
+                .expect("field should exist in class after semantic analysis");
             let field_ptr = self
                 .builder
                 .build_struct_gep(
@@ -1429,9 +1437,14 @@ impl<'a> CodeGenerator<'a> {
             let field_index = self
                 .field_map
                 .get(name)
-                .unwrap()
+                .ok_or_else(|| format!("Field map not found for class {}", name))?
                 .get(&vtable_field_name)
-                .unwrap();
+                .ok_or_else(|| {
+                    format!(
+                        "Vtable field {} not found in class {}",
+                        vtable_field_name, name
+                    )
+                })?;
             let field_ptr = self
                 .builder
                 .build_struct_gep(
@@ -1507,7 +1520,7 @@ impl<'a> CodeGenerator<'a> {
                 Ok(discriminant_call
                     .try_as_basic_value()
                     .left()
-                    .unwrap()
+                    .expect("mux_get_discriminant should return a basic value")
                     .into_int_value())
             }
             _ => {
@@ -1644,8 +1657,13 @@ impl<'a> CodeGenerator<'a> {
         let cond_val = self.generate_expression(cond)?;
 
         // get current function
-        let current_bb = self.builder.get_insert_block().unwrap();
-        let function = current_bb.get_parent().unwrap();
+        let current_bb = self
+            .builder
+            .get_insert_block()
+            .expect("builder should have an insert block during if generation");
+        let function = current_bb
+            .get_parent()
+            .expect("basic block should have a parent function");
 
         // create blocks
         let then_bb = self.context.append_basic_block(function, "if_then");
@@ -1663,7 +1681,10 @@ impl<'a> CodeGenerator<'a> {
         self.builder
             .build_unconditional_branch(merge_bb)
             .map_err(|e| e.to_string())?;
-        let then_bb_end = self.builder.get_insert_block().unwrap();
+        let then_bb_end = self
+            .builder
+            .get_insert_block()
+            .expect("builder should have insert block after then block");
 
         // else block
         self.builder.position_at_end(else_bb);
@@ -1671,7 +1692,10 @@ impl<'a> CodeGenerator<'a> {
         self.builder
             .build_unconditional_branch(merge_bb)
             .map_err(|e| e.to_string())?;
-        let else_bb_end = self.builder.get_insert_block().unwrap();
+        let else_bb_end = self
+            .builder
+            .get_insert_block()
+            .expect("builder should have insert block after else block");
 
         // merge with phi
         self.builder.position_at_end(merge_bb);
@@ -1753,10 +1777,15 @@ impl<'a> CodeGenerator<'a> {
         // set parameter names
         let param_offset = if has_captures { 1 } else { 0 };
         if has_captures {
-            function.get_nth_param(0).unwrap().set_name("captures");
+            function
+                .get_nth_param(0)
+                .expect("captures parameter should exist")
+                .set_name("captures");
         }
         for (i, param) in params.iter().enumerate() {
-            let arg = function.get_nth_param((i + param_offset) as u32).unwrap();
+            let arg = function
+                .get_nth_param((i + param_offset) as u32)
+                .expect("function parameter should exist at expected index");
             arg.set_name(&param.name);
         }
 
@@ -1777,7 +1806,10 @@ impl<'a> CodeGenerator<'a> {
         // If we have captures, extract them from the capture struct
         // The capture struct layout is: [ptr0, ptr1, ptr2, ...] where each ptr points to the captured variable's storage
         if has_captures {
-            let captures_ptr = function.get_nth_param(0).unwrap().into_pointer_value();
+            let captures_ptr = function
+                .get_nth_param(0)
+                .expect("captures parameter should exist")
+                .into_pointer_value();
 
             // Create a struct type for the captures (array of pointers)
             let capture_struct_type = self
@@ -1817,7 +1849,9 @@ impl<'a> CodeGenerator<'a> {
 
         // set up user parameter variables
         for (i, param) in params.iter().enumerate() {
-            let arg = function.get_nth_param((i + param_offset) as u32).unwrap();
+            let arg = function
+                .get_nth_param((i + param_offset) as u32)
+                .expect("function parameter should exist at expected index");
             let boxed = self.box_value(arg);
             let alloca = self
                 .builder
@@ -2639,11 +2673,16 @@ impl<'a> CodeGenerator<'a> {
                     // handle specialized method names like Box$int.to_string
                     func.name.split('$').next()
                 })
-                .unwrap();
+                .expect("class method name should contain '.' or '$'");
             // for specialized methods like Box$int.to_string, we need just "Box"
             let base_class_name = class_name.split('$').next().unwrap_or(class_name);
-            let class_type = self.type_map.get(base_class_name).unwrap();
-            let arg = function.get_nth_param(param_index).unwrap();
+            let class_type = self
+                .type_map
+                .get(base_class_name)
+                .expect("class type should be in type_map after type generation");
+            let arg = function
+                .get_nth_param(param_index)
+                .expect("self parameter should exist for class methods");
             param_index += 1;
             // set self as variable
             let ptr_type = self.context.ptr_type(AddressSpace::default());
@@ -2686,7 +2725,9 @@ impl<'a> CodeGenerator<'a> {
         }
 
         for (i, param) in func.params.iter().enumerate() {
-            let arg = function.get_nth_param((i as u32) + param_index).unwrap();
+            let arg = function
+                .get_nth_param((i as u32) + param_index)
+                .expect("function parameter should exist at expected index");
 
             // resolve parameter type first
             let resolved_type = self
@@ -2828,14 +2869,16 @@ impl<'a> CodeGenerator<'a> {
                 let none_call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_optional_none").unwrap(),
+                        self.module
+                            .get_function("mux_optional_none")
+                            .expect("mux_optional_none must be declared in runtime"),
                         &[],
                         "none_literal",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_optional_none should return a basic value");
                 // Return Optional pointer directly (not wrapped in Value)
                 Ok(none_call)
             }
@@ -2965,7 +3008,9 @@ impl<'a> CodeGenerator<'a> {
                     // check if class method field access
                     if let Some(ref func_name) = self.current_function_name {
                         if func_name.contains('.') {
-                            let class_name = func_name.split('.').next().unwrap();
+                            let class_name = func_name.split('.').next().ok_or_else(|| {
+                                format!("Invalid function name format: {}", func_name)
+                            })?;
                             if let Some((self_ptr, _, _)) = self
                                 .variables
                                 .get("self")
@@ -3062,7 +3107,10 @@ impl<'a> CodeGenerator<'a> {
                     // check if we're in a method and this is a field access
                     if let Some(ref func_name) = self.current_function_name {
                         if func_name.contains('.') {
-                            let class_name = func_name.split('.').next().unwrap();
+                            let class_name = func_name
+                                .split('.')
+                                .next()
+                                .expect("function name contains '.' so next() should return Some");
                             if self.classes.contains_key(class_name) {
                                 if let Some(field_index) = self
                                     .field_map
@@ -3101,11 +3149,19 @@ impl<'a> CodeGenerator<'a> {
                                             .map_err(|e| e.to_string())?
                                             .try_as_basic_value()
                                             .left()
-                                            .unwrap()
+                                            .expect(
+                                                "mux_get_object_ptr should return a basic value",
+                                            )
                                             .into_pointer_value();
 
                                         // get the struct type and field pointer
-                                        let struct_type = self.type_map.get(class_name).unwrap();
+                                        let struct_type =
+                                            self.type_map.get(class_name).ok_or_else(|| {
+                                                format!(
+                                                    "Class {} not found in type map",
+                                                    class_name
+                                                )
+                                            })?;
                                         let field_ptr = self
                                             .builder
                                             .build_struct_gep(
@@ -3117,8 +3173,10 @@ impl<'a> CodeGenerator<'a> {
                                             .map_err(|e| e.to_string())?;
 
                                         // load the field value
-                                        let field_types =
-                                            self.field_types_map.get(class_name).unwrap();
+                                        let field_types = self
+                                            .field_types_map
+                                            .get(class_name)
+                                            .expect("class should be in field_types_map");
                                         let field_type = field_types[*field_index];
                                         let loaded = self
                                             .builder
@@ -3153,7 +3211,8 @@ impl<'a> CodeGenerator<'a> {
                                 // check if this is a field assignment (bare identifier in method)
                                 if let Some(ref func_name) = self.current_function_name {
                                     if func_name.contains('.') {
-                                        let class_name = func_name.split('.').next().unwrap();
+                                        let class_name = func_name.split('.').next()
+                                            .expect("function name contains '.' so next() should return Some");
                                         if let Some(field_index) = self
                                             .field_map
                                             .get(class_name)
@@ -3192,12 +3251,19 @@ impl<'a> CodeGenerator<'a> {
                                                     .map_err(|e| e.to_string())?
                                                     .try_as_basic_value()
                                                     .left()
-                                                    .unwrap()
+                                                    .expect("mux_get_object_ptr should return a basic value")
                                                     .into_pointer_value();
 
                                                 // get the struct type and field pointer
-                                                let struct_type =
-                                                    self.type_map.get(class_name).unwrap();
+                                                let struct_type = self
+                                                    .type_map
+                                                    .get(class_name)
+                                                    .ok_or_else(|| {
+                                                        format!(
+                                                            "Class {} not found in type map",
+                                                            class_name
+                                                        )
+                                                    })?;
                                                 let field_ptr = self
                                                     .builder
                                                     .build_struct_gep(
@@ -3271,32 +3337,32 @@ impl<'a> CodeGenerator<'a> {
                                 Ok(right_val)
                             } else if let ExpressionKind::FieldAccess { expr, field } = &left.kind {
                                 // handle field assignment
-                                let mut struct_ptr =
-                                    if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                                        if obj_name == "self" {
-                                            // special case: accessing field of 'self'
-                                            if let Some((self_ptr, _, _)) = self
-                                                .variables
-                                                .get("self")
-                                                .or_else(|| self.global_variables.get("self"))
-                                            {
-                                                let self_value_ptr = self
-                                                    .builder
-                                                    .build_load(
-                                                        self.context
-                                                            .ptr_type(AddressSpace::default()),
-                                                        *self_ptr,
-                                                        "load_self_for_field_assign",
-                                                    )
-                                                    .map_err(|e| e.to_string())?
-                                                    .into_pointer_value();
+                                let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) =
+                                    &expr.kind
+                                {
+                                    if obj_name == "self" {
+                                        // special case: accessing field of 'self'
+                                        if let Some((self_ptr, _, _)) = self
+                                            .variables
+                                            .get("self")
+                                            .or_else(|| self.global_variables.get("self"))
+                                        {
+                                            let self_value_ptr = self
+                                                .builder
+                                                .build_load(
+                                                    self.context.ptr_type(AddressSpace::default()),
+                                                    *self_ptr,
+                                                    "load_self_for_field_assign",
+                                                )
+                                                .map_err(|e| e.to_string())?
+                                                .into_pointer_value();
 
-                                                // get the raw data pointer from the boxed Value
-                                                let get_ptr_func = self
-                                                    .module
-                                                    .get_function("mux_get_object_ptr")
-                                                    .ok_or("mux_get_object_ptr not found")?;
-                                                let data_ptr = self
+                                            // get the raw data pointer from the boxed Value
+                                            let get_ptr_func = self
+                                                .module
+                                                .get_function("mux_get_object_ptr")
+                                                .ok_or("mux_get_object_ptr not found")?;
+                                            let data_ptr = self
                                                     .builder
                                                     .build_call(
                                                         get_ptr_func,
@@ -3306,19 +3372,20 @@ impl<'a> CodeGenerator<'a> {
                                                     .map_err(|e| e.to_string())?
                                                     .try_as_basic_value()
                                                     .left()
-                                                    .unwrap()
+                                                    .expect("mux_get_object_ptr should return a basic value")
                                                     .into_pointer_value();
-                                                data_ptr
-                                            } else {
-                                                return Err("Self not found in field assignment"
-                                                    .to_string());
-                                            }
+                                            data_ptr
                                         } else {
-                                            self.generate_expression(expr)?.into_pointer_value()
+                                            return Err(
+                                                "Self not found in field assignment".to_string()
+                                            );
                                         }
                                     } else {
                                         self.generate_expression(expr)?.into_pointer_value()
-                                    };
+                                    }
+                                } else {
+                                    self.generate_expression(expr)?.into_pointer_value()
+                                };
 
                                 // for non-self class objects, get the data pointer
                                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
@@ -3343,7 +3410,7 @@ impl<'a> CodeGenerator<'a> {
                                                 .map_err(|e| e.to_string())?
                                                 .try_as_basic_value()
                                                 .left()
-                                                .unwrap()
+                                                .expect("mux_get_object_ptr should return a basic value")
                                                 .into_pointer_value();
                                         }
                                     }
@@ -3673,14 +3740,16 @@ impl<'a> CodeGenerator<'a> {
                         if let Some(current_function) = &self.current_function_name {
                             if current_function.contains('.') {
                                 // we're in a method, check if field_name is a field of current class
-                                let class_name = current_function.split('.').next().unwrap();
+                                let class_name = current_function.split('.').next().expect(
+                                    "function name contains '.' so next() should return Some",
+                                );
                                 if let Some(class_fields) = self.classes.get(class_name) {
                                     if class_fields.iter().any(|f| f.name == *field_name) {
                                         // get the field type before borrowing self mutably
                                         let field_type = class_fields
                                             .iter()
                                             .find(|f| f.name == *field_name)
-                                            .unwrap()
+                                            .expect("field should exist in class after semantic analysis")
                                             .type_
                                             .clone();
                                         let resolved_field_type =
@@ -3809,12 +3878,16 @@ impl<'a> CodeGenerator<'a> {
                                                             "{}.{}",
                                                             name, field
                                                         ))
-                                                        .unwrap(),
+                                                        .expect(
+                                                            "static method should be in module",
+                                                        ),
                                                     &call_args,
                                                     &format!("{}.{}_call", name, field),
                                                 )
                                                 .map_err(|e| e.to_string())?;
-                                            return Ok(call.try_as_basic_value().left().unwrap());
+                                            return Ok(call.try_as_basic_value().left().expect(
+                                                "static method call should return a basic value",
+                                            ));
                                         } else {
                                             return Err(format!(
                                                 "Method {} not found on class {}",
@@ -3840,7 +3913,9 @@ impl<'a> CodeGenerator<'a> {
                                                     &format!("{}_call", constructor_name),
                                                 )
                                                 .map_err(|e| e.to_string())?;
-                                            return Ok(call.try_as_basic_value().left().unwrap());
+                                            return Ok(call.try_as_basic_value().left().expect(
+                                                "constructor call should return a basic value",
+                                            ));
                                         } else {
                                             return Err(format!(
                                                 "Enum variant {} not found in enum {}",
@@ -3948,7 +4023,9 @@ impl<'a> CodeGenerator<'a> {
                                         // clear generic context after call
                                         self.generic_context = None;
 
-                                        return Ok(call.try_as_basic_value().left().unwrap());
+                                        return Ok(call.try_as_basic_value().left().expect(
+                                            "generic method call should return a basic value",
+                                        ));
                                     } else {
                                         return Err(format!(
                                             "Method {} on class {} is not static",
@@ -4047,7 +4124,10 @@ impl<'a> CodeGenerator<'a> {
                                     .builder
                                     .build_call(func, &[ptr.into()], "err_call")
                                     .map_err(|e| e.to_string())?;
-                                let result_ptr = call.try_as_basic_value().left().unwrap();
+                                let result_ptr = call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .expect("result constructor should return a basic value");
                                 Ok(result_ptr)
                             } else {
                                 return Err("Err argument must be a string literal".to_string());
@@ -4089,7 +4169,10 @@ impl<'a> CodeGenerator<'a> {
                                 .builder
                                 .build_call(func, &[arg_val.into()], "ok_call")
                                 .map_err(|e| e.to_string())?;
-                            let result_ptr = call.try_as_basic_value().left().unwrap();
+                            let result_ptr = call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("result constructor should return a basic value");
                             // result constructors return Value* pointers directly
                             Ok(result_ptr)
                         }
@@ -4129,7 +4212,10 @@ impl<'a> CodeGenerator<'a> {
                                 .builder
                                 .build_call(func, &[arg_val.into()], "some_call")
                                 .map_err(|e| e.to_string())?;
-                            let result_ptr = call.try_as_basic_value().left().unwrap();
+                            let result_ptr = call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("optional constructor should return a basic value");
                             // optional constructors return Value* pointers directly
                             Ok(result_ptr)
                         }
@@ -4145,7 +4231,10 @@ impl<'a> CodeGenerator<'a> {
                                 .builder
                                 .build_call(func, &[], "none_call")
                                 .map_err(|e| e.to_string())?;
-                            let result_ptr = call.try_as_basic_value().left().unwrap();
+                            let result_ptr = call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("optional constructor should return a basic value");
                             // optional constructors return Value* pointers directly
                             Ok(result_ptr)
                         }
@@ -4314,7 +4403,7 @@ impl<'a> CodeGenerator<'a> {
                                         .build_unconditional_branch(merge_bb)
                                         .map_err(|e| e.to_string())?;
                                     let with_captures_end_bb =
-                                        self.builder.get_insert_block().unwrap();
+                                        self.builder.get_insert_block().expect("Builder should have an insertion block after positioning and building branch");
 
                                     // Without captures: call directly
                                     self.builder.position_at_end(without_captures_bb);
@@ -4332,7 +4421,7 @@ impl<'a> CodeGenerator<'a> {
                                         .build_unconditional_branch(merge_bb)
                                         .map_err(|e| e.to_string())?;
                                     let without_captures_end_bb =
-                                        self.builder.get_insert_block().unwrap();
+                                        self.builder.get_insert_block().expect("Builder should have an insertion block after positioning and building branch");
 
                                     // Merge block with phi
                                     self.builder.position_at_end(merge_bb);
@@ -4673,7 +4762,7 @@ impl<'a> CodeGenerator<'a> {
                         self.builder
                             .build_unconditional_branch(merge_bb)
                             .map_err(|e| e.to_string())?;
-                        let with_captures_end_bb = self.builder.get_insert_block().unwrap();
+                        let with_captures_end_bb = self.builder.get_insert_block().expect("Builder should have an insertion block after positioning and building branch");
 
                         // Without captures: call directly
                         self.builder.position_at_end(without_captures_bb);
@@ -4690,7 +4779,7 @@ impl<'a> CodeGenerator<'a> {
                         self.builder
                             .build_unconditional_branch(merge_bb)
                             .map_err(|e| e.to_string())?;
-                        let without_captures_end_bb = self.builder.get_insert_block().unwrap();
+                        let without_captures_end_bb = self.builder.get_insert_block().expect("Builder should have an insertion block after positioning and building branch");
 
                         // Merge block with phi
                         self.builder.position_at_end(merge_bb);
@@ -4727,7 +4816,9 @@ impl<'a> CodeGenerator<'a> {
                 let raw_list = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_list").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_list")
+                            .expect("mux_value_get_list must be declared in runtime"),
                         &[list_val.into()],
                         "extract_list",
                     )
@@ -4737,9 +4828,15 @@ impl<'a> CodeGenerator<'a> {
                 let raw_result = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_list_get_value").unwrap(),
+                        self.module
+                            .get_function("mux_list_get_value")
+                            .expect("mux_list_get_value must be declared in runtime"),
                         &[
-                            raw_list.try_as_basic_value().left().unwrap().into(),
+                            raw_list
+                                .try_as_basic_value()
+                                .left()
+                                .expect("mux_value_get_list should return a basic value")
+                                .into(),
                             index_val.into(),
                         ],
                         "list_raw",
@@ -4749,7 +4846,7 @@ impl<'a> CodeGenerator<'a> {
                 let result_ptr = raw_result
                     .try_as_basic_value()
                     .left()
-                    .unwrap()
+                    .expect("mux_list_get_value should return a basic value")
                     .into_pointer_value();
 
                 // check for null (out of bounds)
@@ -4762,7 +4859,7 @@ impl<'a> CodeGenerator<'a> {
                 let current_function = self
                     .builder
                     .get_insert_block()
-                    .unwrap()
+                    .expect("Builder should have an insertion block")
                     .get_parent()
                     .ok_or("No current function")?;
 
@@ -4789,7 +4886,7 @@ impl<'a> CodeGenerator<'a> {
                         "mux_new_string_from_cstr",
                         &[error_msg.as_pointer_value().into()],
                     )
-                    .unwrap();
+                    .expect("mux_new_string_from_cstr should always return a value");
                 self.generate_runtime_call("mux_print", &[error_str.into()]);
                 self.generate_runtime_call(
                     "exit",
@@ -4817,7 +4914,7 @@ impl<'a> CodeGenerator<'a> {
             ExpressionKind::ListLiteral(elements) => {
                 let list_ptr = self
                     .generate_runtime_call("mux_new_list", &[])
-                    .unwrap()
+                    .expect("mux_new_list should always return a value")
                     .into_pointer_value();
                 for element in elements {
                     let elem_val = self.generate_expression(element)?;
@@ -4830,13 +4927,13 @@ impl<'a> CodeGenerator<'a> {
                 // convert list pointer to Value for type consistency
                 let list_value = self
                     .generate_runtime_call("mux_list_value", &[list_ptr.into()])
-                    .unwrap();
+                    .expect("mux_list_value should always return a value");
                 Ok(list_value)
             }
             ExpressionKind::MapLiteral { entries, .. } => {
                 let map_ptr = self
                     .generate_runtime_call("mux_new_map", &[])
-                    .unwrap()
+                    .expect("mux_new_map should always return a value")
                     .into_pointer_value();
                 for (key, value) in entries {
                     let key_val = self.generate_expression(key)?;
@@ -4850,13 +4947,13 @@ impl<'a> CodeGenerator<'a> {
                 }
                 let map_value = self
                     .generate_runtime_call("mux_map_value", &[map_ptr.into()])
-                    .unwrap();
+                    .expect("mux_map_value should always return a value");
                 Ok(map_value)
             }
             ExpressionKind::SetLiteral(elements) => {
                 let set_ptr = self
                     .generate_runtime_call("mux_new_set", &[])
-                    .unwrap()
+                    .expect("mux_new_set should always return a value")
                     .into_pointer_value();
                 for element in elements {
                     let elem_val = self.generate_expression(element)?;
@@ -4865,7 +4962,7 @@ impl<'a> CodeGenerator<'a> {
                 }
                 let set_value = self
                     .generate_runtime_call("mux_set_value", &[set_ptr.into()])
-                    .unwrap();
+                    .expect("mux_set_value should always return a value");
                 Ok(set_value)
             }
             ExpressionKind::If {
@@ -4896,7 +4993,6 @@ impl<'a> CodeGenerator<'a> {
                                 )
                                 .map_err(|e| e.to_string())?
                                 .into_pointer_value();
-
                             // get the raw data pointer from the boxed Value
                             let get_ptr_func = self
                                 .module
@@ -4908,7 +5004,7 @@ impl<'a> CodeGenerator<'a> {
                                 .map_err(|e| e.to_string())?
                                 .try_as_basic_value()
                                 .left()
-                                .unwrap()
+                                .expect("mux_get_object_ptr should return a basic value")
                                 .into_pointer_value();
                             data_ptr
                         } else {
@@ -4920,7 +5016,6 @@ impl<'a> CodeGenerator<'a> {
                 } else {
                     self.generate_expression(expr)?.into_pointer_value()
                 };
-
                 // for non-self class objects, get the data pointer
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name != "self" {
@@ -4940,12 +5035,11 @@ impl<'a> CodeGenerator<'a> {
                                 .map_err(|e| e.to_string())?
                                 .try_as_basic_value()
                                 .left()
-                                .unwrap()
+                                .expect("mux_get_object_ptr should return a basic value")
                                 .into_pointer_value();
                         }
                     }
                 }
-
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if let Some(type_node) = self
                         .variables
@@ -4965,7 +5059,6 @@ impl<'a> CodeGenerator<'a> {
                                             .builder
                                             .build_struct_gep(st, struct_ptr, index as u32, field)
                                             .map_err(|e| e.to_string())?;
-
                                         // check if this field is an enum type
                                         let field_types = self
                                             .field_types_map
@@ -4973,7 +5066,6 @@ impl<'a> CodeGenerator<'a> {
                                             .ok_or("Field types not found for class")?;
                                         if index < field_types.len() {
                                             let field_type = field_types[index];
-
                                             // check if field type is a struct (enum)
                                             if let BasicTypeEnum::StructType(struct_type) =
                                                 field_type
@@ -5014,13 +5106,11 @@ impl<'a> CodeGenerator<'a> {
                                                 .analyzer
                                                 .resolve_type(&field_def.type_)
                                                 .map_err(|e| e.to_string())?;
-
                                             // load the field value (all fields stored as Value*)
                                             let loaded = self
                                                 .builder
                                                 .build_load(*field_type_node, field_ptr, field)
                                                 .map_err(|e| e.to_string())?;
-
                                             // For generic parameters, resolve to concrete type first
                                             let is_generic_param = field_def.is_generic_param;
                                             if is_generic_param {
@@ -5077,7 +5167,6 @@ impl<'a> CodeGenerator<'a> {
                                                 }
                                                 // If we can't resolve, fall through to regular logic
                                             }
-
                                             // handle unboxing for primitive fields (non-generic case)
                                             match &resolved_field_type {
                                                 Type::Primitive(PrimitiveType::Int) => {
@@ -5137,7 +5226,6 @@ impl<'a> CodeGenerator<'a> {
                                                 }
                                                 _ => {} // for non-primitives, return the loaded pointer
                                             }
-
                                             return Ok(loaded);
                                         }
                                     }
@@ -5168,11 +5256,19 @@ impl<'a> CodeGenerator<'a> {
                                     .builder
                                     .build_call(
                                         func_new,
-                                        &[call.try_as_basic_value().left().unwrap().into()],
+                                        &[call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .expect(
+                                                "mux_value_to_string should return a basic value",
+                                            )
+                                            .into()],
                                         "new_str",
                                     )
                                     .map_err(|e| e.to_string())?;
-                                return Ok(call2.try_as_basic_value().left().unwrap());
+                                return Ok(call2.try_as_basic_value().left().expect(
+                                    "mux_new_string_from_cstr should return a basic value",
+                                ));
                             }
                             Type::Primitive(PrimitiveType::Int) if field == "to_float" => {
                                 // Get the boxed int value
@@ -5214,11 +5310,19 @@ impl<'a> CodeGenerator<'a> {
                                     .builder
                                     .build_call(
                                         func_new,
-                                        &[call.try_as_basic_value().left().unwrap().into()],
+                                        &[call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .expect(
+                                                "mux_float_to_string should return a basic value",
+                                            )
+                                            .into()],
                                         "new_str",
                                     )
                                     .map_err(|e| e.to_string())?;
-                                return Ok(call2.try_as_basic_value().left().unwrap());
+                                return Ok(call2.try_as_basic_value().left().expect(
+                                    "mux_new_string_from_cstr should return a basic value",
+                                ));
                             }
                             Type::Primitive(PrimitiveType::Float) if field == "to_int" => {
                                 // Get the boxed float value
@@ -5259,11 +5363,17 @@ impl<'a> CodeGenerator<'a> {
                                     .builder
                                     .build_call(
                                         func_new,
-                                        &[call.try_as_basic_value().left().unwrap().into()],
+                                        &[call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .expect("mux_int_to_string should return a basic value")
+                                            .into()],
                                         "new_str",
                                     )
                                     .map_err(|e| e.to_string())?;
-                                return Ok(call2.try_as_basic_value().left().unwrap());
+                                return Ok(call2.try_as_basic_value().left().expect(
+                                    "mux_new_string_from_cstr should return a basic value",
+                                ));
                             }
                             Type::Primitive(PrimitiveType::Bool) if field == "to_int" => {
                                 // Get the boxed bool value
@@ -5315,11 +5425,19 @@ impl<'a> CodeGenerator<'a> {
                                     .builder
                                     .build_call(
                                         func_new,
-                                        &[call.try_as_basic_value().left().unwrap().into()],
+                                        &[call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .expect(
+                                                "mux_value_to_string should return a basic value",
+                                            )
+                                            .into()],
                                         "new_str",
                                     )
                                     .map_err(|e| e.to_string())?;
-                                return Ok(call2.try_as_basic_value().left().unwrap());
+                                return Ok(call2.try_as_basic_value().left().expect(
+                                    "mux_new_string_from_cstr should return a basic value",
+                                ));
                             }
                             Type::Primitive(PrimitiveType::Str) if field == "to_int" => {
                                 // Get the string value (it's a *mut Value)
@@ -5335,7 +5453,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap();
+                                    .expect("mux_value_to_string should return a basic value");
                                 // Call mux_string_to_int which returns *mut MuxResult
                                 let func = self
                                     .module
@@ -5347,7 +5465,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap();
+                                    .expect("mux_string_to_int should return a basic value");
                                 return Ok(result_ptr);
                             }
                             Type::Primitive(PrimitiveType::Str) if field == "to_float" => {
@@ -5364,7 +5482,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap();
+                                    .expect("mux_value_to_string should return a basic value");
                                 // Call mux_string_to_float which returns *mut MuxResult
                                 let func = self
                                     .module
@@ -5376,7 +5494,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap();
+                                    .expect("mux_string_to_float should return a basic value");
                                 return Ok(result_ptr);
                             }
                             Type::Primitive(PrimitiveType::Char) if field == "to_int" => {
@@ -5393,7 +5511,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap();
+                                    .expect("mux_char_to_int should return a basic value");
                                 return Ok(result_ptr);
                             }
                             Type::Primitive(PrimitiveType::Char) if field == "to_string" => {
@@ -5406,11 +5524,11 @@ impl<'a> CodeGenerator<'a> {
                                     .ok_or("mux_char_to_string not found")?;
                                 let cstr = self
                                     .builder
-                                    .build_call(func, &[char_val.into()], "char_to_str")
+                                    .build_call(func, &[char_val.into()], "str_to_cstr")
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap();
+                                    .expect("mux_value_to_string should return a basic value");
                                 // Convert to *mut Value (string)
                                 let func_new = self
                                     .module
@@ -5422,7 +5540,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap();
+                                    .expect("mux_new_string_from_cstr should return a basic value");
                                 return Ok(result);
                             }
                             _ => {}
@@ -5534,7 +5652,6 @@ impl<'a> CodeGenerator<'a> {
                                     )
                                     .map_err(|e| e.to_string())?
                                     .into_pointer_value();
-
                                 // Extract the i64 from the mux_value using the runtime function
                                 let get_int_func = self
                                     .module
@@ -5550,24 +5667,20 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap()
+                                    .expect("mux_value_get_int should return a basic value")
                                     .into_int_value();
-
                                 // Add 1
                                 let one = self.context.i64_type().const_int(1, false);
                                 let new_val = self
                                     .builder
                                     .build_int_add(current_val, one, "incr_result")
                                     .map_err(|e| e.to_string())?;
-
                                 // Box it back into a mux_value*
                                 let boxed_val = self.box_value(new_val.into());
-
                                 // Store back to the variable
                                 self.builder
                                     .build_store(ptr_copy, boxed_val)
                                     .map_err(|e| e.to_string())?;
-
                                 Ok(new_val.into())
                             } else {
                                 Err(format!("Undefined variable {}", name))
@@ -5592,7 +5705,6 @@ impl<'a> CodeGenerator<'a> {
                                     )
                                     .map_err(|e| e.to_string())?
                                     .into_pointer_value();
-
                                 // Extract the i64 from the mux_value using the runtime function
                                 let get_int_func = self
                                     .module
@@ -5608,24 +5720,20 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap()
+                                    .expect("mux_value_get_int should return a basic value")
                                     .into_int_value();
-
                                 // Subtract 1
                                 let one = self.context.i64_type().const_int(1, false);
                                 let new_val = self
                                     .builder
                                     .build_int_sub(current_val, one, "decr_result")
                                     .map_err(|e| e.to_string())?;
-
                                 // Box it back into a mux_value*
                                 let boxed_val = self.box_value(new_val.into());
-
                                 // Store back to the variable
                                 self.builder
                                     .build_store(ptr_copy, boxed_val)
                                     .map_err(|e| e.to_string())?;
-
                                 Ok(new_val.into())
                             } else {
                                 Err(format!("Undefined variable {}", name))
@@ -5638,22 +5746,18 @@ impl<'a> CodeGenerator<'a> {
                     UnaryOp::Not => {
                         // Evaluate the expression to get a bool value
                         let expr_val = self.generate_expression(expr)?;
-
                         // Get raw bool value (i1) - handles both raw i1 and boxed bool
                         let bool_val = self.get_raw_bool_value(expr_val)?;
-
                         // Use LLVM's build_not to invert the i1 value
                         let not_result = self
                             .builder
                             .build_not(bool_val, "not")
                             .map_err(|e| e.to_string())?;
-
                         Ok(not_result.into())
                     }
                     UnaryOp::Neg => {
                         // Negate a number (int or float)
                         let expr_val = self.generate_expression(expr)?;
-
                         if expr_val.is_int_value() {
                             let int_val = expr_val.into_int_value();
                             let neg = self
@@ -5692,7 +5796,6 @@ impl<'a> CodeGenerator<'a> {
             _ => Err("Expression type not implemented".to_string()),
         }
     }
-
     fn generate_statement(
         &mut self,
         stmt: &StatementNode,
@@ -5703,16 +5806,13 @@ impl<'a> CodeGenerator<'a> {
                 // Check if variable already exists BEFORE generating expression
                 // (generate_expression may modify self.variables)
                 let existing_var = self.variables.get(name).cloned();
-
                 let value = self.generate_expression(expr)?;
-
                 // Get the type from the expression directly using semantic analyzer
                 // (not from symbol table, since local variables are not stored there to avoid collisions)
                 let resolved_type = self
                     .analyzer
                     .get_expression_type(expr)
                     .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
-
                 // Resolve type variables using the current generic context
                 // For example, in a specialized method Chain$string.box_value, when we see
                 // auto b = Box<T>.new(), the type from expression is Box<Variable("T")>
@@ -5720,7 +5820,6 @@ impl<'a> CodeGenerator<'a> {
                 let concrete_type = self
                     .resolve_type(&resolved_type)
                     .unwrap_or_else(|_| resolved_type.clone());
-
                 // Use the existing variable if we found one before expression generation
                 if let Some((existing_ptr, _, _)) = existing_var {
                     // variable already exists - just store to it (this handles globals in main)
@@ -5785,14 +5884,12 @@ impl<'a> CodeGenerator<'a> {
             StatementKind::TypedDecl(name, type_node, expr) => {
                 let var_type = self.llvm_type_from_mux_type(type_node)?;
                 let value = self.generate_expression(expr)?;
-
                 // Get the declared type from the type_node directly using semantic analyzer
                 // (not from symbol table, since local variables are not stored there to avoid collisions)
                 let resolved_type = self
                     .analyzer
                     .resolve_type(type_node)
                     .map_err(|e| format!("Failed to resolve type for {}: {}", name, e.message))?;
-
                 // check if this variable already exists in current scope (e.g., pre-created global)
                 if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
                     // variable already exists - just store to it (this handles globals in main)
@@ -5857,14 +5954,12 @@ impl<'a> CodeGenerator<'a> {
                 let value = self.generate_expression(expr)?;
                 let boxed = self.box_value(value);
                 let ptr_type = self.context.ptr_type(AddressSpace::default());
-
                 // Get the type from the expression directly using semantic analyzer
                 // (not from symbol table, since local variables are not stored there to avoid collisions)
                 let resolved_type = self
                     .analyzer
                     .get_expression_type(expr)
                     .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
-
                 // check if this constant already exists in current scope (e.g., pre-created global)
                 if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
                     // constant already exists - just store to it
@@ -5918,7 +6013,6 @@ impl<'a> CodeGenerator<'a> {
                         return Ok(());
                     }
                 }
-
                 let value = self.generate_expression(expr)?;
                 // check if we need to return raw primitive or boxed value
                 if let Some(return_type) = &self.current_function_return_type {
@@ -6051,7 +6145,6 @@ impl<'a> CodeGenerator<'a> {
                 let function = function.ok_or("If statement not in function")?;
                 let cond_val = self.generate_expression(cond)?;
                 let cond_int = cond_val.into_int_value();
-
                 let if_id = self.label_counter;
                 self.label_counter += 1;
                 let then_bb = self
@@ -6060,7 +6153,6 @@ impl<'a> CodeGenerator<'a> {
                 let else_bb = self
                     .context
                     .append_basic_block(*function, &format!("if_else_{}", if_id));
-
                 // check if we need a merge block
                 let then_ends_with_return = then_block
                     .last()
@@ -6073,7 +6165,6 @@ impl<'a> CodeGenerator<'a> {
                     false
                 };
                 let needs_merge = !then_ends_with_return || !else_ends_with_return;
-
                 let merge_bb = if needs_merge {
                     Some(
                         self.context
@@ -6082,11 +6173,9 @@ impl<'a> CodeGenerator<'a> {
                 } else {
                     None
                 };
-
                 self.builder
                     .build_conditional_branch(cond_int, then_bb, else_bb)
                     .map_err(|e| e.to_string())?;
-
                 // then block
                 self.builder.position_at_end(then_bb);
                 for stmt in then_block {
@@ -6099,7 +6188,6 @@ impl<'a> CodeGenerator<'a> {
                             .map_err(|e| e.to_string())?;
                     }
                 }
-
                 // else block
                 self.builder.position_at_end(else_bb);
                 if let Some(else_stmts) = else_block {
@@ -6114,7 +6202,6 @@ impl<'a> CodeGenerator<'a> {
                             .map_err(|e| e.to_string())?;
                     }
                 }
-
                 // merge
                 if let Some(merge_bb) = merge_bb {
                     self.builder.position_at_end(merge_bb);
@@ -6125,11 +6212,9 @@ impl<'a> CodeGenerator<'a> {
                 let header_bb = self.context.append_basic_block(*function, "while_header");
                 let body_bb = self.context.append_basic_block(*function, "while_body");
                 let exit_bb = self.context.append_basic_block(*function, "while_exit");
-
                 self.builder
                     .build_unconditional_branch(header_bb)
                     .map_err(|e| e.to_string())?;
-
                 // header
                 self.builder.position_at_end(header_bb);
                 let cond_val = self.generate_expression(cond)?;
@@ -6137,7 +6222,6 @@ impl<'a> CodeGenerator<'a> {
                 self.builder
                     .build_conditional_branch(cond_int, body_bb, exit_bb)
                     .map_err(|e| e.to_string())?;
-
                 // body
                 self.builder.position_at_end(body_bb);
                 for stmt in body {
@@ -6146,7 +6230,6 @@ impl<'a> CodeGenerator<'a> {
                 self.builder
                     .build_unconditional_branch(header_bb)
                     .map_err(|e| e.to_string())?;
-
                 // exit
                 self.builder.position_at_end(exit_bb);
             }
@@ -6164,7 +6247,6 @@ impl<'a> CodeGenerator<'a> {
                             let resolved_var_type = Type::Primitive(PrimitiveType::Int);
                             let start_val = self.generate_expression(&args[0])?;
                             let end_val = self.generate_expression(&args[1])?;
-
                             // create index variable
                             let index_type = self.context.i64_type();
                             let index_alloca = self
@@ -6174,7 +6256,6 @@ impl<'a> CodeGenerator<'a> {
                             self.builder
                                 .build_store(index_alloca, start_val)
                                 .map_err(|e| e.to_string())?;
-
                             // create loop var
                             let ptr_type = self.context.ptr_type(AddressSpace::default());
                             let var_alloca = self
@@ -6189,7 +6270,6 @@ impl<'a> CodeGenerator<'a> {
                                     resolved_var_type.clone(),
                                 ),
                             );
-
                             // loop header
                             let label_id = self.label_counter;
                             self.label_counter += 1;
@@ -6202,11 +6282,9 @@ impl<'a> CodeGenerator<'a> {
                             let exit_bb = self
                                 .context
                                 .append_basic_block(*function, &format!("for_exit_{}", label_id));
-
                             self.builder
                                 .build_unconditional_branch(header_bb)
                                 .map_err(|e| e.to_string())?;
-
                             // header: check index < end
                             self.builder.position_at_end(header_bb);
                             let index_load = self
@@ -6225,7 +6303,6 @@ impl<'a> CodeGenerator<'a> {
                             self.builder
                                 .build_conditional_branch(cmp, body_bb, exit_bb)
                                 .map_err(|e| e.to_string())?;
-
                             // body: set var = index, then body
                             self.builder.position_at_end(body_bb);
                             let index_load2 = self
@@ -6265,12 +6342,13 @@ impl<'a> CodeGenerator<'a> {
                         .resolve_type(var_type)
                         .map_err(|e| e.message)?;
                     let list_val = self.generate_expression(iter)?;
-
                     // get length
                     let len_call = self
                         .builder
                         .build_call(
-                            self.module.get_function("mux_value_list_length").unwrap(),
+                            self.module
+                                .get_function("mux_value_list_length")
+                                .expect("mux_value_list_length must be declared in runtime"),
                             &[list_val.into()],
                             "list_len",
                         )
@@ -6278,9 +6356,8 @@ impl<'a> CodeGenerator<'a> {
                     let len_val = len_call
                         .try_as_basic_value()
                         .left()
-                        .unwrap()
+                        .expect("mux_value_list_length should return a basic value")
                         .into_int_value();
-
                     // create index variable
                     let index_type = self.context.i64_type();
                     let index_alloca = self
@@ -6291,7 +6368,6 @@ impl<'a> CodeGenerator<'a> {
                     self.builder
                         .build_store(index_alloca, zero)
                         .map_err(|e| e.to_string())?;
-
                     // create loop var
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
                     let var_alloca = self
@@ -6306,7 +6382,6 @@ impl<'a> CodeGenerator<'a> {
                             resolved_var_type.clone(),
                         ),
                     );
-
                     // loop header
                     let label_id = self.label_counter;
                     self.label_counter += 1;
@@ -6319,11 +6394,9 @@ impl<'a> CodeGenerator<'a> {
                     let exit_bb = self
                         .context
                         .append_basic_block(*function, &format!("for_exit_{}", label_id));
-
                     self.builder
                         .build_unconditional_branch(header_bb)
                         .map_err(|e| e.to_string())?;
-
                     // header: check index < len
                     self.builder.position_at_end(header_bb);
                     let index_load = self
@@ -6339,11 +6412,9 @@ impl<'a> CodeGenerator<'a> {
                             "cmp",
                         )
                         .map_err(|e| e.to_string())?;
-
                     self.builder
                         .build_conditional_branch(cmp, body_bb, exit_bb)
                         .map_err(|e| e.to_string())?;
-
                     // body: get element at index
                     self.builder.position_at_end(body_bb);
                     let index_load2 = self
@@ -6355,7 +6426,7 @@ impl<'a> CodeGenerator<'a> {
                         .build_call(
                             self.module
                                 .get_function("mux_value_list_get_value")
-                                .unwrap(),
+                                .expect("mux_value_list_get_value must be declared in runtime"),
                             &[list_val.into(), index_load2.into()],
                             "list_get_value",
                         )
@@ -6363,18 +6434,16 @@ impl<'a> CodeGenerator<'a> {
                     let value_ptr = get_call
                         .try_as_basic_value()
                         .left()
-                        .unwrap()
+                        .expect("mux_value_list_get_value should return a basic value")
                         .into_pointer_value();
                     // store the Value pointer directly
                     self.builder
                         .build_store(var_alloca, value_ptr)
                         .map_err(|e| e.to_string())?;
-
                     // execute body
                     for stmt in body {
                         self.generate_statement(stmt, Some(function))?;
                     }
-
                     // increment index
                     let one = self.context.i64_type().const_int(1, false);
                     let new_index = self
@@ -6387,18 +6456,15 @@ impl<'a> CodeGenerator<'a> {
                     self.builder
                         .build_unconditional_branch(header_bb)
                         .map_err(|e| e.to_string())?;
-
                     // create continuation block for code after the loop
                     let continue_bb = self
                         .context
                         .append_basic_block(*function, &format!("for_continue_{}", label_id));
-
                     // position exit block to branch to continuation
                     self.builder.position_at_end(exit_bb);
                     self.builder
                         .build_unconditional_branch(continue_bb)
                         .map_err(|e| e.to_string())?;
-
                     // position at continuation block for code after loop
                     self.builder.position_at_end(continue_bb);
                 } else {
@@ -6407,7 +6473,6 @@ impl<'a> CodeGenerator<'a> {
             }
             StatementKind::Match { expr, arms } => {
                 let function = function.ok_or("Match not in function")?;
-
                 // check if match expression is complex (not simple identifier/constructor/field access)
                 let (expr_val, match_expr) = if matches!(
                     &expr.kind,
@@ -6421,25 +6486,21 @@ impl<'a> CodeGenerator<'a> {
                     let temp_val = self.generate_expression(expr)?;
                     let temp_name = format!("match_temp_{}", self.label_counter);
                     self.label_counter += 1;
-
                     // create temporary variable to hold the result
                     let temp_type = self.context.ptr_type(AddressSpace::default());
                     let temp_alloca = self
                         .builder
                         .build_alloca(temp_type, &temp_name)
                         .map_err(|e| e.to_string())?;
-
                     // store the result
                     self.builder
                         .build_store(temp_alloca, temp_val)
                         .map_err(|e| e.to_string())?;
-
                     // get the actual type for the temporary variable
                     let actual_type = self
                         .analyzer
                         .get_expression_type(expr)
                         .map_err(|e| format!("Type inference failed: {}", e))?;
-
                     // add to variables for pattern matching
                     self.variables.insert(
                         temp_name.clone(),
@@ -6449,16 +6510,13 @@ impl<'a> CodeGenerator<'a> {
                             actual_type,
                         ),
                     );
-
                     // create synthetic identifier expression for the temporary
                     let temp_expr = ExpressionNode {
                         kind: ExpressionKind::Identifier(temp_name),
                         span: expr.span,
                     };
-
                     (temp_val, temp_expr)
                 };
-
                 // get the full type of the match expression
                 let match_expr_type = match &match_expr.kind {
                     ExpressionKind::Identifier(name) => {
@@ -6736,7 +6794,10 @@ impl<'a> CodeGenerator<'a> {
                     Some(temp_ptr)
                 };
 
-                let mut current_bb = self.builder.get_insert_block().unwrap();
+                let mut current_bb = self
+                    .builder
+                    .get_insert_block()
+                    .expect("Builder should have an insertion block");
                 let match_id = self.label_counter;
                 self.label_counter += 1;
                 let end_bb = self
@@ -6803,7 +6864,7 @@ impl<'a> CodeGenerator<'a> {
                                     let data_ptr = data_call
                                         .try_as_basic_value()
                                         .left()
-                                        .unwrap()
+                                        .expect("data function should return a basic value")
                                         .into_pointer_value();
 
                                     // extract the actual value based on the variant type
@@ -6866,8 +6927,11 @@ impl<'a> CodeGenerator<'a> {
                             }
                         } else {
                             // custom enum - use variant-specific field information
-                            let struct_type =
-                                self.type_map.get(&enum_name).unwrap().into_struct_type();
+                            let struct_type = self
+                                .type_map
+                                .get(&enum_name)
+                                .ok_or_else(|| format!("Enum {} not found in type map", enum_name))?
+                                .into_struct_type();
                             let field_types_clone = if let Some(variant_fields) =
                                 self.enum_variant_fields.get(&enum_name)
                             {
@@ -6893,7 +6957,9 @@ impl<'a> CodeGenerator<'a> {
                                         .builder
                                         .build_struct_gep(
                                             struct_type,
-                                            temp_ptr_opt.unwrap(),
+                                            temp_ptr_opt.ok_or_else(|| {
+                                                "Temp pointer should be Some".to_string()
+                                            })?,
                                             data_index as u32,
                                             "data_ptr",
                                         )
@@ -7193,11 +7259,18 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(
                             func_new,
-                            &[call.try_as_basic_value().left().unwrap().into()],
+                            &[call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("mux_float_to_string should return a basic value")
+                                .into()],
                             "new_str",
                         )
                         .map_err(|e| e.to_string())?;
-                    Ok(call2.try_as_basic_value().left().unwrap())
+                    Ok(call2
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_new_string_from_cstr should return a basic value"))
                 }
                 "to_float" => {
                     // Convert raw i64 to f64 using LLVM sitofp instruction
@@ -7235,11 +7308,18 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(
                             func_new,
-                            &[call.try_as_basic_value().left().unwrap().into()],
+                            &[call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("mux_float_to_string should return a basic value")
+                                .into()],
                             "new_str",
                         )
                         .map_err(|e| e.to_string())?;
-                    Ok(call2.try_as_basic_value().left().unwrap())
+                    Ok(call2
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_new_string_from_cstr should return a basic value"))
                 }
                 "to_int" => {
                     // float.to_int() - direct LLVM conversion using fptosi
@@ -7278,11 +7358,18 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(
                             func_new,
-                            &[call.try_as_basic_value().left().unwrap().into()],
+                            &[call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("mux_value_to_string should return a basic value")
+                                .into()],
                             "new_str",
                         )
                         .map_err(|e| e.to_string())?;
-                    Ok(call2.try_as_basic_value().left().unwrap())
+                    Ok(call2
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_new_string_from_cstr should return a basic value"))
                 }
                 "to_int" => {
                     // str.to_int() - call mux_string_to_int which returns Result<int, str>
@@ -7297,7 +7384,7 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?
                         .try_as_basic_value()
                         .left()
-                        .unwrap();
+                        .expect("mux_value_to_string should return a basic value");
                     // Now call mux_string_to_int with the C string
                     let func = self
                         .module
@@ -7307,7 +7394,10 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(func, &[cstr.into()], "str_to_int")
                         .map_err(|e| e.to_string())?;
-                    Ok(call.try_as_basic_value().left().unwrap())
+                    Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_string_to_int should return a basic value"))
                 }
                 "to_float" => {
                     // str.to_float() - call mux_string_to_float which returns Result<float, str>
@@ -7322,7 +7412,7 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?
                         .try_as_basic_value()
                         .left()
-                        .unwrap();
+                        .expect("mux_value_to_string should return a basic value");
                     // Now call mux_string_to_float with the C string
                     let func = self
                         .module
@@ -7332,7 +7422,10 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(func, &[cstr.into()], "str_to_float")
                         .map_err(|e| e.to_string())?;
-                    Ok(call.try_as_basic_value().left().unwrap())
+                    Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_string_to_float should return a basic value"))
                 }
                 "length" => {
                     let func = self
@@ -7343,7 +7436,10 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(func, &[obj_value.into()], "str_len")
                         .map_err(|e| e.to_string())?;
-                    Ok(call.try_as_basic_value().left().unwrap())
+                    Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_string_length should return a basic value"))
                 }
                 _ => Err(format!("Method {} not implemented for string", method_name)),
             },
@@ -7392,11 +7488,18 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(
                             func_new,
-                            &[call.try_as_basic_value().left().unwrap().into()],
+                            &[call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("mux_bool_to_string should return a basic value")
+                                .into()],
                             "new_str",
                         )
                         .map_err(|e| e.to_string())?;
-                    Ok(call2.try_as_basic_value().left().unwrap())
+                    Ok(call2
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_new_string_from_cstr should return a basic value"))
                 }
                 "to_int" => {
                     // bool.to_int() - direct LLVM conversion
@@ -7443,11 +7546,18 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(
                             func_new,
-                            &[call.try_as_basic_value().left().unwrap().into()],
+                            &[call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("mux_char_to_string should return a basic value")
+                                .into()],
                             "new_str",
                         )
                         .map_err(|e| e.to_string())?;
-                    Ok(call2.try_as_basic_value().left().unwrap())
+                    Ok(call2
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_new_string_from_cstr should return a basic value"))
                 }
                 "to_int" => {
                     // char.to_int() - call mux_char_to_int which returns Result<int, str>
@@ -7460,7 +7570,10 @@ impl<'a> CodeGenerator<'a> {
                         .builder
                         .build_call(func, &[obj_value.into()], "char_to_int")
                         .map_err(|e| e.to_string())?;
-                    Ok(call.try_as_basic_value().left().unwrap())
+                    Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_char_to_int should return a basic value"))
                 }
                 _ => Err(format!("Method {} not implemented for char", method_name)),
             },
@@ -7488,7 +7601,9 @@ impl<'a> CodeGenerator<'a> {
                 let raw_list = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_list").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_list")
+                            .expect("mux_value_get_list must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_list",
                     )
@@ -7497,9 +7612,15 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_list_get").unwrap(),
+                        self.module
+                            .get_function("mux_list_get")
+                            .expect("mux_list_get must be declared in runtime"),
                         &[
-                            raw_list.try_as_basic_value().left().unwrap().into(),
+                            raw_list
+                                .try_as_basic_value()
+                                .left()
+                                .expect("mux_value_get_list should return a basic value")
+                                .into(),
                             index_val.into(),
                         ],
                         "list_get",
@@ -7509,12 +7630,21 @@ impl<'a> CodeGenerator<'a> {
                 let boxed_call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_from_optional").unwrap(),
-                        &[call.try_as_basic_value().left().unwrap().into()],
+                        self.module
+                            .get_function("mux_value_from_optional")
+                            .expect("mux_value_from_optional must be declared in runtime"),
+                        &[call
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_list_get should return a basic value")
+                            .into()],
                         "optional_as_value",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(boxed_call.try_as_basic_value().left().unwrap())
+                Ok(boxed_call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_value_from_optional should return a basic value"))
             }
             "push_back" => {
                 if args.len() != 1 {
@@ -7537,12 +7667,17 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_list_pop_back_value").unwrap(),
+                        self.module
+                            .get_function("mux_list_pop_back_value")
+                            .expect("mux_list_pop_back_value must be declared in runtime"),
                         &[obj_value.into()],
                         "list_pop_back",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_list_pop_back_value should return a basic value"))
             }
             "push" => {
                 if args.len() != 1 {
@@ -7565,12 +7700,17 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_list_pop_value").unwrap(),
+                        self.module
+                            .get_function("mux_list_pop_value")
+                            .expect("mux_list_pop_value must be declared in runtime"),
                         &[obj_value.into()],
                         "list_pop",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_list_pop_value should return a basic value"))
             }
             "push_front" => {
                 if args.len() != 1 {
@@ -7595,12 +7735,15 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(
                         self.module
                             .get_function("mux_list_pop_front_value")
-                            .unwrap(),
+                            .expect("mux_list_pop_front_value must be declared in runtime"),
                         &[obj_value.into()],
                         "list_pop_front",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_list_pop_front_value should return a basic value"))
             }
             "is_empty" => {
                 if !args.is_empty() {
@@ -7611,7 +7754,9 @@ impl<'a> CodeGenerator<'a> {
                 let raw_list = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_list").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_list")
+                            .expect("mux_value_get_list must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_list",
                     )
@@ -7620,12 +7765,21 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_list_is_empty").unwrap(),
-                        &[raw_list.try_as_basic_value().left().unwrap().into()],
+                        self.module
+                            .get_function("mux_list_is_empty")
+                            .expect("mux_list_is_empty must be declared in runtime"),
+                        &[raw_list
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_value_get_list should return a basic value")
+                            .into()],
                         "list_is_empty",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_list_is_empty should return a basic value"))
             }
             "length" => {
                 if !args.is_empty() {
@@ -7636,7 +7790,9 @@ impl<'a> CodeGenerator<'a> {
                 let raw_list = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_list").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_list")
+                            .expect("mux_value_get_list must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_list",
                     )
@@ -7645,12 +7801,21 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_list_length").unwrap(),
-                        &[raw_list.try_as_basic_value().left().unwrap().into()],
+                        self.module
+                            .get_function("mux_list_length")
+                            .expect("mux_list_length must be declared in runtime"),
+                        &[raw_list
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_value_get_list should return a basic value")
+                            .into()],
                         "list_length",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_list_length should return a basic value"))
             }
             "to_string" => {
                 if !args.is_empty() {
@@ -7660,7 +7825,9 @@ impl<'a> CodeGenerator<'a> {
                 let raw_list = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_list").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_list")
+                            .expect("mux_value_get_list must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_list",
                     )
@@ -7669,8 +7836,14 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_list_to_string").unwrap(),
-                        &[raw_list.try_as_basic_value().left().unwrap().into()],
+                        self.module
+                            .get_function("mux_list_to_string")
+                            .expect("mux_list_to_string must be declared in runtime"),
+                        &[raw_list
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_value_get_list should return a basic value")
+                            .into()],
                         "list_to_str",
                     )
                     .map_err(|e| e.to_string())?;
@@ -7682,11 +7855,18 @@ impl<'a> CodeGenerator<'a> {
                     .builder
                     .build_call(
                         func_new,
-                        &[call.try_as_basic_value().left().unwrap().into()],
+                        &[call
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_list_to_string should return a basic value")
+                            .into()],
                         "new_str",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call2.try_as_basic_value().left().unwrap())
+                Ok(call2
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_new_string_from_cstr should return a basic value"))
             }
             _ => Err(format!("Method {} not implemented for lists", method_name)),
         }
@@ -7719,11 +7899,18 @@ impl<'a> CodeGenerator<'a> {
                     .builder
                     .build_call(
                         func_new,
-                        &[call.try_as_basic_value().left().unwrap().into()],
+                        &[call
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_value_to_string should return a basic value")
+                            .into()],
                         "new_str",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call2.try_as_basic_value().left().unwrap())
+                Ok(call2
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_new_string_from_cstr should return a basic value"))
             }
             "put" => {
                 if args.len() != 2 {
@@ -7734,23 +7921,30 @@ impl<'a> CodeGenerator<'a> {
                 let extract_map = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_map").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_map")
+                            .expect("mux_value_get_map must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_map",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_value_get_map should return a basic value");
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_map_put").unwrap(),
+                        self.module
+                            .get_function("mux_map_put")
+                            .expect("mux_map_put must be declared in runtime"),
                         &[extract_map.into(), key_val.into(), value_val.into()],
                         "map_put",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_map_put should return a basic value"))
             }
             "get" => {
                 if args.len() != 1 {
@@ -7760,36 +7954,42 @@ impl<'a> CodeGenerator<'a> {
                 let extract_map = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_map").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_map")
+                            .expect("mux_value_get_map must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_map",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_value_get_map should return a basic value");
                 let map_get_result = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_map_get").unwrap(),
+                        self.module
+                            .get_function("mux_map_get")
+                            .expect("mux_map_get must be declared in runtime"),
                         &[extract_map.into(), key_val.into()],
                         "map_get",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_map_get should return a basic value");
                 let optional_value = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_from_optional").unwrap(),
+                        self.module
+                            .get_function("mux_value_from_optional")
+                            .expect("mux_value_from_optional must be declared in runtime"),
                         &[map_get_result.into()],
                         "optional_value",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_value_from_optional should return a basic value");
                 Ok(optional_value)
             }
             "contains" => {
@@ -7800,23 +8000,30 @@ impl<'a> CodeGenerator<'a> {
                 let extract_map = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_map").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_map")
+                            .expect("mux_value_get_map must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_map",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_value_get_map should return a basic value");
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_map_contains").unwrap(),
+                        self.module
+                            .get_function("mux_map_contains")
+                            .expect("mux_map_contains must be declared in runtime"),
                         &[extract_map.into(), key_val.into()],
                         "map_contains",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_map_contains should return a basic value"))
             }
             "size" => {
                 if !args.is_empty() {
@@ -7825,23 +8032,30 @@ impl<'a> CodeGenerator<'a> {
                 let extract_map = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_map").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_map")
+                            .expect("mux_value_get_map must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_map",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_value_get_map should return a basic value");
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_map_size").unwrap(),
+                        self.module
+                            .get_function("mux_map_size")
+                            .expect("mux_map_size must be declared in runtime"),
                         &[extract_map.into()],
                         "map_size",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_map_size should return a basic value"))
             }
             "is_empty" => {
                 if !args.is_empty() {
@@ -7850,23 +8064,30 @@ impl<'a> CodeGenerator<'a> {
                 let extract_map = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_map").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_map")
+                            .expect("mux_value_get_map must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_map",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_value_get_map should return a basic value");
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_map_is_empty").unwrap(),
+                        self.module
+                            .get_function("mux_map_is_empty")
+                            .expect("mux_map_is_empty must be declared in runtime"),
                         &[extract_map.into()],
                         "map_is_empty",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_map_is_empty should return a basic value"))
             }
             "remove" => {
                 if args.len() != 1 {
@@ -7876,36 +8097,42 @@ impl<'a> CodeGenerator<'a> {
                 let extract_map = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_get_map").unwrap(),
+                        self.module
+                            .get_function("mux_value_get_map")
+                            .expect("mux_value_get_map must be declared in runtime"),
                         &[obj_value.into()],
                         "extract_map",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_value_get_map should return a basic value");
                 let map_remove_result = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_map_remove").unwrap(),
+                        self.module
+                            .get_function("mux_map_remove")
+                            .expect("mux_map_remove must be declared in runtime"),
                         &[extract_map.into(), key_val.into()],
                         "map_remove",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_map_remove should return a basic value");
                 let optional_value = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_value_from_optional").unwrap(),
+                        self.module
+                            .get_function("mux_value_from_optional")
+                            .expect("mux_value_from_optional must be declared in runtime"),
                         &[map_remove_result.into()],
                         "optional_value",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_value_from_optional should return a basic value");
                 Ok(optional_value)
             }
             _ => Err(format!("Method {} not implemented for maps", method_name)),
@@ -7939,11 +8166,18 @@ impl<'a> CodeGenerator<'a> {
                     .builder
                     .build_call(
                         func_new,
-                        &[call.try_as_basic_value().left().unwrap().into()],
+                        &[call
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_value_to_string should return a basic value")
+                            .into()],
                         "new_str",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call2.try_as_basic_value().left().unwrap())
+                Ok(call2
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_new_string_from_cstr should return a basic value"))
             }
             "add" => {
                 if args.len() != 1 {
@@ -7953,12 +8187,17 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_set_add").unwrap(),
+                        self.module
+                            .get_function("mux_set_add")
+                            .expect("mux_set_add must be declared in runtime"),
                         &[obj_value.into(), elem_val.into()],
                         "set_add",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_set_add should return a basic value"))
             }
             "contains" => {
                 if args.len() != 1 {
@@ -7968,12 +8207,17 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_set_contains").unwrap(),
+                        self.module
+                            .get_function("mux_set_contains")
+                            .expect("mux_set_contains must be declared in runtime"),
                         &[obj_value.into(), elem_val.into()],
                         "set_contains",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_set_contains should return a basic value"))
             }
             "size" => {
                 if !args.is_empty() {
@@ -7982,12 +8226,17 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_set_size").unwrap(),
+                        self.module
+                            .get_function("mux_set_size")
+                            .expect("mux_set_size must be declared in runtime"),
                         &[obj_value.into()],
                         "set_size",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_set_size should return a basic value"))
             }
             "is_empty" => {
                 if !args.is_empty() {
@@ -7996,12 +8245,17 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module.get_function("mux_set_is_empty").unwrap(),
+                        self.module
+                            .get_function("mux_set_is_empty")
+                            .expect("mux_set_is_empty must be declared in runtime"),
                         &[obj_value.into()],
                         "set_is_empty",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call.try_as_basic_value().left().unwrap())
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_set_is_empty should return a basic value"))
             }
             _ => Err(format!("Method {} not implemented for sets", method_name)),
         }
@@ -8035,11 +8289,18 @@ impl<'a> CodeGenerator<'a> {
                     .builder
                     .build_call(
                         func_new,
-                        &[call.try_as_basic_value().left().unwrap().into()],
+                        &[call
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_value_to_string should return a basic value")
+                            .into()],
                         "new_str",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call2.try_as_basic_value().left().unwrap())
+                Ok(call2
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_new_string_from_cstr should return a basic value"))
             }
             _ => Err(format!(
                 "Method {} not implemented for Optionals",
@@ -8096,7 +8357,7 @@ impl<'a> CodeGenerator<'a> {
                 .map_err(|e| e.to_string())?;
                 let call = self
                     .generate_runtime_call("mux_new_string_from_cstr", &[ptr.into()])
-                    .unwrap();
+                    .expect("mux_new_string_from_cstr should always return a value");
                 Ok(call)
             }
             LiteralNode::Char(c) => {
@@ -8958,7 +9219,11 @@ impl<'a> CodeGenerator<'a> {
                             .build_call(
                                 contains_fn,
                                 &[
-                                    raw_list.try_as_basic_value().left().unwrap().into(),
+                                    raw_list
+                                        .try_as_basic_value()
+                                        .left()
+                                        .expect("mux_value_get_list should return a basic value")
+                                        .into(),
                                     item_ptr.into(),
                                 ],
                                 "list_contains",
@@ -8966,7 +9231,7 @@ impl<'a> CodeGenerator<'a> {
                             .map_err(|e| e.to_string())?
                             .try_as_basic_value()
                             .left()
-                            .unwrap();
+                            .expect("mux_list_contains should return a basic value");
 
                         Ok(result)
                     }
@@ -9002,7 +9267,11 @@ impl<'a> CodeGenerator<'a> {
                             .build_call(
                                 contains_fn,
                                 &[
-                                    raw_set.try_as_basic_value().left().unwrap().into(),
+                                    raw_set
+                                        .try_as_basic_value()
+                                        .left()
+                                        .expect("mux_value_get_set should return a basic value")
+                                        .into(),
                                     item_ptr.into(),
                                 ],
                                 "set_contains",
@@ -9010,7 +9279,7 @@ impl<'a> CodeGenerator<'a> {
                             .map_err(|e| e.to_string())?
                             .try_as_basic_value()
                             .left()
-                            .unwrap();
+                            .expect("mux_set_contains should return a basic value");
 
                         Ok(result)
                     }
@@ -9044,7 +9313,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap();
+                                    .expect("mux_string_contains_char should return a basic value");
 
                                 Ok(result)
                             }
@@ -9066,7 +9335,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map_err(|e| e.to_string())?
                                     .try_as_basic_value()
                                     .left()
-                                    .unwrap();
+                                    .expect("mux_string_contains should return a basic value");
 
                                 Ok(result)
                             }
@@ -9474,7 +9743,10 @@ impl<'a> CodeGenerator<'a> {
                 panic!("Function '{}' not found in module", name);
             }
         };
-        let call = self.builder.build_call(func, args, "call").unwrap();
+        let call = self
+            .builder
+            .build_call(func, args, "call")
+            .expect("build_call should always return Some");
         call.try_as_basic_value().left()
     }
 
@@ -9487,22 +9759,22 @@ impl<'a> CodeGenerator<'a> {
                 let i32_val = self
                     .builder
                     .build_int_z_extend(int_val, self.context.i32_type(), "bool_to_i32")
-                    .unwrap();
+                    .expect("bool extension should succeed");
                 let call = self
                     .generate_runtime_call("mux_bool_value", &[i32_val.into()])
-                    .unwrap();
+                    .expect("mux_bool_value should always return a value");
                 call.into_pointer_value()
             } else {
                 // Regular int (i64)
                 let call = self
                     .generate_runtime_call("mux_int_value", &[int_val.into()])
-                    .unwrap();
+                    .expect("mux_int_value should always return a value");
                 call.into_pointer_value()
             }
         } else if val.is_float_value() {
             let call = self
                 .generate_runtime_call("mux_float_value", &[val.into()])
-                .unwrap();
+                .expect("mux_float_value should always return a value");
             call.into_pointer_value()
         } else if val.is_pointer_value() {
             // assume string or already boxed Value (from Map/Set/List literals)
@@ -9914,7 +10186,7 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_new_list should return a basic value");
                 let list_value_fn = self
                     .module
                     .get_function("mux_list_value")
@@ -9925,7 +10197,7 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_list_value should return a basic value");
                 self.builder
                     .build_store(field_ptr, list_val)
                     .map_err(|e| e.to_string())?;
@@ -9942,7 +10214,7 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_new_map should return a basic value");
                 let map_value_fn = self
                     .module
                     .get_function("mux_map_value")
@@ -9953,7 +10225,7 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_map_value should return a basic value");
                 self.builder
                     .build_store(field_ptr, map_val)
                     .map_err(|e| e.to_string())?;
@@ -9970,7 +10242,7 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_new_set should return a basic value");
                 let set_value_fn = self
                     .module
                     .get_function("mux_set_value")
@@ -9981,7 +10253,7 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .unwrap();
+                    .expect("mux_set_value should return a basic value");
                 self.builder
                     .build_store(field_ptr, set_val)
                     .map_err(|e| e.to_string())?;
@@ -10295,7 +10567,7 @@ impl<'a> CodeGenerator<'a> {
         let type_id_val = type_id
             .try_as_basic_value()
             .left()
-            .unwrap()
+            .expect("mux_type_register should return a basic value")
             .into_int_value();
 
         // allocate the object using runtime
@@ -10310,7 +10582,7 @@ impl<'a> CodeGenerator<'a> {
         let obj_value_ptr = obj_ptr
             .try_as_basic_value()
             .left()
-            .unwrap()
+            .expect("mux_alloc_object should return a basic value")
             .into_pointer_value();
 
         // get the object data pointer for field initialization
@@ -10325,7 +10597,7 @@ impl<'a> CodeGenerator<'a> {
         let struct_ptr = data_ptr
             .try_as_basic_value()
             .left()
-            .unwrap()
+            .expect("mux_get_object_ptr should return a basic value")
             .into_pointer_value();
 
         // initialize fields based on their types
@@ -10421,7 +10693,10 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func_val, &call_args, &format!("call_{}", method_name))
             .map_err(|e| e.to_string())?;
 
-        Ok(call.try_as_basic_value().left().unwrap())
+        Ok(call
+            .try_as_basic_value()
+            .left()
+            .expect("method call should return a basic value"))
     }
 
     fn generate_generic_function_call(

@@ -55,7 +55,10 @@ impl fmt::Display for Int {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_int_to_string(i: i64) -> *mut c_char {
     let s = format!("{}", Int(i));
-    CString::new(s).unwrap().into_raw()
+    // Safe: format! produces valid UTF-8 without null bytes
+    CString::new(s)
+        .expect("format output should be valid UTF-8")
+        .into_raw()
 }
 
 /// # Safety

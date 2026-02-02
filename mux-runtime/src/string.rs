@@ -40,9 +40,15 @@ impl fmt::Display for MuxString {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
     if let Value::String(s) = unsafe { &*v } {
-        CString::new(s.clone()).unwrap().into_raw()
+        // Safe: s is a valid UTF-8 String from the Mux runtime
+        CString::new(s.clone())
+            .expect("valid UTF-8 String should convert to CString")
+            .into_raw()
     } else {
-        CString::new("".to_string()).unwrap().into_raw() // Return empty string instead of panicking
+        // Safe: empty string is valid UTF-8
+        CString::new("".to_string())
+            .expect("empty string should convert to CString")
+            .into_raw()
     }
 }
 
@@ -51,9 +57,15 @@ pub unsafe extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_value_get_string(v: *mut Value) -> *mut c_char {
     if let Value::String(s) = unsafe { &*v } {
-        CString::new(s.clone()).unwrap().into_raw()
+        // Safe: s is a valid UTF-8 String from the Mux runtime
+        CString::new(s.clone())
+            .expect("valid UTF-8 String should convert to CString")
+            .into_raw()
     } else {
-        CString::new("".to_string()).unwrap().into_raw() // Return empty string instead of panicking
+        // Safe: empty string is valid UTF-8
+        CString::new("".to_string())
+            .expect("empty string should convert to CString")
+            .into_raw()
     }
 }
 
@@ -87,7 +99,10 @@ pub extern "C" fn mux_string_concat(a: *const c_char, b: *const c_char) -> *mut 
     let a_str = unsafe { CStr::from_ptr(a).to_string_lossy() };
     let b_str = unsafe { CStr::from_ptr(b).to_string_lossy() };
     let result = MuxString(a_str.to_string()).concat(&MuxString(b_str.to_string()));
-    CString::new(result.0).unwrap().into_raw()
+    // Safe: result is a valid UTF-8 String
+    CString::new(result.0)
+        .expect("valid UTF-8 String should convert to CString")
+        .into_raw()
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -131,8 +146,9 @@ pub extern "C" fn mux_string_contains_char(haystack: *const Value, needle: i64) 
 pub extern "C" fn mux_string_to_string(s: *const c_char) -> *mut c_char {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
+    // Safe: rust_str is lossily converted but valid UTF-8
     std::ffi::CString::new(rust_str.as_ref())
-        .unwrap()
+        .expect("lossily converted string should contain no null bytes")
         .into_raw()
 }
 
@@ -203,8 +219,14 @@ pub extern "C" fn mux_char_to_int(c: i64) -> *mut MuxResult {
 pub extern "C" fn mux_char_to_string(c: i64) -> *mut c_char {
     if let Some(ch) = char::from_u32(c as u32) {
         let s = ch.to_string();
-        CString::new(s).unwrap().into_raw()
+        // Safe: char::to_string() returns valid UTF-8
+        CString::new(s)
+            .expect("char conversion should produce valid UTF-8")
+            .into_raw()
     } else {
-        CString::new("").unwrap().into_raw()
+        // Safe: empty string is valid UTF-8 (invalid char converted to empty)
+        CString::new("")
+            .expect("empty string should convert to CString")
+            .into_raw()
     }
 }
