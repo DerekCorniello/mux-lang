@@ -1,560 +1,24 @@
+// Module declarations
+pub mod error;
+pub mod format;
+pub mod symbol_table;
+pub mod types;
+pub mod unifier;
+
+// Re-exports for public API
+pub use error::SemanticError;
+pub use format::{format_binary_op, format_type};
+#[allow(unused_imports)]
+pub use format::{format_span_location, format_unary_op};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
+pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
+pub use unifier::Unifier;
+
+// Internal imports
+use crate::ast::*;
 use crate::lexer::Span;
-use crate::parser::PrimitiveType;
-use crate::parser::*;
-use lazy_static::lazy_static;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
-
-pub fn format_type(t: &Type) -> String {
-    match t {
-        Type::Primitive(p) => format_primitive_type(p),
-        Type::List(inner) => format!("[{}]", format_type(inner)),
-        Type::Map(k, v) => format!("{{{}: {}}}", format_type(k), format_type(v)),
-        Type::Set(inner) => format!("{{{}}}", format_type(inner)),
-        Type::Optional(inner) => format!("Optional<{}>", format_type(inner)),
-        Type::Reference(inner) => format!("&{}", format_type(inner)),
-        Type::Void => "void".to_string(),
-        Type::Never => "never".to_string(),
-        Type::EmptyList => "[?]".to_string(),
-        Type::EmptyMap => "{:}".to_string(),
-        Type::EmptySet => "{?}".to_string(),
-        Type::Function {
-            params,
-            returns,
-            default_count: _,
-        } => {
-            let params_str = params
-                .iter()
-                .map(format_type)
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("fn({params_str}) -> {}", format_type(returns))
-        }
-        Type::Named(name, args) => {
-            if args.is_empty() {
-                name.clone()
-            } else {
-                let args_str = args.iter().map(format_type).collect::<Vec<_>>().join(", ");
-                format!("{name}<{args_str}>")
-            }
-        }
-        Type::Variable(name) | Type::Generic(name) => name.clone(),
-        Type::Instantiated(name, args) => {
-            let args_str = args.iter().map(format_type).collect::<Vec<_>>().join(", ");
-            format!("{name}<{args_str}>")
-        }
-        Type::Module(name) => format!("module:{name}"),
-    }
-}
-
-fn format_primitive_type(p: &PrimitiveType) -> String {
-    match p {
-        PrimitiveType::Int => "int".to_string(),
-        PrimitiveType::Float => "float".to_string(),
-        PrimitiveType::Bool => "bool".to_string(),
-        PrimitiveType::Char => "char".to_string(),
-        PrimitiveType::Str => "string".to_string(),
-        PrimitiveType::Void => "void".to_string(),
-        PrimitiveType::Auto => "auto".to_string(),
-    }
-}
-
-pub fn format_binary_op(op: &BinaryOp) -> String {
-    match op {
-        BinaryOp::Add => "+".to_string(),
-        BinaryOp::Subtract => "-".to_string(),
-        BinaryOp::Multiply => "*".to_string(),
-        BinaryOp::Divide => "/".to_string(),
-        BinaryOp::Modulo => "%".to_string(),
-        BinaryOp::Exponent => "**".to_string(),
-        BinaryOp::Equal => "==".to_string(),
-        BinaryOp::NotEqual => "!=".to_string(),
-        BinaryOp::Less => "<".to_string(),
-        BinaryOp::LessEqual => "<=".to_string(),
-        BinaryOp::Greater => ">".to_string(),
-        BinaryOp::GreaterEqual => ">=".to_string(),
-        BinaryOp::LogicalAnd => "&&".to_string(),
-        BinaryOp::LogicalOr => "||".to_string(),
-        BinaryOp::In => "in".to_string(),
-        BinaryOp::Assign => "=".to_string(),
-        BinaryOp::AddAssign => "+=".to_string(),
-        BinaryOp::SubtractAssign => "-=".to_string(),
-        BinaryOp::MultiplyAssign => "*=".to_string(),
-        BinaryOp::DivideAssign => "/=".to_string(),
-        BinaryOp::ModuloAssign => "%=".to_string(),
-    }
-}
-
-#[allow(unused)]
-pub fn format_unary_op(op: &UnaryOp) -> String {
-    match op {
-        UnaryOp::Not => "!".to_string(),
-        UnaryOp::Neg => "-".to_string(),
-        UnaryOp::Ref => "&".to_string(),
-        UnaryOp::Deref => "*".to_string(),
-        UnaryOp::Incr => "++".to_string(),
-        UnaryOp::Decr => "--".to_string(),
-    }
-}
-
-pub fn format_span_location(span: &Span) -> String {
-    let row = span.row_start;
-    let col = span.col_start;
-    format!("{row}:{col}")
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SymbolKind {
-    Function,
-    Variable,
-    Class,
-    Interface,
-    Enum,
-    Constant,
-    Import,
-    Type, // For generic type parameters
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Symbol {
-    pub kind: SymbolKind,
-    pub span: Span,
-    pub type_: Option<Type>,
-    pub interfaces: std::collections::HashMap<String, std::collections::HashMap<String, MethodSig>>,
-    pub methods: std::collections::HashMap<String, MethodSig>,
-    pub fields: std::collections::HashMap<String, (Type, bool)>, // (Type, is_const)
-    pub type_params: Vec<(String, Vec<String>)>,
-    pub original_name: Option<String>, // For imported symbols with aliases, stores the original source name
-    pub llvm_name: Option<String>,     // For imported symbols, stores the mangled LLVM name
-    pub default_param_count: usize, // Number of parameters with default values (must be at the end)
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Type {
-    Primitive(PrimitiveType),
-    List(Box<Type>),
-    Map(Box<Type>, Box<Type>),
-    Set(Box<Type>),
-
-    Optional(Box<Type>),
-    Reference(Box<Type>),
-    Void,
-    Never,
-    EmptyList,
-    EmptyMap,
-    EmptySet,
-    Function {
-        params: Vec<Type>,
-        returns: Box<Type>,
-        default_count: usize, // Number of parameters with default values (must be at the end)
-    },
-    Named(String, Vec<Type>),
-    Variable(String),
-    Generic(String), // Generic parameter like "T", "U"
-    // used in codegen for concrete instantiations of generic types
-    #[allow(dead_code)]
-    Instantiated(String, Vec<Type>), // Concrete instantiation like "Pair<string, bool>"
-    Module(String), // Module namespace (e.g., "shapes" from "import shapes")
-}
-
-#[derive(Debug, Clone)]
-pub struct GenericContext {
-    pub type_params: HashMap<String, Type>, // T -> string, U -> bool
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MethodSig {
-    pub params: Vec<Type>,
-    pub return_type: Type,
-    pub is_static: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct BuiltInSig {
-    pub params: Vec<Type>,
-    pub return_type: Type,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Unifier {
-    pub substitutions: std::collections::HashMap<String, Type>,
-}
-
-impl Unifier {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    // unifies two types, returning an error with the provided span on mismatch.
-    pub fn unify(&mut self, a: &Type, b: &Type, span: Span) -> Result<(), SemanticError> {
-        match (a, b) {
-            (Type::Variable(var), t) | (t, Type::Variable(var)) => {
-                // If t is the same type variable, they're compatible
-                if let Type::Variable(tvar) = t {
-                    if tvar == var {
-                        return Ok(());
-                    }
-                }
-                if let Some(existing) = self.substitutions.get(var).cloned() {
-                    self.unify(&existing, t, span)?;
-                } else {
-                    // occurs check, ensure var not in t (but not if t is the same variable)
-                    if self.occurs(var, t) {
-                        return Err(SemanticError {
-                            message: format!(
-                                "Recursive type: {} occurs in {}",
-                                var,
-                                format_type(t)
-                            ),
-                            span,
-                        });
-                    }
-                    self.substitutions.insert(var.clone(), t.clone());
-                }
-            }
-            (Type::Primitive(p1), Type::Primitive(p2)) if p1 == p2 => {}
-            (Type::Named(n1, args1), Type::Named(n2, args2))
-                if n1 == n2 && args1.len() == args2.len() =>
-            {
-                for (a1, a2) in args1.iter().zip(args2) {
-                    self.unify(a1, a2, span)?;
-                }
-            }
-            (
-                Type::Function {
-                    params: p1,
-                    returns: r1,
-                    ..
-                },
-                Type::Function {
-                    params: p2,
-                    returns: r2,
-                    ..
-                },
-            ) if p1.len() == p2.len() => {
-                for (a1, a2) in p1.iter().zip(p2) {
-                    self.unify(a1, a2, span)?;
-                }
-                self.unify(r1, r2, span)?;
-            }
-            (Type::Reference(t1), Type::Reference(t2)) => self.unify(t1, t2, span)?,
-            (Type::List(t1), Type::List(t2)) => self.unify(t1, t2, span)?,
-            (Type::Map(k1, v1), Type::Map(k2, v2)) => {
-                self.unify(k1, k2, span)?;
-                self.unify(v1, v2, span)?;
-            }
-            (Type::Set(t1), Type::Set(t2)) => self.unify(t1, t2, span)?,
-
-            (Type::Optional(t1), Type::Optional(t2)) => self.unify(t1, t2, span)?,
-            (Type::Void, Type::Void) => {}
-            (Type::EmptyList, Type::EmptyList) => {}
-            (Type::EmptyMap, Type::EmptyMap) => {}
-            (Type::EmptySet, Type::EmptySet) => {}
-            (Type::List(_), Type::EmptyList) | (Type::EmptyList, Type::List(_)) => {}
-            (Type::Map(_, _), Type::EmptyMap) | (Type::EmptyMap, Type::Map(_, _)) => {}
-            (Type::Set(_), Type::EmptySet) | (Type::EmptySet, Type::Set(_)) => {}
-            (Type::Map(_, _), Type::EmptySet) | (Type::EmptySet, Type::Map(_, _)) => {}
-            (Type::Never, _) => {}
-            (_, Type::Never) => {}
-            _ => {
-                return Err(SemanticError::new(
-                    format!(
-                        "Type mismatch: expected {}, got {}",
-                        format_type(a),
-                        format_type(b)
-                    ),
-                    span,
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    #[allow(clippy::only_used_in_recursion)]
-    fn occurs(&self, var: &str, t: &Type) -> bool {
-        match t {
-            Type::Variable(v) if v == var => true,
-            Type::Named(_, args) => args.iter().any(|arg| self.occurs(var, arg)),
-            Type::Function {
-                params, returns, ..
-            } => params.iter().any(|p| self.occurs(var, p)) || self.occurs(var, returns),
-            Type::Reference(inner)
-            | Type::List(inner)
-            | Type::Set(inner)
-            | Type::Optional(inner) => self.occurs(var, inner),
-            Type::Map(k, v) => self.occurs(var, k) || self.occurs(var, v),
-
-            _ => false,
-        }
-    }
-
-    pub fn apply(&self, t: &Type) -> Type {
-        match t {
-            Type::Variable(var) => self
-                .substitutions
-                .get(var)
-                .cloned()
-                .unwrap_or_else(|| t.clone()),
-            Type::Named(name, args) => {
-                let applied_args: Vec<Type> = args.iter().map(|arg| self.apply(arg)).collect();
-                Type::Named(name.clone(), applied_args)
-            }
-            Type::Function {
-                params,
-                returns,
-                default_count,
-            } => Type::Function {
-                params: params.iter().map(|p| self.apply(p)).collect(),
-                returns: Box::new(self.apply(returns)),
-                default_count: *default_count,
-            },
-            Type::Reference(inner) => Type::Reference(Box::new(self.apply(inner))),
-            Type::List(inner) => Type::List(Box::new(self.apply(inner))),
-            Type::Map(k, v) => Type::Map(Box::new(self.apply(k)), Box::new(self.apply(v))),
-            Type::Set(inner) => Type::Set(Box::new(self.apply(inner))),
-            Type::Optional(inner) => Type::Optional(Box::new(self.apply(inner))),
-            _ => t.clone(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct SymbolTable {
-    scopes: Vec<Rc<RefCell<Scope>>>,
-    all_symbols: std::collections::HashMap<String, Symbol>,
-}
-
-#[derive(Debug, Default)]
-struct Scope {
-    symbols: HashMap<String, Symbol>,
-    children: Vec<Rc<RefCell<Scope>>>,
-}
-
-lazy_static! {
-    pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
-        let mut m = HashMap::new();
-        // int functions
-        m.insert("int_to_string", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("int_to_float", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("int_add", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_sub", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_mul", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_div", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_rem", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_eq", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Bool),
-        });
-        m.insert("int_lt", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Bool),
-        });
-        // float functions
-        m.insert("float_to_string", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("float_to_int", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("float_add", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        // string functions
-        m.insert("string_to_int", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("string_to_float", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("string_concat", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str), Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("string_length", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        // bool functions
-        m.insert("bool_to_string", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Bool)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("bool_to_int", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Bool)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        // math functions
-        m.insert("math_pow", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_sqrt", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_sin", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_cos", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        // io functions
-        m.insert("print", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Void,
-        });
-        m.insert("read_line", BuiltInSig {
-            params: vec![],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        // std functions
-        m.insert("range", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::List(Box::new(Type::Primitive(PrimitiveType::Int))),
-        });
-        m.insert("Some", BuiltInSig {
-            params: vec![Type::Variable("T".to_string())],
-            return_type: Type::Optional(Box::new(Type::Variable("T".to_string()))),
-        });
-
-        m.insert("None", BuiltInSig {
-            params: vec![],
-            return_type: Type::Optional(Box::new(Type::Void)),
-        });
-        m
-    };
-}
-
-impl Default for SymbolTable {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-impl SymbolTable {
-    pub fn new() -> Self {
-        let root = Rc::new(RefCell::new(Scope::default()));
-        SymbolTable {
-            scopes: vec![root],
-            all_symbols: std::collections::HashMap::new(),
-        }
-    }
-
-    pub fn push_scope(&mut self) -> Result<(), SemanticError> {
-        let new_scope = Rc::new(RefCell::new(Scope::default()));
-        self.scopes
-            .last()
-            .expect("at least global scope should exist")
-            .borrow_mut()
-            .children
-            .push(Rc::clone(&new_scope));
-        self.scopes.push(new_scope);
-        Ok(())
-    }
-
-    pub fn pop_scope(&mut self) -> Result<(), SemanticError> {
-        if self.scopes.len() <= 1 {
-            return Err(SemanticError {
-                message: "Cannot pop the global scope".into(),
-                span: Span::new(0, 0), // Internal error, no user span available
-            });
-        }
-        self.scopes.pop();
-        Ok(())
-    }
-
-    pub fn exists(&self, name: &str) -> bool {
-        // For variable/constant lookups, only check the scope stack (not global)
-        // For other symbol kinds (functions, classes, etc.), check global too
-        if self.get_cloned(name).is_some() {
-            return true;
-        }
-
-        // Only consider symbols that are currently in scope.
-        // Global `all_symbols` is intentionally ignored here to prevent
-        // out-of-scope symbols from being treated as visible.
-        self.get_cloned(name).is_some()
-    }
-
-    pub fn add_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {
-        if self.scopes.is_empty() {
-            return Err(SemanticError {
-                message: "No active scope".into(),
-                span: Span::new(0, 0), // Internal error, no user span available
-            });
-        }
-
-        let current = self
-            .scopes
-            .last()
-            .expect("at least global scope should exist");
-        let mut current_borrow = current.borrow_mut();
-
-        if current_borrow.symbols.contains_key(name) {
-            return Err(SemanticError {
-                message: format!("Duplicate declaration of '{}'", name),
-                span: symbol.span,
-            });
-        }
-
-        current_borrow
-            .symbols
-            .insert(name.to_string(), symbol.clone());
-        // Add all symbols to all_symbols for codegen lookups
-        // Note: This can cause name collisions for local variables across different functions,
-        // but it's needed because codegen calls get_expression_type after scopes are popped.
-        // For the collision case in generic methods, codegen should use expression types directly.
-        if name != "self" {
-            self.all_symbols.insert(name.to_string(), symbol);
-        }
-        Ok(())
-    }
-
-    pub fn lookup(&self, name: &str) -> Option<Symbol> {
-        if let Some(symbol) = self.all_symbols.get(name) {
-            return Some(symbol.clone());
-        }
-        None
-    }
-
-    pub fn get_cloned(&self, name: &str) -> Option<Symbol> {
-        for scope in self.scopes.iter().rev() {
-            let scope_borrow = scope.borrow();
-            if let Some(symbol) = scope_borrow.symbols.get(name) {
-                return Some(symbol.clone());
-            }
-        }
-        None
-    }
-}
 
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
@@ -774,23 +238,23 @@ impl SemanticAnalyzer {
     pub fn resolve_type(&self, type_node: &TypeNode) -> Result<Type, SemanticError> {
         match &type_node.kind {
             TypeKind::Primitive(prim) => match prim {
-                crate::parser::PrimitiveType::Int => {
-                    Ok(Type::Primitive(crate::parser::PrimitiveType::Int))
+                crate::ast::PrimitiveType::Int => {
+                    Ok(Type::Primitive(crate::ast::PrimitiveType::Int))
                 }
-                crate::parser::PrimitiveType::Float => {
-                    Ok(Type::Primitive(crate::parser::PrimitiveType::Float))
+                crate::ast::PrimitiveType::Float => {
+                    Ok(Type::Primitive(crate::ast::PrimitiveType::Float))
                 }
-                crate::parser::PrimitiveType::Bool => {
-                    Ok(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                crate::ast::PrimitiveType::Bool => {
+                    Ok(Type::Primitive(crate::ast::PrimitiveType::Bool))
                 }
-                crate::parser::PrimitiveType::Char => {
-                    Ok(Type::Primitive(crate::parser::PrimitiveType::Char))
+                crate::ast::PrimitiveType::Char => {
+                    Ok(Type::Primitive(crate::ast::PrimitiveType::Char))
                 }
-                crate::parser::PrimitiveType::Str => {
-                    Ok(Type::Primitive(crate::parser::PrimitiveType::Str))
+                crate::ast::PrimitiveType::Str => {
+                    Ok(Type::Primitive(crate::ast::PrimitiveType::Str))
                 }
-                crate::parser::PrimitiveType::Void => Ok(Type::Void),
-                crate::parser::PrimitiveType::Auto => Err(SemanticError {
+                crate::ast::PrimitiveType::Void => Ok(Type::Void),
+                crate::ast::PrimitiveType::Auto => Err(SemanticError {
                     message: "The 'auto' type is not allowed in this context".into(),
                     span: type_node.span,
                 }),
@@ -869,11 +333,11 @@ impl SemanticAnalyzer {
     pub fn get_expression_type(&mut self, expr: &ExpressionNode) -> Result<Type, SemanticError> {
         match &expr.kind {
             ExpressionKind::Literal(lit) => match lit {
-                LiteralNode::Integer(_) => Ok(Type::Primitive(crate::parser::PrimitiveType::Int)),
-                LiteralNode::Float(_) => Ok(Type::Primitive(crate::parser::PrimitiveType::Float)),
-                LiteralNode::String(_) => Ok(Type::Primitive(crate::parser::PrimitiveType::Str)),
-                LiteralNode::Boolean(_) => Ok(Type::Primitive(crate::parser::PrimitiveType::Bool)),
-                LiteralNode::Char(_) => Ok(Type::Primitive(crate::parser::PrimitiveType::Char)),
+                LiteralNode::Integer(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Int)),
+                LiteralNode::Float(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Float)),
+                LiteralNode::String(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Str)),
+                LiteralNode::Boolean(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Bool)),
+                LiteralNode::Char(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Char)),
             },
             ExpressionKind::None => Ok(Type::Optional(Box::new(Type::Never))),
             ExpressionKind::Identifier(name) => {
@@ -927,8 +391,8 @@ impl SemanticAnalyzer {
                 let left_type = self.get_expression_type(left)?;
                 let right_type = self.get_expression_type(right)?;
 
-                if *op == crate::parser::BinaryOp::Assign {
-                    if let crate::parser::ExpressionKind::Identifier(name) = &left.kind {
+                if *op == crate::ast::BinaryOp::Assign {
+                    if let crate::ast::ExpressionKind::Identifier(name) = &left.kind {
                         let symbol =
                             self.symbol_table
                                 .lookup(name)
@@ -955,7 +419,7 @@ impl SemanticAnalyzer {
                         } else {
                             self.check_type_compatibility(var_type, &right_type, expr.span)?;
                         }
-                    } else if let crate::parser::ExpressionKind::FieldAccess {
+                    } else if let crate::ast::ExpressionKind::FieldAccess {
                         expr: obj_expr,
                         field,
                     } = &left.kind
@@ -993,8 +457,8 @@ impl SemanticAnalyzer {
                                 }
                             }
                         }
-                    } else if let crate::parser::ExpressionKind::Unary {
-                        op: crate::parser::UnaryOp::Deref,
+                    } else if let crate::ast::ExpressionKind::Unary {
+                        op: crate::ast::UnaryOp::Deref,
                         op_span: _,
                         expr: _,
                         postfix: _,
@@ -1009,13 +473,13 @@ impl SemanticAnalyzer {
                     Ok(right_type) // assignment returns the assigned value
                 } else if matches!(
                     op,
-                    crate::parser::BinaryOp::AddAssign
-                        | crate::parser::BinaryOp::SubtractAssign
-                        | crate::parser::BinaryOp::MultiplyAssign
-                        | crate::parser::BinaryOp::DivideAssign
-                        | crate::parser::BinaryOp::ModuloAssign
+                    crate::ast::BinaryOp::AddAssign
+                        | crate::ast::BinaryOp::SubtractAssign
+                        | crate::ast::BinaryOp::MultiplyAssign
+                        | crate::ast::BinaryOp::DivideAssign
+                        | crate::ast::BinaryOp::ModuloAssign
                 ) {
-                    if let crate::parser::ExpressionKind::Identifier(name) = &left.kind {
+                    if let crate::ast::ExpressionKind::Identifier(name) = &left.kind {
                         let symbol =
                             self.symbol_table
                                 .lookup(name)
@@ -1032,7 +496,7 @@ impl SemanticAnalyzer {
                                 "Constants cannot be modified after initialization",
                             ));
                         }
-                    } else if let crate::parser::ExpressionKind::FieldAccess {
+                    } else if let crate::ast::ExpressionKind::FieldAccess {
                         expr: obj_expr,
                         field,
                     } = &left.kind
@@ -1054,20 +518,20 @@ impl SemanticAnalyzer {
                                     }
 
                                     let base_op = match op {
-                                        crate::parser::BinaryOp::AddAssign => {
-                                            crate::parser::BinaryOp::Add
+                                        crate::ast::BinaryOp::AddAssign => {
+                                            crate::ast::BinaryOp::Add
                                         }
-                                        crate::parser::BinaryOp::SubtractAssign => {
-                                            crate::parser::BinaryOp::Subtract
+                                        crate::ast::BinaryOp::SubtractAssign => {
+                                            crate::ast::BinaryOp::Subtract
                                         }
-                                        crate::parser::BinaryOp::MultiplyAssign => {
-                                            crate::parser::BinaryOp::Multiply
+                                        crate::ast::BinaryOp::MultiplyAssign => {
+                                            crate::ast::BinaryOp::Multiply
                                         }
-                                        crate::parser::BinaryOp::DivideAssign => {
-                                            crate::parser::BinaryOp::Divide
+                                        crate::ast::BinaryOp::DivideAssign => {
+                                            crate::ast::BinaryOp::Divide
                                         }
-                                        crate::parser::BinaryOp::ModuloAssign => {
-                                            crate::parser::BinaryOp::Modulo
+                                        crate::ast::BinaryOp::ModuloAssign => {
+                                            crate::ast::BinaryOp::Modulo
                                         }
                                         _ => unreachable!(),
                                     };
@@ -1093,8 +557,8 @@ impl SemanticAnalyzer {
                                 }
                             }
                         }
-                    } else if let crate::parser::ExpressionKind::Unary {
-                        op: crate::parser::UnaryOp::Deref,
+                    } else if let crate::ast::ExpressionKind::Unary {
+                        op: crate::ast::UnaryOp::Deref,
                         op_span: _,
                         expr: _,
                         postfix: _,
@@ -1103,15 +567,11 @@ impl SemanticAnalyzer {
                     }
 
                     let base_op = match op {
-                        crate::parser::BinaryOp::AddAssign => crate::parser::BinaryOp::Add,
-                        crate::parser::BinaryOp::SubtractAssign => {
-                            crate::parser::BinaryOp::Subtract
-                        }
-                        crate::parser::BinaryOp::MultiplyAssign => {
-                            crate::parser::BinaryOp::Multiply
-                        }
-                        crate::parser::BinaryOp::DivideAssign => crate::parser::BinaryOp::Divide,
-                        crate::parser::BinaryOp::ModuloAssign => crate::parser::BinaryOp::Modulo,
+                        crate::ast::BinaryOp::AddAssign => crate::ast::BinaryOp::Add,
+                        crate::ast::BinaryOp::SubtractAssign => crate::ast::BinaryOp::Subtract,
+                        crate::ast::BinaryOp::MultiplyAssign => crate::ast::BinaryOp::Multiply,
+                        crate::ast::BinaryOp::DivideAssign => crate::ast::BinaryOp::Divide,
+                        crate::ast::BinaryOp::ModuloAssign => crate::ast::BinaryOp::Modulo,
                         _ => unreachable!(),
                     };
 
@@ -1149,12 +609,12 @@ impl SemanticAnalyzer {
             ExpressionKind::Unary {
                 expr, op, op_span, ..
             } => match op {
-                UnaryOp::Not => Ok(Type::Primitive(crate::parser::PrimitiveType::Bool)),
+                UnaryOp::Not => Ok(Type::Primitive(crate::ast::PrimitiveType::Bool)),
                 UnaryOp::Neg => {
                     let operand_type = self.get_expression_type(expr)?;
                     match operand_type {
-                        Type::Primitive(crate::parser::PrimitiveType::Int)
-                        | Type::Primitive(crate::parser::PrimitiveType::Float) => Ok(operand_type),
+                        Type::Primitive(crate::ast::PrimitiveType::Int)
+                        | Type::Primitive(crate::ast::PrimitiveType::Float) => Ok(operand_type),
                         _ => Err(SemanticError {
                             message: "Negation operator requires a numeric operand".into(),
                             span: *op_span,
@@ -1178,7 +638,7 @@ impl SemanticAnalyzer {
                 }
                 UnaryOp::Incr | UnaryOp::Decr => {
                     // Check if trying to modify a constant
-                    if let crate::parser::ExpressionKind::Identifier(name) = &expr.kind {
+                    if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
                         if let Some(symbol) = self.symbol_table.lookup(name) {
                             if symbol.kind == SymbolKind::Constant {
                                 return Err(SemanticError::with_help(
@@ -1188,7 +648,7 @@ impl SemanticAnalyzer {
                                 ));
                             }
                         }
-                    } else if let crate::parser::ExpressionKind::FieldAccess {
+                    } else if let crate::ast::ExpressionKind::FieldAccess {
                         expr: obj_expr,
                         field,
                     } = &expr.kind
@@ -1210,8 +670,8 @@ impl SemanticAnalyzer {
                                 }
                             }
                         }
-                    } else if let crate::parser::ExpressionKind::Unary {
-                        op: crate::parser::UnaryOp::Deref,
+                    } else if let crate::ast::ExpressionKind::Unary {
+                        op: crate::ast::UnaryOp::Deref,
                         op_span: _,
                         expr: _,
                         postfix: _,
@@ -1223,7 +683,7 @@ impl SemanticAnalyzer {
 
                     let operand_type = self.get_expression_type(expr)?;
                     match operand_type {
-                        Type::Primitive(crate::parser::PrimitiveType::Int) => Ok(operand_type),
+                        Type::Primitive(crate::ast::PrimitiveType::Int) => Ok(operand_type),
                         _ => Err(SemanticError {
                             message: "Increment/decrement operators require an int operand".into(),
                             span: *op_span,
@@ -2280,12 +1740,12 @@ impl SemanticAnalyzer {
             match right_type {
                 Type::List(_) | Type::Set(_) => {
                     // For list and set, left operand should be compatible with element type
-                    Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                    Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
                 }
                 Type::Map(key_type, _) => {
                     // For map, left operand should be compatible with key type
                     if left_type == key_type.as_ref() {
-                        Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                        Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
                     } else {
                         None
                     }
@@ -2296,7 +1756,7 @@ impl SemanticAnalyzer {
                         left_type,
                         Type::Primitive(PrimitiveType::Char | PrimitiveType::Str)
                     ) {
-                        Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                        Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
                     } else {
                         None
                     }
@@ -2345,7 +1805,7 @@ impl SemanticAnalyzer {
                 }
                 BinaryOp::Equal | BinaryOp::NotEqual => {
                     // equality is supported for all types
-                    Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                    Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
                 }
                 BinaryOp::Less
                 | BinaryOp::LessEqual
@@ -2359,7 +1819,7 @@ impl SemanticAnalyzer {
                         )
                     ) || self.type_implements_interface(left_type, "Comparable")
                     {
-                        Some(Type::Primitive(crate::parser::PrimitiveType::Bool))
+                        Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
                     } else {
                         None
                     }
@@ -3275,7 +2735,7 @@ impl SemanticAnalyzer {
                 return Ok(());
             }
             StatementKind::Import { module_path, spec } => {
-                use crate::parser::ImportSpec;
+                use crate::ast::ImportSpec;
 
                 // Handle std library specially
                 if module_path.starts_with("std.") {
@@ -3598,7 +3058,7 @@ impl SemanticAnalyzer {
                     UnaryOp::Not => {
                         if !matches!(
                             operand_type,
-                            Type::Primitive(crate::parser::PrimitiveType::Bool)
+                            Type::Primitive(crate::ast::PrimitiveType::Bool)
                         ) {
                             return Err(SemanticError {
                                 message: "Logical 'not' operator requires a boolean operand".into(),
@@ -3609,8 +3069,8 @@ impl SemanticAnalyzer {
                     UnaryOp::Neg => {
                         if !matches!(
                             operand_type,
-                            Type::Primitive(crate::parser::PrimitiveType::Int)
-                                | Type::Primitive(crate::parser::PrimitiveType::Float)
+                            Type::Primitive(crate::ast::PrimitiveType::Int)
+                                | Type::Primitive(crate::ast::PrimitiveType::Float)
                         ) {
                             return Err(SemanticError {
                                 message: "Negation operator requires a numeric operand".into(),
@@ -3624,7 +3084,7 @@ impl SemanticAnalyzer {
                     UnaryOp::Incr | UnaryOp::Decr => {
                         if !matches!(
                             operand_type,
-                            Type::Primitive(crate::parser::PrimitiveType::Int)
+                            Type::Primitive(crate::ast::PrimitiveType::Int)
                         ) {
                             return Err(SemanticError {
                                 message: "Increment/decrement operators require an int operand"
@@ -3634,7 +3094,7 @@ impl SemanticAnalyzer {
                         }
 
                         // Check if trying to modify a constant
-                        if let crate::parser::ExpressionKind::Identifier(name) = &expr.kind {
+                        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
                             if let Some(symbol) = self.symbol_table.lookup(name) {
                                 if symbol.kind == SymbolKind::Constant {
                                     return Err(SemanticError::with_help(
@@ -3646,7 +3106,7 @@ impl SemanticAnalyzer {
                             }
                         }
 
-                        if let crate::parser::ExpressionKind::FieldAccess {
+                        if let crate::ast::ExpressionKind::FieldAccess {
                             expr: obj_expr,
                             field,
                         } = &expr.kind
@@ -3726,10 +3186,7 @@ impl SemanticAnalyzer {
                     }
                 }
                 let index_type = self.get_expression_type(index)?;
-                if !matches!(
-                    index_type,
-                    Type::Primitive(crate::parser::PrimitiveType::Int)
-                ) {
+                if !matches!(index_type, Type::Primitive(crate::ast::PrimitiveType::Int)) {
                     return Err(SemanticError {
                         message: "List index must be an integer".into(),
                         span: index.span,
@@ -3816,10 +3273,7 @@ impl SemanticAnalyzer {
                 self.analyze_expression(else_expr)?;
                 // type check if expression
                 let cond_type = self.get_expression_type(cond)?;
-                if !matches!(
-                    cond_type,
-                    Type::Primitive(crate::parser::PrimitiveType::Bool)
-                ) {
+                if !matches!(cond_type, Type::Primitive(crate::ast::PrimitiveType::Bool)) {
                     return Err(SemanticError {
                         message: "If condition must be boolean".into(),
                         span: cond.span,
@@ -4054,10 +3508,10 @@ impl SemanticAnalyzer {
     fn handle_std_import(
         &mut self,
         module_path: &str,
-        spec: &crate::parser::ImportSpec,
+        spec: &crate::ast::ImportSpec,
         span: Span,
     ) -> Result<(), SemanticError> {
-        use crate::parser::ImportSpec;
+        use crate::ast::ImportSpec;
 
         match spec {
             ImportSpec::Module { alias } => {
@@ -4308,47 +3762,3 @@ impl SemanticAnalyzer {
         Ok(())
     }
 }
-
-// represents a semantic error with location information
-#[derive(Debug, Clone, PartialEq)]
-pub struct SemanticError {
-    pub message: String,
-    pub span: Span,
-}
-
-impl SemanticError {
-    pub fn new(message: impl Into<String>, span: Span) -> Self {
-        Self {
-            message: message.into(),
-            span,
-        }
-    }
-
-    pub fn with_help(message: impl Into<String>, span: Span, help: impl Into<String>) -> Self {
-        Self {
-            message: format!("{}\n  = help: {}", message.into(), help.into()),
-            span,
-        }
-    }
-
-    #[allow(unused)]
-    pub fn with_suggestion(message: impl Into<String>, span: Span, suggestion: &str) -> Self {
-        Self {
-            message: format!("{}\n  = help: {}", message.into(), suggestion),
-            span,
-        }
-    }
-}
-
-impl std::fmt::Display for SemanticError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Semantic error at {}: {}",
-            format_span_location(&self.span),
-            self.message
-        )
-    }
-}
-
-impl std::error::Error for SemanticError {}

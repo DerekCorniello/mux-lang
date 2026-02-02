@@ -1,0 +1,1004 @@
+//! Binary and logical operator generation for the code generator.
+//!
+//! This module handles:
+//! - Short-circuit logical operators (&&, ||)
+//! - Binary arithmetic operators (+, -, *, /, %, **)
+//! - Comparison operators (==, !=, <, >, <=, >=)
+//! - The 'in' operator for containment checks
+
+use inkwell::values::BasicValueEnum;
+
+use crate::ast::{BinaryOp, ExpressionNode, PrimitiveType};
+use crate::semantics::Type;
+
+use super::CodeGenerator;
+
+impl<'a> CodeGenerator<'a> {
+    pub(super) fn generate_short_circuit_logical_op(
+        &mut self,
+        left_expr: &ExpressionNode,
+        op: &BinaryOp,
+        right_expr: &ExpressionNode,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        // Get the current function from the current basic block
+        let current_bb = self
+            .builder
+            .get_insert_block()
+            .ok_or("No current basic block for short-circuit logical operation")?;
+        let current_fn = current_bb
+            .get_parent()
+            .ok_or("No current function for short-circuit logical operation")?;
+
+        match op {
+            BinaryOp::LogicalAnd => {
+                // Create basic blocks for control flow
+                let eval_right_bb = self
+                    .context
+                    .append_basic_block(current_fn, "and_eval_right");
+                let merge_bb = self.context.append_basic_block(current_fn, "and_merge");
+
+                // Evaluate left operand
+                let left_val = self.generate_expression(left_expr)?;
+                let left_bool = self.get_raw_bool_value(left_val)?;
+                let left_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating left operand")?;
+
+                // If left is false, skip to merge with false result
+                // If left is true, evaluate right operand
+                self.builder
+                    .build_conditional_branch(left_bool, eval_right_bb, merge_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // eval_right_bb: evaluate right operand
+                self.builder.position_at_end(eval_right_bb);
+                let right_val = self.generate_expression(right_expr)?;
+                let right_bool = self.get_raw_bool_value(right_val)?;
+                let right_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating right operand")?;
+                self.builder
+                    .build_unconditional_branch(merge_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // merge_bb: phi node combines results
+                self.builder.position_at_end(merge_bb);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "and_result")
+                    .map_err(|e| e.to_string())?;
+
+                let false_val = self.context.bool_type().const_zero();
+                phi.add_incoming(&[
+                    (&false_val, left_bb),   // Left was false, return false
+                    (&right_bool, right_bb), // Left was true, return right
+                ]);
+
+                Ok(phi.as_basic_value())
+            }
+            BinaryOp::LogicalOr => {
+                // Create basic blocks for control flow
+                let eval_right_bb = self.context.append_basic_block(current_fn, "or_eval_right");
+                let merge_bb = self.context.append_basic_block(current_fn, "or_merge");
+
+                // Evaluate left operand
+                let left_val = self.generate_expression(left_expr)?;
+                let left_bool = self.get_raw_bool_value(left_val)?;
+                let left_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating left operand")?;
+
+                // If left is true, skip to merge with true result
+                // If left is false, evaluate right operand
+                self.builder
+                    .build_conditional_branch(left_bool, merge_bb, eval_right_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // eval_right_bb: evaluate right operand
+                self.builder.position_at_end(eval_right_bb);
+                let right_val = self.generate_expression(right_expr)?;
+                let right_bool = self.get_raw_bool_value(right_val)?;
+                let right_bb = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or("No insert block after evaluating right operand")?;
+                self.builder
+                    .build_unconditional_branch(merge_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // merge_bb: phi node combines results
+                self.builder.position_at_end(merge_bb);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "or_result")
+                    .map_err(|e| e.to_string())?;
+
+                let true_val = self.context.bool_type().const_int(1, false);
+                phi.add_incoming(&[
+                    (&true_val, left_bb),    // Left was true, return true
+                    (&right_bool, right_bb), // Left was false, return right
+                ]);
+
+                Ok(phi.as_basic_value())
+            }
+            _ => Err(
+                "generate_short_circuit_logical_op called with non-logical operator".to_string(),
+            ),
+        }
+    }
+
+    pub(super) fn generate_binary_op(
+        &mut self,
+        left_expr: &ExpressionNode,
+        left: BasicValueEnum<'a>,
+        op: &BinaryOp,
+        _right_expr: &ExpressionNode,
+        right: BasicValueEnum<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match op {
+            BinaryOp::Add => {
+                // Get the semantic type to determine what kind of addition to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                // Semantics already validated both types are the same, so just check left
+                match &left_type {
+                    // String concatenation
+                    Type::Primitive(PrimitiveType::Str) => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
+
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
+
+                        let concat_fn = self
+                            .module
+                            .get_function("mux_string_concat")
+                            .ok_or("mux_string_concat not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                concat_fn,
+                                &[left_cstr.into(), right_cstr.into()],
+                                "string_concat",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?
+                            .into_pointer_value();
+
+                        self.box_string_value(result)
+                    }
+
+                    // List concatenation
+                    Type::List(_) => {
+                        // Extract List pointers from Value wrappers
+                        let left_list = self.extract_list_from_value(left.into_pointer_value())?;
+                        let right_list =
+                            self.extract_list_from_value(right.into_pointer_value())?;
+
+                        // Call mux_list_concat
+                        let concat_fn = self
+                            .module
+                            .get_function("mux_list_concat")
+                            .ok_or("mux_list_concat not found")?;
+                        let result_list = self
+                            .builder
+                            .build_call(
+                                concat_fn,
+                                &[left_list.into(), right_list.into()],
+                                "list_concat",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?
+                            .into_pointer_value();
+
+                        // Wrap in Value
+                        let list_value_fn = self
+                            .module
+                            .get_function("mux_list_value")
+                            .ok_or("mux_list_value not found")?;
+                        let result = self
+                            .builder
+                            .build_call(list_value_fn, &[result_list.into()], "list_value")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        Ok(result)
+                    }
+
+                    // Map merge
+                    Type::Map(_, _) => {
+                        let left_map = self.extract_map_from_value(left.into_pointer_value())?;
+                        let right_map = self.extract_map_from_value(right.into_pointer_value())?;
+
+                        let merge_fn = self
+                            .module
+                            .get_function("mux_map_merge")
+                            .ok_or("mux_map_merge not found")?;
+                        let result_map = self
+                            .builder
+                            .build_call(merge_fn, &[left_map.into(), right_map.into()], "map_merge")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?
+                            .into_pointer_value();
+
+                        let map_value_fn = self
+                            .module
+                            .get_function("mux_map_value")
+                            .ok_or("mux_map_value not found")?;
+                        let result = self
+                            .builder
+                            .build_call(map_value_fn, &[result_map.into()], "map_value")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        Ok(result)
+                    }
+
+                    // Set union
+                    Type::Set(_) => {
+                        let left_set = self.extract_set_from_value(left.into_pointer_value())?;
+                        let right_set = self.extract_set_from_value(right.into_pointer_value())?;
+
+                        let union_fn = self
+                            .module
+                            .get_function("mux_set_union")
+                            .ok_or("mux_set_union not found")?;
+                        let result_set = self
+                            .builder
+                            .build_call(union_fn, &[left_set.into(), right_set.into()], "set_union")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?
+                            .into_pointer_value();
+
+                        let set_value_fn = self
+                            .module
+                            .get_function("mux_set_value")
+                            .ok_or("mux_set_value not found")?;
+                        let result = self
+                            .builder
+                            .build_call(set_value_fn, &[result_set.into()], "set_value")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        Ok(result)
+                    }
+
+                    // Numeric addition (int)
+                    Type::Primitive(PrimitiveType::Int) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_add(left_int, right_int, "add")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+
+                    // Numeric addition (float)
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_add(left_float, right_float, "fadd")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+
+                    _ => Err(format!(
+                        "Add operation not supported for type: {:?}",
+                        left_type
+                    )),
+                }
+            }
+            BinaryOp::Subtract => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_sub(left_int, right_int, "sub")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_sub(left_float, right_float, "fsub")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported sub operands".to_string())
+                }
+            }
+            BinaryOp::Multiply => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_mul(left_int, right_int, "mul")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    let result = self
+                        .builder
+                        .build_float_mul(left_float, right_float, "fmul")
+                        .map_err(|e| e.to_string())?;
+                    Ok(result.into())
+                } else {
+                    Err("Unsupported mul operands".to_string())
+                }
+            }
+            BinaryOp::Divide => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_signed_div(left_int, right_int, "div")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_div(left_float, right_float, "fdiv")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported div operands".to_string())
+                }
+            }
+            BinaryOp::Exponent => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    let pow_fn = self
+                        .module
+                        .get_function("mux_int_pow")
+                        .ok_or("mux_int_pow not found")?;
+                    let result = self
+                        .builder
+                        .build_call(pow_fn, &[left_int.into(), right_int.into()], "pow")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("Call returned no value")?;
+                    Ok(result)
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    let pow_fn = self
+                        .module
+                        .get_function("mux_math_pow")
+                        .ok_or("mux_math_pow not found")?;
+                    let result = self
+                        .builder
+                        .build_call(pow_fn, &[left_float.into(), right_float.into()], "pow")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("Call returned no value")?;
+                    Ok(result)
+                } else {
+                    Err("Unsupported pow operands".to_string())
+                }
+            }
+            BinaryOp::Equal => {
+                // Get the semantic type to determine what kind of comparison to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                match &left_type {
+                    // String comparison
+                    Type::Primitive(PrimitiveType::Str) => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
+
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
+
+                        let equal_fn = self
+                            .module
+                            .get_function("mux_string_equal")
+                            .ok_or("mux_string_equal not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                equal_fn,
+                                &[left_cstr.into(), right_cstr.into()],
+                                "string_equal",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        // Convert i32 result to i1 bool
+                        let result_i32 = result.into_int_value();
+                        let zero = self.context.i32_type().const_zero();
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                result_i32,
+                                zero,
+                                "to_bool",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Int/Char comparison
+                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_compare(inkwell::IntPredicate::EQ, left_int, right_int, "eq")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Bool comparison
+                    Type::Primitive(PrimitiveType::Bool) => {
+                        let left_bool = self.get_raw_bool_value(left)?;
+                        let right_bool = self.get_raw_bool_value(right)?;
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::EQ,
+                                left_bool,
+                                right_bool,
+                                "eq",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Float comparison
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_compare(
+                                inkwell::FloatPredicate::OEQ,
+                                left_float,
+                                right_float,
+                                "feq",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // List/Map/Set comparison using Value equality
+                    Type::List(_)
+                    | Type::Map(_, _)
+                    | Type::Set(_)
+                    | Type::EmptyList
+                    | Type::EmptyMap
+                    | Type::EmptySet => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
+
+                        let equal_fn = self
+                            .module
+                            .get_function("mux_value_equal")
+                            .ok_or("mux_value_equal not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                equal_fn,
+                                &[left_ptr.into(), right_ptr.into()],
+                                "value_equal",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        // Convert i32 result to i1 bool
+                        let result_i32 = result.into_int_value();
+                        let zero = self.context.i32_type().const_zero();
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                result_i32,
+                                zero,
+                                "to_bool",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    _ => Err(format!(
+                        "Equality comparison not supported for type: {:?}",
+                        left_type
+                    )),
+                }
+            }
+            BinaryOp::Less => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_compare(inkwell::IntPredicate::SLT, left_int, right_int, "lt")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OLT,
+                            left_float,
+                            right_float,
+                            "flt",
+                        )
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported lt operands".to_string())
+                }
+            }
+            BinaryOp::Greater => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_compare(inkwell::IntPredicate::SGT, left_int, right_int, "gt")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OGT,
+                            left_float,
+                            right_float,
+                            "fgt",
+                        )
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported gt operands".to_string())
+                }
+            }
+            BinaryOp::LessEqual => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_compare(inkwell::IntPredicate::SLE, left_int, right_int, "le")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OLE,
+                            left_float,
+                            right_float,
+                            "fle",
+                        )
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported le operands".to_string())
+                }
+            }
+            BinaryOp::GreaterEqual => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_compare(inkwell::IntPredicate::SGE, left_int, right_int, "ge")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else if let (Ok(left_float), Ok(right_float)) = (
+                    self.get_raw_float_value(left),
+                    self.get_raw_float_value(right),
+                ) {
+                    self.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OGE,
+                            left_float,
+                            right_float,
+                            "fge",
+                        )
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported ge operands".to_string())
+                }
+            }
+            BinaryOp::NotEqual => {
+                // Get the semantic type to determine what kind of comparison to perform
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                match &left_type {
+                    // String comparison
+                    Type::Primitive(PrimitiveType::Str) => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
+
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
+
+                        let not_equal_fn = self
+                            .module
+                            .get_function("mux_string_not_equal")
+                            .ok_or("mux_string_not_equal not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                not_equal_fn,
+                                &[left_cstr.into(), right_cstr.into()],
+                                "string_not_equal",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        // Convert i32 result to i1 bool
+                        let result_i32 = result.into_int_value();
+                        let zero = self.context.i32_type().const_zero();
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                result_i32,
+                                zero,
+                                "to_bool",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Int/Char comparison
+                    Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                        let left_int = self.get_raw_int_value(left)?;
+                        let right_int = self.get_raw_int_value(right)?;
+                        self.builder
+                            .build_int_compare(inkwell::IntPredicate::NE, left_int, right_int, "ne")
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Bool comparison
+                    Type::Primitive(PrimitiveType::Bool) => {
+                        let left_bool = self.get_raw_bool_value(left)?;
+                        let right_bool = self.get_raw_bool_value(right)?;
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                left_bool,
+                                right_bool,
+                                "ne",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // Float comparison
+                    Type::Primitive(PrimitiveType::Float) => {
+                        let left_float = self.get_raw_float_value(left)?;
+                        let right_float = self.get_raw_float_value(right)?;
+                        self.builder
+                            .build_float_compare(
+                                inkwell::FloatPredicate::ONE,
+                                left_float,
+                                right_float,
+                                "fne",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    // List/Map/Set comparison using Value inequality
+                    Type::List(_)
+                    | Type::Map(_, _)
+                    | Type::Set(_)
+                    | Type::EmptyList
+                    | Type::EmptyMap
+                    | Type::EmptySet => {
+                        let left_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+                        let right_ptr = if right.is_pointer_value() {
+                            right.into_pointer_value()
+                        } else {
+                            self.box_value(right)
+                        };
+
+                        let not_equal_fn = self
+                            .module
+                            .get_function("mux_value_not_equal")
+                            .ok_or("mux_value_not_equal not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                not_equal_fn,
+                                &[left_ptr.into(), right_ptr.into()],
+                                "value_not_equal",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("Call returned no value")?;
+
+                        // Convert i32 result to i1 bool
+                        let result_i32 = result.into_int_value();
+                        let zero = self.context.i32_type().const_zero();
+                        self.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::NE,
+                                result_i32,
+                                zero,
+                                "to_bool",
+                            )
+                            .map_err(|e| e.to_string())
+                            .map(|v| v.into())
+                    }
+                    _ => Err(format!(
+                        "Inequality comparison not supported for type: {:?}",
+                        left_type
+                    )),
+                }
+            }
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
+                // These should be handled by generate_short_circuit_logical_op
+                // and should not reach here
+                Err("Logical AND/OR should use short-circuit evaluation".to_string())
+            }
+            BinaryOp::Modulo => {
+                // try to get raw int values first
+                if let (Ok(left_int), Ok(right_int)) =
+                    (self.get_raw_int_value(left), self.get_raw_int_value(right))
+                {
+                    self.builder
+                        .build_int_signed_rem(left_int, right_int, "mod")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into())
+                } else {
+                    Err("Unsupported mod operands".to_string())
+                }
+            }
+            BinaryOp::In => {
+                // 'in' operator - check if left is contained in right
+                let right_type = self
+                    .analyzer
+                    .get_expression_type(_right_expr)
+                    .map_err(|e| format!("Failed to get right operand type: {}", e))?;
+
+                match right_type {
+                    Type::List(_) | Type::EmptyList => {
+                        // List containment: mux_list_contains(list, item)
+                        // Extract raw list pointer from Value
+                        let raw_list = self
+                            .builder
+                            .build_call(
+                                self.module
+                                    .get_function("mux_value_get_list")
+                                    .ok_or("mux_value_get_list not found")?,
+                                &[right.into()],
+                                "extract_list",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // Box item as *mut Value
+                        let item_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+
+                        // Call mux_list_contains
+                        let contains_fn = self
+                            .module
+                            .get_function("mux_list_contains")
+                            .ok_or("mux_list_contains not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                contains_fn,
+                                &[
+                                    raw_list
+                                        .try_as_basic_value()
+                                        .left()
+                                        .expect("mux_value_get_list should return a basic value")
+                                        .into(),
+                                    item_ptr.into(),
+                                ],
+                                "list_contains",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_list_contains should return a basic value");
+
+                        Ok(result)
+                    }
+
+                    Type::Set(_) | Type::EmptySet => {
+                        // Set containment: mux_set_contains(set, item)
+                        // Extract raw set pointer from Value
+                        let raw_set = self
+                            .builder
+                            .build_call(
+                                self.module
+                                    .get_function("mux_value_get_set")
+                                    .ok_or("mux_value_get_set not found")?,
+                                &[right.into()],
+                                "extract_set",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // Box item as *mut Value
+                        let item_ptr = if left.is_pointer_value() {
+                            left.into_pointer_value()
+                        } else {
+                            self.box_value(left)
+                        };
+
+                        // Call mux_set_contains
+                        let contains_fn = self
+                            .module
+                            .get_function("mux_set_contains")
+                            .ok_or("mux_set_contains not found")?;
+                        let result = self
+                            .builder
+                            .build_call(
+                                contains_fn,
+                                &[
+                                    raw_set
+                                        .try_as_basic_value()
+                                        .left()
+                                        .expect("mux_value_get_set should return a basic value")
+                                        .into(),
+                                    item_ptr.into(),
+                                ],
+                                "set_contains",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_set_contains should return a basic value");
+
+                        Ok(result)
+                    }
+
+                    Type::Primitive(PrimitiveType::Str) => {
+                        // String/char substring search
+                        let left_type = self
+                            .analyzer
+                            .get_expression_type(left_expr)
+                            .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+
+                        // String is *const c_char
+                        let string_ptr = right.into_pointer_value();
+
+                        match left_type {
+                            Type::Primitive(PrimitiveType::Char) => {
+                                // Char in string: mux_string_contains_char(string, char_as_i64)
+                                let char_i64 = left.into_int_value();
+
+                                let contains_fn = self
+                                    .module
+                                    .get_function("mux_string_contains_char")
+                                    .ok_or("mux_string_contains_char not found")?;
+                                let result = self
+                                    .builder
+                                    .build_call(
+                                        contains_fn,
+                                        &[string_ptr.into(), char_i64.into()],
+                                        "string_contains_char",
+                                    )
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .expect("mux_string_contains_char should return a basic value");
+
+                                Ok(result)
+                            }
+                            Type::Primitive(PrimitiveType::Str) => {
+                                // Substring search: mux_string_contains(haystack, needle)
+                                let substring_ptr = left.into_pointer_value();
+
+                                let contains_fn = self
+                                    .module
+                                    .get_function("mux_string_contains")
+                                    .ok_or("mux_string_contains not found")?;
+                                let result = self
+                                    .builder
+                                    .build_call(
+                                        contains_fn,
+                                        &[string_ptr.into(), substring_ptr.into()],
+                                        "string_contains",
+                                    )
+                                    .map_err(|e| e.to_string())?
+                                    .try_as_basic_value()
+                                    .left()
+                                    .expect("mux_string_contains should return a basic value");
+
+                                Ok(result)
+                            }
+                            _ => Err(format!(
+                                "Invalid left operand type for 'in' operator with string: {:?}",
+                                left_type
+                            )),
+                        }
+                    }
+
+                    _ => Err(format!(
+                        "'in' operator not supported for type: {:?}",
+                        right_type
+                    )),
+                }
+            }
+            _ => Err("Binary op not implemented".to_string()),
+        }
+    }
+}

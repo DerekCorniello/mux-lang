@@ -1,5 +1,6 @@
+use crate::ast::AstNode;
 use crate::lexer::Lexer;
-use crate::parser::{AstNode, Parser};
+use crate::parser::Parser;
 use crate::source::Source;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
