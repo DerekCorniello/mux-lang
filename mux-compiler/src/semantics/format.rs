@@ -1,0 +1,101 @@
+use crate::ast::{BinaryOp, PrimitiveType, UnaryOp};
+use crate::lexer::Span;
+use crate::semantics::types::Type;
+
+pub fn format_type(t: &Type) -> String {
+    match t {
+        Type::Primitive(p) => format_primitive_type(p),
+        Type::List(inner) => format!("[{}]", format_type(inner)),
+        Type::Map(k, v) => format!("{{{}: {}}}", format_type(k), format_type(v)),
+        Type::Set(inner) => format!("{{{}}}", format_type(inner)),
+        Type::Optional(inner) => format!("Optional<{}>", format_type(inner)),
+        Type::Reference(inner) => format!("&{}", format_type(inner)),
+        Type::Void => "void".to_string(),
+        Type::Never => "never".to_string(),
+        Type::EmptyList => "[?]".to_string(),
+        Type::EmptyMap => "{:}".to_string(),
+        Type::EmptySet => "{?}".to_string(),
+        Type::Function {
+            params,
+            returns,
+            default_count: _,
+        } => {
+            let params_str = params
+                .iter()
+                .map(format_type)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("fn({params_str}) -> {}", format_type(returns))
+        }
+        Type::Named(name, args) => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                let args_str = args.iter().map(format_type).collect::<Vec<_>>().join(", ");
+                format!("{name}<{args_str}>")
+            }
+        }
+        Type::Variable(name) | Type::Generic(name) => name.clone(),
+        Type::Instantiated(name, args) => {
+            let args_str = args.iter().map(format_type).collect::<Vec<_>>().join(", ");
+            format!("{name}<{args_str}>")
+        }
+        Type::Module(name) => format!("module:{name}"),
+    }
+}
+
+fn format_primitive_type(p: &PrimitiveType) -> String {
+    match p {
+        PrimitiveType::Int => "int".to_string(),
+        PrimitiveType::Float => "float".to_string(),
+        PrimitiveType::Bool => "bool".to_string(),
+        PrimitiveType::Char => "char".to_string(),
+        PrimitiveType::Str => "string".to_string(),
+        PrimitiveType::Void => "void".to_string(),
+        PrimitiveType::Auto => "auto".to_string(),
+    }
+}
+
+pub fn format_binary_op(op: &BinaryOp) -> String {
+    match op {
+        BinaryOp::Add => "+".to_string(),
+        BinaryOp::Subtract => "-".to_string(),
+        BinaryOp::Multiply => "*".to_string(),
+        BinaryOp::Divide => "/".to_string(),
+        BinaryOp::Modulo => "%".to_string(),
+        BinaryOp::Exponent => "**".to_string(),
+        BinaryOp::Equal => "==".to_string(),
+        BinaryOp::NotEqual => "!=".to_string(),
+        BinaryOp::Less => "<".to_string(),
+        BinaryOp::LessEqual => "<=".to_string(),
+        BinaryOp::Greater => ">".to_string(),
+        BinaryOp::GreaterEqual => ">=".to_string(),
+        BinaryOp::LogicalAnd => "&&".to_string(),
+        BinaryOp::LogicalOr => "||".to_string(),
+        BinaryOp::In => "in".to_string(),
+        BinaryOp::Assign => "=".to_string(),
+        BinaryOp::AddAssign => "+=".to_string(),
+        BinaryOp::SubtractAssign => "-=".to_string(),
+        BinaryOp::MultiplyAssign => "*=".to_string(),
+        BinaryOp::DivideAssign => "/=".to_string(),
+        BinaryOp::ModuloAssign => "%=".to_string(),
+    }
+}
+
+#[allow(unused)]
+pub fn format_unary_op(op: &UnaryOp) -> String {
+    match op {
+        UnaryOp::Not => "!".to_string(),
+        UnaryOp::Neg => "-".to_string(),
+        UnaryOp::Ref => "&".to_string(),
+        UnaryOp::Deref => "*".to_string(),
+        UnaryOp::Incr => "++".to_string(),
+        UnaryOp::Decr => "--".to_string(),
+    }
+}
+
+pub fn format_span_location(span: &Span) -> String {
+    let row = span.row_start;
+    let col = span.col_start;
+    format!("{row}:{col}")
+}

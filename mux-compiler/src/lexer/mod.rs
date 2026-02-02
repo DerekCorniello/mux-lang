@@ -1,155 +1,19 @@
+//! Lexical analyzer for the Mux language.
+//!
+//! This module provides the lexer that converts source code into a stream of tokens.
+
+mod error;
+mod span;
+mod token;
+
+pub use error::LexerError;
+pub use span::Span;
+pub use token::{Token, TokenType};
+
 use crate::source::Source;
 use ordered_float::OrderedFloat;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct LexerError {
-    pub message: String,
-    pub span: Span,
-}
-
-impl LexerError {
-    pub fn new(message: impl Into<String>, span: Span) -> Self {
-        Self {
-            message: message.into(),
-            span,
-        }
-    }
-
-    pub fn with_help(message: impl Into<String>, span: Span, help: impl Into<String>) -> Self {
-        Self {
-            message: format!("{}\n  = help: {}", message.into(), help.into()),
-            span,
-        }
-    }
-}
-
-impl std::fmt::Display for LexerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Lexer error at {}:{} - {}",
-            self.span.row_start, self.span.col_start, self.message
-        )
-    }
-}
-
-impl std::error::Error for LexerError {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Span {
-    pub row_start: usize,
-    pub row_end: Option<usize>,
-    pub col_start: usize,
-    pub col_end: Option<usize>,
-}
-
-impl Span {
-    pub fn new(row_start: usize, col_start: usize) -> Self {
-        Self {
-            row_start,
-            row_end: None,
-            col_start,
-            col_end: None,
-        }
-    }
-
-    pub fn complete(&mut self, row_end: usize, col_end: usize) {
-        self.row_end = Some(row_end);
-        self.col_end = Some(col_end);
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token {
-    pub token_type: TokenType,
-    pub span: Span,
-}
-
-impl Token {
-    pub fn new(token: TokenType, span: Span) -> Token {
-        Token {
-            token_type: token,
-            span,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenType {
-    Auto,
-    Func,
-    Returns,
-    Return,
-    If,
-    Else,
-    For,
-    While,
-    Match,
-    Const,
-    Class,
-    Interface,
-    Enum,
-    Import,
-    Is,
-    As,
-    In,
-    Break,
-    Continue,
-    None,
-    Common,
-
-    OpenParen,    // (
-    CloseParen,   // )
-    OpenBrace,    // {
-    CloseBrace,   // }
-    OpenBracket,  // [
-    CloseBracket, // ]
-    Dot,          // .
-    Comma,
-    Colon,
-    Eq,
-    Plus,
-    Minus,
-    Star,
-    StarStar,
-    Slash,
-    Percent,
-    Lt,
-    Gt,
-    Le,
-    Ge,
-    EqEq,
-    NotEq,
-    Bang,
-    Incr,
-    Decr,
-    PlusEq,
-    MinusEq,
-    StarEq,
-    SlashEq,
-    PercentEq,
-    And,
-    Or,
-    Ref,
-
-    Int(i64),
-    Float(OrderedFloat<f64>),
-    Bool(bool),
-    Char(char),
-    Str(String),
-    Underscore,
-
-    // identifiers
-    Id(String),
-
-    Eof,
-
-    NewLine,
-
-    LineComment(String),
-    MultilineComment(String),
-}
-
+/// The lexer for the Mux language.
 pub struct Lexer<'a> {
     source: &'a mut Source,
 }

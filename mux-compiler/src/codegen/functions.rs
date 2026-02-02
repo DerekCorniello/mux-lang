@@ -1,0 +1,465 @@
+//! Function declaration and generation for the code generator.
+//!
+//! This module handles:
+//! - Function declaration with proper type signatures
+//! - Function generation with parameter handling
+//! - Module initialization functions
+//! - Main function generation
+
+use inkwell::types::BasicMetadataTypeEnum;
+use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::AddressSpace;
+
+use crate::ast::{AstNode, FunctionNode, PrimitiveType, StatementNode, TypeKind};
+use crate::semantics::Type;
+
+use super::CodeGenerator;
+
+impl CodeGenerator<'_> {
+    pub(super) fn declare_function(&mut self, func: &FunctionNode) -> Result<(), String> {
+        let mut param_types: Vec<BasicMetadataTypeEnum> = func
+            .params
+            .iter()
+            .map(|p| self.llvm_type_from_mux_type(&p.type_).map(|t| t.into()))
+            .collect::<Result<_, _>>()?;
+
+        // for class methods, add implicit 'self' parameter (unless static)
+        let is_class_method = func.name.contains('.');
+        if is_class_method && !func.is_common {
+            param_types.insert(0, self.context.ptr_type(AddressSpace::default()).into());
+        }
+
+        // for specialized methods (name contains $), wrap all parameters in pointers,
+        // only for instance methods, not static methods
+        // static methods should use concrete types after specialization
+        let is_specialized = func.name.contains('$');
+        let is_static = func.is_common;
+        if is_specialized && !is_static {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            param_types = param_types
+                .into_iter()
+                .enumerate()
+                .map(|(i, param_type)| {
+                    // skip self parameter (index 0)
+                    if i == 0 && is_class_method && !func.is_common {
+                        param_type
+                    } else {
+                        // wrap non-self parameters in pointers
+                        ptr_type.into()
+                    }
+                })
+                .collect();
+        }
+
+        let fn_type = if matches!(
+            func.return_type.kind,
+            TypeKind::Primitive(PrimitiveType::Void)
+        ) {
+            self.context.void_type().fn_type(&param_types, false)
+        } else {
+            let return_type = self.llvm_type_from_mux_type(&func.return_type)?;
+            return_type.fn_type(&param_types, false)
+        };
+
+        // Check if this function has a mangled LLVM name
+        // First check the main symbol table (for functions in current module)
+        let llvm_name = if let Some(symbol) = self.analyzer.symbol_table().lookup(&func.name) {
+            if let Some(mangled_name) = &symbol.llvm_name {
+                mangled_name.clone()
+            } else {
+                func.name.clone()
+            }
+        } else {
+            // Not in main symbol table - check if it's from an imported module
+            // Search through all imported modules to find this function
+            let mut found_name = None;
+            for module_syms in self.analyzer.imported_symbols().values() {
+                if let Some(func_symbol) = module_syms.get(&func.name) {
+                    if let Some(mangled) = &func_symbol.llvm_name {
+                        found_name = Some(mangled.clone());
+                        break;
+                    }
+                }
+            }
+            found_name.unwrap_or_else(|| func.name.clone())
+        };
+
+        let function = self.module.add_function(&llvm_name, fn_type, None);
+        self.functions.insert(func.name.clone(), function);
+        self.function_nodes.insert(func.name.clone(), func.clone());
+
+        Ok(())
+    }
+
+    // Declare a function with an explicit LLVM name (for imported module functions)
+    pub(super) fn declare_function_with_name(
+        &mut self,
+        func: &FunctionNode,
+        llvm_name: &str,
+    ) -> Result<(), String> {
+        let mut param_types: Vec<BasicMetadataTypeEnum> = func
+            .params
+            .iter()
+            .map(|p| self.llvm_type_from_mux_type(&p.type_).map(|t| t.into()))
+            .collect::<Result<_, _>>()?;
+
+        // for class methods, add implicit 'self' parameter (unless static)
+        let is_class_method = func.name.contains('.');
+        if is_class_method && !func.is_common {
+            param_types.insert(0, self.context.ptr_type(AddressSpace::default()).into());
+        }
+
+        // for specialized methods (name contains $), wrap all parameters in pointers
+        let is_specialized = func.name.contains('$');
+        let is_static = func.is_common;
+        if is_specialized && !is_static {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            param_types = param_types
+                .into_iter()
+                .enumerate()
+                .map(|(i, param_type)| {
+                    if i == 0 && is_class_method && !func.is_common {
+                        param_type
+                    } else {
+                        ptr_type.into()
+                    }
+                })
+                .collect();
+        }
+
+        let fn_type = if matches!(
+            func.return_type.kind,
+            TypeKind::Primitive(PrimitiveType::Void)
+        ) {
+            self.context.void_type().fn_type(&param_types, false)
+        } else {
+            let return_type = self.llvm_type_from_mux_type(&func.return_type)?;
+            return_type.fn_type(&param_types, false)
+        };
+
+        let function = self.module.add_function(llvm_name, fn_type, None);
+        // Store by mangled name so we can find it later during generation
+        self.functions.insert(llvm_name.to_string(), function);
+
+        Ok(())
+    }
+
+    pub(super) fn generate_module_init(
+        &mut self,
+        top_level_statements: &[StatementNode],
+        module_name: &str,
+    ) -> Result<(), String> {
+        // Use ! prefix to avoid conflicts with user-defined functions
+        // (! is used for module-level generated code, $ is used for generic specializations)
+        let init_name = format!("!{}!init", module_name.replace(['.', '/'], "_"));
+
+        let init_type = self.context.void_type().fn_type(&[], false);
+        let init_func = self.module.add_function(&init_name, init_type, None);
+        let entry = self.context.append_basic_block(init_func, "entry");
+        self.builder.position_at_end(entry);
+
+        // copy global_variables to variables so statements can access/initialize them
+        self.variables = self.global_variables.clone();
+
+        // Execute top-level statements as module initialization
+        for stmt in top_level_statements {
+            self.generate_statement(stmt, Some(&init_func))?;
+        }
+
+        self.builder.build_return(None).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub(super) fn generate_main_function(&mut self, module_name: &str) -> Result<(), String> {
+        let main_type = self.context.i32_type().fn_type(&[], false);
+        let main_func = self.module.add_function("main", main_type, None);
+        let entry = self.context.append_basic_block(main_func, "entry");
+        self.builder.position_at_end(entry);
+
+        // Call imported module init functions in dependency order
+        // This ensures modules are initialized before use
+        for module_path in &self.analyzer.module_dependencies {
+            let init_name = format!("!{}!init", Self::sanitize_module_path(module_path));
+            if let Some(init_func) = self.module.get_function(&init_name) {
+                self.builder
+                    .build_call(
+                        init_func,
+                        &[],
+                        &format!("{}_init_call", module_path.replace('.', "_")),
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        // Call main module init function
+        let init_name = format!("!{}!init", Self::sanitize_module_path(module_name));
+        if let Some(init_func) = self.module.get_function(&init_name) {
+            self.builder
+                .build_call(init_func, &[], "init_call")
+                .map_err(|e| e.to_string())?;
+        }
+
+        // Call user-defined main function if it exists
+        if let Some(user_main) = self.module.get_function("!user!main") {
+            self.builder
+                .build_call(user_main, &[], "user_main_call")
+                .map_err(|e| e.to_string())?;
+        }
+
+        // return 0 from main
+        self.builder
+            .build_return(Some(&self.context.i32_type().const_int(0, false)))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub(super) fn get_module_name(&self, nodes: &[AstNode]) -> String {
+        // Try to get module name from first class or function
+        for node in nodes {
+            match node {
+                AstNode::Class { name, .. } => {
+                    return name.split('.').next().unwrap_or("main").to_string();
+                }
+                AstNode::Function(func) => {
+                    return func.name.split('.').next().unwrap_or("main").to_string();
+                }
+                _ => {}
+            }
+        }
+        "main".to_string()
+    }
+
+    pub(super) fn generate_function(&mut self, func: &FunctionNode) -> Result<(), String> {
+        // Save state that might be overwritten by nested function generation
+        // (e.g., when generating specialized methods for generic classes used in this function)
+        let saved_function_name = self.current_function_name.take();
+        let saved_return_type = self.current_function_return_type.take();
+
+        // Save the RC scope stack from any parent function context.
+        // Each function has its own isolated RC scope - nested function generation
+        // (specialized methods, generic instantiation, etc.) should not see or clean up
+        // variables from the calling function's scope.
+        let saved_rc_scope_stack = std::mem::take(&mut self.rc_scope_stack);
+
+        self.current_function_name = Some(func.name.clone());
+        self.current_function_return_type = Some(
+            self.analyzer
+                .resolve_type(&func.return_type)
+                .map_err(|e| e.to_string())?,
+        );
+
+        let function = *self
+            .functions
+            .get(&func.name)
+            .ok_or("Function not declared")?;
+
+        let entry = self.context.append_basic_block(function, "entry");
+        self.builder.position_at_end(entry);
+
+        // clear variables for new scope
+        self.variables.clear();
+
+        // Push RC scope for this function (on a fresh stack)
+        self.push_rc_scope();
+
+        // set up parameter variables
+        let is_class_method = func.name.contains('.');
+        let mut param_index = 0;
+        if is_class_method && !func.is_common {
+            let class_name = func
+                .name
+                .split('.')
+                .next()
+                .or_else(|| {
+                    // handle specialized method names like Box$int.to_string
+                    func.name.split('$').next()
+                })
+                .expect("class method name should contain '.' or '$'");
+            // for specialized methods like Box$int.to_string, we need just "Box"
+            let base_class_name = class_name.split('$').next().unwrap_or(class_name);
+            let class_type = self
+                .type_map
+                .get(base_class_name)
+                .expect("class type should be in type_map after type generation");
+            let arg = function
+                .get_nth_param(param_index)
+                .expect("self parameter should exist for class methods");
+            param_index += 1;
+            // set self as variable
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let alloca = self
+                .builder
+                .build_alloca(ptr_type, "self")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(alloca, arg)
+                .map_err(|e| e.to_string())?;
+
+            // For specialized methods, reconstruct the full type including type arguments
+            // from the generic context. For example, in Wrapper$string.set, self should be
+            // Type::Named("Wrapper", [Type::Primitive(Str)]) not Type::Named("Wrapper", [])
+            let self_type = if let Some(ref context) = self.generic_context {
+                // For specialized methods, reconstruct type args from generic context
+                if let Some(class_symbol) = self.analyzer.symbol_table().lookup(base_class_name) {
+                    // Build type args by looking up each class type parameter in the context
+                    let type_args: Vec<Type> = class_symbol
+                        .type_params
+                        .iter()
+                        .filter_map(|(param_name, _bounds)| {
+                            context.type_params.get(param_name).cloned()
+                        })
+                        .collect();
+                    Type::Named(base_class_name.to_string(), type_args)
+                } else {
+                    // Fallback if class not found
+                    Type::Named(base_class_name.to_string(), vec![])
+                }
+            } else {
+                // Non-specialized methods have no type args
+                Type::Named(base_class_name.to_string(), vec![])
+            };
+
+            self.variables
+                .insert("self".to_string(), (alloca, *class_type, self_type.clone()));
+            // also set current_self_type in the analyzer for type checking
+            self.analyzer.current_self_type = Some(self_type);
+        }
+
+        for (i, param) in func.params.iter().enumerate() {
+            let arg = function
+                .get_nth_param((i as u32) + param_index)
+                .expect("function parameter should exist at expected index");
+
+            // resolve parameter type first
+            let resolved_type = self
+                .analyzer
+                .resolve_type(&param.type_)
+                .map_err(|e| e.to_string())?;
+
+            // handle different parameter types appropriately
+            let value_to_store = if matches!(resolved_type, Type::Reference(_)) {
+                // for reference parameters, store pointer directly
+                arg.into_pointer_value()
+            } else {
+                // check if this is an enum type
+                let is_enum = matches!(&resolved_type, Type::Named(type_name, _) if self
+                    .analyzer
+                    .symbol_table()
+                    .lookup(type_name)
+                    .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
+                    .unwrap_or(false));
+
+                if is_enum {
+                    // for enum types, store struct value directly
+                    let struct_type = arg.get_type();
+                    let alloca = self
+                        .builder
+                        .build_alloca(struct_type, &param.name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, arg)
+                        .map_err(|e| e.to_string())?;
+                    // for enums, store the struct type directly
+                    self.variables
+                        .insert(param.name.clone(), (alloca, struct_type, resolved_type));
+                    continue; // skip the normal pointer wrapping
+                } else if matches!(resolved_type, Type::Function { .. }) {
+                    // for function type parameters, store raw function pointer directly
+                    let func_ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let alloca = self
+                        .builder
+                        .build_alloca(func_ptr_type, &param.name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, arg)
+                        .map_err(|e| e.to_string())?;
+
+                    self.variables.insert(
+                        param.name.clone(),
+                        (alloca, func_ptr_type.into(), resolved_type),
+                    );
+                    continue; // skip the normal pointer wrapping
+                } else {
+                    // for class and primitive types, box the value
+                    self.box_value(arg)
+                }
+            };
+
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let alloca = self
+                .builder
+                .build_alloca(ptr_type, &param.name)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(alloca, value_to_store)
+                .map_err(|e| e.to_string())?;
+
+            self.variables.insert(
+                param.name.clone(),
+                (
+                    alloca,
+                    BasicTypeEnum::PointerType(ptr_type),
+                    resolved_type.clone(),
+                ),
+            );
+        }
+
+        // generate function body
+        for stmt in &func.body {
+            self.generate_statement(stmt, Some(&function))?;
+        }
+
+        // if void return, add return void if not already terminated
+        if matches!(
+            func.return_type.kind,
+            TypeKind::Primitive(PrimitiveType::Void)
+        ) {
+            if let Some(block) = self.builder.get_insert_block() {
+                if block.get_terminator().is_none() {
+                    // Generate cleanup for all RC variables before returning
+                    self.generate_all_scopes_cleanup()?;
+                    self.builder.build_return(None).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+
+        // Pop the function's RC scope (no cleanup needed here since we already
+        // cleaned up before returns, and non-void functions must have explicit returns)
+        self.rc_scope_stack.pop();
+
+        // clear current_self_type
+        self.analyzer.current_self_type = None;
+
+        // Restore previous function context
+        self.current_function_name = saved_function_name;
+        self.current_function_return_type = saved_return_type;
+
+        // Restore the parent function's RC scope stack
+        self.rc_scope_stack = saved_rc_scope_stack;
+
+        Ok(())
+    }
+
+    // Generate function with explicit LLVM name (for imported module functions)
+    pub(super) fn generate_function_with_llvm_name(
+        &mut self,
+        func: &FunctionNode,
+        llvm_name: &str,
+    ) -> Result<(), String> {
+        // Look up by LLVM name instead of source name
+        let function = *self.functions.get(llvm_name).ok_or_else(|| {
+            format!(
+                "Function {} not declared (LLVM name: {})",
+                func.name, llvm_name
+            )
+        })?;
+
+        // Delegate to the regular implementation
+        // but first we need to temporarily store it under the source name too
+        self.functions.insert(func.name.clone(), function);
+        let result = self.generate_function(func);
+        // Remove the temporary entry
+        self.functions.remove(&func.name);
+        result
+    }
+}
