@@ -31,7 +31,6 @@ impl fmt::Display for Set {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_set_value(set: *mut Set) -> *mut Value {
-    // Borrow instead of taking ownership to avoid double-free
     let set = unsafe { &*set };
     let value = Value::Set(set.0.clone());
     mux_rc_alloc(value)
@@ -72,7 +71,8 @@ pub unsafe extern "C" fn mux_set_is_empty(set: *const Set) -> bool {
 pub extern "C" fn mux_set_to_string(set: *const Set) -> *mut std::ffi::c_char {
     let set = unsafe { &*set };
     let s = set.to_string();
-    let c_str = CString::new(s).unwrap();
+    // Safe: to_string produces valid UTF-8 without null bytes
+    let c_str = CString::new(s).expect("to_string should produce valid UTF-8");
     c_str.into_raw()
 }
 

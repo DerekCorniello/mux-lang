@@ -26,12 +26,11 @@ use crate::Value;
 /// Uses atomic operations for thread-safety.
 #[repr(C)]
 pub struct RefHeader {
-    /// Atomic reference count. Starts at 1 on allocation.
+    /// Atomic reference count.
     ref_count: AtomicUsize,
 }
 
 impl RefHeader {
-    /// Create a new header with ref_count = 1
     #[inline]
     const fn new() -> Self {
         RefHeader {
@@ -43,7 +42,6 @@ impl RefHeader {
 /// Calculate the memory layout for RefHeader + Value
 #[inline]
 fn layout_for_value() -> Layout {
-    // We need space for the header followed by the Value
     let header_size = std::mem::size_of::<RefHeader>();
     let value_size = std::mem::size_of::<Value>();
     let value_align = std::mem::align_of::<Value>();
@@ -60,7 +58,6 @@ fn layout_for_value() -> Layout {
         .expect("Failed to create layout for ref-counted Value")
 }
 
-/// Get the offset from allocation start to Value
 #[inline]
 fn value_offset() -> usize {
     let header_size = std::mem::size_of::<RefHeader>();
@@ -87,11 +84,9 @@ pub extern "C" fn mux_rc_alloc(value: Value) -> *mut Value {
             panic!("Failed to allocate ref-counted Value: out of memory");
         }
 
-        // Initialize header at the start of allocation
         let header = ptr as *mut RefHeader;
         header.write(RefHeader::new());
 
-        // Initialize Value after header (with proper alignment)
         let value_ptr = ptr.add(value_offset()) as *mut Value;
         value_ptr.write(value);
 
@@ -99,8 +94,6 @@ pub extern "C" fn mux_rc_alloc(value: Value) -> *mut Value {
     }
 }
 
-/// Get the header pointer from a Value pointer.
-///
 /// # Safety
 /// The Value pointer must have been returned by `mux_rc_alloc`.
 #[inline]
@@ -108,7 +101,6 @@ unsafe fn get_header(val: *mut Value) -> *mut RefHeader {
     unsafe { (val as *mut u8).sub(value_offset()) as *mut RefHeader }
 }
 
-/// Get the allocation base pointer from a Value pointer.
 #[inline]
 unsafe fn get_alloc_base(val: *mut Value) -> *mut u8 {
     unsafe { (val as *mut u8).sub(value_offset()) }
@@ -154,19 +146,11 @@ pub extern "C" fn mux_rc_dec(val: *mut Value) -> bool {
     unsafe {
         let header = get_header(val);
 
-        // Use AcqRel ordering:
-        // - Acquire ensures we see all writes before the previous release
-        // - Release ensures our writes are visible to subsequent acquires
         let old_count = (*header).ref_count.fetch_sub(1, Ordering::AcqRel);
 
         if old_count == 1 {
-            // We were the last reference - time to free
-
-            // First, drop the Value in place to run any Drop implementations
-            // This handles nested allocations (Vec, BTreeMap, etc.)
             std::ptr::drop_in_place(val);
 
-            // Then deallocate the memory
             let alloc_ptr = get_alloc_base(val);
             dealloc(alloc_ptr, layout_for_value());
 

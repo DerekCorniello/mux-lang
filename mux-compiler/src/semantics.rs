@@ -152,8 +152,7 @@ pub enum Type {
     Named(String, Vec<Type>),
     Variable(String),
     Generic(String), // Generic parameter like "T", "U"
-    // not sure why this is needed to be allowed,
-    // i am using it in codegen
+    // used in codegen for concrete instantiations of generic types
     #[allow(dead_code)]
     Instantiated(String, Vec<Type>), // Concrete instantiation like "Pair<string, bool>"
     Module(String), // Module namespace (e.g., "shapes" from "import shapes")
@@ -473,7 +472,7 @@ impl SymbolTable {
         let new_scope = Rc::new(RefCell::new(Scope::default()));
         self.scopes
             .last()
-            .unwrap()
+            .expect("at least global scope should exist")
             .borrow_mut()
             .children
             .push(Rc::clone(&new_scope));
@@ -513,7 +512,10 @@ impl SymbolTable {
             });
         }
 
-        let current = self.scopes.last().unwrap();
+        let current = self
+            .scopes
+            .last()
+            .expect("at least global scope should exist");
         let mut current_borrow = current.borrow_mut();
 
         if current_borrow.symbols.contains_key(name) {
@@ -646,7 +648,6 @@ impl SemanticAnalyzer {
         }
     }
 
-    // get reference to the symbol table for debugging.
     pub fn symbol_table(&self) -> &SymbolTable {
         &self.symbol_table
     }
@@ -677,7 +678,6 @@ impl SemanticAnalyzer {
 
     /// Clear class-level type parameters after finishing with a class.
     pub fn clear_class_type_params(&mut self) {
-        // Remove class type params from current_bounds
         if let Some(params) = &self.current_class_type_params {
             for (param, _) in params {
                 self.current_bounds.remove(param);
@@ -686,7 +686,6 @@ impl SemanticAnalyzer {
         self.current_class_type_params = None;
     }
 
-    // check if a name is a built-in function and return its signature
     fn get_builtin_sig(&self, name: &str) -> Option<&BuiltInSig> {
         BUILT_IN_FUNCTIONS.get(name)
     }
@@ -701,7 +700,6 @@ impl SemanticAnalyzer {
     }
 
     fn add_builtin_functions(&mut self) {
-        // add built-in functions
         let builtins = vec![
             (
                 "print",
@@ -768,11 +766,10 @@ impl SemanticAnalyzer {
                         default_param_count: 0,
                     },
                 )
-                .unwrap();
+                .expect("builtin function registration should not fail");
         }
     }
 
-    // resolve a parsed typenode to a resolved type
     #[allow(clippy::only_used_in_recursion)]
     pub fn resolve_type(&self, type_node: &TypeNode) -> Result<Type, SemanticError> {
         match &type_node.kind {
@@ -821,8 +818,7 @@ impl SemanticAnalyzer {
                     ));
                 }
 
-                // for now, assume named types are classes/enums/interfaces
-                // todo, implement full type definition resolution for enums/interfaces (currently only handles generics).
+                // named types are assumed to be classes, enums, or interfaces
                 let resolved_args = type_args
                     .iter()
                     .map(|arg| self.resolve_type(arg))
@@ -870,7 +866,6 @@ impl SemanticAnalyzer {
         }
     }
 
-    // get the type of an expression
     pub fn get_expression_type(&mut self, expr: &ExpressionNode) -> Result<Type, SemanticError> {
         match &expr.kind {
             ExpressionKind::Literal(lit) => match lit {
@@ -887,7 +882,7 @@ impl SemanticAnalyzer {
                     if let Some(self_type) = &self.current_self_type {
                         Ok(self_type.clone())
                     } else {
-                        // For now, return a placeholder type to allow analysis to continue
+                        // placeholder type to allow analysis to continue when self type is unavailable
                         Ok(Type::Named("Unknown".to_string(), vec![]))
                     }
                 } else {
@@ -907,7 +902,6 @@ impl SemanticAnalyzer {
                             Type::Generic(n) if n == name => Type::Variable(name.clone()),
                             _ => type_,
                         };
-                        // Return the actual type of the variable (including Reference types)
                         Ok(type_)
                     } else if let Some(sig) = self.get_builtin_sig(name) {
                         Ok(Type::Function {
@@ -934,7 +928,6 @@ impl SemanticAnalyzer {
                 let right_type = self.get_expression_type(right)?;
 
                 if *op == crate::parser::BinaryOp::Assign {
-                    // special handling for assignment
                     if let crate::parser::ExpressionKind::Identifier(name) = &left.kind {
                         let symbol =
                             self.symbol_table
@@ -984,7 +977,6 @@ impl SemanticAnalyzer {
                                         });
                                     }
 
-                                    // Type check
                                     self.check_type_compatibility(
                                         field_type,
                                         &right_type,
@@ -1008,9 +1000,6 @@ impl SemanticAnalyzer {
                         postfix: _,
                     } = &left.kind
                     {
-                        // Dereference assignment is allowed (e.g., *p = 20)
-                        // Type compatibility already checked via left_type and right_type
-                        // No const checking needed - you can't have a const pointer target
                     } else {
                         return Err(SemanticError {
                             message: "Assignment to non-identifier is not supported".into(),
@@ -1026,7 +1015,6 @@ impl SemanticAnalyzer {
                         | crate::parser::BinaryOp::DivideAssign
                         | crate::parser::BinaryOp::ModuloAssign
                 ) {
-                    // Compound assignment operators - check for const
                     if let crate::parser::ExpressionKind::Identifier(name) = &left.kind {
                         let symbol =
                             self.symbol_table
@@ -1049,7 +1037,6 @@ impl SemanticAnalyzer {
                         field,
                     } = &left.kind
                     {
-                        // Check if field is const
                         let obj_type = self.get_expression_type(obj_expr)?;
 
                         if let Type::Named(class_name, _) = &obj_type {
@@ -1066,7 +1053,6 @@ impl SemanticAnalyzer {
                                         });
                                     }
 
-                                    // Type check
                                     let base_op = match op {
                                         crate::parser::BinaryOp::AddAssign => {
                                             crate::parser::BinaryOp::Add
@@ -1114,11 +1100,8 @@ impl SemanticAnalyzer {
                         postfix: _,
                     } = &left.kind
                     {
-                        // Dereference compound assignment is allowed (e.g., *p += 5)
-                        // Type checking happens below via resolve_binary_operator
                     }
 
-                    // Type check compound assignment
                     let base_op = match op {
                         crate::parser::BinaryOp::AddAssign => crate::parser::BinaryOp::Add,
                         crate::parser::BinaryOp::SubtractAssign => {
@@ -1486,7 +1469,6 @@ impl SemanticAnalyzer {
                     });
                 }
 
-                // First time analyzing this lambda - do full analysis
                 // Collect parameter names to identify what's local vs captured
                 let mut local_vars = std::collections::HashSet::new();
                 for param in params {
@@ -1527,14 +1509,17 @@ impl SemanticAnalyzer {
                 let return_type_resolved = if body.is_empty() {
                     Type::Void
                 } else {
-                    match &body.last().unwrap().kind {
+                    match &body
+                        .last()
+                        .expect("body is not empty (checked above), so last() should return Some")
+                        .kind
+                    {
                         StatementKind::Expression(expr) => self.get_expression_type(expr)?,
                         StatementKind::Return(Some(expr)) => self.get_expression_type(expr)?,
                         _ => Type::Void,
                     }
                 };
                 self.symbol_table.pop_scope()?;
-                // Count default parameters in lambda
                 let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
                 Ok(Type::Function {
                     params: param_types,
@@ -1551,7 +1536,6 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::GenericType(name, type_args) => {
-                // check if the generic type name exists.
                 if !self.symbol_table.exists(name) {
                     return Err(SemanticError {
                         message: format!("Undefined type '{}'", name),
@@ -1567,7 +1551,6 @@ impl SemanticAnalyzer {
         }
     }
 
-    // check if two types are compatible for assignment
     fn check_type_compatibility(
         &self,
         expected: &Type,
@@ -1751,7 +1734,6 @@ impl SemanticAnalyzer {
         })
     }
 
-    // check if a type implements a specific operator interface
     fn type_implements_interface(&self, type_: &Type, interface_name: &str) -> bool {
         match type_ {
             Type::Named(name, _) => {
@@ -1810,7 +1792,6 @@ impl SemanticAnalyzer {
         }
     }
 
-    // get method signature for built-in interfaces (used by generic type parameters)
     fn get_builtin_interface_method(
         &self,
         interface_name: &str,
@@ -1885,12 +1866,10 @@ impl SemanticAnalyzer {
         }
     }
 
-    // get method signature for a type and method name
     fn get_method_sig(&self, type_: &Type, method_name: &str) -> Option<MethodSig> {
         match type_ {
             Type::Named(name, args) => {
                 if let Some(symbol) = self.symbol_table.lookup(name) {
-                    // check direct methods
                     if let Some(sig) = symbol.methods.get(method_name) {
                         if args.is_empty() {
                             return Some(sig.clone());
@@ -1913,7 +1892,6 @@ impl SemanticAnalyzer {
                             });
                         }
                     }
-                    // check implemented interfaces
                     for interface_methods in symbol.interfaces.values() {
                         if let Some(sig) = interface_methods.get(method_name) {
                             return Some(sig.clone());
@@ -1923,7 +1901,6 @@ impl SemanticAnalyzer {
                 None
             }
             Type::Variable(var) | Type::Generic(var) => {
-                // for generics, check bounds
                 if let Some(bounds) = self.current_bounds.get(var) {
                     for bound in bounds {
                         // First check if it's a built-in interface
@@ -1944,7 +1921,6 @@ impl SemanticAnalyzer {
                 None
             }
             Type::Primitive(prim) => {
-                // built-in methods for primitives
                 match prim {
                     PrimitiveType::Int => match method_name {
                         "to_string" | "to_float" | "to_int" => Some(MethodSig {
@@ -2291,7 +2267,6 @@ impl SemanticAnalyzer {
         }
     }
 
-    // resolve binary operator for given operand types
     fn resolve_binary_operator(
         &self,
         left_type: &Type,
@@ -2919,7 +2894,6 @@ impl SemanticAnalyzer {
             )?;
         }
 
-        // add parameters to function scope.
         for param in &func.params {
             let param_type = self.resolve_type(&param.type_)?;
             self.symbol_table.add_symbol(
@@ -3935,7 +3909,6 @@ impl SemanticAnalyzer {
             }
             // Instantiate generic types (e.g., Stack<int>)
             ExpressionKind::GenericType(name, _) => {
-                // check if the generic type name exists.
                 if !self.symbol_table.exists(name) {
                     return Err(SemanticError {
                         message: format!("Undefined type '{}'", name),
@@ -4088,10 +4061,12 @@ impl SemanticAnalyzer {
 
         match spec {
             ImportSpec::Module { alias } => {
-                let symbol_name = alias
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| module_path.split('.').last().unwrap());
+                let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or_else(|| {
+                    module_path
+                        .split('.')
+                        .last()
+                        .expect("module path should have at least one component")
+                });
 
                 if let Some(sig) = self.get_builtin_sig(symbol_name) {
                     self.symbol_table.add_symbol(

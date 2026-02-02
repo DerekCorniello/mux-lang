@@ -117,14 +117,12 @@ impl<'a> Parser<'a> {
             let next_token = &self.tokens[self.current + 1];
             if self.is_statement_starter(&next_token.token_type)
                 && !matches!(token.token_type, TokenType::NewLine)
+                && next_token.token_type != TokenType::Eof
             {
-                // skip error if at eof
-                if next_token.token_type != TokenType::Eof {
-                    return Err(ParserError::new(
-                        "Expected newline before statement".to_string(),
-                        next_token.span,
-                    ));
-                }
+                return Err(ParserError::new(
+                    "Expected newline before statement".to_string(),
+                    next_token.span,
+                ));
             }
         }
         Ok(())
@@ -133,7 +131,6 @@ impl<'a> Parser<'a> {
     pub fn parse(&mut self) -> Result<Vec<AstNode>, (Vec<AstNode>, Vec<ParserError>)> {
         let mut nodes = Vec::new();
         while !self.is_at_end() {
-            // declaration() handles newlines.
             if self.is_at_end() {
                 break;
             }
@@ -146,7 +143,7 @@ impl<'a> Parser<'a> {
 
                     // check statement termination for top-level, non-control flow statements.
                     let should_check_termination = matches!(
-                        nodes.last().unwrap(),
+                        nodes.last().expect("nodes should not be empty after push"),
                         AstNode::Statement(stmt) if !matches!(
                             stmt.kind,
                             StatementKind::If { .. } | StatementKind::While { .. } |
@@ -162,7 +159,6 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    // skip newlines after statement.
                     let _ = self.skip_newlines();
                 }
                 Ok(None) => {
@@ -203,7 +199,6 @@ impl<'a> Parser<'a> {
             self.function_declaration(false).map(Some)
         } else if let TokenType::Id(_) = &self.peek().token_type {
             let start = self.current;
-            // Try to parse a type
             if self.parse_type().is_ok() {
                 if let TokenType::Id(_) = &self.peek().token_type {
                     let next = self.current + 1;
@@ -274,23 +269,19 @@ impl<'a> Parser<'a> {
         // Validate that postfix ++ and -- don't appear in declarations
         self.check_no_postfix_increment_decrement(&value)?;
 
-        // require newline before next statement at top level.
         if !self.is_in_block() {
-            // check if next token starts a new statement.
             if self.current < self.tokens.len() {
                 let next_token = &self.tokens[self.current];
-                if self.is_statement_starter(&next_token.token_type) {
-                    // error if not at newline.
-                    if !matches!(self.tokens[self.current - 1].token_type, TokenType::NewLine) {
-                        return Err(ParserError::new(
-                            "Expected newline after statement".to_string(),
-                            next_token.span,
-                        ));
-                    }
+                if self.is_statement_starter(&next_token.token_type)
+                    && !matches!(self.tokens[self.current - 1].token_type, TokenType::NewLine)
+                {
+                    return Err(ParserError::new(
+                        "Expected newline after statement".to_string(),
+                        next_token.span,
+                    ));
                 }
             }
         } else {
-            // skip newlines in blocks.
             let _ = self.skip_newlines();
         }
 
@@ -356,7 +347,6 @@ impl<'a> Parser<'a> {
         let type_params = if self.matches(&[TokenType::Lt]) {
             let mut params = Vec::new();
 
-            // parse at least one type parameter.
             loop {
                 let param = self.consume_identifier("Expected type parameter name")?;
                 let mut bounds = Vec::new();
@@ -563,10 +553,8 @@ impl<'a> Parser<'a> {
             match self.peek().token_type {
                 TokenType::Func => {
                     self.consume();
-                    // parse function signature for interface method.
                     let name = self.consume_identifier("Expected method name")?;
 
-                    // parse type parameters if present.
                     let type_params = if self.matches(&[TokenType::Lt]) {
                         let mut params = Vec::new();
                         if !self.check(TokenType::Gt) {
@@ -585,7 +573,6 @@ impl<'a> Parser<'a> {
                         Vec::new()
                     };
 
-                    // parse parameters.
                     self.consume_token(TokenType::OpenParen, "Expected '(' after method name")?;
                     let mut params = Vec::new();
                     if !self.check(TokenType::CloseParen) {
@@ -604,7 +591,6 @@ impl<'a> Parser<'a> {
                     }
                     self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
 
-                    // parse return type.
                     let return_type = if self.matches(&[TokenType::Minus, TokenType::Gt])
                         || self.matches(&[TokenType::Returns])
                     {
@@ -616,7 +602,6 @@ impl<'a> Parser<'a> {
                         }
                     };
 
-                    // add the method to the interface.
                     methods.push(FunctionNode {
                         name,
                         type_params,
@@ -628,7 +613,6 @@ impl<'a> Parser<'a> {
                     });
                 }
                 TokenType::Id(_) | TokenType::Const => {
-                    // Parse field declaration
                     let field = self.parse_field_declaration(&type_params)?;
                     fields.push(field);
                 }
@@ -644,7 +628,6 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // consume closing brace
         let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after interface body")?;
         let full_span = start_span.combine(&end_span);
@@ -920,7 +903,6 @@ impl<'a> Parser<'a> {
                     let param = self.consume_identifier("Expected type parameter name")?;
                     let mut bounds = Vec::new();
 
-                    // look for bounds using 'is' keyword.
                     if self.matches(&[TokenType::Is]) {
                         loop {
                             let bound_name =
@@ -960,10 +942,8 @@ impl<'a> Parser<'a> {
         if !self.check(TokenType::CloseParen) {
             let mut has_default = false;
             loop {
-                // parse param as: type name.
                 let param_type = self.parse_type()?;
                 let param_name = self.consume_identifier("Expected parameter name")?;
-                // optional default value
                 let default_value = if self.matches(&[TokenType::Eq]) {
                     let default_expr = self.parse_expression()?;
                     // Validate that default value is a literal
@@ -1007,7 +987,6 @@ impl<'a> Parser<'a> {
             ));
         };
 
-        // skip newlines before function body.
         self.skip_newlines();
         let body = self.block()?;
 
@@ -1110,7 +1089,6 @@ impl<'a> Parser<'a> {
                     if depth != 0 {
                         return None;
                     }
-                    // expect 'returns' keyword.
                     if i >= n || tokens[i].token_type != TokenType::Returns {
                         return None;
                     }
@@ -1257,7 +1235,6 @@ impl<'a> Parser<'a> {
 
         // allow newline(s) before body.
         self.skip_newlines();
-        // require a braced block body.
         let body = self.block()?;
 
         let body_statements = match body {
@@ -1300,11 +1277,9 @@ impl<'a> Parser<'a> {
 
         // allow newline(s) before body.
         self.skip_newlines();
-        // parse the body, can be a single statement or a block.
         let body = if self.check(TokenType::OpenBrace) {
             self.block()?
         } else {
-            // single statement without braces
             self.statement()?
         };
 
@@ -1354,11 +1329,9 @@ impl<'a> Parser<'a> {
             };
             self.skip_newlines();
 
-            // check if the next token is an open brace for a block.
             let body = if self.check(TokenType::OpenBrace) {
                 self.block()?
             } else if self.matches(&[TokenType::Colon]) {
-                // if there's a colon, expect a block or statement after it.
                 self.skip_newlines();
                 if self.check(TokenType::OpenBrace) {
                     self.block()?
@@ -1366,7 +1339,6 @@ impl<'a> Parser<'a> {
                     self.statement()?
                 }
             } else {
-                // if not a block or colon, try to parse a single statement.
                 self.statement()?
             };
 
@@ -1391,7 +1363,6 @@ impl<'a> Parser<'a> {
 
             self.skip_newlines();
             if self.matches(&[TokenType::Comma]) {
-                // skip any newlines after the comma
                 self.skip_newlines();
                 // if the next token is a closing brace, break to handle trailing comma
                 if self.check(TokenType::CloseBrace) {
@@ -1422,7 +1393,6 @@ impl<'a> Parser<'a> {
                 let name_clone = name.clone();
                 self.current += 1; // consume the identifier
                 if self.matches(&[TokenType::OpenParen]) {
-                    // Parse as enum variant pattern
                     let mut args = Vec::new();
                     if !self.check(TokenType::CloseParen) {
                         loop {
@@ -1474,7 +1444,6 @@ impl<'a> Parser<'a> {
             // return at end of input, or followed by newline/closing brace - void return
             None
         } else {
-            // Try to parse an expression
             let expr = self.parse_expression()?;
 
             // Validate that postfix ++ and -- don't appear in return value
@@ -1522,7 +1491,6 @@ impl<'a> Parser<'a> {
         let mut statements = Vec::new();
         self.skip_newlines();
 
-        // if we immediately hit a closing brace, return an empty block.
         if self.matches(&[TokenType::CloseBrace]) {
             return Ok(AstNode::Statement(StatementNode {
                 kind: StatementKind::Block(Vec::new()),
@@ -1530,7 +1498,6 @@ impl<'a> Parser<'a> {
             }));
         }
 
-        // parse statements until we hit a closing brace or end of file.
         while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
             self.skip_newlines();
             if self.check(TokenType::CloseBrace) {
@@ -1563,7 +1530,6 @@ impl<'a> Parser<'a> {
             // use the span returned by consume_token so row/col end are correct.
             self.consume_token(TokenType::CloseBrace, "Expected '}' after block")?
         } else {
-            // if we've reached the end of the file without a closing brace, return an error.
             return Err(ParserError::new(
                 "Expected '}' after block".to_string(),
                 self.peek().span,
@@ -1601,9 +1567,7 @@ impl<'a> Parser<'a> {
 
     fn expression_statement(&mut self) -> ParserResult<AstNode> {
         let expr = self.parse_expression()?;
-        // check if there's a newline immediately after the expression before consuming it.
         let has_newline = self.check(TokenType::NewLine);
-        // only check statement termination for top-level statements.
         if !self.is_in_block() && !has_newline && self.current < self.tokens.len() {
             let next_token = &self.tokens[self.current];
             if self.is_statement_starter(&next_token.token_type) {
@@ -1613,7 +1577,6 @@ impl<'a> Parser<'a> {
                 ));
             }
         }
-        // now that we've validated, consume any newlines (in or out of blocks).
         let _ = self.skip_newlines();
         let span = *expr.span();
 
@@ -1801,7 +1764,6 @@ impl<'a> Parser<'a> {
                     });
                 }
 
-                // handle named types with generic parameters
                 let name_clone = name.clone();
                 let type_args = if self.matches(&[TokenType::Lt]) {
                     let args = self.parse_type_arguments()?;
@@ -1951,7 +1913,6 @@ impl<'a> Parser<'a> {
             // now it is safe to consume the operator
             let _ = self.consume_operator();
 
-            // handle operator associativity
             let next_precedence = if op_token.is_right_associative() {
                 op_precedence
             } else {
@@ -2010,7 +1971,6 @@ impl<'a> Parser<'a> {
         let mut map_entries = Vec::new();
         let mut is_map = false;
 
-        // Skip newlines after opening brace
         self.skip_newlines();
 
         if !self.check(TokenType::CloseBrace) {
@@ -2142,21 +2102,18 @@ impl<'a> Parser<'a> {
                 let start_span = token_span;
                 let mut elements = Vec::new();
 
-                // Skip newlines after opening bracket
                 self.skip_newlines();
 
                 if !self.check(TokenType::CloseBracket) {
                     loop {
                         elements.push(self.parse_expression()?);
 
-                        // Skip newlines after comma
                         self.skip_newlines();
 
                         if !self.matches(&[TokenType::Comma]) {
                             break;
                         }
 
-                        // Skip newlines after comma
                         self.skip_newlines();
                     }
                 }
@@ -2182,7 +2139,6 @@ impl<'a> Parser<'a> {
                     loop {
                         let param_type = self.parse_type()?;
                         let param_name = self.consume_identifier("Expected parameter name")?;
-                        // Default arguments not supported in lambdas
                         if self.matches(&[TokenType::Eq]) {
                             return Err(ParserError::new(
                                 "Default arguments are not supported in lambda expressions. Use named functions instead.",
@@ -2447,7 +2403,6 @@ impl<'a> Parser<'a> {
         let token = self.peek();
         for ty in types {
             if token.token_type == *ty {
-                // do not consume eof tokens
                 if token.token_type == TokenType::Eof {
                     return false;
                 }

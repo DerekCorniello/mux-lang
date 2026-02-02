@@ -130,8 +130,12 @@ impl ModuleResolver {
     }
 
     fn parse_module(&self, file_path: &Path) -> Result<Vec<AstNode>, String> {
-        let mut src = Source::new(file_path.to_str().unwrap())
-            .map_err(|e| format!("Failed to open module: {}", e))?;
+        let mut src = Source::new(
+            file_path
+                .to_str()
+                .expect("file path should be valid Unicode"),
+        )
+        .map_err(|e| format!("Failed to open module: {}", e))?;
 
         let mut lex = Lexer::new(&mut src);
         let tokens = lex

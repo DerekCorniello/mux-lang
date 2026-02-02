@@ -201,13 +201,12 @@ impl<'a> Lexer<'a> {
                 self.source.next_char(); // consume '\n'
                 return Ok(Token::new(TokenType::NewLine, start_span));
             }
-            // handle slash stuff
+            // handle comments and division operator starting with slash
             Some('/') => {
                 let start_span = Span::new(self.source.line, self.source.col);
                 self.source.next_char(); // consume '/'
 
                 match self.source.peek() {
-                    // line comment - consume until newline and return it
                     Some('/') => {
                         self.source.next_char(); // consume second '/'
                         let comment = self.source.consume_until('\n');
@@ -216,7 +215,6 @@ impl<'a> Lexer<'a> {
                             start_span,
                         ));
                     }
-                    // block comment - consume until */ and return it
                     Some('*') => {
                         self.source.next_char(); // consume '*'
                         let comment = self.source.consume_multiline_comment();
@@ -225,18 +223,15 @@ impl<'a> Lexer<'a> {
                             start_span,
                         ));
                     }
-                    // slasheq
                     Some('=') => {
                         self.source.next_char(); // consume '='
                         return Ok(Token::new(TokenType::SlashEq, start_span));
                     }
-                    // not a comment, handle as a slash token
                     _ => {
                         return Ok(Token::new(TokenType::Slash, start_span));
                     }
                 }
             }
-            // ready to process the next token
             _ => {}
         }
 
@@ -277,7 +272,6 @@ impl<'a> Lexer<'a> {
         first_char: char,
         mut start_span: Span,
     ) -> Result<Token, LexerError> {
-        // update the span with the end position
         start_span.complete(self.source.line, self.source.col);
 
         match first_char {
@@ -439,15 +433,11 @@ impl<'a> Lexer<'a> {
             '0'..='9' => self.read_number(first_char, start_span),
             '\'' => self.read_char(start_span),
             '"' => {
-                // Check for triple quotes
                 if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
-                    // Skip the next two quotes
                     self.source.next_char();
                     self.source.next_char();
-                    // Read the string with triple quotes
                     self.read_string(start_span)
                 } else {
-                    // Regular double-quoted string
                     self.read_string(start_span)
                 }
             }
@@ -508,33 +498,28 @@ impl<'a> Lexer<'a> {
         let mut s = String::new();
         let mut escaped = false;
         let is_triple = self.is_triple_quote();
-        let start_col = start_span.col_start; // remember where string starts
+        let start_col = start_span.col_start;
 
-        // Skip the next two quotes if this is a triple-quoted string
         if is_triple {
             self.source.next_char(); // consume second quote
             self.source.next_char(); // consume third quote
         }
 
         while let Some(c) = self.source.next_char() {
-            // Handle escape sequences
             if c == '\\' && !escaped {
                 escaped = true;
                 continue;
             }
 
-            // Check for end of string
             if c == '"' && !escaped {
-                // For triple-quoted strings, check for two more quotes
                 if is_triple {
                     if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
-                        self.source.next_char(); // consume second quote
-                        self.source.next_char(); // consume third quote
+                        self.source.next_char();
+                        self.source.next_char();
                         start_span.complete(self.source.line, self.source.col);
                         return Ok(Token::new(TokenType::Str(s), start_span));
                     }
                 } else {
-                    // For regular strings, a single quote ends it
                     start_span.complete(self.source.line, self.source.col);
                     return Ok(Token::new(TokenType::Str(s), start_span));
                 }
@@ -592,7 +577,6 @@ impl<'a> Lexer<'a> {
             }
 
             if c == '\'' && !escaped {
-                // end of char literal
                 if chars.len() != 1 {
                     return Err(LexerError::with_help(
                         "Char literal must be exactly one character",
@@ -649,15 +633,17 @@ impl<'a> Lexer<'a> {
         // Handle leading minus sign for negative numbers
         // Note: if first_char is '-', it was already added to num in the caller
         if first_char == '.' {
-            // handle numbers starting with decimal point
             is_float = true;
             num.push('0');
             num.push('.');
-            // require at least one digit after the decimal point
             let mut has_digit = false;
             while let Some(c) = self.source.peek() {
                 if c.is_ascii_digit() {
-                    num.push(self.source.next_char().unwrap());
+                    num.push(
+                        self.source
+                            .next_char()
+                            .expect("peek returned Some, so next_char should return Some"),
+                    );
                     has_digit = true;
                 } else if c == '_' {
                     self.source.next_char(); // skip underscores
@@ -673,18 +659,19 @@ impl<'a> Lexer<'a> {
                 ));
             }
         } else {
-            // handle numbers starting with a digit (or with a minus sign for negative numbers)
             if first_char == '-' {
-                // Add the minus sign for negative numbers
                 num.push('-');
             } else {
                 num.push(first_char);
             }
 
-            // read digits before decimal point
             while let Some(c) = self.source.peek() {
                 if c.is_ascii_digit() {
-                    num.push(self.source.next_char().unwrap());
+                    num.push(
+                        self.source
+                            .next_char()
+                            .expect("peek returned Some, so next_char should return Some"),
+                    );
                 } else if c == '_' {
                     self.source.next_char(); // skip underscores
                 } else {
@@ -692,15 +679,22 @@ impl<'a> Lexer<'a> {
                 }
             }
 
-            // check for decimal point
             if let Some('.') = self.source.peek() {
                 is_float = true;
-                num.push(self.source.next_char().unwrap());
+                num.push(
+                    self.source
+                        .next_char()
+                        .expect("peek returned Some, so next_char should return Some"),
+                );
 
                 // read digits after decimal point (optional for numbers like 42.)
                 while let Some(c) = self.source.peek() {
                     if c.is_ascii_digit() {
-                        num.push(self.source.next_char().unwrap());
+                        num.push(
+                            self.source
+                                .next_char()
+                                .expect("peek returned Some, so next_char should return Some"),
+                        );
                     } else if c == '_' {
                         self.source.next_char(); // skip underscores
                     } else {
@@ -713,18 +707,29 @@ impl<'a> Lexer<'a> {
         // handle scientific notation (e.g., 1.23e4, 1e-10, 1.23e+10)
         if let Some('e') | Some('E') = self.source.peek() {
             is_float = true;
-            num.push(self.source.next_char().unwrap());
+            num.push(
+                self.source
+                    .next_char()
+                    .expect("peek returned Some, so next_char should return Some"),
+            );
 
-            // check for sign
             if let Some('+') | Some('-') = self.source.peek() {
-                num.push(self.source.next_char().unwrap());
+                num.push(
+                    self.source
+                        .next_char()
+                        .expect("peek returned Some, so next_char should return Some"),
+                );
             }
 
             // Require at least one digit after 'e' and optional sign
             let mut has_exponent_digit = false;
             while let Some(c) = self.source.peek() {
                 if c.is_ascii_digit() {
-                    num.push(self.source.next_char().unwrap());
+                    num.push(
+                        self.source
+                            .next_char()
+                            .expect("peek returned Some, so next_char should return Some"),
+                    );
                     has_exponent_digit = true;
                 } else if c == '_' {
                     self.source.next_char(); // skip underscores
@@ -744,11 +749,9 @@ impl<'a> Lexer<'a> {
         start_span.complete(self.source.line, self.source.col);
 
         if is_float {
-            // handle case where the number ends with a decimal point
             if num.ends_with('.') {
                 num.push('0');
             }
-            // remove underscores for parsing
             let clean_num: String = num.chars().filter(|c| *c != '_').collect();
             clean_num
                 .parse::<f64>()
@@ -756,7 +759,6 @@ impl<'a> Lexer<'a> {
                 .map(|f| Token::new(TokenType::Float(f), start_span))
                 .map_err(|_| LexerError::new(format!("Invalid float literal: {}", num), start_span))
         } else {
-            // Parse as integer
             let clean_num: String = num.chars().filter(|c| *c != '_').collect();
             clean_num
                 .parse::<i64>()

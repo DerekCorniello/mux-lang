@@ -84,7 +84,6 @@ pub extern "C" fn mux_optional_some_string(val: *mut Value) -> *mut Optional {
         return Box::into_raw(Box::new(Optional::none()));
     }
     unsafe {
-        // Clone the value instead of taking ownership
         let value = (*val).clone();
         Box::into_raw(Box::new(Optional::some(value)))
     }
@@ -93,12 +92,10 @@ pub extern "C" fn mux_optional_some_string(val: *mut Value) -> *mut Optional {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_some_value(val: *mut Value) -> *mut Optional {
-    // Generic function for any *mut Value (lists, maps, sets, custom types)
     if val.is_null() {
         return Box::into_raw(Box::new(Optional::none()));
     }
     unsafe {
-        // Clone the value instead of taking ownership
         let value = (*val).clone();
         Box::into_raw(Box::new(Optional::some(value)))
     }
@@ -114,11 +111,17 @@ pub extern "C" fn mux_optional_none() -> *mut Optional {
 pub extern "C" fn mux_optional_to_string(opt: *const Optional) -> *mut std::ffi::c_char {
     use std::ffi::CString;
     if opt.is_null() {
-        return CString::new("null".to_string()).unwrap().into_raw();
+        // Safe: "null" is valid UTF-8 without null bytes
+        return CString::new("null".to_string())
+            .expect("'null' string should be valid UTF-8")
+            .into_raw();
     }
     unsafe {
         let s = (*opt).to_string();
-        CString::new(s).unwrap().into_raw()
+        // Safe: to_string produces valid UTF-8 without null bytes
+        CString::new(s)
+            .expect("to_string should produce valid UTF-8")
+            .into_raw()
     }
 }
 

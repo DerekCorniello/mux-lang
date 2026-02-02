@@ -40,7 +40,6 @@ impl fmt::Display for Map {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_map_value(map: *mut Map) -> *mut Value {
-    // Borrow instead of taking ownership to avoid double-free
     let map = unsafe { &*map };
     let value = Value::Map(map.0.clone());
     mux_rc_alloc(value)
@@ -102,7 +101,8 @@ pub unsafe extern "C" fn mux_map_is_empty(map: *const Map) -> bool {
 pub extern "C" fn mux_map_to_string(map: *const Map) -> *mut c_char {
     let map = unsafe { &*map };
     let s = map.to_string();
-    let c_str = CString::new(s).unwrap();
+    // Safe: to_string produces valid UTF-8 without null bytes
+    let c_str = CString::new(s).expect("to_string should produce valid UTF-8");
     c_str.into_raw()
 }
 
