@@ -18,7 +18,6 @@ pub extern "C" fn mux_range(start: i64, end: i64) -> *mut List {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_some(val: *mut Value) -> *mut Optional {
-    // Clone the value instead of taking ownership
     let value = unsafe { (*val).clone() };
     Box::into_raw(Box::new(Optional::some(value)))
 }
@@ -50,7 +49,6 @@ pub extern "C" fn mux_none() -> *mut Optional {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_ok(val: *mut Value) -> *mut MuxResult {
-    // Clone the value instead of taking ownership
     let value = unsafe { (*val).clone() };
     Box::into_raw(Box::new(MuxResult::ok(value)))
 }
@@ -82,7 +80,6 @@ pub extern "C" fn mux_new_set() -> *mut Set {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_add(a: *mut Value, b: *mut Value) -> *mut Value {
-    // NON-DESTRUCTIVE: Borrow values instead of taking ownership
     let a = unsafe { &*a };
     let b = unsafe { &*b };
     let result = match (a, b) {
@@ -115,11 +112,7 @@ pub extern "C" fn mux_value_get_list(val: *mut Value) -> *mut List {
     }
     unsafe {
         match &*val {
-            Value::List(list_data) => {
-                // Return a pointer to a new List containing the same data
-                // This allows us to modify the list while keeping the original Value intact
-                Box::into_raw(Box::new(List(list_data.clone())))
-            }
+            Value::List(list_data) => Box::into_raw(Box::new(List(list_data.clone()))),
             _ => std::ptr::null_mut(),
         }
     }

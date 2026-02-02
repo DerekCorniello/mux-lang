@@ -40,7 +40,6 @@ impl fmt::Display for Map {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_map_value(map: *mut Map) -> *mut Value {
-    // Borrow instead of taking ownership to avoid double-free
     let map = unsafe { &*map };
     let value = Value::Map(map.0.clone());
     mux_rc_alloc(value)

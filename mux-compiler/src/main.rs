@@ -222,8 +222,6 @@ fn main() {
     };
 
     let exe_path = std::env::current_exe().unwrap();
-    // todo:
-    // clean up the resolution of the library path and anything else needed
     let lib_path = exe_path
         .parent()
         .unwrap()
@@ -249,7 +247,7 @@ fn main() {
         .output();
 
     match clang_output {
-        Ok(output) if output.status.success() => { /* Executable built successfully */ }
+        Ok(output) if output.status.success() => {}
         Ok(output) => {
             eprintln!("clang failed: {}", String::from_utf8_lossy(&output.stderr));
         }
@@ -261,7 +259,6 @@ fn main() {
         }
     }
 
-    // remove IR if requested to not keep
     if !intermediate {
         Command::new("rm")
             .arg(&ir_file)
@@ -269,7 +266,6 @@ fn main() {
             .expect("Failed to remove intermediate IR file");
     }
 
-    // run executable if requested
     if do_run {
         let status = Command::new(&exe_file).status();
         match status {

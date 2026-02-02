@@ -37,7 +37,6 @@ pub extern "C" fn mux_result_ok_bool(val: i32) -> *mut MuxResult {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_result_ok_char(val: i64) -> *mut MuxResult {
-    // Char is passed as i64, store as int
     Box::into_raw(Box::new(MuxResult::ok(Value::Int(val))))
 }
 
@@ -48,7 +47,6 @@ pub extern "C" fn mux_result_ok_string(val: *mut Value) -> *mut MuxResult {
         return std::ptr::null_mut();
     }
     unsafe {
-        // Clone the value instead of taking ownership
         let value = (*val).clone();
         Box::into_raw(Box::new(MuxResult::ok(value)))
     }
@@ -57,12 +55,10 @@ pub extern "C" fn mux_result_ok_string(val: *mut Value) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_result_ok_value(val: *mut Value) -> *mut MuxResult {
-    // Generic function for any *mut Value (lists, maps, sets, custom types)
     if val.is_null() {
         return std::ptr::null_mut();
     }
     unsafe {
-        // Clone the value instead of taking ownership
         let value = (*val).clone();
         Box::into_raw(Box::new(MuxResult::ok(value)))
     }

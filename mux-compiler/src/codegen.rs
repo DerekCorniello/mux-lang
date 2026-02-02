@@ -57,618 +57,739 @@ impl<'a> CodeGenerator<'a> {
         let module = context.create_module("mux_module");
         let builder = context.create_builder();
 
-        // declare runtime functions
         let void_type = context.void_type();
         let i64_type = context.i64_type();
         let f64_type = context.f64_type();
         let i8_ptr = context.ptr_type(AddressSpace::default());
-        let list_ptr = i8_ptr; // placeholder for *mut List
-        let map_ptr = i8_ptr; // placeholder for *mut Map
-        let set_ptr = i8_ptr; // placeholder for *mut Set
+        let list_ptr = i8_ptr;
+        let map_ptr = i8_ptr;
+        let set_ptr = i8_ptr;
 
-        // mux_value_from_string: (*const c_char) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_value_from_string", fn_type, None);
+        module.add_function(
+            "mux_value_from_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_new_string_from_cstr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_print",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "exit",
+            void_type.fn_type(&[context.i32_type().into()], false),
+            None,
+        );
+        module.add_function("malloc", i8_ptr.fn_type(&[i64_type.into()], false), None);
 
-        // mux_new_string_from_cstr: (*const c_char) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_new_string_from_cstr", fn_type, None);
-
-        // mux_print: (*mut Value) -> ()
-        let params = &[i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_print", fn_type, None);
-
-        // mux_print: (*mut Value) -> ()
-        let params = &[i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_print", fn_type, None);
-
-        // exit: (i32) -> ()
-        let params = &[context.i32_type().into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("exit", fn_type, None);
-
-        // malloc: (i64) -> *mut i8
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("malloc", fn_type, None);
-
-        // mux_string_concat: (*const c_char, *const c_char) -> *mut c_char
         let params = &[i8_ptr.into(), i8_ptr.into()];
         let fn_type = i8_ptr.fn_type(params, false);
         module.add_function("mux_string_concat", fn_type, None);
 
-        // mux_string_contains: (*const Value, *const Value) -> bool
-        let params = &[i8_ptr.into(), i8_ptr.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_string_contains", fn_type, None);
-
-        // mux_string_contains_char: (*const Value, i64) -> bool
-        let params = &[i8_ptr.into(), i64_type.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_string_contains_char", fn_type, None);
-
-        // mux_string_equal: (*const c_char, *const c_char) -> i32
-        let params = &[i8_ptr.into(), i8_ptr.into()];
-        let fn_type = context.i32_type().fn_type(params, false);
-        module.add_function("mux_string_equal", fn_type, None);
-
-        // mux_string_not_equal: (*const c_char, *const c_char) -> i32
-        let params = &[i8_ptr.into(), i8_ptr.into()];
-        let fn_type = context.i32_type().fn_type(params, false);
-        module.add_function("mux_string_not_equal", fn_type, None);
-
-        // mux_value_equal: (*const Value, *const Value) -> i32
-        let params = &[i8_ptr.into(), i8_ptr.into()];
-        let fn_type = context.i32_type().fn_type(params, false);
-        module.add_function("mux_value_equal", fn_type, None);
-
-        // mux_value_not_equal: (*const Value, *const Value) -> i32
-        let params = &[i8_ptr.into(), i8_ptr.into()];
-        let fn_type = context.i32_type().fn_type(params, false);
-        module.add_function("mux_value_not_equal", fn_type, None);
-
-        // mux_value_get_string: (*const Value) -> *const c_char
-        let fn_type = i8_ptr.fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_get_string", fn_type, None);
-
-        // mux_value_from_string: (*const c_char) -> *mut Value
-        let fn_type = i8_ptr.fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_from_string", fn_type, None);
-
-        // mux_int_to_string: (i64) -> *const c_char
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_int_to_string", fn_type, None);
-
-        // mux_int_to_float: (i64) -> *mut Value
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_int_to_float", fn_type, None);
-
-        // mux_float_to_int: (f64) -> *mut Value
-        let params = &[f64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_float_to_int", fn_type, None);
-
-        // mux_float_to_string: (f64) -> *const c_char
-        let params = &[f64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_float_to_string", fn_type, None);
-
-        // mux_bool_to_string: (i32) -> *const c_char
-        let params = &[context.i32_type().into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_bool_to_string", fn_type, None);
-
-        // mux_bool_to_int: (*mut Value) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_bool_to_int", fn_type, None);
-
-        // mux_bool_to_float: (*mut Value) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_bool_to_float", fn_type, None);
-
-        // mux_string_to_string: (*const c_char) -> *const c_char
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_string_to_string", fn_type, None);
-
-        // mux_string_to_int: (*const c_char) -> *mut MuxResult
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_string_to_int", fn_type, None);
-
-        // mux_string_to_float: (*const c_char) -> *mut MuxResult
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_string_to_float", fn_type, None);
-
-        // mux_char_to_int: (i64) -> *mut MuxResult
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_char_to_int", fn_type, None);
-
-        // mux_char_to_string: (i64) -> *const c_char
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_char_to_string", fn_type, None);
-
-        // mux_list_to_string: (*mut List) -> *const c_char
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_to_string", fn_type, None);
-
-        // mux_list_value: (*mut List) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_value", fn_type, None);
-
-        // mux_map_value: (*mut Map) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_map_value", fn_type, None);
-
-        // mux_set_value: (*mut Set) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_set_value", fn_type, None);
-
-        // mux_map_to_string: (*mut Map) -> *const c_char
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_map_to_string", fn_type, None);
-
-        // object management functions
-        // mux_register_object_type: (*const c_char, usize) -> u32
-        let params = &[i8_ptr.into(), context.i64_type().into()];
-        let fn_type = context.i32_type().fn_type(params, false);
-        module.add_function("mux_register_object_type", fn_type, None);
-
-        // mux_alloc_object: (u32) -> *mut Value
-        let params = &[context.i32_type().into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_alloc_object", fn_type, None);
-
-        // mux_free_object: (*mut Value) -> ()
-        let params = &[i8_ptr.into()];
-        let fn_type = context.void_type().fn_type(params, false);
-        module.add_function("mux_free_object", fn_type, None);
-
-        // mux_get_object_ptr: (*const Value) -> *mut c_void
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_get_object_ptr", fn_type, None);
-
-        // mux_set_to_string: (*mut Set) -> *const c_char
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_set_to_string", fn_type, None);
-
-        // mux_optional_to_string: (*const Optional) -> *const c_char
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_optional_to_string", fn_type, None);
-
-        // mux_value_from_optional: (*mut Optional) -> *mut Value
-        let fn_type = i8_ptr.fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_from_optional", fn_type, None);
-
-        // mux_value_get_list: (*mut Value) -> *mut List
-        let fn_type = list_ptr.fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_get_list", fn_type, None);
-
-        // mux_value_get_map: (*mut Value) -> *mut Map
-        let fn_type = map_ptr.fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_get_map", fn_type, None);
-
-        // mux_value_get_set: (*mut Value) -> *mut Set
-        let fn_type = set_ptr.fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_get_set", fn_type, None);
-
-        // mux_list_concat: (*const List, *const List) -> *mut List
-        let fn_type = list_ptr.fn_type(&[list_ptr.into(), list_ptr.into()], false);
-        module.add_function("mux_list_concat", fn_type, None);
-
-        // mux_map_merge: (*const Map, *const Map) -> *mut Map
-        let fn_type = map_ptr.fn_type(&[map_ptr.into(), map_ptr.into()], false);
-        module.add_function("mux_map_merge", fn_type, None);
-
-        // mux_set_union: (*const Set, *const Set) -> *mut Set
-        let fn_type = set_ptr.fn_type(&[set_ptr.into(), set_ptr.into()], false);
-        module.add_function("mux_set_union", fn_type, None);
-
-        // mux_value_to_string: (*mut Value) -> *const c_char
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_value_to_string", fn_type, None);
-
-        // mux_list_value: (*mut List) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_value", fn_type, None);
-
-        // mux_map_value: (*mut Map) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_map_value", fn_type, None);
-
-        // mux_set_value: (*mut Set) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_set_value", fn_type, None);
-
-        // mux_range: (i64, i64) -> *mut List
-        let params = &[i64_type.into(), i64_type.into()];
-        let fn_type = list_ptr.fn_type(params, false);
-        module.add_function("mux_range", fn_type, None);
-
-        // collection constructors
-        // mux_new_list: () -> *mut List
-        let fn_type = list_ptr.fn_type(&[], false);
-        module.add_function("mux_new_list", fn_type, None);
-
-        // mux_new_map: () -> *mut Map
-        let fn_type = list_ptr.fn_type(&[], false); // using list_ptr as generic ptr
-        module.add_function("mux_new_map", fn_type, None);
-
-        // mux_new_set: () -> *mut Set
-        let fn_type = list_ptr.fn_type(&[], false);
-        module.add_function("mux_new_set", fn_type, None);
-
-        // mux_value_add: (*mut Value, *mut Value) -> *mut Value
-        let fn_type = i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false);
-        module.add_function("mux_value_add", fn_type, None);
-
-        // safe value extraction functions
-        // mux_value_get_int: (*const Value) -> i64
-        let fn_type = i64_type.fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_get_int", fn_type, None);
-
-        // mux_value_get_float: (*const Value) -> f64
-        let fn_type = context.f64_type().fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_get_float", fn_type, None);
-
-        // mux_value_get_bool: (*const Value) -> i32
-        let fn_type = context.i32_type().fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_get_bool", fn_type, None);
-
-        // mux_value_get_type_tag: (*const Value) -> i32
-        let fn_type = context.i32_type().fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_value_get_type_tag", fn_type, None);
-
-        // mux_free_value: (*mut Value) -> ()
-        let fn_type = void_type.fn_type(&[i8_ptr.into()], false);
-        module.add_function("mux_free_value", fn_type, None);
-
-        // list operations
-        // mux_list_push_back: (*mut List, *mut Value) -> ()
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_list_push_back", fn_type, None);
-
-        // mux_list_get: (*const List, i64) -> *mut Optional
-        let params = &[list_ptr.into(), i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_get", fn_type, None);
-
-        // mux_list_get_value: (*const List, i64) -> *mut Value
-        let params = &[list_ptr.into(), i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_get_value", fn_type, None);
-
-        // mux_list_length: (*const List) -> i64
-        let params = &[list_ptr.into()];
-        let fn_type = i64_type.fn_type(params, false);
-        module.add_function("mux_list_length", fn_type, None);
-
-        // mux_list_contains: (*const List, *const Value) -> bool
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_list_contains", fn_type, None);
-
-        // mux_value_list_length: (*const Value) -> i64
-        let params = &[i8_ptr.into()];
-        let fn_type = i64_type.fn_type(params, false);
-        module.add_function("mux_value_list_length", fn_type, None);
-
-        // mux_value_list_get_value: (*const Value, i64) -> *mut Value
-        let params = &[i8_ptr.into(), i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_value_list_get_value", fn_type, None);
-
-        // mux_list_pop_back: (*mut List) -> *mut Optional
-        let params = &[list_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_pop_back", fn_type, None);
-
-        // mux_list_push: (*mut List, *mut Value) -> ()
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_list_push", fn_type, None);
-
-        // mux_list_pop: (*mut List) -> *mut Optional
-        let params = &[list_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_pop", fn_type, None);
-
-        // mux_list_push_front: (*mut List, *mut Value) -> ()
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_list_push_front", fn_type, None);
-
-        // mux_list_pop_front: (*mut List) -> *mut Optional
-        let params = &[list_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_pop_front", fn_type, None);
-
-        // mux_list_push_back_value: (*mut Value, *mut Value) -> ()
-        let params = &[i8_ptr.into(), i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_list_push_back_value", fn_type, None);
-
-        // mux_list_push_value: (*mut Value, *mut Value) -> ()
-        let params = &[i8_ptr.into(), i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_list_push_value", fn_type, None);
-
-        // mux_list_push_front_value: (*mut Value, *mut Value) -> ()
-        let params = &[i8_ptr.into(), i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_list_push_front_value", fn_type, None);
-
-        // mux_list_pop_back_value: (*mut Value) -> *mut Optional
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_pop_back_value", fn_type, None);
-
-        // mux_list_pop_value: (*mut Value) -> *mut Optional
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_pop_value", fn_type, None);
-
-        // mux_list_pop_front_value: (*mut Value) -> *mut Optional
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_list_pop_front_value", fn_type, None);
-
-        // mux_list_is_empty: (*const List) -> bool
-        let params = &[list_ptr.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_list_is_empty", fn_type, None);
-
-        // map operations
-        // mux_map_put: (*mut Map, *mut Value, *mut Value) -> ()
-        let params = &[list_ptr.into(), i8_ptr.into(), i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_map_put", fn_type, None);
-
-        // mux_map_get: (*const Map, *const Value) -> *mut Optional
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_map_get", fn_type, None);
-
-        // mux_map_contains: (*const Map, *const Value) -> bool
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_map_contains", fn_type, None);
-
-        // mux_map_remove: (*mut Map, *const Value) -> *mut Optional
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_map_remove", fn_type, None);
-
-        // set operations
-        // mux_set_add: (*mut Set, *mut Value) -> ()
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = void_type.fn_type(params, false);
-        module.add_function("mux_set_add", fn_type, None);
-
-        // mux_set_contains: (*const Set, *const Value) -> bool
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_set_contains", fn_type, None);
-
-        // mux_set_remove: (*mut Set, *const Value) -> bool
-        let params = &[list_ptr.into(), i8_ptr.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_set_remove", fn_type, None);
-
-        // mux_set_size: (*const Set) -> i64
-        let params = &[list_ptr.into()];
-        let fn_type = i64_type.fn_type(params, false);
-        module.add_function("mux_set_size", fn_type, None);
-
-        // mux_set_is_empty: (*const Set) -> bool
-        let params = &[list_ptr.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_set_is_empty", fn_type, None);
-
-        // additional map operations
-        // mux_map_size: (*const Map) -> i64
-        let params = &[list_ptr.into()];
-        let fn_type = i64_type.fn_type(params, false);
-        module.add_function("mux_map_size", fn_type, None);
-
-        // mux_map_is_empty: (*const Map) -> bool
-        let params = &[list_ptr.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_map_is_empty", fn_type, None);
-
-        // value creation functions
-        // mux_int_value: (i64) -> *mut Value
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_int_value", fn_type, None);
-
-        // mux_float_value: (f64) -> *mut Value
-        let params = &[context.f64_type().into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_float_value", fn_type, None);
-
-        // mux_bool_value: (i32) -> *mut Value
-        let params = &[context.i32_type().into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_bool_value", fn_type, None);
-
-        // mux_string_value: (*const c_char) -> *mut Value
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_string_value", fn_type, None);
-
-        // mux_int_to_string: (i64) -> *const c_char
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_int_to_string", fn_type, None);
-
-        // mux_int_from_value: (*mut Value) -> i64
-        let params = &[i8_ptr.into()];
-        let fn_type = i64_type.fn_type(params, false);
-        module.add_function("mux_int_from_value", fn_type, None);
-
-        // mux_float_from_value: (*mut Value) -> f64
-        let params = &[i8_ptr.into()];
-        let fn_type = f64_type.fn_type(params, false);
-        module.add_function("mux_float_from_value", fn_type, None);
-
-        // mux_bool_from_value: (*mut Value) -> i32
-        let params = &[i8_ptr.into()];
-        let fn_type = context.i32_type().fn_type(params, false);
-        module.add_function("mux_bool_from_value", fn_type, None);
-
-        // mux_string_from_value: (*mut Value) -> *const c_char
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_string_from_value", fn_type, None);
-
-        // result constructors
-        // mux_result_ok_int: (i64) -> *mut MuxResult
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_ok_int", fn_type, None);
-
-        // mux_result_err_str: (*const c_char) -> *mut MuxResult
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_err_str", fn_type, None);
-
-        // mux_optional_some_int: (i64) -> *mut Optional
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_optional_some_int", fn_type, None);
-
-        // mux_optional_some_float: (f64) -> *mut Optional
-        let params = &[f64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_optional_some_float", fn_type, None);
-
-        // mux_optional_some_bool: (i32) -> *mut Optional
-        let params = &[context.i32_type().into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_optional_some_bool", fn_type, None);
-
-        // mux_optional_some_char: (i64) -> *mut Optional
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_optional_some_char", fn_type, None);
-
-        // mux_optional_some_string: (*mut Value) -> *mut Optional
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_optional_some_string", fn_type, None);
-
-        // mux_optional_some_value: (*mut Value) -> *mut Optional
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_optional_some_value", fn_type, None);
-
-        // mux_optional_none: () -> *mut Optional
-        let fn_type = i8_ptr.fn_type(&[], false);
-        module.add_function("mux_optional_none", fn_type, None);
-
-        // mux_result_ok_int: (i64) -> *mut MuxResult
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_ok_int", fn_type, None);
-
-        // mux_result_ok_float: (f64) -> *mut MuxResult
-        let params = &[f64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_ok_float", fn_type, None);
-
-        // mux_result_ok_bool: (i32) -> *mut MuxResult
-        let params = &[context.i32_type().into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_ok_bool", fn_type, None);
-
-        // mux_result_ok_char: (i64) -> *mut MuxResult
-        let params = &[i64_type.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_ok_char", fn_type, None);
-
-        // mux_result_ok_string: (*mut Value) -> *mut MuxResult
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_ok_string", fn_type, None);
-
-        // mux_result_ok_value: (*mut Value) -> *mut MuxResult
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_ok_value", fn_type, None);
-
-        // mux_result_err_str: (*const c_char) -> *mut MuxResult
-        let params = &[i8_ptr.into()];
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_err_str", fn_type, None);
-
-        // mux_optional_discriminant: (*mut Optional) -> i32
-        let params = &[i8_ptr.into()];
-        let fn_type = context.i32_type().fn_type(params, false);
-        module.add_function("mux_optional_discriminant", fn_type, None);
-
-        // mux_optional_data: (*mut Optional) -> *mut Value
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_optional_data", fn_type, None);
-
-        // mux_result_discriminant: (*mut MuxResult) -> i32
-        let params = &[i8_ptr.into()];
-        let fn_type = context.i32_type().fn_type(params, false);
-        module.add_function("mux_result_discriminant", fn_type, None);
-
-        // mux_result_data: (*mut MuxResult) -> *mut Value
-        let fn_type = i8_ptr.fn_type(params, false);
-        module.add_function("mux_result_data", fn_type, None);
-
-        // mux_int_pow: (i64, i64) -> i64
-        let params = &[i64_type.into(), i64_type.into()];
-        let fn_type = i64_type.fn_type(params, false);
-        module.add_function("mux_int_pow", fn_type, None);
-
-        // mux_math_pow: (f64, f64) -> f64
-        let params = &[f64_type.into(), f64_type.into()];
-        let fn_type = f64_type.fn_type(params, false);
-        module.add_function("mux_math_pow", fn_type, None);
-
-        // Reference counting functions
-        // mux_rc_inc: (*mut Value) -> void
-        let params = &[i8_ptr.into()];
-        let fn_type = context.void_type().fn_type(params, false);
-        module.add_function("mux_rc_inc", fn_type, None);
-
-        // mux_rc_dec: (*mut Value) -> bool
-        let params = &[i8_ptr.into()];
-        let fn_type = context.bool_type().fn_type(params, false);
-        module.add_function("mux_rc_dec", fn_type, None);
+        module.add_function(
+            "mux_string_contains",
+            context
+                .bool_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_contains_char",
+            context
+                .bool_type()
+                .fn_type(&[i8_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_equal",
+            context
+                .i32_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_not_equal",
+            context
+                .i32_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_equal",
+            context
+                .i32_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_not_equal",
+            context
+                .i32_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_from_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_int_to_string",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_int_to_float",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_float_to_int",
+            i8_ptr.fn_type(&[f64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_float_to_string",
+            i8_ptr.fn_type(&[f64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_bool_to_string",
+            i8_ptr.fn_type(&[context.i32_type().into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_bool_to_int",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_bool_to_float",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_to_int",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_to_float",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_char_to_int",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_char_to_string",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_register_object_type",
+            context
+                .i32_type()
+                .fn_type(&[i8_ptr.into(), context.i64_type().into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_alloc_object",
+            i8_ptr.fn_type(&[context.i32_type().into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_free_object",
+            context.void_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_get_object_ptr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_from_optional",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_list",
+            list_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_map",
+            map_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_set",
+            set_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_concat",
+            list_ptr.fn_type(&[list_ptr.into(), list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_merge",
+            map_ptr.fn_type(&[map_ptr.into(), map_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_union",
+            set_ptr.fn_type(&[set_ptr.into(), set_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_range",
+            list_ptr.fn_type(&[i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_new_list", list_ptr.fn_type(&[], false), None);
+
+        module.add_function("mux_new_map", list_ptr.fn_type(&[], false), None);
+
+        module.add_function("mux_new_set", list_ptr.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_value_add",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_int",
+            i64_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_float",
+            context.f64_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_bool",
+            context.i32_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_type_tag",
+            context.i32_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_free_value",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push_back",
+            void_type.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_get",
+            i8_ptr.fn_type(&[list_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_get_value",
+            i8_ptr.fn_type(&[list_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_length",
+            i64_type.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_contains",
+            context
+                .bool_type()
+                .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_list_length",
+            i64_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_list_get_value",
+            i8_ptr.fn_type(&[i8_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop_back",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push",
+            void_type.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push_front",
+            void_type.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop_front",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push_back_value",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push_value",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push_front_value",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop_back_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop_front_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_is_empty",
+            context.bool_type().fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_put",
+            void_type.fn_type(&[list_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_get",
+            i8_ptr.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_contains",
+            context
+                .bool_type()
+                .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_remove",
+            i8_ptr.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_add",
+            void_type.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_contains",
+            context
+                .bool_type()
+                .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_remove",
+            context
+                .bool_type()
+                .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_size",
+            i64_type.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_is_empty",
+            context.bool_type().fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_size",
+            i64_type.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_is_empty",
+            context.bool_type().fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_int_value",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_float_value",
+            i8_ptr.fn_type(&[context.f64_type().into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_bool_value",
+            i8_ptr.fn_type(&[context.i32_type().into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_int_to_string",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_int_from_value",
+            i64_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_float_from_value",
+            f64_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_bool_from_value",
+            context.i32_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_from_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_ok_int",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_err_str",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_some_int",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_some_float",
+            i8_ptr.fn_type(&[f64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_some_bool",
+            i8_ptr.fn_type(&[context.i32_type().into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_some_char",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_some_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_some_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function("mux_optional_none", i8_ptr.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_result_ok_int",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_ok_float",
+            i8_ptr.fn_type(&[f64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_ok_bool",
+            i8_ptr.fn_type(&[context.i32_type().into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_ok_char",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_ok_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_ok_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_err_str",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_discriminant",
+            context.i32_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_data",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_discriminant",
+            context.i32_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_result_data",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_int_pow",
+            i64_type.fn_type(&[i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_math_pow",
+            f64_type.fn_type(&[f64_type.into(), f64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_rc_inc",
+            context.void_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_rc_dec",
+            context.bool_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
 
         let mut type_map = HashMap::new();
         let mut enum_variants = HashMap::new();
 
-        // built-in enum types
         let i32_type = context.i32_type();
         let i8_ptr = context.ptr_type(AddressSpace::default());
         let struct_type = context.struct_type(&[i32_type.into(), i8_ptr.into()], false);
@@ -691,8 +812,6 @@ impl<'a> CodeGenerator<'a> {
             enum_variants.insert(enum_name, variants);
         }
 
-        // Collect enum variant names. Actual enum types are generated by generate_enum_type()
-        // which properly analyzes variant field types to create the correct tagged union.
         for (name, symbol) in analyzer.all_symbols() {
             if symbol.kind == crate::semantics::SymbolKind::Enum {
                 let mut variants = vec![];
@@ -923,14 +1042,12 @@ impl<'a> CodeGenerator<'a> {
                 std::collections::HashSet::new()
             };
 
-        // add vtable fields for implemented interfaces FIRST
         let ptr_type = self.context.ptr_type(AddressSpace::default());
         for interface_name in interfaces.keys() {
             field_types.push(ptr_type.into());
             field_indices.insert(format!("vtable_{}", interface_name), field_types.len() - 1);
         }
 
-        // add class fields after
         for field in fields {
             let field_type = if let TypeNode {
                 kind: TypeKind::Named(field_type_name, _),
@@ -1721,10 +1838,6 @@ impl<'a> CodeGenerator<'a> {
                     resolved_type.clone(),
                 ),
             );
-
-            // Note: We do NOT track lambda parameters for RC cleanup.
-            // The caller owns the parameter values and is responsible for their lifetime.
-            // If a parameter is stored into a field, the field assignment will increment RC.
         }
 
         // generate all statements
@@ -1929,13 +2042,11 @@ impl<'a> CodeGenerator<'a> {
 
     /// check if a method's parameters or return type reference any of the given type parameters
     fn method_uses_type_params(method: &FunctionNode, type_param_names: &[&str]) -> bool {
-        // check parameter types
         for param in &method.params {
             if Self::type_node_contains_names(&param.type_, type_param_names) {
                 return true;
             }
         }
-        // check return type
         if Self::type_node_contains_names(&method.return_type, type_param_names) {
             return true;
         }
@@ -1983,14 +2094,8 @@ impl<'a> CodeGenerator<'a> {
         // Now process all nodes together for type generation and function declarations
         let nodes = &all_nodes;
 
-        // zero pass: generate LLVM types for user-defined types
         self.generate_user_defined_types(nodes)?;
 
-        // first pass: declare all non-generic functions
-        // Process imported modules first, then main module
-        // This ensures we know which module each function belongs to for proper name mangling
-
-        // Collect imported module functions first to avoid borrow issues
         let imported_functions: Vec<(String, FunctionNode)> = self
             .analyzer
             .all_module_asts()
@@ -2087,9 +2192,6 @@ impl<'a> CodeGenerator<'a> {
             }
         }
 
-        // second pass: collect top-level statements and function nodes
-        // Note: collect from ALL nodes for top_level_statements (for globals),
-        // but only from main module for user_functions
         let mut top_level_statements = vec![];
         for node in nodes {
             if let AstNode::Statement(stmt) = node {
@@ -2097,19 +2199,15 @@ impl<'a> CodeGenerator<'a> {
             }
         }
 
-        // Collect user functions from main module only
         let mut user_functions = vec![];
         for node in main_module_nodes {
             if let AstNode::Function(func) = node {
-                // collect non-generic functions for later generation
                 if func.type_params.is_empty() {
                     user_functions.push(func.clone());
                 }
             }
         }
 
-        // Collect main module's top-level statements separately
-        // These will be used for main_init() to avoid re-initializing imported modules' globals
         let mut main_top_level_statements = vec![];
         for node in main_module_nodes {
             if let AstNode::Statement(stmt) = node {
@@ -2662,10 +2760,6 @@ impl<'a> CodeGenerator<'a> {
                     resolved_type.clone(),
                 ),
             );
-
-            // Note: We do NOT track function parameters for RC cleanup.
-            // The caller owns the parameter values and is responsible for their lifetime.
-            // If a parameter is stored into a field, the field assignment will increment RC.
         }
 
         // generate function body

@@ -42,7 +42,6 @@ impl fmt::Display for List {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_back(list: *mut List, val: *mut Value) {
-    // Clone the value instead of taking ownership
     let value = unsafe { (*val).clone() };
     unsafe { (*list).push_back(value) }
 }
@@ -60,7 +59,6 @@ pub extern "C" fn mux_list_pop_back(list: *mut List) -> *mut crate::optional::Op
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push(list: *mut List, val: *mut Value) {
-    // Clone the value instead of taking ownership
     let value = unsafe { (*val).clone() };
     unsafe { (*list).push_back(value) }
 }
@@ -82,7 +80,6 @@ pub extern "C" fn mux_list_pop(list: *mut List) -> *mut crate::optional::Optiona
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_front(list: *mut List, val: *mut Value) {
-    // Clone the value instead of taking ownership
     let value = unsafe { (*val).clone() };
     unsafe {
         (*list).0.insert(0, value);
@@ -122,15 +119,11 @@ pub unsafe extern "C" fn mux_list_length(list: *const List) -> i64 {
     unsafe { (*list).length() }
 }
 
-// Functions that operate directly on Values containing lists
-// These functions extract the list, modify it, and update the original Value
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_back_value(list_val: *mut Value, val: *mut Value) {
-    // Clone the value instead of taking ownership
     let value = unsafe { (*val).clone() };
     unsafe {
-        // Extract list, modify it, and update the original Value
         if let Value::List(list_data) = &*list_val {
             let mut new_list = list_data.clone();
             new_list.push(value);
@@ -142,10 +135,8 @@ pub extern "C" fn mux_list_push_back_value(list_val: *mut Value, val: *mut Value
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_value(list_val: *mut Value, val: *mut Value) {
-    // Clone the value instead of taking ownership
     let value = unsafe { (*val).clone() };
     unsafe {
-        // Extract list, modify it, and update the original Value
         if let Value::List(list_data) = &*list_val {
             let mut new_list = list_data.clone();
             new_list.insert(0, value); // Add to front
@@ -157,10 +148,8 @@ pub extern "C" fn mux_list_push_value(list_val: *mut Value, val: *mut Value) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_push_front_value(list_val: *mut Value, val: *mut Value) {
-    // Clone the value instead of taking ownership
     let value = unsafe { (*val).clone() };
     unsafe {
-        // Extract list, modify it, and update the original Value
         if let Value::List(list_data) = &*list_val {
             let mut new_list = list_data.clone();
             new_list.insert(0, value);
@@ -173,7 +162,6 @@ pub extern "C" fn mux_list_push_front_value(list_val: *mut Value, val: *mut Valu
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_pop_back_value(list_val: *mut Value) -> *mut crate::optional::Optional {
     let opt = unsafe {
-        // Extract list data first
         let current_list = if let Value::List(ref list_data) = *list_val {
             Some(list_data.clone())
         } else {
@@ -182,7 +170,6 @@ pub extern "C" fn mux_list_pop_back_value(list_val: *mut Value) -> *mut crate::o
 
         if let Some(mut list_data) = current_list {
             let popped = list_data.pop();
-            // Update the original Value
             *list_val = Value::List(list_data);
             popped
         } else {
@@ -199,7 +186,6 @@ pub extern "C" fn mux_list_pop_back_value(list_val: *mut Value) -> *mut crate::o
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_pop_value(list_val: *mut Value) -> *mut crate::optional::Optional {
     let opt = unsafe {
-        // Extract list data first
         let current_list = if let Value::List(ref list_data) = *list_val {
             Some(list_data.clone())
         } else {
@@ -210,9 +196,8 @@ pub extern "C" fn mux_list_pop_value(list_val: *mut Value) -> *mut crate::option
             let popped = if list_data.is_empty() {
                 None
             } else {
-                Some(list_data.remove(0)) // Remove from front
+                Some(list_data.remove(0))
             };
-            // Update the original Value
             *list_val = Value::List(list_data);
             popped
         } else {
@@ -229,7 +214,6 @@ pub extern "C" fn mux_list_pop_value(list_val: *mut Value) -> *mut crate::option
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_pop_front_value(list_val: *mut Value) -> *mut crate::optional::Optional {
     let opt = unsafe {
-        // Extract list data first
         let current_list = if let Value::List(ref list_data) = *list_val {
             Some(list_data.clone())
         } else {
@@ -242,7 +226,6 @@ pub extern "C" fn mux_list_pop_front_value(list_val: *mut Value) -> *mut crate::
             } else {
                 Some(list_data.remove(0))
             };
-            // Update the original Value
             *list_val = Value::List(list_data);
             popped
         } else {

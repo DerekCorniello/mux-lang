@@ -84,7 +84,6 @@ pub extern "C" fn mux_optional_some_string(val: *mut Value) -> *mut Optional {
         return Box::into_raw(Box::new(Optional::none()));
     }
     unsafe {
-        // Clone the value instead of taking ownership
         let value = (*val).clone();
         Box::into_raw(Box::new(Optional::some(value)))
     }
@@ -93,12 +92,10 @@ pub extern "C" fn mux_optional_some_string(val: *mut Value) -> *mut Optional {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_some_value(val: *mut Value) -> *mut Optional {
-    // Generic function for any *mut Value (lists, maps, sets, custom types)
     if val.is_null() {
         return Box::into_raw(Box::new(Optional::none()));
     }
     unsafe {
-        // Clone the value instead of taking ownership
         let value = (*val).clone();
         Box::into_raw(Box::new(Optional::some(value)))
     }

@@ -31,7 +31,6 @@ impl fmt::Display for Set {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_set_value(set: *mut Set) -> *mut Value {
-    // Borrow instead of taking ownership to avoid double-free
     let set = unsafe { &*set };
     let value = Value::Set(set.0.clone());
     mux_rc_alloc(value)

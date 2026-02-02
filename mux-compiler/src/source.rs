@@ -11,8 +11,6 @@ pub struct Source {
 impl Source {
     pub fn new(file_path: &str) -> std::io::Result<Self> {
         if Path::new(file_path).exists() {
-            // if file doesnt exist or there is an issue opening
-            // it, then it will return the error with the ? op
             let input = std::fs::read_to_string(file_path)?;
             return Ok(Self {
                 input,
@@ -34,7 +32,6 @@ impl Source {
         }
     }
 
-    // get next char and move pos
     pub fn next_char(&mut self) -> Option<char> {
         if self.pos >= self.input.len() {
             return None;
@@ -55,7 +52,6 @@ impl Source {
         Some(ch)
     }
 
-    // gets next char without consuming
     pub fn peek(&self) -> Option<char> {
         if self.pos >= self.input.len() {
             return None;
@@ -63,7 +59,6 @@ impl Source {
         self.input[self.pos..].chars().next()
     }
 
-    // gets the nth character ahead without consuming
     pub fn peek_nth(&self, n: usize) -> Option<char> {
         if self.pos >= self.input.len() {
             return None;
@@ -200,8 +195,6 @@ mod tests {
 
     #[test]
     fn test_consume_multiline_comment() {
-        // the multiline comment will already pass in the text
-        // without the opening comment, thus the missing /*
         let mut src = Source::from_test_str(" hello\nworld*/");
 
         let result = src.consume_multiline_comment();

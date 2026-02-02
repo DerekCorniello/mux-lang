@@ -184,7 +184,6 @@ pub extern "C" fn mux_string_not_equal(a: *const c_char, b: *const c_char) -> i3
 /// Returns Result<int, str>
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_char_to_int(c: i64) -> *mut MuxResult {
-    // Convert i64 to char
     if let Some(ch) = char::from_u32(c as u32) {
         if ch.is_ascii_digit() {
             let digit = (ch as u8 - b'0') as i64;
