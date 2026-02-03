@@ -2,14 +2,97 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: full_output
 ---
-nums: [1, 2, 3, 4]
-scores: {Alice: 90, Bob: 85}
-matrix: [[1, 2], [3, 4]]
-avgs: {Alice: 90, Bob: 85}
-grid: [[1, 2], [3, 4]]
-myset: {1, 2, 4}
-abt to safe
-Safe access: Some(1)
-abt to direct
-Direct access: 1
-Access a map: Some(90)
+========================================
+LIST OPERATIONS
+========================================
+Initial list: [10, 20, 30, 40, 50]
+nums[0] = 10
+nums[2] = 30
+nums[4] (last) = 50
+
+Safe access with get():
+nums.get(0) = Some(10)
+nums.get(100) = None
+
+Index assignment:
+After nums[0] = 100: [100, 20, 30, 40, 50]
+After nums[4] = 999: [100, 20, 30, 40, 999]
+
+List extension:
+After nums[7] = 777 (extends): [100, 20, 30, 40, 999, 0, 0, 777]
+
+List methods:
+Is empty: false
+
+Concatenation: [1,2,3] + [4,5,6] = [1, 2, 3, 4, 5, 6]
+
+========================================
+MAP OPERATIONS
+========================================
+Initial map: {Alice: 90, Bob: 85, Charlie: 95}
+
+Direct key access:
+scores["Alice"] = 90
+scores["Bob"] = 85
+
+Safe access with get():
+scores.get("Alice") = Some(90)
+scores.get("Missing") = None
+
+Key assignment (update):
+After scores["Alice"] = 95: {Alice: 95, Bob: 85, Charlie: 95}
+
+Key assignment (add new):
+After scores["David"] = 88: {Alice: 95, Bob: 85, Charlie: 95, David: 88}
+
+put() method:
+After put("Eve", 92): {Alice: 95, Bob: 85, Charlie: 95, David: 88, Eve: 92}
+
+remove() method:
+Removed Bob: Some(85)
+After remove("Bob"): {Alice: 95, Bob: 85, Charlie: 95, David: 88, Eve: 92}
+
+contains() method:
+scores.contains("Alice"): true
+scores.contains("Bob"): true
+
+Map properties:
+Size: 5
+Is empty: false
+
+Map merge: {a:1,b:2} + {b:3,c:4} = {a: 1, b: 3, c: 4}
+
+========================================
+SET OPERATIONS
+========================================
+Initial set: {1, 2, 3, 4, 5}
+
+Set properties:
+Size: 5
+Is empty: false
+
+contains() method:
+unique_nums.contains(3): true
+unique_nums.contains(99): false
+
+========================================
+NESTED COLLECTIONS
+========================================
+Matrix: [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+matrix[0]: [1, 2, 3]
+matrix[0][0]: 1
+matrix[1][2]: 6
+
+After matrix[0][0] = 100:
+Matrix: [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+
+========================================
+NEGATIVE INDEX WRITE (wraparound)
+========================================
+Initial: [1, 2, 3, 4, 5]
+After wrap_list[-1] = 999: [1, 2, 3, 4, 999]
+After wrap_list[-2] = 888: [1, 2, 3, 888, 999]
+
+========================================
+ALL TESTS COMPLETED SUCCESSFULLY!
+========================================
