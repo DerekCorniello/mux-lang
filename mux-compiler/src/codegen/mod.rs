@@ -431,6 +431,18 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_list_set",
+            void_type.fn_type(&[list_ptr.into(), i64_type.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_set_value",
+            void_type.fn_type(&[i8_ptr.into(), i64_type.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_list_length",
             i64_type.fn_type(&[list_ptr.into()], false),
             None,
@@ -506,7 +518,13 @@ impl<'a> CodeGenerator<'a> {
 
         module.add_function(
             "mux_map_put",
-            void_type.fn_type(&[list_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
+            void_type.fn_type(&[map_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_put_value",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
             None,
         );
 
@@ -520,13 +538,13 @@ impl<'a> CodeGenerator<'a> {
             "mux_map_contains",
             context
                 .bool_type()
-                .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+                .fn_type(&[map_ptr.into(), i8_ptr.into()], false),
             None,
         );
 
         module.add_function(
             "mux_map_remove",
-            i8_ptr.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            i8_ptr.fn_type(&[map_ptr.into(), i8_ptr.into()], false),
             None,
         );
 
@@ -730,6 +748,18 @@ impl<'a> CodeGenerator<'a> {
 
         module.add_function(
             "mux_optional_data",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_is_some",
+            context.bool_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_get_value",
             i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,
         );

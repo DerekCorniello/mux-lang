@@ -68,6 +68,25 @@ pub extern "C" fn mux_map_put(map: *mut Map, key: *mut Value, val: *mut Value) {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::mutable_key_type)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_put_value(map_val: *mut Value, key: *mut Value, val: *mut Value) {
+    if map_val.is_null() || key.is_null() || val.is_null() {
+        return;
+    }
+    unsafe {
+        if let Value::Map(map_data) = &*map_val {
+            let mut new_map = map_data.clone();
+            let key_clone = (*key).clone();
+            let val_clone = (*val).clone();
+            new_map.insert(key_clone, val_clone);
+            // Write back to the original Value
+            *map_val = Value::Map(new_map);
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_map_remove(
     map: *mut Map,
@@ -78,6 +97,15 @@ pub extern "C" fn mux_map_remove(
         opt.map(crate::optional::Optional::some)
             .unwrap_or(crate::optional::Optional::none()),
     ))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_contains(map: *const Map, key: *const Value) -> bool {
+    if map.is_null() || key.is_null() {
+        return false;
+    }
+    unsafe { (*map).contains(&*key) }
 }
 
 /// # Safety

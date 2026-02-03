@@ -464,6 +464,27 @@ impl SemanticAnalyzer {
                         postfix: _,
                     } = &left.kind
                     {
+                    } else if let crate::ast::ExpressionKind::ListAccess {
+                        expr: target_expr,
+                        index: _,
+                    } = &left.kind
+                    {
+                        // Index assignment: list[index] = value or map[key] = value
+                        let target_type = self.get_expression_type(target_expr)?;
+                        match target_type {
+                            Type::List(ref elem_type) => {
+                                self.check_type_compatibility(elem_type, &right_type, expr.span)?;
+                            }
+                            Type::Map(_, ref value_type) => {
+                                self.check_type_compatibility(value_type, &right_type, expr.span)?;
+                            }
+                            _ => {
+                                return Err(SemanticError {
+                                    message: "Cannot assign to index on non-list/map type".into(),
+                                    span: expr.span,
+                                });
+                            }
+                        }
                     } else {
                         return Err(SemanticError {
                             message: "Assignment to non-identifier is not supported".into(),
@@ -838,15 +859,21 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::ListAccess { expr, index: _ } => {
-                // list access returns direct element_type (runtime error if out of bounds)
+                // list/map access returns direct element_type (runtime error if out of bounds/key not found)
                 // Use .get() method for safe Optional access
-                let list_type = self.get_expression_type(expr)?;
-                match list_type {
+                let target_type = self.get_expression_type(expr)?;
+                match target_type {
                     Type::List(elem_type) => Ok(*elem_type),
+                    Type::Map(_, value_type) => Ok(*value_type),
+                    Type::EmptyMap => Err(SemanticError::with_help(
+                        "Cannot index empty map",
+                        expr.span,
+                        "The map type is unknown. Provide type annotations or add entries to the map literal.",
+                    )),
                     _ => Err(SemanticError::with_help(
                         "Cannot index non-list type",
                         expr.span,
-                        "Only lists can be indexed with '[]'. Example: my_list[0]",
+                        "Only lists and maps can be indexed with '[]'. Examples: my_list[0], my_map['key']",
                     )),
                 }
             }
@@ -3163,24 +3190,46 @@ impl SemanticAnalyzer {
             ExpressionKind::ListAccess { expr, index } => {
                 self.analyze_expression(expr)?;
                 self.analyze_expression(index)?;
-                // type check list access
-                let list_type = self.get_expression_type(expr)?;
-                match list_type {
-                    Type::List(_) => {}
+                // type check list/map access
+                let target_type = self.get_expression_type(expr)?;
+                let index_type = self.get_expression_type(index)?;
+                match &target_type {
+                    Type::List(_) => {
+                        // List requires integer index
+                        if !matches!(index_type, Type::Primitive(crate::ast::PrimitiveType::Int)) {
+                            return Err(SemanticError {
+                                message: "List index must be an integer".into(),
+                                span: index.span,
+                            });
+                        }
+                    }
+                    Type::Map(expected_key_type, _) => {
+                        // Map requires matching key type
+                        if index_type != **expected_key_type {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "Map key type mismatch: expected {}, found {}",
+                                    format_type(expected_key_type),
+                                    format_type(&index_type)
+                                ),
+                                span: index.span,
+                            });
+                        }
+                    }
+                    Type::EmptyMap => {
+                        return Err(SemanticError::with_help(
+                            "Cannot index empty map",
+                            expr.span,
+                            "The map type is unknown. Provide type annotations or add entries to the map literal.",
+                        ));
+                    }
                     _ => {
                         return Err(SemanticError::with_help(
                             "Cannot index non-list type",
                             expr.span,
-                            "Only lists can be indexed with '[]'. Example: my_list[0]",
+                            "Only lists and maps can be indexed with '[]'. Examples: my_list[0], my_map['key']",
                         ));
                     }
-                }
-                let index_type = self.get_expression_type(index)?;
-                if !matches!(index_type, Type::Primitive(crate::ast::PrimitiveType::Int)) {
-                    return Err(SemanticError {
-                        message: "List index must be an integer".into(),
-                        span: index.span,
-                    });
                 }
                 Ok(())
             }

@@ -43,6 +43,34 @@ pub extern "C" fn mux_optional_discriminant(opt: *mut Optional) -> i32 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_is_some(opt: *mut Optional) -> bool {
+    if opt.is_null() {
+        return false;
+    }
+    unsafe {
+        match &*opt {
+            Optional::Some(_) => true,
+            Optional::None => false,
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_get_value(opt: *mut Optional) -> *mut Value {
+    if opt.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*opt {
+            Optional::Some(v) => mux_rc_alloc(*v.clone()),
+            Optional::None => std::ptr::null_mut(),
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_data(opt: *mut Optional) -> *mut Value {
     if opt.is_null() {
         return std::ptr::null_mut();

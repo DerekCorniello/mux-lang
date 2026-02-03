@@ -1,0 +1,42 @@
+// Collections Comprehensive Test
+print("=== Starting Collections Tests ===")
+
+// Test 1: List Operations
+auto nums = [1, 2, 3]
+print("Test 1 - Initial list: " + nums.to_string())
+
+nums[0] = 100
+print("Test 1a - After nums[0] = 100: " + nums.to_string())
+
+nums[-1] = 999
+print("Test 1b - After nums[-1] = 999 (wraparound): " + nums.to_string())
+
+nums[5] = 500
+print("Test 1c - After nums[5] = 500 (extension): " + nums.to_string())
+
+// Test 2: Map Operations
+auto scores = {"Alice": 90}
+print("\nTest 2 - Initial map: " + scores.to_string())
+
+scores["Alice"] = 95
+print("Test 2a - After scores[\"Alice\"] = 95: " + scores.to_string())
+
+scores["Bob"] = 85
+print("Test 2b - After scores[\"Bob\"] = 85: " + scores.to_string())
+
+// Test 3: Map.put() Method
+scores.put("Charlie", 100)
+print("\nTest 3 - After put Charlie: " + scores.to_string())
+
+// Test 4: Safe access
+print("\nTest 4 - Safe access:")
+print("scores.get(\"Alice\"): " + scores.get("Alice").to_string())
+print("scores.get(\"Missing\"): " + scores.get("Missing").to_string())
+
+// Test 5: Direct access
+print("\nTest 5 - Direct access:")
+print("scores[\"Alice\"]: " + scores["Alice"].to_string())
+print("scores[\"Bob\"]: " + scores["Bob"].to_string())
+print("scores[\"Charlie\"]: " + scores["Charlie"].to_string())
+
+print("\n=== All Tests Completed Successfully ===")

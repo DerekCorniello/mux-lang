@@ -204,6 +204,56 @@ pub extern "C" fn mux_list_set(list: *mut List, index: i64, val: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_list_set_value(list_val: *mut Value, index: i64, val: *mut Value) {
+    if list_val.is_null() || val.is_null() {
+        return;
+    }
+    unsafe {
+        if let Value::List(list_data) = &*list_val {
+            let mut new_list = list_data.clone();
+            let len = new_list.len() as i64;
+
+            // Handle negative indices (wraparound)
+            let actual_index = if index < 0 { len + index } else { index };
+
+            // Check if index is still negative after wraparound
+            if actual_index < 0 {
+                return; // Invalid index
+            }
+
+            // Extend list if necessary with type-appropriate defaults
+            if actual_index >= len {
+                // Get default value based on first element's type, or Int(0) if empty
+                let default_value = if new_list.is_empty() {
+                    Value::Int(0)
+                } else {
+                    match &new_list[0] {
+                        Value::Int(_) => Value::Int(0),
+                        Value::Float(_) => Value::Float(0.0.into()),
+                        Value::String(_) => Value::String(String::new()),
+                        Value::Bool(_) => Value::Bool(false),
+                        _ => Value::Int(0), // Fallback for complex types
+                    }
+                };
+
+                // Extend to actual_index + 1
+                while new_list.len() <= actual_index as usize {
+                    new_list.push(default_value.clone());
+                }
+            }
+
+            // Set the value
+            let value = (*val).clone();
+            new_list[actual_index as usize] = value;
+
+            // Write back to the original Value
+            *list_val = Value::List(new_list);
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_list_insert(list: *mut List, index: i64, val: *mut Value) {
     let value = unsafe { (*val).clone() };
     let len = unsafe { (*list).length() as usize };

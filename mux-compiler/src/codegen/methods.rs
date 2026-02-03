@@ -761,33 +761,20 @@ impl<'a> CodeGenerator<'a> {
                 }
                 let key_val = self.generate_expression(&args[0])?;
                 let value_val = self.generate_expression(&args[1])?;
-                let extract_map = self
-                    .builder
+                // Use mux_map_put_value which modifies the boxed Value directly
+                let boxed_key = self.box_value(key_val);
+                let boxed_value = self.box_value(value_val);
+                self.builder
                     .build_call(
                         self.module
-                            .get_function("mux_value_get_map")
-                            .expect("mux_value_get_map must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_map",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_map should return a basic value");
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_map_put")
-                            .expect("mux_map_put must be declared in runtime"),
-                        &[extract_map.into(), key_val.into(), value_val.into()],
-                        "map_put",
+                            .get_function("mux_map_put_value")
+                            .expect("mux_map_put_value must be declared in runtime"),
+                        &[obj_value.into(), boxed_key.into(), boxed_value.into()],
+                        "map_put_value",
                     )
                     .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_map_put should return a basic value"))
+                // put() returns nothing (void), return a dummy value
+                Ok(self.context.i64_type().const_int(0, false).into())
             }
             "get" => {
                 if args.len() != 1 {
@@ -1047,13 +1034,27 @@ impl<'a> CodeGenerator<'a> {
                     return Err("contains() method takes exactly 1 argument".to_string());
                 }
                 let elem_val = self.generate_expression(&args[0])?;
+                let elem_ptr = self.box_value(elem_val);
+                let extract_set = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_value_get_set")
+                            .expect("mux_value_get_set must be declared in runtime"),
+                        &[obj_value.into()],
+                        "extract_set",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_value_get_set should return a basic value");
                 let call = self
                     .builder
                     .build_call(
                         self.module
                             .get_function("mux_set_contains")
                             .expect("mux_set_contains must be declared in runtime"),
-                        &[obj_value.into(), elem_val.into()],
+                        &[extract_set.into(), elem_ptr.into()],
                         "set_contains",
                     )
                     .map_err(|e| e.to_string())?;
@@ -1066,13 +1067,26 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("size() method takes no arguments".to_string());
                 }
+                let extract_set = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_value_get_set")
+                            .expect("mux_value_get_set must be declared in runtime"),
+                        &[obj_value.into()],
+                        "extract_set",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_value_get_set should return a basic value");
                 let call = self
                     .builder
                     .build_call(
                         self.module
                             .get_function("mux_set_size")
                             .expect("mux_set_size must be declared in runtime"),
-                        &[obj_value.into()],
+                        &[extract_set.into()],
                         "set_size",
                     )
                     .map_err(|e| e.to_string())?;
@@ -1085,13 +1099,26 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("is_empty() method takes no arguments".to_string());
                 }
+                let extract_set = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_value_get_set")
+                            .expect("mux_value_get_set must be declared in runtime"),
+                        &[obj_value.into()],
+                        "extract_set",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_value_get_set should return a basic value");
                 let call = self
                     .builder
                     .build_call(
                         self.module
                             .get_function("mux_set_is_empty")
                             .expect("mux_set_is_empty must be declared in runtime"),
-                        &[obj_value.into()],
+                        &[extract_set.into()],
                         "set_is_empty",
                     )
                     .map_err(|e| e.to_string())?;

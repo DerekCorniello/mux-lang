@@ -1217,6 +1217,76 @@ impl<'a> CodeGenerator<'a> {
                                 } else {
                                     Err("Field access on complex expression not supported for assignment".to_string())
                                 }
+                            } else if let ExpressionKind::ListAccess {
+                                expr: target_expr,
+                                index,
+                            } = &left.kind
+                            {
+                                // Index assignment: list[index] = value or map[key] = value
+                                let target_type = self
+                                    .analyzer
+                                    .get_expression_type(target_expr)
+                                    .map_err(|e| e.message)?;
+
+                                match target_type {
+                                    crate::semantics::Type::List(_) => {
+                                        // List index assignment: list[index] = value
+                                        // Use mux_list_set_value which modifies the boxed Value directly
+                                        let target_val = self.generate_expression(target_expr)?;
+                                        let index_val = self.generate_expression(index)?;
+                                        let right_val = self.generate_expression(right)?;
+
+                                        // Box the value for storage
+                                        let boxed_value = self.box_value(right_val);
+
+                                        // Call mux_list_set_value to set the element (handles wraparound and extension)
+                                        self.builder
+                                            .build_call(
+                                                self.module
+                                                    .get_function("mux_list_set_value")
+                                                    .expect("mux_list_set_value must be declared in runtime"),
+                                                &[target_val.into(), index_val.into(), boxed_value.into()],
+                                                "list_set_value",
+                                            )
+                                            .map_err(|e| e.to_string())?;
+
+                                        Ok(right_val)
+                                    }
+                                    crate::semantics::Type::Map(_, _) => {
+                                        // Map key assignment: map[key] = value
+                                        // Use mux_map_put_value which modifies the boxed Value directly
+                                        let target_val = self.generate_expression(target_expr)?;
+                                        let key_val = self.generate_expression(index)?;
+                                        let right_val = self.generate_expression(right)?;
+
+                                        // Box the key and value for storage
+                                        let boxed_key = self.box_value(key_val);
+                                        let boxed_value = self.box_value(right_val);
+
+                                        // Call mux_map_put_value to insert/update the entry
+                                        self.builder
+                                            .build_call(
+                                                self.module
+                                                    .get_function("mux_map_put_value")
+                                                    .expect(
+                                                    "mux_map_put_value must be declared in runtime",
+                                                ),
+                                                &[
+                                                    target_val.into(),
+                                                    boxed_key.into(),
+                                                    boxed_value.into(),
+                                                ],
+                                                "map_put_value",
+                                            )
+                                            .map_err(|e| e.to_string())?;
+
+                                        Ok(right_val)
+                                    }
+                                    _ => Err(format!(
+                                        "Cannot assign to index on non-list/map type: {:?}",
+                                        target_type
+                                    )),
+                                }
                             } else {
                                 Err("Assignment to non-identifier/deref/field not implemented"
                                     .to_string())
@@ -2434,110 +2504,257 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             ExpressionKind::ListAccess {
-                expr: list_expr,
+                expr: target_expr,
                 index,
             } => {
-                let list_val = self.generate_expression(list_expr)?;
+                let target_val = self.generate_expression(target_expr)?;
                 let index_val = self.generate_expression(index)?;
 
-                // extract raw List pointer from Value
-                let raw_list = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_list")
-                            .expect("mux_value_get_list must be declared in runtime"),
-                        &[list_val.into()],
-                        "extract_list",
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                // call mux_list_get_value (returns direct value or null)
-                let raw_result = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_list_get_value")
-                            .expect("mux_list_get_value must be declared in runtime"),
-                        &[
-                            raw_list
-                                .try_as_basic_value()
-                                .left()
-                                .expect("mux_value_get_list should return a basic value")
-                                .into(),
-                            index_val.into(),
-                        ],
-                        "list_raw",
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                let result_ptr = raw_result
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_list_get_value should return a basic value")
-                    .into_pointer_value();
-
-                // check for null (out of bounds)
-                let is_null = self
-                    .builder
-                    .build_is_null(result_ptr, "is_null")
-                    .map_err(|e| e.to_string())?;
-
-                // get current function for basic blocks
-                let current_function = self
-                    .builder
-                    .get_insert_block()
-                    .expect("Builder should have an insertion block")
-                    .get_parent()
-                    .ok_or("No current function")?;
-
-                // create error block and continue block
-                let error_bb = self
-                    .context
-                    .append_basic_block(current_function, "index_error");
-                let continue_bb = self
-                    .context
-                    .append_basic_block(current_function, "index_continue");
-
-                self.builder
-                    .build_conditional_branch(is_null, error_bb, continue_bb)
-                    .map_err(|e| e.to_string())?;
-
-                // error block: print error and exit
-                self.builder.position_at_end(error_bb);
-                let error_msg = self
-                    .builder
-                    .build_global_string_ptr("List index out of bounds", "error_msg")
-                    .map_err(|e| e.to_string())?;
-                let error_str = self
-                    .generate_runtime_call(
-                        "mux_new_string_from_cstr",
-                        &[error_msg.as_pointer_value().into()],
-                    )
-                    .expect("mux_new_string_from_cstr should always return a value");
-                self.generate_runtime_call("mux_print", &[error_str.into()]);
-                self.generate_runtime_call(
-                    "exit",
-                    &[self.context.i32_type().const_int(1, false).into()],
-                );
-                self.builder
-                    .build_unreachable()
-                    .map_err(|e| e.to_string())?;
-
-                // continue block: extract the value based on its actual type
-                self.builder.position_at_end(continue_bb);
-
-                // Get the element type from the semantic analyzer
-                // (expr is the full ListAccess expression, so get_expression_type returns the element type)
-                let element_type = self
+                // Get the target type to determine if it's a list or map
+                let target_type = self
                     .analyzer
-                    .get_expression_type(expr)
+                    .get_expression_type(target_expr)
                     .map_err(|e| e.message)?;
 
-                // Use extract_value_from_ptr to properly extract based on type
-                let (extracted_val, _) =
-                    self.extract_value_from_ptr(result_ptr, &element_type, "list_element")?;
-                Ok(extracted_val)
+                match target_type {
+                    crate::semantics::Type::List(_) => {
+                        // List access: use mux_list_get_value
+                        // extract raw List pointer from Value
+                        let raw_list = self
+                            .builder
+                            .build_call(
+                                self.module
+                                    .get_function("mux_value_get_list")
+                                    .expect("mux_value_get_list must be declared in runtime"),
+                                &[target_val.into()],
+                                "extract_list",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // call mux_list_get_value (returns direct value or null)
+                        let raw_result = self
+                            .builder
+                            .build_call(
+                                self.module
+                                    .get_function("mux_list_get_value")
+                                    .expect("mux_list_get_value must be declared in runtime"),
+                                &[
+                                    raw_list
+                                        .try_as_basic_value()
+                                        .left()
+                                        .expect("mux_value_get_list should return a basic value")
+                                        .into(),
+                                    index_val.into(),
+                                ],
+                                "list_raw",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        let result_ptr = raw_result
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_list_get_value should return a basic value")
+                            .into_pointer_value();
+
+                        // check for null (out of bounds)
+                        let is_null = self
+                            .builder
+                            .build_is_null(result_ptr, "is_null")
+                            .map_err(|e| e.to_string())?;
+
+                        // get current function for basic blocks
+                        let current_function = self
+                            .builder
+                            .get_insert_block()
+                            .expect("Builder should have an insertion block")
+                            .get_parent()
+                            .ok_or("No current function")?;
+
+                        // create error block and continue block
+                        let error_bb = self
+                            .context
+                            .append_basic_block(current_function, "index_error");
+                        let continue_bb = self
+                            .context
+                            .append_basic_block(current_function, "index_continue");
+
+                        self.builder
+                            .build_conditional_branch(is_null, error_bb, continue_bb)
+                            .map_err(|e| e.to_string())?;
+
+                        // error block: print error and exit
+                        self.builder.position_at_end(error_bb);
+                        let error_msg = self
+                            .builder
+                            .build_global_string_ptr("List index out of bounds", "error_msg")
+                            .map_err(|e| e.to_string())?;
+                        let error_str = self
+                            .generate_runtime_call(
+                                "mux_new_string_from_cstr",
+                                &[error_msg.as_pointer_value().into()],
+                            )
+                            .expect("mux_new_string_from_cstr should always return a value");
+                        self.generate_runtime_call("mux_print", &[error_str.into()]);
+                        self.generate_runtime_call(
+                            "exit",
+                            &[self.context.i32_type().const_int(1, false).into()],
+                        );
+                        self.builder
+                            .build_unreachable()
+                            .map_err(|e| e.to_string())?;
+
+                        // continue block: extract the value based on its actual type
+                        self.builder.position_at_end(continue_bb);
+
+                        // Get the element type from the semantic analyzer
+                        let element_type = self
+                            .analyzer
+                            .get_expression_type(expr)
+                            .map_err(|e| e.message)?;
+
+                        // Use extract_value_from_ptr to properly extract based on type
+                        let (extracted_val, _) =
+                            self.extract_value_from_ptr(result_ptr, &element_type, "list_element")?;
+                        Ok(extracted_val)
+                    }
+                    crate::semantics::Type::Map(_, _) => {
+                        // Map access: use mux_map_get (returns Optional)
+                        // extract raw Map pointer from Value
+                        let raw_map = self
+                            .builder
+                            .build_call(
+                                self.module
+                                    .get_function("mux_value_get_map")
+                                    .expect("mux_value_get_map must be declared in runtime"),
+                                &[target_val.into()],
+                                "extract_map",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // Box the index value for map lookup
+                        let boxed_index = self.box_value(index_val);
+
+                        // call mux_map_get (returns Optional)
+                        let raw_result = self
+                            .builder
+                            .build_call(
+                                self.module
+                                    .get_function("mux_map_get")
+                                    .expect("mux_map_get must be declared in runtime"),
+                                &[
+                                    raw_map
+                                        .try_as_basic_value()
+                                        .left()
+                                        .expect("mux_value_get_map should return a basic value")
+                                        .into(),
+                                    boxed_index.into(),
+                                ],
+                                "map_get_result",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        let optional_ptr = raw_result
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_map_get should return a basic value")
+                            .into_pointer_value();
+
+                        // Check if Optional has a value using mux_optional_is_some
+                        let is_some = self
+                            .builder
+                            .build_call(
+                                self.module
+                                    .get_function("mux_optional_is_some")
+                                    .expect("mux_optional_is_some must be declared in runtime"),
+                                &[optional_ptr.into()],
+                                "map_has_key",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        let is_some_val = is_some
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_optional_is_some should return a basic value")
+                            .into_int_value();
+
+                        // get current function for basic blocks
+                        let current_function = self
+                            .builder
+                            .get_insert_block()
+                            .expect("Builder should have an insertion block")
+                            .get_parent()
+                            .ok_or("No current function")?;
+
+                        // create error block and continue block
+                        let error_bb = self
+                            .context
+                            .append_basic_block(current_function, "map_key_error");
+                        let continue_bb = self
+                            .context
+                            .append_basic_block(current_function, "map_key_continue");
+
+                        self.builder
+                            .build_conditional_branch(is_some_val, continue_bb, error_bb)
+                            .map_err(|e| e.to_string())?;
+
+                        // error block: print error with key and exit
+                        self.builder.position_at_end(error_bb);
+                        let error_msg = self
+                            .builder
+                            .build_global_string_ptr("Key not found in map", "map_error_msg")
+                            .map_err(|e| e.to_string())?;
+                        let error_str = self
+                            .generate_runtime_call(
+                                "mux_new_string_from_cstr",
+                                &[error_msg.as_pointer_value().into()],
+                            )
+                            .expect("mux_new_string_from_cstr should always return a value");
+                        self.generate_runtime_call("mux_print", &[error_str.into()]);
+                        self.generate_runtime_call(
+                            "exit",
+                            &[self.context.i32_type().const_int(1, false).into()],
+                        );
+                        self.builder
+                            .build_unreachable()
+                            .map_err(|e| e.to_string())?;
+
+                        // continue block: extract the value from the Optional
+                        self.builder.position_at_end(continue_bb);
+
+                        // Get the value from Optional using mux_optional_get_value
+                        let value_result = self
+                            .builder
+                            .build_call(
+                                self.module
+                                    .get_function("mux_optional_get_value")
+                                    .expect("mux_optional_get_value must be declared in runtime"),
+                                &[optional_ptr.into()],
+                                "map_value",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        let value_ptr = value_result
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_optional_get_value should return a basic value")
+                            .into_pointer_value();
+
+                        // Get the value type from the semantic analyzer
+                        let value_type = self
+                            .analyzer
+                            .get_expression_type(expr)
+                            .map_err(|e| e.message)?;
+
+                        // Use extract_value_from_ptr to properly extract based on type
+                        let (extracted_val, _) =
+                            self.extract_value_from_ptr(value_ptr, &value_type, "map_element")?;
+                        Ok(extracted_val)
+                    }
+                    _ => Err(format!(
+                        "ListAccess target must be a list or map, found {:?}",
+                        target_type
+                    )),
+                }
             }
             ExpressionKind::ListLiteral(elements) => {
                 let list_ptr = self
