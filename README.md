@@ -12,7 +12,7 @@ By Derek Corniello
 
 ## 1. Overview
 
-Mux (fully "MuxLang") is a statically-typed, garbage-collected language that combines:
+Mux (fully "MuxLang") is a statically-typed, reference-counted language that combines:
 
 - **Java-style explicit typing** with **local type inference**
 - **Python-style collection literals**
@@ -33,7 +33,7 @@ Mux (fully "MuxLang") is a statically-typed, garbage-collected language that com
 - **Statement termination**: by end-of-line only (no semicolons)
 - **Underscore placeholder**: `_` can be used for unused parameters, variables, or pattern matching wildcards
 - **Keywords**:
-  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `Some`, `None`, `Ok`, `Err`, `common`
+  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `as`, `in`, `true`, `false`, `common`
 
 ---
 
@@ -96,10 +96,10 @@ auto num_str = "42"
 auto result = num_str.to_int()
 match result {
     Ok(value) {
-        println("Parsed: " + value.to_string())  // "Parsed: 42"
+        print("Parsed: " + value.to_string())  // "Parsed: 42"
     }
     Err(error) {
-        println("Parse error: " + error)
+        print("Parse error: " + error)
     }
 }
 
@@ -107,23 +107,23 @@ match result {
 auto float_str = "3.14159"
 auto float_result = float_str.to_float()
 match float_result {
-    Ok(value) { println(value.to_string()) }
-    Err(msg) { println("Error: " + msg) }
+    Ok(value) { print(value.to_string()) }
+    Err(msg) { print("Error: " + msg) }
 }
 
 // Char to digit (only works for '0'-'9')
 auto digit_char = '5'
 auto digit_result = digit_char.to_int()
 match digit_result {
-    Ok(digit) { println(digit.to_string()) }  // "5"
-    Err(msg) { println(msg) }
+    Ok(digit) { print(digit.to_string()) }  // "5"
+    Err(msg) { print(msg) }
 }
 
 auto letter = 'A'
 auto letter_result = letter.to_int()
 match letter_result {
-    Ok(_) { println("Unexpected success") }
-    Err(msg) { println(msg) }  // "Character is not a digit (0-9)"
+    Ok(_) { print("Unexpected success") }
+    Err(msg) { print(msg) }  // "Character is not a digit (0-9)"
 }
 ```
 
@@ -177,17 +177,17 @@ Mux provides essential built-in functions for output and utility operations. The
 
 #### Output Functions
 
-**`print(string message)`** - Prints a string to standard output without a trailing newline.
+**`print(string message)`** - Prints a string to standard output with a trailing newline.
 
 ```mux
-print("Hello, ")
-print("World")  // Output: Hello, World
-```
-
-**`println(string message)`** - Prints a string to standard output with a trailing newline.
-
-```mux
-println("Hello, World")  // Output: Hello, World\n
+print("Hello, World")  // Output: Hello, World\n
+// Multiple prints produce separate lines:
+print("First")
+print("Second")  // First\nSecond\n
+// To print without newline, use multiple arguments or string concatenation:
+print("Hello, " + "World")  // Output: Hello, World\n
+// Or use the runtime function directly (advanced):
+// mux_print_raw("No newline") - if available in runtime
 ```
 
 #### Utility Functions
@@ -206,6 +206,16 @@ auto numbers = range(10, 15)  // [10, 11, 12, 13, 14]
 
 **Design Note:** `range()` is the primary way to create numeric sequences for iteration, as Mux does not support C-style `for (int i = 0; i < n; i++)` loops.
 
+#### Input Functions
+
+**`read_line() -> string`** - Reads a line from standard input and returns it as a string (excluding the newline).
+
+```mux
+print("Enter your name: ")
+auto name = read_line()
+print("Hello, " + name)
+```
+
 ### 3.4 Composite Types
 
 ```
@@ -215,7 +225,7 @@ list<T>
 map<K,V>
 ```
 
-### 3.4 Generics
+### 3.5 Generics
 
 Mux supports Go/Rust-style generics with type parameters and interface bounds using the `is` keyword:
 
@@ -253,7 +263,7 @@ class Stack<T> {
 }
 ```
 
-### 3.5 Built-in Interfaces
+### 3.6 Built-in Interfaces
 
 Mux provides built-in interfaces for common operations on generic types:
 
@@ -296,7 +306,7 @@ class Point {
 
 func sum_points<T is Add>(list<T> points) returns T {
     auto result = points[0]
-    for i in range(1, points.length()) {
+    for i in range(1, points.size()) {
         result = result.add(points[i])
     }
     return result
@@ -306,7 +316,7 @@ auto points = [Point.new(1, 2), Point.new(3, 4), Point.new(5, 6)]
 auto total = sum_points(points)  // Point(9, 12)
 ```
 
-### 3.6 Generic Type Constraints
+### 3.7 Generic Type Constraints
 
 ```mux
 // Using built-in interfaces
@@ -327,7 +337,7 @@ auto names = ["apple", "banana"]
 print(greet<string>(names[0]))          // T = string, Stringable bound satisfied
 ```
 
-### 3.7 User-Defined Types
+### 3.8 User-Defined Types
 
 - **Structs**: simple aggregates
 - **Enums**: tagged unions (see §8)
@@ -615,22 +625,22 @@ auto greeting = "Hello, " + "World"  // "Hello, World"
 ## 7. Lambdas & Closures
 
 ```
-// Block-form lambda with explicit types
-auto square = func(int n) {
+// Block-form lambda with explicit types and return type
+auto square = func(int n) returns int {
     return n * n
 }
 
-auto doubler = func(auto x) {
-    return x * 2  // parameter type can be inferred in some contexts
+auto doubler = func(float x) returns float {
+    return x * 2.0
 }
 
 // Passing lambdas to functions
-auto result = apply(10, func(int x) {
+auto result = apply(10, func(int x) returns int {
     return x + 5
 })
 
 // Lambda with unused parameters
-auto processFirst = func(int first, int _) {
+auto processFirst = func(int first, int _) returns int {
     return first * 2  // second parameter ignored
 }
 
@@ -639,7 +649,7 @@ auto filter = func(list<int> nums, func(int) returns bool cond) returns list<int
     list<int> out = []
     for n in nums {
         if cond(n) {
-            out.append(n)
+            out.push_back(n)
         }
     }
     return out
@@ -653,9 +663,9 @@ auto filter = func(list<int> nums, func(int) returns bool cond) returns list<int
 
 ---
 
-## 7. Control Flow
+## 8. Control Flow
 
-### 7.1 If / Else
+### 8.1 If / Else
 
 ```
 if x > 0 {
@@ -670,7 +680,7 @@ if x > 0 {
 auto message = if x > 0 { "positive" } else { "non-positive" }
 ```
 
-### 7.2 Match with Guards
+### 8.2 Match with Guards
 
 ```
 match (value) {
@@ -690,7 +700,7 @@ match (value) {
 }
 ```
 
-### 7.3 For Loops
+### 8.3 For Loops
 
 ```
 for item in myList {
@@ -715,7 +725,7 @@ for (key, _) in keyValuePairs {
 }
 ```
 
-### 7.4 While Loops
+### 8.4 While Loops
 
 ```
 while cond {
@@ -724,13 +734,13 @@ while cond {
 }
 ```
 
-### 7.5 Break / Continue / Return
+### 8.5 Break / Continue / Return
 
 Works as in C/Java.
 
 ---
 
-## 8. Enums (Tagged Unions)
+## 9. Enums (Tagged Unions)
 
 ```
 enum Shape {
@@ -740,8 +750,8 @@ enum Shape {
 }
 
 // Usage with inference
-auto myShape = Circle(5.0)  // type inferred as Shape
-list<Shape> shapes = [Circle(1.0), Rectangle(2.0, 3.0)]
+auto myShape = Circle.new(5.0)  // type inferred as Shape
+list<Shape> shapes = [Circle.new(1.0), Rectangle.new(2.0, 3.0)]
 
 // Pattern matching with unused enum data
 match (shape) {
@@ -761,7 +771,7 @@ Each variant may carry data. Pattern-match with destructuring and guards. Use `_
 
 ---
 
-## 9. Classes & Traits
+## 10. Classes & Traits
 
 ### 9.1 Traits (Interfaces)
 
@@ -798,14 +808,14 @@ class Stack<T> {
     list<T> items
 
     func push(T item) returns void {
-        items.append(item)
+        items.push_back(item)
     }
 
     func pop() returns Optional<T> {
         if items.isEmpty() {
             return None
         }
-        auto item = items.removeLast()
+        auto item = items.pop_back()
         return Some(item)
     }
 }
@@ -887,7 +897,7 @@ auto pair = Pair<string, int>.from("key", 42)
 
 ---
 
-## 10. Collections & Literals
+## 11. Collections & Literals
 
 ```
 // Explicit typing
@@ -915,7 +925,7 @@ auto data = {
 }  // inferred as map<string, list<int> | map<string, string | int>>
 
 // Generic collections
-list<Pair<int, string>> pairs = [Pair(1, "one"), Pair(2, "two")]
+list<Pair<int, string>> pairs = [Pair.new(1, "one"), Pair.new(2, "two")]
 list<Container<int>> containers = list<Container<int>>()
 ```
 
@@ -927,12 +937,15 @@ All collections provide a consistent API for access, mutation, and inspection.
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `.length()` | `int` | Returns the number of elements in the list |
+| `.size()` | `int` | Returns the number of elements in the list |
 | `.is_empty()` | `bool` | Returns `true` if list has no elements |
 | `.get(int index)` | `Optional<T>` | Safe access; returns `Some(value)` or `None` if out of bounds |
 | `[int index]` | `T` | Direct access; runtime error if out of bounds |
+| `.push(T item)` | `void` | Appends item to the end of the list (alias for push_back) |
 | `.push_back(T item)` | `void` | Appends item to the end of the list |
+| `.pop()` | `Optional<T>` | Removes and returns last item, or `None` if empty (alias for pop_back) |
 | `.pop_back()` | `Optional<T>` | Removes and returns last item, or `None` if empty |
+| `.to_string()` | `string` | Returns a string representation of the list |
 
 ```mux
 auto nums = [1, 2, 3]
@@ -954,7 +967,7 @@ match nums.pop_back() {
 }
 
 // Inspection
-print(nums.length().to_string())     // "3"
+print(nums.size().to_string())     // "3"
 print(nums.is_empty().to_string())   // "false"
 ```
 
@@ -962,10 +975,14 @@ print(nums.is_empty().to_string())   // "false"
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `.length()` | `int` | Returns the number of key-value pairs |
+| `.size()` | `int` | Returns the number of key-value pairs |
 | `.is_empty()` | `bool` | Returns `true` if map has no entries |
 | `.get(K key)` | `Optional<V>` | Safe lookup; returns `Some(value)` or `None` if key not found |
 | `[K key]` | `V` | Direct access; runtime error if key not found |
+| `.put(K key, V value)` | `void` | Inserts or updates a key-value pair |
+| `.contains(K key)` | `bool` | Returns `true` if key exists in map |
+| `.remove(K key)` | `Optional<V>` | Removes key and returns value, or `None` if key not found |
+| `.to_string()` | `string` | Returns a string representation of the map |
 
 ```mux
 auto scores = {"Alice": 90, "Bob": 85}
@@ -987,19 +1004,35 @@ scores["Alice"] = 95  // Updates existing key
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `.length()` | `int` | Returns the number of elements |
+| `.size()` | `int` | Returns the number of elements |
 | `.is_empty()` | `bool` | Returns `true` if set is empty |
+| `.add(T item)` | `void` | Adds an item to the set |
+| `.contains(T item)` | `bool` | Returns `true` if item exists in set |
+| `.remove(T item)` | `Optional<T>` | Removes item and returns it, or `None` if not found |
+| `.to_string()` | `string` | Returns a string representation of the set |
 
 ```mux
 auto tags = {"urgent", "important", "review"}
-print(tags.length().to_string())  // "3"
+print(tags.size().to_string())  // "3"
+
+// Add and check membership
+tags.add("priority")
+if tags.contains("urgent") {
+    print("Has urgent tag")
+}
+
+// Remove item
+match tags.remove("review") {
+    Some(removed) { print("Removed: " + removed) }
+    None { print("Item not found") }
+}
 ```
 
 **Design Note:** Collections use consistent method naming across all types. Safe access via `.get()` returns `Optional<T>`, while direct access with `[]` provides unchecked access with runtime bounds checking.
 
 ---
 
-## 11. Error Handling
+## 12. Error Handling
 
 ### 11.1 `Result<T, E>`
 
@@ -1079,15 +1112,15 @@ Use `match` to unpack results and optionals. Use `_` to ignore unused values in 
 
 ---
 
-## 12. Memory Model
+## 13. Memory Model
 
-- **Garbage-collected** runtime; no manual `free` or ownership semantics
+- **Reference-counted** runtime; deterministic memory management with no manual `free`
 - All objects and collections live on the heap
 - Primitives passed by value, objects by reference
 
 ---
 
-## 13. References
+## 14. References
 
 Mux uses references for safe memory access and manipulation:
 
@@ -1132,7 +1165,7 @@ print("val after update: " + x.to_string())  // 21
 
 ---
 
-## 14. Modules & Imports
+## 15. Modules & Imports
 
 ```
 import math
@@ -1153,7 +1186,7 @@ import utils.logger as _  // imported but not directly used in this scope
 
 ---
 
-## 15. Type Inference Guidelines
+## 16. Type Inference Guidelines
 
 ### 15.1 When to Use `auto`
 
@@ -1203,7 +1236,7 @@ func calculate(int width, int height, float _) returns float { }
 
 ---
 
-## 16. Example Program
+## 17. Example Program
 
 ```
 import math
@@ -1231,13 +1264,13 @@ class Circle is Shape {
 func map<T, U>(list<T> items, func(T) returns U transform) returns list<U> {
     auto result = list<U>()
     for item in items {
-        result.append(transform(item))
+        result.push_back(transform(item))
     }
     return result
 }
 
 func main() returns void {
-    auto shapes = [Circle(2.0), Circle(3.5)]  // inferred as list<Circle>
+    auto shapes = [Circle.new(2.0), Circle.new(3.5)]  // inferred as list<Circle>
     
     for shape in shapes {
         float area = shape.area()  // inferred as float
@@ -1249,7 +1282,7 @@ func main() returns void {
     auto results = list<Result<float, string>>()
     for shape in shapes {
         auto areaResult = Ok(shape.area())  // inferred as Result<float, string>
-        results.append(areaResult)
+        results.push_back(areaResult)
     }
     
     // Using generics with inference and lambdas
@@ -1275,7 +1308,7 @@ func main() returns void {
 }
 ```
 
-## 17. Compiler Behavior
+## 18. Compiler Behavior
 
 The Mux compiler performs type inference during the semantic analysis phase:
 
@@ -1289,7 +1322,7 @@ Type inference errors are reported with suggestions for explicit typing when amb
 
 The compiler will warn about unused variables unless they are explicitly marked with `_` or have names starting with `_`.
 
-## 18. License
+## 19. License
 
 Mux will be licensed under the MIT license.
 

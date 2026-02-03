@@ -36,7 +36,7 @@ class Stack<T> {
     }
     
     func get_size() returns int {
-        return self.items.length()
+        return self.items.size()
     }
 }
 
@@ -141,7 +141,7 @@ auto box2 = Box<int>.from(20)
 auto box3 = Box<int>.from(30)
 
 auto boxes = [box1, box2, box3]
-auto boxes_len = boxes.length()
+auto boxes_len = boxes.size()
 print("List of boxes size: " + boxes_len.to_string())
 print("First box value: " + boxes[0].get().to_string())
 
@@ -149,7 +149,7 @@ print("=== Test 7: Box<list<int>> ===")
 auto int_list = [1, 2, 3, 4, 5]
 auto box_with_list = Box<list<int>>.from(int_list)
 auto retrieved_list = box_with_list.get()
-auto list_len = retrieved_list.length()
+auto list_len = retrieved_list.size()
 print("List in box size: " + list_len.to_string())
 print("List in box first element: " + retrieved_list[0].to_string())
 
@@ -187,7 +187,7 @@ auto stack_with_box = Stack<Box<int>>.new()
 stack_with_box.push(box_in_stack)
 
 auto list_of_stacks = [stack_with_box]
-print("List of stacks size: " + list_of_stacks.length().to_string())
+print("List of stacks size: " + list_of_stacks.size().to_string())
 
 match list_of_stacks[0].pop() {
     Some(b) {

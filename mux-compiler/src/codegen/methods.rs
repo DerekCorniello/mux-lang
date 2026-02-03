@@ -588,39 +588,6 @@ impl<'a> CodeGenerator<'a> {
                     .left()
                     .expect("mux_list_pop_value should return a basic value"))
             }
-            "push_front" => {
-                if args.len() != 1 {
-                    return Err("push_front() method takes exactly 1 argument".to_string());
-                }
-                let elem_val = self.generate_expression(&args[0])?;
-                let elem_ptr = self.box_value(elem_val);
-
-                self.generate_runtime_call(
-                    "mux_list_push_front_value",
-                    &[obj_value.into(), elem_ptr.into()],
-                );
-                Ok(self.context.i32_type().const_int(0, false).into()) // return dummy value
-            }
-            "pop_front" => {
-                if !args.is_empty() {
-                    return Err("pop_front() method takes no arguments".to_string());
-                }
-
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_list_pop_front_value")
-                            .expect("mux_list_pop_front_value must be declared in runtime"),
-                        &[obj_value.into()],
-                        "list_pop_front",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_list_pop_front_value should return a basic value"))
-            }
             "is_empty" => {
                 if !args.is_empty() {
                     return Err("is_empty() method takes no arguments".to_string());

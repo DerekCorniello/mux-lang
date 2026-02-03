@@ -475,18 +475,6 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
-            "mux_list_push_front",
-            void_type.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
-            None,
-        );
-
-        module.add_function(
-            "mux_list_pop_front",
-            i8_ptr.fn_type(&[list_ptr.into()], false),
-            None,
-        );
-
-        module.add_function(
             "mux_list_push_back_value",
             void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
             None,
@@ -499,12 +487,6 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
-            "mux_list_push_front_value",
-            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
-            None,
-        );
-
-        module.add_function(
             "mux_list_pop_back_value",
             i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,
@@ -512,12 +494,6 @@ impl<'a> CodeGenerator<'a> {
 
         module.add_function(
             "mux_list_pop_value",
-            i8_ptr.fn_type(&[i8_ptr.into()], false),
-            None,
-        );
-
-        module.add_function(
-            "mux_list_pop_front_value",
             i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,
         );

@@ -82,7 +82,19 @@ Responsible for parsing, semantic analysis, and code generation:
 - **lexer** - Tokenizes source code into tokens
 - **parser** - Builds AST from tokens  
 - **semantics** - Type checking and symbol resolution
-- **codegen** - LLVM IR generation (this is being rewritten)
+- **codegen** - LLVM IR generation (split into 12 focused modules)
+  - `mod.rs` - Core module with CodeGenerator struct, `new()`, `generate()`, `emit_ir_to_file()`
+  - `expressions.rs` - All expression types (literals, binary ops, function calls, etc.)
+  - `statements.rs` - Statement generation (if, while, for, match, return, variable decls)
+  - `functions.rs` - Function declaration and generation
+  - `methods.rs` - Method call generation for all types
+  - `classes.rs` - Class, interface, and enum type generation
+  - `constructors.rs` - Constructor generation for classes and enums
+  - `operators.rs` - Binary and logical operators
+  - `generics.rs` - Generic type instantiation and specialization
+  - `types.rs` - Type conversions between Mux types, LLVM types, and type nodes
+  - `memory.rs` - RC (reference counting) memory management
+  - `runtime.rs` - Runtime function calls and value boxing/unboxing
 - **source** - File handling utilities
 
 The compiler generates LLVM IR which is compiled to a .ll file, then linked with clang against the runtime.
@@ -175,14 +187,26 @@ mux-compiler/
 ├── Cargo.lock
 ├── Cargo.toml
 ├── src
-│   ├── codegen.rs
-│   ├── lexer.rs
-│   ├── lib.rs
-│   ├── main.rs
-│   ├── module_resolver.rs
-│   ├── parser.rs
-│   ├── semantics.rs
-│   └── source.rs
+│   ├── codegen/
+│   │   ├── mod.rs          # Core module: struct, new(), generate(), emit_ir_to_file()
+│   │   ├── expressions.rs  # Expression generation (~3500 lines)
+│   │   ├── statements.rs   # Statement generation (~1400 lines)
+│   │   ├── functions.rs    # Function declaration and generation
+│   │   ├── methods.rs      # Method call generation
+│   │   ├── classes.rs      # Class/interface/enum type generation
+│   │   ├── constructors.rs # Constructor generation
+│   │   ├── operators.rs    # Binary and logical operators
+│   │   ├── generics.rs     # Generic type instantiation
+│   │   ├── types.rs        # Type conversions
+│   │   ├── memory.rs       # RC memory management
+│   │   └── runtime.rs      # Runtime boxing/unboxing
+│   ├── lexer.rs
+│   ├── lib.rs
+│   ├── main.rs
+│   ├── module_resolver.rs
+│   ├── parser.rs
+│   ├── semantics.rs
+│   └── source.rs
 └── tests
     ├── executable_integration.rs
     ├── lexer_integration.rs
@@ -193,21 +217,22 @@ mux-compiler/
 mux-runtime/
 ├── Cargo.toml
 └── src
-    ├── bool.rs
-    ├── boxing.rs
-    ├── float.rs
-    ├── int.rs
-    ├── io.rs
     ├── lib.rs
+    ├── boxing.rs
+    ├── refcount.rs
+    ├── bool.rs
+    ├── int.rs
+    ├── float.rs
+    ├── string.rs
     ├── list.rs
     ├── map.rs
-    ├── math.rs
-    ├── object.rs
+    ├── set.rs
     ├── optional.rs
     ├── result.rs
-    ├── set.rs
-    ├── std.rs
-    └── string.rs
+    ├── object.rs
+    ├── io.rs
+    ├── math.rs
+    └── std.rs
 ```
 
 ## Key Constraints
@@ -216,6 +241,63 @@ mux-runtime/
 - NO runtime reflection
 - All generics must monomorphize at compile time
 - Interfaces use static dispatch (no vtables)
+
+## Codegen Module Architecture Notes
+
+### Import Pattern
+All codegen submodules follow this pattern:
+```rust
+use super::CodeGenerator;
+use crate::ast::{...};  // Import from ast module, NOT parser
+use inkwell::types::{BasicType, ...};
+use inkwell::values::{...};
+
+impl<'a> CodeGenerator<'a> {
+    pub(super) fn function_name(...) { ... }
+}
+```
+
+**Important:** Always import types from `crate::ast` (e.g., `PrimitiveType`, `TypeKind`, `TypeNode`), not from `crate::parser` (which has private re-exports).
+
+### Critical Types to Import
+When working with inkwell types:
+- Use `inkwell::types::BasicType` trait when calling `.fn_type()` or `.size_of()` on `BasicTypeEnum`
+- Most files need: `use inkwell::types::{BasicType, BasicTypeEnum};`
+
+### Visibility Rules
+- All functions in submodules should be `pub(super)` to be accessible from `mod.rs`
+- The `CodeGenerator` struct and its impl block are defined in `mod.rs`
+- Helper functions that are only used within a module can be `fn` (private)
+
+### Memory Management (RC)
+RC (reference counting) functions are defined in `memory.rs`:
+- `push_rc_scope()` - Create new scope for RC tracking
+- `track_rc_variable()` - Add variable to current scope
+- `generate_all_scopes_cleanup()` - Clean up all scopes
+- `rc_inc_if_pointer()` - Increment RC before returning values
+- `type_needs_rc_tracking()` - Check if type needs RC
+
+These are core to Mux's memory safety - all heap-allocated values use reference counting.
+
+### Expression vs Statement Distinction
+- **Expressions** return values and can be nested (literals, function calls, binary ops)
+- **Statements** perform actions and don't return values (variable declarations, if/while/for, return)
+- The `generate_expression()` function in `expressions.rs` handles ~30 different expression types
+- The `generate_statement()` function in `statements.rs` handles all statement types
+
+### Boxing/Unboxing
+Mux boxes all primitive values into a uniform `Value*` representation:
+- `box_value()` - Wraps LLVM values into boxed Value pointers
+- Runtime provides typed extractors: `get_raw_int_value()`, `get_raw_float_value()`, etc.
+- This enables uniform handling in collections and generic functions
+
+### Type System Integration
+The codegen works with three type representations:
+1. **Mux AST types** (`TypeNode`, `TypeKind`) - from parser/AST
+2. **Semantic types** (`Type`, `ResolvedType`) - from semantic analyzer
+3. **LLVM types** (`BasicTypeEnum`, `PointerValue`) - for IR generation
+
+Conversion functions in `types.rs` bridge these representations.
 
 ## When to Ask for Clarification
 - Unclear requirements or specifications

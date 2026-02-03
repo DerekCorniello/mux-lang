@@ -1606,17 +1606,7 @@ impl SemanticAnalyzer {
                     return_type: Type::Void,
                     is_static: false,
                 }),
-                "push_front" => Some(MethodSig {
-                    params: vec![*elem_type.clone()],
-                    return_type: Type::Void,
-                    is_static: false,
-                }),
                 "pop" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Optional(elem_type.clone()),
-                    is_static: false,
-                }),
-                "pop_front" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Optional(elem_type.clone()),
                     is_static: false,
