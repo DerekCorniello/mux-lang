@@ -1,0 +1,2 @@
+// Should fail: Expected type after variable name
+auto y:

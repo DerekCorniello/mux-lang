@@ -1,0 +1,4 @@
+// Should fail: Type mismatch in return
+func baz() returns int {
+  return "str"
+}

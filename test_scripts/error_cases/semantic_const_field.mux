@@ -1,0 +1,6 @@
+// Should fail: Cannot assign to const field
+class C {
+  const int f
+}
+auto c = C.new()
+c.f = 5

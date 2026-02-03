@@ -1,0 +1,3 @@
+// Should fail: Cannot modify immutable collection
+auto arr = [1,2,3]
+arr[0] = 4

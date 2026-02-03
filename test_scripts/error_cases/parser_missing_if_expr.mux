@@ -1,0 +1,3 @@
+// Should fail: Expected expression after 'if'
+if {
+}

@@ -1,0 +1,2 @@
+// Should fail: Undefined variable 'x'
+print(x)

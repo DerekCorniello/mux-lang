@@ -1,0 +1,2 @@
+// Should fail: Type mismatch in operation
+auto a = "str" + 1

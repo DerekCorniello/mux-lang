@@ -1,0 +1,2 @@
+// Should fail: Expected expression after operator
+auto z = 1 +

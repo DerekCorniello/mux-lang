@@ -86,23 +86,22 @@ fn test_executable_all_mux_files_in_dir() {
         "Scanning directory for executable tests: {}",
         dir_path.display()
     );
-
-    let entries = fs::read_dir(&dir_path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read test directory {}: {}",
-            dir_path.display(),
-            e
-        )
-    });
-
-    let mut test_files = Vec::new();
-    for entry in entries {
-        let entry = entry.expect("Failed to read directory entry");
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("mux") {
-            test_files.push(path);
+    fn collect_mux_files(dir: &Path) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    files.extend(collect_mux_files(&path));
+                } else if path.extension().and_then(|s| s.to_str()) == Some("mux") {
+                    files.push(path);
+                }
+            }
         }
+        files
     }
+
+    let mut test_files = collect_mux_files(&dir_path);
 
     // Sort files for consistent test order
     test_files.sort();

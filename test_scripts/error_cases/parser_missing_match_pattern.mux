@@ -1,0 +1,4 @@
+// Should fail: Expected pattern
+match x {
+  => 1
+}

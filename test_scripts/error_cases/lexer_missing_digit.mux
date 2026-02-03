@@ -1,0 +1,2 @@
+// Should fail: Expected digit after decimal point
+auto f = 1.

@@ -1,0 +1,3 @@
+// Should fail: Cannot index empty map
+auto m = {}
+m["key"]

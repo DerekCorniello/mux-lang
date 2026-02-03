@@ -1,0 +1,4 @@
+// Should fail: Cannot use 'self' in a common method
+func common() returns void {
+  self.x
+}
