@@ -1,0 +1,2 @@
+// Should fail: Missing import path
+import

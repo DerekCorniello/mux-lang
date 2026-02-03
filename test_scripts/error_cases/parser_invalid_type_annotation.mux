@@ -1,0 +1,2 @@
+// Should fail: Invalid type annotation
+auto x: invalid = 5

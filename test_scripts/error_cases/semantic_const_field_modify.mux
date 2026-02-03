@@ -1,0 +1,6 @@
+// Should fail: Modify const field in class initialization
+class C {
+    const int x = 5
+}
+auto c = C.new()
+c.x = 10

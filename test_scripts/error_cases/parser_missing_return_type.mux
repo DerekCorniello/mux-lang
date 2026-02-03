@@ -1,2 +1,2 @@
-// Should fail: Expected ':' after function parameters
-fn bar()
+// Should fail: Expected return type after 'returns'
+func bar() returns

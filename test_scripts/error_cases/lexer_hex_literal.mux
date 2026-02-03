@@ -1,0 +1,2 @@
+// Should fail: Invalid hex literal (G is not a valid hex digit)
+auto x = 0xGHI

@@ -1,2 +1,2 @@
 // Should fail: Expected '}' after function body
-fn foo() {
+func foo() returns void {

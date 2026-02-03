@@ -81,7 +81,7 @@ impl<'a> Lexer<'a> {
                     }
                     Some('*') => {
                         self.source.next_char(); // consume '*'
-                        let comment = self.source.consume_multiline_comment();
+                        let comment = self.read_multiline_comment(start_span)?;
                         return Ok(Token::new(
                             TokenType::MultilineComment(comment.trim().to_string()),
                             start_span,
@@ -124,10 +124,20 @@ impl<'a> Lexer<'a> {
             }
             '_' => Ok(Token::new(TokenType::Underscore, start_span)),
             '.' => match self.source.peek() {
-                Some(c) if c.is_ascii_digit() => self.read_number(c, start_span),
+                Some(c) if c.is_ascii_digit() => self.read_number('.', start_span),
                 _ => Ok(Token::new(TokenType::Dot, start_span)),
             },
             _ => self.get_multichar_token(c, start_span),
+        }
+    }
+
+    fn read_multiline_comment(&mut self, start_span: Span) -> Result<String, LexerError> {
+        let (comment, found) = self.source.consume_multiline_comment();
+
+        if !found {
+            Err(LexerError::new("Unterminated block comment", start_span))
+        } else {
+            Ok(comment)
         }
     }
 
@@ -248,7 +258,10 @@ impl<'a> Lexer<'a> {
                         comment.push(ch);
                     }
                     start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::LineComment(comment), start_span))
+                    Ok(Token::new(
+                        TokenType::LineComment(comment.trim().to_string()),
+                        start_span,
+                    ))
                 } else if self.source.peek() == Some('*') {
                     self.source.next_char();
                     let mut comment = String::new();
@@ -285,7 +298,10 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::MultilineComment(comment), start_span))
+                    Ok(Token::new(
+                        TokenType::MultilineComment(comment.trim().to_string()),
+                        start_span,
+                    ))
                 } else if self.source.peek() == Some('=') {
                     self.source.next_char();
                     start_span.complete(self.source.line, self.source.col);
@@ -543,7 +559,26 @@ impl<'a> Lexer<'a> {
                 }
             }
 
-            if let Some('.') = self.source.peek() {
+            if self.source.peek() == Some('.') {
+                // Disambiguation:
+                // - If the '.' is followed by a digit, it's a float literal.
+                // - If the '.' is followed by an identifier start (e.g. `1.to_string()`),
+                //   it's a field/method access and the '.' is NOT part of the number.
+                // - Otherwise (e.g. `1.` or `1..2`) this is an invalid numeric literal.
+                let after_dot = self.source.peek_nth(1);
+                if after_dot.is_some_and(|c| c.is_ascii_digit()) {
+                    is_float = true;
+                } else if after_dot.is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
+                    // Leave '.' to be tokenized separately.
+                } else {
+                    return Err(LexerError::new(
+                        "Expected digit after decimal point",
+                        Span::new(self.source.line, self.source.col),
+                    ));
+                }
+            }
+
+            if is_float {
                 is_float = true;
                 num.push(
                     self.source
@@ -551,7 +586,8 @@ impl<'a> Lexer<'a> {
                         .expect("peek returned Some, so next_char should return Some"),
                 );
 
-                // read digits after decimal point (optional for numbers like 42.)
+                // read digits after decimal point (required)
+                let mut has_digit = false;
                 while let Some(c) = self.source.peek() {
                     if c.is_ascii_digit() {
                         num.push(
@@ -559,11 +595,19 @@ impl<'a> Lexer<'a> {
                                 .next_char()
                                 .expect("peek returned Some, so next_char should return Some"),
                         );
+                        has_digit = true;
                     } else if c == '_' {
                         self.source.next_char(); // skip underscores
                     } else {
                         break;
                     }
+                }
+
+                if !has_digit {
+                    return Err(LexerError::new(
+                        "Expected digit after decimal point",
+                        Span::new(self.source.line, self.source.col),
+                    ));
                 }
             }
         }
@@ -613,9 +657,57 @@ impl<'a> Lexer<'a> {
         start_span.complete(self.source.line, self.source.col);
 
         if is_float {
-            if num.ends_with('.') {
-                num.push('0');
+            // Catch cases like 1.2.3 early: a second dot followed by a digit.
+            if self.source.peek() == Some('.')
+                && self.source.peek_nth(1).is_some_and(|c| c.is_ascii_digit())
+            {
+                num.push(
+                    self.source
+                        .next_char()
+                        .expect("peek returned Some, so next_char should return Some"),
+                );
+                while let Some(c) = self.source.peek() {
+                    if c.is_ascii_digit() || c == '_' {
+                        num.push(
+                            self.source
+                                .next_char()
+                                .expect("peek returned Some, so next_char should return Some"),
+                        );
+                    } else {
+                        break;
+                    }
+                }
+                start_span.complete(self.source.line, self.source.col);
+                return Err(LexerError::new(
+                    format!("Invalid float literal: {}", num),
+                    start_span,
+                ));
             }
+
+            // Reject suffixes like 1.2abc
+            if self
+                .source
+                .peek()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            {
+                while let Some(c) = self.source.peek() {
+                    if c.is_ascii_alphanumeric() || c == '_' {
+                        num.push(
+                            self.source
+                                .next_char()
+                                .expect("peek returned Some, so next_char should return Some"),
+                        );
+                    } else {
+                        break;
+                    }
+                }
+                start_span.complete(self.source.line, self.source.col);
+                return Err(LexerError::new(
+                    format!("Invalid float literal: {}", num),
+                    start_span,
+                ));
+            }
+
             let clean_num: String = num.chars().filter(|c| *c != '_').collect();
             clean_num
                 .parse::<f64>()
@@ -623,6 +715,30 @@ impl<'a> Lexer<'a> {
                 .map(|f| Token::new(TokenType::Float(f), start_span))
                 .map_err(|_| LexerError::new(format!("Invalid float literal: {}", num), start_span))
         } else {
+            // Reject suffixes like 123abc
+            if self
+                .source
+                .peek()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            {
+                while let Some(c) = self.source.peek() {
+                    if c.is_ascii_alphanumeric() || c == '_' {
+                        num.push(
+                            self.source
+                                .next_char()
+                                .expect("peek returned Some, so next_char should return Some"),
+                        );
+                    } else {
+                        break;
+                    }
+                }
+                start_span.complete(self.source.line, self.source.col);
+                return Err(LexerError::new(
+                    format!("Invalid integer literal: {}", num),
+                    start_span,
+                ));
+            }
+
             let clean_num: String = num.chars().filter(|c| *c != '_').collect();
             clean_num
                 .parse::<i64>()
@@ -773,11 +889,14 @@ auto y = 42"#;
 
     #[test]
     fn test_number_errors() {
-        // The lexer should parse "1.2.3" as 1.2 and .3
+        // The lexer should fail on multiple decimal points
         let input = "auto x = 1.2.3";
         let mut source = Source::from_test_str(input);
-        let tokens = Lexer::new(&mut source).lex_all().unwrap();
-        assert_eq!(tokens.len(), 5); // auto, x, =, 1.2, .3
+        let result = Lexer::new(&mut source).lex_all();
+        assert!(
+            result.is_err(),
+            "Expected error for invalid float literal with multiple decimals"
+        );
 
         // The lexer should fail on invalid scientific notation
         let input = "auto x = 1.23e";
@@ -795,6 +914,21 @@ auto y = 42"#;
         assert!(
             result.is_err(),
             "Expected error for invalid scientific notation"
+        );
+
+        // The lexer should fail on trailing decimal points
+        let input = "auto x = 1.";
+        let mut source = Source::from_test_str(input);
+        let result = Lexer::new(&mut source).lex_all();
+        assert!(result.is_err(), "Expected error for trailing decimal point");
+
+        // The lexer should fail on integer literals with identifier suffixes
+        let input = "auto x = 123abc";
+        let mut source = Source::from_test_str(input);
+        let result = Lexer::new(&mut source).lex_all();
+        assert!(
+            result.is_err(),
+            "Expected error for invalid integer literal"
         );
     }
 
@@ -877,37 +1011,30 @@ auto y = 42"#;
 
     #[test]
     fn test_number_parsing() {
-        // Test that "1.2.3" is tokenized as Float(1.2) and Int(33) (ASCII for '3')
-        let mut source = Source::from_test_str("auto x = 1.2.3");
-        let mut lexer = Lexer::new(&mut source);
-        let tokens = lexer.lex_all().unwrap();
+        // Method calls on literals should be unambiguous: `1.to_string()` is int + dot + ident.
+        let mut source = Source::from_test_str("auto x = 1.to_string()");
+        let tokens = Lexer::new(&mut source).lex_all().unwrap();
+        let token_types: Vec<_> = tokens.into_iter().map(|t| t.token_type).collect();
+        assert_eq!(
+            token_types,
+            vec![
+                TokenType::Auto,
+                TokenType::Id("x".to_string()),
+                TokenType::Eq,
+                TokenType::Int(1),
+                TokenType::Dot,
+                TokenType::Id("to_string".to_string()),
+                TokenType::OpenParen,
+                TokenType::CloseParen,
+            ]
+        );
 
-        // We expect 5 tokens: auto, x, =, 1.2, .3
-        assert_eq!(tokens.len(), 5, "Expected 5 tokens, got: {:?}", tokens);
-
-        // Check the tokens
-        match &tokens[..] {
-            [Token {
-                token_type: TokenType::Auto,
-                ..
-            }, Token {
-                token_type: TokenType::Id(id),
-                ..
-            }, Token {
-                token_type: TokenType::Eq,
-                ..
-            }, Token {
-                token_type: TokenType::Float(f),
-                ..
-            }, Token {
-                token_type: TokenType::Int(i),
-                ..
-            }] => {
-                assert_eq!(id, "x");
-                assert!((f.into_inner() - 1.2).abs() < f64::EPSILON);
-                assert_eq!(*i, 33); // ASCII for '3'
-            }
-            _ => panic!("Unexpected tokens: {:?}", tokens),
+        // Leading-dot floats should be accepted (and normalized to 0.x)
+        let mut source = Source::from_test_str("auto y = .5");
+        let tokens = Lexer::new(&mut source).lex_all().unwrap();
+        match tokens.last().map(|t| &t.token_type) {
+            Some(TokenType::Float(f)) => assert!((f.into_inner() - 0.5).abs() < f64::EPSILON),
+            other => panic!("Expected Float(0.5), got {:?}", other),
         }
     }
 

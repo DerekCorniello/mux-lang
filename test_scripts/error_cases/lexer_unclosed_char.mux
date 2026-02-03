@@ -1,0 +1,2 @@
+// Should fail: Unclosed character literal
+auto c = '

@@ -18,6 +18,11 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
     // Get the directory containing the test file
     let test_dir = test_file.parent().unwrap_or_else(|| Path::new("."));
 
+    // Check if this is an error case (in error_cases subdirectory)
+    let is_error_case = test_file
+        .ancestors()
+        .any(|p| p.file_name().map_or(false, |n| n == "error_cases"));
+
     // Compile the file using the mux_compiler
     let mut compile_cmd = Command::new("cargo");
     compile_cmd
@@ -30,8 +35,15 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
         .output()
         .unwrap_or_else(|e| panic!("Failed to execute compile command for {}: {}", path_str, e));
 
+    let stdout = String::from_utf8_lossy(&compile_output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&compile_output.stderr).to_string();
+
     if !compile_output.status.success() {
-        // If compilation fails, return empty output for snapshot
+        // For error cases, return stderr as the error output
+        if is_error_case {
+            return (String::new(), stderr);
+        }
+        // If compilation fails (non-error-case), return empty output for snapshot
         return (String::from(" "), String::from(" "));
     }
 
@@ -56,8 +68,8 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
         }
     };
 
-    let stdout = String::from_utf8_lossy(&exec_output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&exec_output.stderr).to_string();
+    let exec_stdout = String::from_utf8_lossy(&exec_output.stdout).to_string();
+    let exec_stderr = String::from_utf8_lossy(&exec_output.stderr).to_string();
 
     // Clean up the executable
     if exec_path.exists() {
@@ -70,7 +82,13 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
         });
     }
 
-    (stdout, stderr)
+    // For error cases, we only care about stderr
+    // For regular cases, return both stdout and stderr
+    if is_error_case {
+        (String::new(), stderr)
+    } else {
+        (exec_stdout, exec_stderr)
+    }
 }
 
 #[test]
@@ -92,9 +110,7 @@ fn test_executable_all_mux_files_in_dir() {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    // TODO: Uncomment to look at the error files
-                    //
-                    // files.extend(collect_mux_files(&path));
+                    files.extend(collect_mux_files(&path));
                 } else if path.extension().and_then(|s| s.to_str()) == Some("mux") {
                     files.push(path);
                 }
@@ -124,17 +140,18 @@ fn test_executable_all_mux_files_in_dir() {
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown_file");
 
-            // Combine stdout and stderr for complete output snapshot
-            let full_output = if stderr.is_empty() {
+            // For error cases, we only capture stderr
+            // For regular cases, capture stdout
+            let output_to_snapshot = if stderr.is_empty() {
                 stdout.clone()
             } else {
-                format!("STDOUT:\n{}\nSTDERR:\n{}", stdout, stderr)
+                stderr.clone()
             };
 
             println!("Creating executable snapshot for: {}", snapshot_name);
             assert_snapshot!(
                 format!("executable_integration__{}", snapshot_name),
-                full_output
+                output_to_snapshot
             );
             println!("✓ Successfully processed executable for: {}", file_name);
         }) {

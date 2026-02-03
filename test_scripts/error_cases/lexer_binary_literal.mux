@@ -1,0 +1,2 @@
+// Should fail: Invalid binary literal (2 is not a valid binary digit)
+auto x = 0b102

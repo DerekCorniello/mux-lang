@@ -18,6 +18,7 @@ pub struct Parser<'a> {
     tokens: Vec<&'a Token>,
     current: usize,
     pub errors: Vec<ParserError>,
+    loop_depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -34,6 +35,7 @@ impl<'a> Parser<'a> {
                 .collect(),
             current: 0,
             errors: Vec::new(),
+            loop_depth: 0,
         }
     }
 
@@ -1207,7 +1209,9 @@ impl<'a> Parser<'a> {
 
         // allow newline(s) before body.
         self.skip_newlines();
+        self.loop_depth += 1;
         let body = self.block()?;
+        self.loop_depth -= 1;
 
         let body_statements = match body {
             AstNode::Statement(stmt) => match stmt.kind {
@@ -1249,11 +1253,13 @@ impl<'a> Parser<'a> {
 
         // allow newline(s) before body.
         self.skip_newlines();
+        self.loop_depth += 1;
         let body = if self.check(TokenType::OpenBrace) {
             self.block()?
         } else {
             self.statement()?
         };
+        self.loop_depth -= 1;
 
         let body_statements = match body {
             AstNode::Statement(stmt) => match stmt.kind {
@@ -1435,6 +1441,13 @@ impl<'a> Parser<'a> {
     fn break_statement(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current].span;
 
+        if self.loop_depth == 0 {
+            return Err(ParserError::new(
+                "Cannot use 'break' outside of a loop".to_string(),
+                start_span,
+            ));
+        }
+
         Ok(AstNode::Statement(StatementNode {
             kind: StatementKind::Break,
             span: start_span,
@@ -1443,6 +1456,13 @@ impl<'a> Parser<'a> {
 
     fn continue_statement(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current].span;
+
+        if self.loop_depth == 0 {
+            return Err(ParserError::new(
+                "Cannot use 'continue' outside of a loop".to_string(),
+                start_span,
+            ));
+        }
 
         Ok(AstNode::Statement(StatementNode {
             kind: StatementKind::Continue,
@@ -2201,6 +2221,7 @@ impl<'a> Parser<'a> {
                     TokenType::Func => "'func' keyword".to_string(),
                     TokenType::Class => "'class' keyword".to_string(),
                     TokenType::Interface => "'interface' keyword".to_string(),
+                    TokenType::Match => "'match' keyword".to_string(),
                     TokenType::If => "'if' keyword".to_string(),
                     TokenType::For => "'for' keyword".to_string(),
                     TokenType::While => "'while' keyword".to_string(),
@@ -2216,6 +2237,15 @@ impl<'a> Parser<'a> {
                     TokenType::Eof => "end of file".to_string(),
                     t => format!("'{:?}'", t),
                 };
+
+                // Special case for match - give a more helpful error
+                if matches!(token_type, TokenType::Match) {
+                    return Err(ParserError::new(
+                        "match cannot be used as an expression; it can only be used as a statement",
+                        token_span,
+                    ));
+                }
+
                 Err(ParserError::from_token(
                     format!("Expected expression, found {}", token_desc),
                     &Token {
@@ -2280,8 +2310,10 @@ impl<'a> Parser<'a> {
                 // only treat '<...>' as generic type arguments in expression position when:
                 // - current expr is an identifier.
                 // - there is a matching '>'.
-                // - and the token immediately following '>' is either '.' or '('.
-                let should_consume_generics = if let ExpressionKind::Identifier(_) = &expr.kind {
+                // - and the token immediately following '>' is either:
+                //   - '.' or '(' (method/constructor call)
+                //   - statement terminators (NewLine, Eof, CloseBrace, CloseParen, Eq)
+                let should_consume_generics = if let ExpressionKind::Identifier(id) = &expr.kind {
                     let mut i = self.current + 1; // after '<'
                     let mut depth = 1usize;
                     let mut gt_idx: Option<usize> = None;
@@ -2307,9 +2339,17 @@ impl<'a> Parser<'a> {
                     }
                     if let Some(end) = gt_idx {
                         if let Some(next) = self.tokens.get(end + 1) {
-                            matches!(next.token_type, TokenType::Dot | TokenType::OpenParen)
+                            matches!(
+                                next.token_type,
+                                TokenType::Dot
+                                    | TokenType::OpenParen
+                                    | TokenType::CloseParen
+                                    | TokenType::Eq
+                                    | TokenType::NewLine
+                                    | TokenType::Eof
+                            ) || id.chars().next().map_or(false, |c| c.is_ascii_uppercase())
                         } else {
-                            false
+                            true // end of file, treat as generic
                         }
                     } else {
                         false
@@ -3037,7 +3077,7 @@ mod tests {
                 return 42
             }
 
-            123abc = 99
+            = 99
 
             let z = 20 30
 
@@ -3081,8 +3121,7 @@ mod tests {
             for error in &errors {
                 println!("Found error: {} at {:?}", error.message, error.span);
 
-                if error.message.contains("Invalid number format")
-                    || error.message.contains("unknown escape sequence")
+                if error.message.contains("unknown escape sequence")
                     || error.message.contains("Expected expression")
                 {
                     found_expected_error = true;

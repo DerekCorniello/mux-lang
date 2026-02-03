@@ -718,6 +718,16 @@ impl SemanticAnalyzer {
                     ExpressionKind::GenericType(name, type_args) => {
                         self.get_instantiated_constructor_type(name, type_args, func.span)?
                     }
+                    ExpressionKind::Identifier(name) => match self.get_expression_type(func) {
+                        Ok(t) => t,
+                        Err(e) if e.message.contains("Undefined variable") => {
+                            return Err(SemanticError {
+                                message: format!("Undefined function '{}'", name),
+                                span: func.span,
+                            });
+                        }
+                        Err(e) => return Err(e),
+                    },
                     _ => self.get_expression_type(func)?,
                 };
                 match func_type {
@@ -840,7 +850,7 @@ impl SemanticAnalyzer {
                     } else {
                         Err(SemanticError {
                             message: format!(
-                                "Unknown method '{}' on type {}",
+                                "Undefined method '{}' on type {}",
                                 field,
                                 format_type(&expr_type)
                             ),
@@ -850,7 +860,7 @@ impl SemanticAnalyzer {
                 } else {
                     Err(SemanticError {
                         message: format!(
-                            "Unknown method '{}' on type {}",
+                            "Undefined method '{}' on type {}",
                             field,
                             format_type(&expr_type)
                         ),
@@ -1029,6 +1039,22 @@ impl SemanticAnalyzer {
                         span: expr.span,
                     });
                 }
+
+                // Check type argument count
+                if let Some(symbol) = self.symbol_table.lookup(name) {
+                    let expected_count = symbol.type_params.len();
+                    let actual_count = type_args.len();
+                    if expected_count != actual_count {
+                        return Err(SemanticError {
+                            message: format!(
+                                "Generic type '{}' requires {} type argument(s), got {}",
+                                name, expected_count, actual_count
+                            ),
+                            span: expr.span,
+                        });
+                    }
+                }
+
                 let resolved_args = type_args
                     .iter()
                     .map(|arg| self.resolve_type(arg))
@@ -1998,6 +2024,16 @@ impl SemanticAnalyzer {
                     let mut field_types = Vec::new();
                     let mut fields_map = std::collections::HashMap::new();
                     for field in fields {
+                        // Check for duplicate field
+                        if fields_map.contains_key(&field.name) {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "Duplicate field '{}' in class '{}'",
+                                    field.name, name
+                                ),
+                                span: field.type_.span,
+                            });
+                        }
                         match self.resolve_type(&field.type_) {
                             Ok(t) => {
                                 field_types.push(t.clone());
@@ -2277,6 +2313,21 @@ impl SemanticAnalyzer {
                         span: func.span,
                     });
                 }
+
+                // Check that main() returns void
+                if func.name == "main" {
+                    let return_type = self.resolve_type(&func.return_type)?;
+                    if !matches!(return_type, Type::Void) {
+                        return Err(SemanticError {
+                            message: format!(
+                                "Function 'main' must return void, not '{}'",
+                                format_type(&return_type)
+                            ),
+                            span: func.return_type.span,
+                        });
+                    }
+                }
+
                 self.analyze_function(func, None)
             }
             AstNode::Class {
@@ -2719,6 +2770,14 @@ impl SemanticAnalyzer {
                 return Ok(());
             }
             StatementKind::Return(Some(expr)) => {
+                // Check if we're in a function at all
+                if self.current_return_type.is_none() {
+                    return Err(SemanticError {
+                        message: "Cannot use 'return' outside of a function".into(),
+                        span: expr.span,
+                    });
+                }
+
                 self.analyze_expression(expr)?;
 
                 // Check if we're in a void function
@@ -2737,6 +2796,14 @@ impl SemanticAnalyzer {
                 return Ok(());
             }
             StatementKind::Return(None) => {
+                // Check if we're in a function at all
+                if self.current_return_type.is_none() {
+                    return Err(SemanticError {
+                        message: "Cannot use 'return' outside of a function".into(),
+                        span: stmt.span,
+                    });
+                }
+
                 // Check if we're NOT in a void function (missing return value)
                 if !matches!(self.current_return_type, Some(Type::Void)) {
                     if let Some(expected_type) = &self.current_return_type {
@@ -3155,6 +3222,16 @@ impl SemanticAnalyzer {
                 Ok(())
             }
             ExpressionKind::Call { func, args } => {
+                // Check for undefined function before analyzing
+                if let ExpressionKind::Identifier(name) = &func.kind {
+                    if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
+                        return Err(SemanticError {
+                            message: format!("Undefined function '{}'", name),
+                            span: func.span,
+                        });
+                    }
+                }
+
                 self.analyze_expression(func)?;
                 for arg in args {
                     self.analyze_expression(arg)?;
@@ -3259,12 +3336,39 @@ impl SemanticAnalyzer {
                     self.analyze_expression(value)?;
                 }
                 // type check map literal, ensure all keys and values have consistent types
+                // also validate that keys are hashable (primitive types only for now)
                 if !entries.is_empty() {
                     let (first_key, first_value) = &entries[0];
                     let key_type = self.get_expression_type(first_key)?;
+
+                    // Check if key type is hashable (primitives only for now)
+                    let is_hashable = matches!(key_type, Type::Primitive(_));
+                    if !is_hashable {
+                        return Err(SemanticError {
+                            message: format!(
+                                "Map keys must be hashable (primitive types only). Found '{}'",
+                                format_type(&key_type)
+                            ),
+                            span: first_key.span,
+                        });
+                    }
+
                     let value_type = self.get_expression_type(first_value)?;
                     for (key, value) in &entries[1..] {
                         let k_type = self.get_expression_type(key)?;
+
+                        // Check key type is hashable
+                        let is_hashable = matches!(k_type, Type::Primitive(_));
+                        if !is_hashable {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "Map keys must be hashable (primitive types only). Found '{}'",
+                                    format_type(&k_type)
+                                ),
+                                span: key.span,
+                            });
+                        }
+
                         let v_type = self.get_expression_type(value)?;
                         if k_type != key_type {
                             return Err(SemanticError {

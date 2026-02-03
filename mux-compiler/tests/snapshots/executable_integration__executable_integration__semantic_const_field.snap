@@ -1,0 +1,17 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux`
+
+In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux, line 3:
+      const int f
+                ^
+Const fields must have a default value
+
+
+In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux, line 4:
+    }
+    ^
+Expected expression, found '}'

@@ -1,0 +1,6 @@
+// Should fail: Access undefined field
+class C {
+    int x = 5
+}
+auto c = C.new()
+auto y = c.undefined_field

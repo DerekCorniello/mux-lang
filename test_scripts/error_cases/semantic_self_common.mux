@@ -1,4 +1,6 @@
 // Should fail: Cannot use 'self' in a common method
-func common() returns void {
-  self.x
+class C {
+  common func foo() returns void {
+    self.x
+  }
 }

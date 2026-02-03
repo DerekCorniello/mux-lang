@@ -1,0 +1,5 @@
+// Should fail: Instantiate class without .new()
+class Foo {
+    int x = 5
+}
+auto f = Foo()

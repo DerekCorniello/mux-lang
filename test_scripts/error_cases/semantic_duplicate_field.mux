@@ -1,0 +1,5 @@
+// Should fail: Duplicate field in class
+class C {
+    int x
+    int x
+}

@@ -84,18 +84,21 @@ impl Source {
     // consumes characters until the end of a multiline comment ("*/") is found. the
     // comment closer is consumed but not included in the returned string. the opening
     // "/*" should already be consumed before calling this.
-    pub fn consume_multiline_comment(&mut self) -> String {
+    // Returns (content, found_terminator)
+    pub fn consume_multiline_comment(&mut self) -> (String, bool) {
         let mut buf = String::new();
+        let mut found = false;
 
         while let Some(c) = self.next_char() {
             if c == '*' && self.peek() == Some('/') {
                 self.next_char(); // consume the '/'
+                found = true;
                 break;
             }
             buf.push(c);
         }
 
-        buf.trim().to_string()
+        (buf.trim().to_string(), found)
     }
 }
 
@@ -197,8 +200,9 @@ mod tests {
     fn test_consume_multiline_comment() {
         let mut src = Source::from_test_str(" hello\nworld*/");
 
-        let result = src.consume_multiline_comment();
+        let (result, found) = src.consume_multiline_comment();
         assert_eq!(result, "hello\nworld");
+        assert!(found);
         assert_eq!(src.line, 2); // should be on line 2 after the newline
         assert_eq!(src.col, 8); // after "world */"
     }

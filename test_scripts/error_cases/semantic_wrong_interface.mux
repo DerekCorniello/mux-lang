@@ -1,0 +1,7 @@
+// Should fail: Class does not implement required interface method
+interface I {
+    func foo() returns void
+}
+class C is I {
+}
+auto c = C.new()

@@ -1,2 +1,2 @@
 // Should fail: Expected '=' after variable name
-int x
+int x =

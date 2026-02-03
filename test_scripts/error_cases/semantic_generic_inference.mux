@@ -1,2 +1,2 @@
 // Should fail: Cannot infer type for empty literal
-auto empty: List = []
+auto empty = []

@@ -1,3 +1,2 @@
-// Should fail: Expected expression after 'if'
-if {
-}
+// Should fail: Expected '{' after 'else'
+if true { } else

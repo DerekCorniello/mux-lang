@@ -1,0 +1,4 @@
+// Should fail: Invalid field declaration (missing field name)
+class C {
+    int
+}

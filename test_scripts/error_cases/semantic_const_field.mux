@@ -1,6 +1,5 @@
-// Should fail: Cannot assign to const field
+// Should fail: Const fields must have a default value
 class C {
   const int f
 }
 auto c = C.new()
-c.f = 5
