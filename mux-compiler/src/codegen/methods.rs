@@ -624,9 +624,9 @@ impl<'a> CodeGenerator<'a> {
                     .left()
                     .expect("mux_list_is_empty should return a basic value"))
             }
-            "length" => {
+            "size" => {
                 if !args.is_empty() {
-                    return Err("length() method takes no arguments".to_string());
+                    return Err("size() method takes no arguments".to_string());
                 }
 
                 // extract raw List pointer from Value
@@ -652,7 +652,7 @@ impl<'a> CodeGenerator<'a> {
                             .left()
                             .expect("mux_value_get_list should return a basic value")
                             .into()],
-                        "list_length",
+                        "list_size",
                     )
                     .map_err(|e| e.to_string())?;
                 Ok(call

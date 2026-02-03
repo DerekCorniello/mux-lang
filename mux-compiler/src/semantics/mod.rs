@@ -1621,7 +1621,7 @@ impl SemanticAnalyzer {
                     return_type: Type::Primitive(PrimitiveType::Bool),
                     is_static: false,
                 }),
-                "length" => Some(MethodSig {
+                "size" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Int),
                     is_static: false,
