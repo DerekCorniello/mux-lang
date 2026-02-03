@@ -1,0 +1,2 @@
+// Should fail: Invalid escape sequence in character literal
+auto c = '\x'

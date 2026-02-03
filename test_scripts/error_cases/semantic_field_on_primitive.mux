@@ -1,0 +1,2 @@
+// Should fail: Field on primitive type
+auto x = 5.x

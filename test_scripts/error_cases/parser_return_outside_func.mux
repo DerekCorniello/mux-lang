@@ -1,0 +1,2 @@
+// Should fail: Return statement outside of function
+return 5

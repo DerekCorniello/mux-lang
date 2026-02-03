@@ -1,0 +1,6 @@
+// Should fail: Call undefined method
+class C {
+    int x = 5
+}
+auto c = C.new()
+c.foo()

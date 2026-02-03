@@ -1,0 +1,2 @@
+// Should fail: Continue statement outside of loop
+continue

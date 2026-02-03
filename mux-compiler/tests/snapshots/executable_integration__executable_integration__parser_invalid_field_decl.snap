@@ -1,0 +1,17 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_field_decl.mux`
+
+In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_field_decl.mux, line 3:
+        int
+           ^
+Expected field name
+
+
+In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_field_decl.mux, line 4:
+    }
+    ^
+Expected expression, found '}'

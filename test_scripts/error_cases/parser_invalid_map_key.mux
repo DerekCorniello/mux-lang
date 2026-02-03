@@ -1,0 +1,2 @@
+// Should fail: Invalid map key (list cannot be a map key)
+auto m = {[]: 1}

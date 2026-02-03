@@ -1,0 +1,2 @@
+// Should fail: Invalid unicode in identifier (accents not allowed in identifiers)
+auto café = 5

@@ -1,0 +1,3 @@
+// Should fail: Cannot iterate over non-list type
+for int i in 5 {
+}

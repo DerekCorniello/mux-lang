@@ -1,0 +1,4 @@
+// Should fail: Cannot return a value from a void function
+func foo() returns void {
+  return 1
+}

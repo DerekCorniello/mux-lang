@@ -1,0 +1,2 @@
+// Should fail: Invalid float literal
+auto x = 1.2.3

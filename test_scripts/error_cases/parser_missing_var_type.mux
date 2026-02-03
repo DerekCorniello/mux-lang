@@ -1,0 +1,2 @@
+// Should fail: Expected expression after '='
+auto y =

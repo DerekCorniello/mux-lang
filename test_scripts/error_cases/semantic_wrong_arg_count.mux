@@ -1,0 +1,5 @@
+// Should fail: Wrong argument count in function call
+func foo(int a, int b) returns int {
+    return a + b
+}
+auto x = foo(1)

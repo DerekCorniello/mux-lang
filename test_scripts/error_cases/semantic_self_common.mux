@@ -1,0 +1,6 @@
+// Should fail: Cannot use 'self' in a common method
+class C {
+  common func foo() returns void {
+    self.x
+  }
+}

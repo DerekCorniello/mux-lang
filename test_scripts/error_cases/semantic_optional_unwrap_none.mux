@@ -1,0 +1,8 @@
+// Should fail: Pattern matching on Optional without handling None case
+func get_none() returns Optional<int> {
+    return None
+}
+auto opt = get_none()
+auto x = match opt {
+    Some(v) { v }
+}

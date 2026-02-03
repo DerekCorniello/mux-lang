@@ -1,0 +1,3 @@
+// Should fail: Generic type without type argument
+class List<T> {}
+auto x = List

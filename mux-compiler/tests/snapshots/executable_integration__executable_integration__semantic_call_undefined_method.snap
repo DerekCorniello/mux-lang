@@ -1,0 +1,11 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_call_undefined_method.mux`
+
+In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_call_undefined_method.mux, line 6:
+    c.foo()
+    ^
+Unknown field 'foo' on type C

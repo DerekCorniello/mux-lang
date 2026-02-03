@@ -1,0 +1,2 @@
+// Should fail: Unterminated block comment
+/* hello

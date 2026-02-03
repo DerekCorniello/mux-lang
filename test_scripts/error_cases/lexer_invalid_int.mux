@@ -1,0 +1,2 @@
+// Should fail: Invalid integer literal
+auto n = 123abc

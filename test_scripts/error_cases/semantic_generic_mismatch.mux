@@ -1,0 +1,3 @@
+// Should fail: Type argument count mismatch for class
+class Pair<T, U> {}
+auto p = Pair<int>

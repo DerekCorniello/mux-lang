@@ -1,0 +1,2 @@
+// Should fail: Cannot use 'self' outside of a method
+auto s = self

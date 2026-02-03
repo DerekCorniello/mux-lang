@@ -1,0 +1,3 @@
+// Should fail: Cannot assign to constant
+const int c = 5
+c = 6

@@ -1,0 +1,2 @@
+// Should fail: Dangling comma in list literal
+auto x = [1, 2, 3,]

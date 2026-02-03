@@ -1,0 +1,2 @@
+// Should fail: Expected '{' after class header
+class Foo

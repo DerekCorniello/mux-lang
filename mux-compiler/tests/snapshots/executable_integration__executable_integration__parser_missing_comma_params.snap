@@ -1,0 +1,29 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux`
+
+In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux, line 2:
+    func foo(int a int b) returns int {
+                   ^
+Expected ')' after parameters
+
+
+In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux, line 2:
+    func foo(int a int b) returns int {
+                        ^
+Expected expression, found ')'
+
+
+In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux, line 2:
+    func foo(int a int b) returns int {
+                          ^
+Expected expression, found 'Returns'
+
+
+In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux, line 2:
+    func foo(int a int b) returns int {
+                                      ^
+Expected newline before statement

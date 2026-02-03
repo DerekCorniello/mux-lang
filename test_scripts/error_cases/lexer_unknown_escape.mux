@@ -1,0 +1,2 @@
+// Should fail: Unknown escape sequence
+auto = "hi\z"

@@ -1,0 +1,2 @@
+// Should fail: Identifier cannot start with a digit
+auto 123abc = 5

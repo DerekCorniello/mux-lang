@@ -1,0 +1,4 @@
+// Should fail: main function returning value
+func main() returns int {
+    return 0
+}

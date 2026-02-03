@@ -1,0 +1,3 @@
+// Should fail: Duplicate variable in same scope
+auto x = 5
+auto x = 6

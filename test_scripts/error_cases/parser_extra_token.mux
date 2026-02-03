@@ -1,0 +1,2 @@
+// Should fail: Unexpected token at end of statement
+auto x = 5 }
