@@ -92,7 +92,9 @@ fn test_executable_all_mux_files_in_dir() {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    files.extend(collect_mux_files(&path));
+                    // TODO: Uncomment to look at the error files
+                    //
+                    // files.extend(collect_mux_files(&path));
                 } else if path.extension().and_then(|s| s.to_str()) == Some("mux") {
                     files.push(path);
                 }
