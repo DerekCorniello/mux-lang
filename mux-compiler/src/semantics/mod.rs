@@ -16,6 +16,7 @@ pub use unifier::Unifier;
 
 // Internal imports
 use crate::ast::*;
+use crate::diagnostic::Files;
 use crate::lexer::Span;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -154,12 +155,12 @@ impl SemanticAnalyzer {
         BUILT_IN_FUNCTIONS.get(name)
     }
 
-    pub fn analyze(&mut self, ast: &[AstNode]) -> Vec<SemanticError> {
+    pub fn analyze(&mut self, ast: &[AstNode], files: Option<&mut Files>) -> Vec<SemanticError> {
         self.add_builtin_functions();
         if let Err(e) = self.collect_hoistable_declarations(ast) {
             self.errors.push(e);
         }
-        self.analyze_nodes(ast);
+        self.analyze_nodes(ast, files);
         std::mem::take(&mut self.errors)
     }
 
@@ -991,7 +992,7 @@ impl SemanticAnalyzer {
                         },
                     )?;
                 }
-                self.analyze_block(body)?;
+                self.analyze_block(body, None)?;
 
                 // Detect free variables (captured variables)
                 let captures = self.find_free_variables_in_block(body, &local_vars)?;
@@ -2296,15 +2297,19 @@ impl SemanticAnalyzer {
     }
 
     // second pass, analyze all nodes with full symbol information.
-    fn analyze_nodes(&mut self, nodes: &[AstNode]) {
+    fn analyze_nodes(&mut self, nodes: &[AstNode], mut files: Option<&mut Files>) {
         for node in nodes {
-            if let Err(e) = self.analyze_node(node) {
+            if let Err(e) = self.analyze_node(node, files.as_deref_mut()) {
                 self.errors.push(e);
             }
         }
     }
 
-    fn analyze_node(&mut self, node: &AstNode) -> Result<(), SemanticError> {
+    fn analyze_node(
+        &mut self,
+        node: &AstNode,
+        files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
         match node {
             AstNode::Function(func) => {
                 if func.is_common {
@@ -2345,7 +2350,7 @@ impl SemanticAnalyzer {
             }
             AstNode::Enum { .. } => Ok(()), // enums don't need further analysis.
             AstNode::Interface { .. } => Ok(()), // interfaces don't need further analysis.
-            AstNode::Statement(stmt) => self.analyze_statement(stmt),
+            AstNode::Statement(stmt) => self.analyze_statement(stmt, files),
         }
     }
 
@@ -2442,7 +2447,7 @@ impl SemanticAnalyzer {
         }
 
         // analyze function body with new scope.
-        self.analyze_block(&func.body)?;
+        self.analyze_block(&func.body, None)?;
 
         // clean up function scope.
         self.symbol_table.pop_scope()?;
@@ -2498,7 +2503,11 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn analyze_block(&mut self, stmts: &[StatementNode]) -> Result<(), SemanticError> {
+    fn analyze_block(
+        &mut self,
+        stmts: &[StatementNode],
+        mut files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
         // first collect function declarations in this block.
         for stmt in stmts {
             if let StatementKind::Function(func) = &stmt.kind {
@@ -2552,13 +2561,17 @@ impl SemanticAnalyzer {
 
         // then analyze all statements in order.
         for stmt in stmts {
-            self.analyze_statement(stmt)?;
+            self.analyze_statement(stmt, files.as_deref_mut())?;
         }
 
         Ok(())
     }
 
-    fn analyze_statement(&mut self, stmt: &StatementNode) -> Result<(), SemanticError> {
+    fn analyze_statement(
+        &mut self,
+        stmt: &StatementNode,
+        mut files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
                 self.analyze_expression(expr)?;
@@ -2620,7 +2633,7 @@ impl SemanticAnalyzer {
             }
             StatementKind::Block(stmts) => {
                 self.symbol_table.push_scope()?;
-                self.analyze_block(stmts)?;
+                self.analyze_block(stmts, files.as_deref_mut())?;
                 self.symbol_table.pop_scope()?;
             }
             StatementKind::ConstDecl(name, type_node, expr) => {
@@ -2652,12 +2665,12 @@ impl SemanticAnalyzer {
                 self.analyze_expression(cond)?;
 
                 self.symbol_table.push_scope()?;
-                self.analyze_block(then_block)?;
+                self.analyze_block(then_block, files.as_deref_mut())?;
                 self.symbol_table.pop_scope()?;
 
                 if let Some(else_block) = else_block {
                     self.symbol_table.push_scope()?;
-                    self.analyze_block(else_block)?;
+                    self.analyze_block(else_block, files.as_deref_mut())?;
                     self.symbol_table.pop_scope()?;
                 }
             }
@@ -2693,14 +2706,14 @@ impl SemanticAnalyzer {
                         default_param_count: 0,
                     },
                 )?;
-                self.analyze_block(body)?;
+                self.analyze_block(body, files.as_deref_mut())?;
                 self.symbol_table.pop_scope()?;
             }
             StatementKind::While { cond, body } => {
                 self.analyze_expression(cond)?;
 
                 self.symbol_table.push_scope()?;
-                self.analyze_block(body)?;
+                self.analyze_block(body, files.as_deref_mut())?;
                 self.symbol_table.pop_scope()?;
             }
             StatementKind::Match { expr, arms } => {
@@ -2720,7 +2733,7 @@ impl SemanticAnalyzer {
                     if let Some(guard) = &arm.guard {
                         self.analyze_expression(guard)?;
                     }
-                    self.analyze_block(&arm.body)?;
+                    self.analyze_block(&arm.body, files.as_deref_mut())?;
 
                     // Check for return in this arm
                     if expecting_return {
@@ -2833,9 +2846,12 @@ impl SemanticAnalyzer {
                     span: stmt.span,
                 })?;
 
+                // Files must be available for import processing
+                let files = files.expect("Files registry must be available for import processing");
+
                 let module_nodes = resolver
                     .borrow_mut()
-                    .resolve_import_path(module_path, self.current_file.as_deref())
+                    .resolve_import_path(module_path, self.current_file.as_deref(), files)
                     .map_err(|e| SemanticError {
                         message: format!("Import error: {}", e),
                         span: stmt.span,
@@ -2846,7 +2862,7 @@ impl SemanticAnalyzer {
                 module_analyzer.set_current_file(std::path::PathBuf::from(
                     module_path.replace('.', "/") + ".mux",
                 ));
-                let errors = module_analyzer.analyze(&module_nodes);
+                let errors = module_analyzer.analyze(&module_nodes, Some(files));
                 if !errors.is_empty() {
                     let error_messages: Vec<String> =
                         errors.iter().map(|e| e.message.clone()).collect();
@@ -3462,7 +3478,7 @@ impl SemanticAnalyzer {
                     )?;
                 }
 
-                self.analyze_block(body)?;
+                self.analyze_block(body, None)?;
 
                 // Validate that the body returns the correct type
                 if !matches!(self.current_return_type, Some(Type::Void)) {

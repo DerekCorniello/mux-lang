@@ -165,7 +165,7 @@ fn main() {
     let resolver = Rc::new(RefCell::new(ModuleResolver::new(base_path)));
 
     let mut analyzer = SemanticAnalyzer::new_with_resolver(resolver);
-    let errors = analyzer.analyze(&nodes);
+    let errors = analyzer.analyze(&nodes, Some(&mut files));
     if !errors.is_empty() {
         handle_semantic_errors(&files, file_id, &errors);
         process::exit(1);
