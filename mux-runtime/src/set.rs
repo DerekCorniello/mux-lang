@@ -1,5 +1,5 @@
-use crate::refcount::mux_rc_alloc;
 use crate::Value;
+use crate::refcount::mux_rc_alloc;
 use std::collections::BTreeSet;
 use std::ffi::CString;
 use std::fmt;
@@ -45,9 +45,47 @@ pub extern "C" fn mux_set_add(set: *mut Set, val: *mut Value) {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::mutable_key_type)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_add_value(set_val: *mut Value, val: *mut Value) {
+    let value = unsafe { (*val).clone() };
+    unsafe {
+        if let Value::Set(set_data) = &*set_val {
+            let mut new_set = set_data.clone();
+            new_set.insert(value);
+            *set_val = Value::Set(new_set);
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_set_contains(set: *const Set, val: *const Value) -> bool {
     unsafe { (*set).contains(&*val) }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_remove(set: *mut Set, val: *mut Value) -> bool {
+    let set = unsafe { &mut *set };
+    let val = unsafe { (*val).clone() };
+    set.remove(&val)
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::mutable_key_type)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_remove_value(set_val: *mut Value, val: *mut Value) -> bool {
+    let value = unsafe { (*val).clone() };
+    unsafe {
+        if let Value::Set(set_data) = &*set_val {
+            let mut new_set = set_data.clone();
+            let removed = new_set.remove(&value);
+            *set_val = Value::Set(new_set);
+            return removed;
+        }
+    }
+    false
 }
 
 /// # Safety

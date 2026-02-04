@@ -14,12 +14,12 @@
 //! - statements: Statement code generation
 //! - types: Type conversion functions
 
+use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{FunctionValue, PointerValue};
-use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 use crate::ast::{AstNode, Field, FunctionNode, StatementKind, StatementNode, TypeNode};
@@ -550,8 +550,20 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_map_remove_value",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_set_add",
             void_type.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_add_value",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
             None,
         );
 
@@ -568,6 +580,14 @@ impl<'a> CodeGenerator<'a> {
             context
                 .bool_type()
                 .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_remove_value",
+            context
+                .bool_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
             None,
         );
 

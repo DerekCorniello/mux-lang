@@ -10,9 +10,9 @@
 //! - Index access
 //! - Match expressions
 
-use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum};
 use inkwell::AddressSpace;
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,
@@ -1223,48 +1223,81 @@ impl<'a> CodeGenerator<'a> {
                             } = &left.kind
                             {
                                 // Index assignment: list[index] = value or map[key] = value
-                                let target_type = self
-                                    .analyzer
-                                    .get_expression_type(target_expr)
-                                    .map_err(|e| e.message)?;
 
-                                match target_type {
-                                    crate::semantics::Type::List(_) => {
-                                        // List index assignment: list[index] = value
-                                        // Use mux_list_set_value which modifies the boxed Value directly
-                                        let target_val = self.generate_expression(target_expr)?;
-                                        let index_val = self.generate_expression(index)?;
-                                        let right_val = self.generate_expression(right)?;
+                                // Check if target_expr is itself a ListAccess (nested case)
+                                // This works for both Lists and Maps: map["key"][0] or list[0]["key"]
+                                if let ExpressionKind::ListAccess { .. } = &target_expr.kind {
+                                    // Nested access: could be 2+ levels deep
+                                    // Flatten the entire chain to get base expression and all indices
+                                    let (base_expr, all_indices) =
+                                        self.collect_list_access_chain(left);
 
-                                        // Box the value for storage
-                                        let boxed_value = self.box_value(right_val);
-
-                                        // Call mux_list_set_value to set the element (handles wraparound and extension)
-                                        self.builder
-                                            .build_call(
-                                                self.module
-                                                    .get_function("mux_list_set_value")
-                                                    .expect("mux_list_set_value must be declared in runtime"),
-                                                &[target_val.into(), index_val.into(), boxed_value.into()],
-                                                "list_set_value",
-                                            )
-                                            .map_err(|e| e.to_string())?;
-
-                                        Ok(right_val)
+                                    if all_indices.len() <= 1 {
+                                        // This shouldn't happen, but handle gracefully
+                                        return Err(
+                                            "Unexpected single-level nesting in nested path"
+                                                .to_string(),
+                                        );
                                     }
-                                    crate::semantics::Type::Map(_, _) => {
-                                        // Map key assignment: map[key] = value
-                                        // Use mux_map_put_value which modifies the boxed Value directly
-                                        let target_val = self.generate_expression(target_expr)?;
-                                        let key_val = self.generate_expression(index)?;
-                                        let right_val = self.generate_expression(right)?;
 
-                                        // Box the key and value for storage
-                                        let boxed_key = self.box_value(key_val);
-                                        let boxed_value = self.box_value(right_val);
+                                    let right_val = self.generate_expression(right)?;
+                                    let boxed_value = self.box_value(right_val);
 
-                                        // Call mux_map_put_value to insert/update the entry
-                                        self.builder
+                                    // Generate the nested assignment with ALL indices
+                                    // This now handles both Lists and Maps
+                                    self.generate_nested_collection_assignment(
+                                        base_expr,
+                                        &all_indices,
+                                        boxed_value.into(),
+                                    )?;
+
+                                    Ok(right_val)
+                                } else {
+                                    // Simple (non-nested) assignment
+                                    let target_type = self
+                                        .analyzer
+                                        .get_expression_type(target_expr)
+                                        .map_err(|e| e.message)?;
+
+                                    match target_type {
+                                        crate::semantics::Type::List(_) => {
+                                            // Simple list index assignment: list[index] = value
+                                            // Use mux_list_set_value which modifies the boxed Value directly
+                                            let target_val =
+                                                self.generate_expression(target_expr)?;
+                                            let index_val = self.generate_expression(index)?;
+                                            let right_val = self.generate_expression(right)?;
+
+                                            // Box the value for storage
+                                            let boxed_value = self.box_value(right_val);
+
+                                            // Call mux_list_set_value to set the element (handles wraparound and extension)
+                                            self.builder
+                                                .build_call(
+                                                    self.module
+                                                        .get_function("mux_list_set_value")
+                                                        .expect("mux_list_set_value must be declared in runtime"),
+                                                    &[target_val.into(), index_val.into(), boxed_value.into()],
+                                                    "list_set_value",
+                                                )
+                                                .map_err(|e| e.to_string())?;
+
+                                            Ok(right_val)
+                                        }
+                                        crate::semantics::Type::Map(_, _) => {
+                                            // Map key assignment: map[key] = value
+                                            // Use mux_map_put_value which modifies the boxed Value directly
+                                            let target_val =
+                                                self.generate_expression(target_expr)?;
+                                            let key_val = self.generate_expression(index)?;
+                                            let right_val = self.generate_expression(right)?;
+
+                                            // Box the key and value for storage
+                                            let boxed_key = self.box_value(key_val);
+                                            let boxed_value = self.box_value(right_val);
+
+                                            // Call mux_map_put_value to insert/update the entry
+                                            self.builder
                                             .build_call(
                                                 self.module
                                                     .get_function("mux_map_put_value")
@@ -1280,12 +1313,13 @@ impl<'a> CodeGenerator<'a> {
                                             )
                                             .map_err(|e| e.to_string())?;
 
-                                        Ok(right_val)
+                                            Ok(right_val)
+                                        }
+                                        _ => Err(format!(
+                                            "Cannot assign to index on non-list/map type: {:?}",
+                                            target_type
+                                        )),
                                     }
-                                    _ => Err(format!(
-                                        "Cannot assign to index on non-list/map type: {:?}",
-                                        target_type
-                                    )),
                                 }
                             } else {
                                 Err("Assignment to non-identifier/deref/field not implemented"
@@ -2550,6 +2584,16 @@ impl<'a> CodeGenerator<'a> {
                             )
                             .map_err(|e| e.to_string())?;
 
+                        let raw_list_ptr = raw_list
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_value_get_list should return a basic value")
+                            .into_pointer_value();
+
+                        // Normalize the index to handle negative wraparound
+                        let normalized_index =
+                            self.normalize_list_index(index_val, raw_list_ptr)?;
+
                         // call mux_list_get_value (returns direct value or null)
                         let raw_result = self
                             .builder
@@ -2557,14 +2601,7 @@ impl<'a> CodeGenerator<'a> {
                                 self.module
                                     .get_function("mux_list_get_value")
                                     .expect("mux_list_get_value must be declared in runtime"),
-                                &[
-                                    raw_list
-                                        .try_as_basic_value()
-                                        .left()
-                                        .expect("mux_value_get_list should return a basic value")
-                                        .into(),
-                                    index_val.into(),
-                                ],
+                                &[raw_list_ptr.into(), normalized_index.into()],
                                 "list_raw",
                             )
                             .map_err(|e| e.to_string())?;
@@ -3719,6 +3756,737 @@ impl<'a> CodeGenerator<'a> {
                 let val = self.context.i64_type().const_int(*c as u64, false);
                 Ok(val.into())
             }
+        }
+    }
+
+    /// Normalizes a list index to handle negative wraparound.
+    ///
+    /// Given an index value and the list length, returns a normalized index:
+    /// - If index >= 0, returns index as-is
+    /// - If index < 0, returns length + index (wraparound from end)
+    ///
+    /// This matches the behavior of mux_list_set_value in the runtime.
+    fn normalize_list_index(
+        &mut self,
+        index_val: BasicValueEnum<'a>,
+        list_ptr: PointerValue<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let index_int = index_val.into_int_value();
+
+        // Get list length
+        let list_length = self
+            .builder
+            .build_call(
+                self.module
+                    .get_function("mux_list_length")
+                    .expect("mux_list_length must be declared in runtime"),
+                &[list_ptr.into()],
+                "list_len",
+            )
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .expect("mux_list_length should return a basic value")
+            .into_int_value();
+
+        // Check if index < 0
+        let is_negative = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::SLT,
+                index_int,
+                self.context.i64_type().const_zero(),
+                "is_negative",
+            )
+            .map_err(|e| e.to_string())?;
+
+        // If negative, compute (length + index), otherwise use index as-is
+        let wrapped_index = self
+            .builder
+            .build_int_add(list_length, index_int, "wrapped_index")
+            .map_err(|e| e.to_string())?;
+
+        let normalized_index = self
+            .builder
+            .build_select(is_negative, wrapped_index, index_int, "normalized_index")
+            .map_err(|e| e.to_string())?;
+
+        Ok(normalized_index)
+    }
+
+    /// Extracts the base expression and all indices from a nested ListAccess chain.
+    ///
+    /// For example, `matrix[0][1]` returns `(matrix, [0, 1])`
+    /// For `hypercube[0][1][2][3]` returns `(hypercube, [0, 1, 2, 3])`
+    fn collect_list_access_chain<'b>(
+        &self,
+        expr: &'b ExpressionNode,
+    ) -> (&'b ExpressionNode, Vec<&'b ExpressionNode>) {
+        let mut indices = Vec::new();
+        let mut current = expr;
+
+        // Walk the chain backwards, collecting indices
+        while let ExpressionKind::ListAccess { expr: inner, index } = &current.kind {
+            indices.push(index.as_ref());
+            current = inner.as_ref();
+        }
+
+        // We collected from innermost to outermost, so reverse
+        indices.reverse();
+        (current, indices)
+    }
+
+    /// Helper function to handle nested collection assignments of arbitrary depth.
+    ///
+    /// This handles assignments for any depth of nesting with Lists and Maps:
+    /// - `matrix[0][1] = value` (2 levels, List)
+    /// - `cube[0][1][2] = value` (3 levels, List)
+    /// - `map_of_lists["key"][0] = value` (2 levels, Map then List)
+    /// - `list_of_maps[0]["key"] = value` (2 levels, List then Map)
+    ///
+    /// Algorithm (recursive get-modify-writeback):
+    /// For base[i1][i2]...[iN] = value:
+    /// 1. If N == 1: base[i1] = value (base case, direct assignment)
+    /// 2. If N > 1:
+    ///    a. Get base[i1] → temp (copy)
+    ///    b. Recursively: temp[i2]...[iN] = value
+    ///    c. Write temp back: base[i1] = temp
+    fn generate_nested_collection_assignment(
+        &mut self,
+        base_expr: &ExpressionNode,
+        indices: &[&ExpressionNode],
+        value: BasicValueEnum<'a>,
+    ) -> Result<(), String> {
+        if indices.is_empty() {
+            return Err("generate_nested_collection_assignment called with no indices".to_string());
+        }
+
+        if indices.len() == 1 {
+            // BASE CASE: Simple assignment base[index] = value
+            // Determine if base is a List or Map and call appropriate function
+            let base_type = self
+                .analyzer
+                .get_expression_type(base_expr)
+                .map_err(|e| e.message)?;
+
+            let base_val = self.generate_expression(base_expr)?;
+            let index_val = self.generate_expression(indices[0])?;
+
+            match base_type {
+                crate::semantics::Type::List(_) => {
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_list_set_value")
+                                .expect("mux_list_set_value must be declared in runtime"),
+                            &[base_val.into(), index_val.into(), value.into()],
+                            "nested_list_set_direct",
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                crate::semantics::Type::Map(_, _) => {
+                    let boxed_key = self.box_value(index_val);
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_map_put_value")
+                                .expect("mux_map_put_value must be declared in runtime"),
+                            &[base_val.into(), boxed_key.into(), value.into()],
+                            "nested_map_set_direct",
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                _ => {
+                    return Err(format!(
+                        "Cannot assign to index on non-list/map type: {:?}",
+                        base_type
+                    ));
+                }
+            }
+
+            Ok(())
+        } else {
+            // RECURSIVE CASE: base[i1][i2]...[iN] = value where N > 1
+            // Strategy:
+            // 1. Get base[i1] → temp (copy)
+            // 2. Recursively handle temp[i2]...[iN] = value
+            // 3. Write temp back to base[i1]
+
+            // Determine if base is a List or Map
+            let base_type = self
+                .analyzer
+                .get_expression_type(base_expr)
+                .map_err(|e| e.message)?;
+
+            let base_val = self.generate_expression(base_expr)?;
+            let first_index_val = self.generate_expression(indices[0])?;
+
+            // Get base[i1] - different logic for List vs Map
+            let intermediate_val = match base_type {
+                crate::semantics::Type::List(_) => {
+                    // Extract raw List from base
+                    let raw_base_list = self
+                        .builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_value_get_list")
+                                .expect("mux_value_get_list must be declared in runtime"),
+                            &[base_val.into()],
+                            "extract_list",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_value_get_list should return a basic value")
+                        .into_pointer_value();
+
+                    // Normalize the index to handle negative wraparound
+                    let normalized_index =
+                        self.normalize_list_index(first_index_val, raw_base_list)?;
+
+                    // Get base[i1] (this is a copy)
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_list_get_value")
+                                .expect("mux_list_get_value must be declared in runtime"),
+                            &[raw_base_list.into(), normalized_index.into()],
+                            "get_intermediate",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_list_get_value should return a basic value")
+                }
+                crate::semantics::Type::Map(_, _) => {
+                    // Extract raw Map from base
+                    let raw_base_map = self
+                        .builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_value_get_map")
+                                .expect("mux_value_get_map must be declared in runtime"),
+                            &[base_val.into()],
+                            "extract_map",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_value_get_map should return a basic value");
+
+                    // Box the key
+                    let boxed_key = self.box_value(first_index_val);
+
+                    // Get map[key] (returns Optional)
+                    let optional_ptr = self
+                        .builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_map_get")
+                                .expect("mux_map_get must be declared in runtime"),
+                            &[raw_base_map.into(), boxed_key.into()],
+                            "map_get_intermediate",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_map_get should return a basic value")
+                        .into_pointer_value();
+
+                    // Check if Optional has a value
+                    let is_some = self
+                        .builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_optional_is_some")
+                                .expect("mux_optional_is_some must be declared in runtime"),
+                            &[optional_ptr.into()],
+                            "map_has_key",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_optional_is_some should return a basic value")
+                        .into_int_value();
+
+                    // Handle None case
+                    let current_function = self
+                        .builder
+                        .get_insert_block()
+                        .expect("Builder should have an insertion block")
+                        .get_parent()
+                        .ok_or("No current function")?;
+
+                    let error_bb = self
+                        .context
+                        .append_basic_block(current_function, "map_key_error");
+                    let continue_bb = self
+                        .context
+                        .append_basic_block(current_function, "map_key_continue");
+
+                    self.builder
+                        .build_conditional_branch(is_some, continue_bb, error_bb)
+                        .map_err(|e| e.to_string())?;
+
+                    // Error block
+                    self.builder.position_at_end(error_bb);
+                    let error_msg = self
+                        .builder
+                        .build_global_string_ptr(
+                            "Key not found in map during nested assignment",
+                            "map_key_error_msg",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let error_str = self
+                        .generate_runtime_call(
+                            "mux_new_string_from_cstr",
+                            &[error_msg.as_pointer_value().into()],
+                        )
+                        .expect("mux_new_string_from_cstr should always return a value");
+                    self.generate_runtime_call("mux_print", &[error_str.into()]);
+                    self.generate_runtime_call(
+                        "exit",
+                        &[self.context.i32_type().const_int(1, false).into()],
+                    );
+                    self.builder
+                        .build_unreachable()
+                        .map_err(|e| e.to_string())?;
+
+                    // Continue block - extract value from Optional
+                    self.builder.position_at_end(continue_bb);
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_optional_get_value")
+                                .expect("mux_optional_get_value must be declared in runtime"),
+                            &[optional_ptr.into()],
+                            "map_get_value",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_optional_get_value should return a basic value")
+                }
+                _ => {
+                    return Err(format!(
+                        "Cannot use nested indexing on non-list/map type: {:?}",
+                        base_type
+                    ));
+                }
+            };
+
+            // Check for null (out of bounds) - only for Lists
+            // Maps already handled the error case above
+            if matches!(base_type, crate::semantics::Type::List(_)) {
+                let intermediate_ptr = intermediate_val.into_pointer_value();
+                let is_null = self
+                    .builder
+                    .build_is_null(intermediate_ptr, "is_null")
+                    .map_err(|e| e.to_string())?;
+
+                let current_function = self
+                    .builder
+                    .get_insert_block()
+                    .expect("Builder should have an insertion block")
+                    .get_parent()
+                    .ok_or("No current function")?;
+
+                let error_bb = self
+                    .context
+                    .append_basic_block(current_function, "nested_index_error");
+                let continue_bb = self
+                    .context
+                    .append_basic_block(current_function, "nested_index_continue");
+
+                self.builder
+                    .build_conditional_branch(is_null, error_bb, continue_bb)
+                    .map_err(|e| e.to_string())?;
+
+                // Error block
+                self.builder.position_at_end(error_bb);
+                let error_msg = self
+                    .builder
+                    .build_global_string_ptr(
+                        "Index out of bounds in nested assignment",
+                        "nested_error_msg",
+                    )
+                    .map_err(|e| e.to_string())?;
+                let error_str = self
+                    .generate_runtime_call(
+                        "mux_new_string_from_cstr",
+                        &[error_msg.as_pointer_value().into()],
+                    )
+                    .expect("mux_new_string_from_cstr should always return a value");
+                self.generate_runtime_call("mux_print", &[error_str.into()]);
+                self.generate_runtime_call(
+                    "exit",
+                    &[self.context.i32_type().const_int(1, false).into()],
+                );
+                self.builder
+                    .build_unreachable()
+                    .map_err(|e| e.to_string())?;
+
+                // Continue block
+                self.builder.position_at_end(continue_bb);
+            }
+
+            // Now we need to handle: intermediate_val[i2]...[iN] = value
+            // But intermediate_val is a *mut Value, not an ExpressionNode
+            // We need to handle the remaining indices iteratively
+
+            // Get the element type of the intermediate collection
+            let intermediate_type = match &base_type {
+                crate::semantics::Type::List(elem_type) => elem_type.as_ref().clone(),
+                crate::semantics::Type::Map(_, value_type) => value_type.as_ref().clone(),
+                _ => unreachable!(),
+            };
+
+            let remaining_indices = &indices[1..];
+            self.apply_indices_and_set(
+                intermediate_val,
+                &intermediate_type,
+                remaining_indices,
+                value,
+            )?;
+
+            // Write the modified intermediate value back to base[i1]
+            match base_type {
+                crate::semantics::Type::List(_) => {
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_list_set_value")
+                                .expect("mux_list_set_value must be declared in runtime"),
+                            &[
+                                base_val.into(),
+                                first_index_val.into(),
+                                intermediate_val.into(),
+                            ],
+                            "list_writeback",
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                crate::semantics::Type::Map(_, _) => {
+                    let boxed_key = self.box_value(first_index_val);
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_map_put_value")
+                                .expect("mux_map_put_value must be declared in runtime"),
+                            &[base_val.into(), boxed_key.into(), intermediate_val.into()],
+                            "map_writeback",
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                _ => unreachable!(),
+            }
+
+            Ok(())
+        }
+    }
+
+    /// Helper to apply a chain of indices to a value and set the final element.
+    /// This handles: value[i1][i2]...[iN] = new_value
+    /// where `value` is a BasicValueEnum (*mut Value), not an ExpressionNode.
+    ///
+    /// Requires the type of `current_val` to determine if it's a List or Map.
+    fn apply_indices_and_set(
+        &mut self,
+        current_val: BasicValueEnum<'a>,
+        current_type: &crate::semantics::Type,
+        indices: &[&ExpressionNode],
+        final_value: BasicValueEnum<'a>,
+    ) -> Result<(), String> {
+        if indices.is_empty() {
+            return Err("apply_indices_and_set called with no indices".to_string());
+        }
+
+        if indices.len() == 1 {
+            // Base case: current_val[index] = final_value
+            let index_val = self.generate_expression(indices[0])?;
+
+            match current_type {
+                crate::semantics::Type::List(_) => {
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_list_set_value")
+                                .expect("mux_list_set_value must be declared in runtime"),
+                            &[current_val.into(), index_val.into(), final_value.into()],
+                            "apply_list_set",
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                crate::semantics::Type::Map(_, _) => {
+                    let boxed_key = self.box_value(index_val);
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_map_put_value")
+                                .expect("mux_map_put_value must be declared in runtime"),
+                            &[current_val.into(), boxed_key.into(), final_value.into()],
+                            "apply_map_set",
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                _ => {
+                    return Err(format!(
+                        "Cannot apply index to non-list/map type: {:?}",
+                        current_type
+                    ));
+                }
+            }
+            Ok(())
+        } else {
+            // Recursive case: get current_val[i1], recurse on remaining, write back
+            let first_index_val = self.generate_expression(indices[0])?;
+
+            // Get current_val[i1] - different logic for List vs Map
+            let next_val = match current_type {
+                crate::semantics::Type::List(_) => {
+                    // Extract raw List
+                    let raw_list = self
+                        .builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_value_get_list")
+                                .expect("mux_value_get_list must be declared in runtime"),
+                            &[current_val.into()],
+                            "extract_for_apply",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_value_get_list should return a basic value")
+                        .into_pointer_value();
+
+                    // Normalize the index to handle negative wraparound
+                    let normalized_index = self.normalize_list_index(first_index_val, raw_list)?;
+
+                    // Get the next level
+                    let next = self
+                        .builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_list_get_value")
+                                .expect("mux_list_get_value must be declared in runtime"),
+                            &[raw_list.into(), normalized_index.into()],
+                            "get_next_for_apply",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_list_get_value should return a basic value");
+
+                    // Check for null
+                    let next_ptr = next.into_pointer_value();
+                    let is_null = self
+                        .builder
+                        .build_is_null(next_ptr, "is_null_apply")
+                        .map_err(|e| e.to_string())?;
+
+                    let current_function = self
+                        .builder
+                        .get_insert_block()
+                        .expect("Builder should have an insertion block")
+                        .get_parent()
+                        .ok_or("No current function")?;
+
+                    let error_bb = self
+                        .context
+                        .append_basic_block(current_function, "apply_index_error");
+                    let continue_bb = self
+                        .context
+                        .append_basic_block(current_function, "apply_index_continue");
+
+                    self.builder
+                        .build_conditional_branch(is_null, error_bb, continue_bb)
+                        .map_err(|e| e.to_string())?;
+
+                    // Error block
+                    self.builder.position_at_end(error_bb);
+                    let error_msg = self
+                        .builder
+                        .build_global_string_ptr(
+                            "Index out of bounds in nested assignment",
+                            "apply_error_msg",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let error_str = self
+                        .generate_runtime_call(
+                            "mux_new_string_from_cstr",
+                            &[error_msg.as_pointer_value().into()],
+                        )
+                        .expect("mux_new_string_from_cstr should always return a value");
+                    self.generate_runtime_call("mux_print", &[error_str.into()]);
+                    self.generate_runtime_call(
+                        "exit",
+                        &[self.context.i32_type().const_int(1, false).into()],
+                    );
+                    self.builder
+                        .build_unreachable()
+                        .map_err(|e| e.to_string())?;
+
+                    // Continue block
+                    self.builder.position_at_end(continue_bb);
+
+                    next
+                }
+                crate::semantics::Type::Map(_, _) => {
+                    // Extract raw Map
+                    let raw_map = self
+                        .builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_value_get_map")
+                                .expect("mux_value_get_map must be declared in runtime"),
+                            &[current_val.into()],
+                            "extract_map_for_apply",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_value_get_map should return a basic value");
+
+                    // Box the key
+                    let boxed_key = self.box_value(first_index_val);
+
+                    // Get map[key] (returns Optional)
+                    let optional_ptr = self
+                        .builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_map_get")
+                                .expect("mux_map_get must be declared in runtime"),
+                            &[raw_map.into(), boxed_key.into()],
+                            "apply_map_get",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_map_get should return a basic value")
+                        .into_pointer_value();
+
+                    // Check if Optional has a value
+                    let is_some = self
+                        .builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_optional_is_some")
+                                .expect("mux_optional_is_some must be declared in runtime"),
+                            &[optional_ptr.into()],
+                            "apply_map_has_key",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_optional_is_some should return a basic value")
+                        .into_int_value();
+
+                    let current_function = self
+                        .builder
+                        .get_insert_block()
+                        .expect("Builder should have an insertion block")
+                        .get_parent()
+                        .ok_or("No current function")?;
+
+                    let error_bb = self
+                        .context
+                        .append_basic_block(current_function, "apply_map_key_error");
+                    let continue_bb = self
+                        .context
+                        .append_basic_block(current_function, "apply_map_key_continue");
+
+                    self.builder
+                        .build_conditional_branch(is_some, continue_bb, error_bb)
+                        .map_err(|e| e.to_string())?;
+
+                    // Error block
+                    self.builder.position_at_end(error_bb);
+                    let error_msg = self
+                        .builder
+                        .build_global_string_ptr(
+                            "Key not found in map during nested assignment",
+                            "apply_map_key_error_msg",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let error_str = self
+                        .generate_runtime_call(
+                            "mux_new_string_from_cstr",
+                            &[error_msg.as_pointer_value().into()],
+                        )
+                        .expect("mux_new_string_from_cstr should always return a value");
+                    self.generate_runtime_call("mux_print", &[error_str.into()]);
+                    self.generate_runtime_call(
+                        "exit",
+                        &[self.context.i32_type().const_int(1, false).into()],
+                    );
+                    self.builder
+                        .build_unreachable()
+                        .map_err(|e| e.to_string())?;
+
+                    // Continue block - extract value from Optional
+                    self.builder.position_at_end(continue_bb);
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_optional_get_value")
+                                .expect("mux_optional_get_value must be declared in runtime"),
+                            &[optional_ptr.into()],
+                            "apply_map_get_value",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .expect("mux_optional_get_value should return a basic value")
+                }
+                _ => {
+                    return Err(format!(
+                        "Cannot apply nested index to non-list/map type: {:?}",
+                        current_type
+                    ));
+                }
+            };
+
+            // Get the element type for recursion
+            let next_type = match current_type {
+                crate::semantics::Type::List(elem_type) => elem_type.as_ref().clone(),
+                crate::semantics::Type::Map(_, value_type) => value_type.as_ref().clone(),
+                _ => unreachable!(),
+            };
+
+            // Recurse on the remaining indices
+            self.apply_indices_and_set(next_val, &next_type, &indices[1..], final_value)?;
+
+            // Write back
+            match current_type {
+                crate::semantics::Type::List(_) => {
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_list_set_value")
+                                .expect("mux_list_set_value must be declared in runtime"),
+                            &[current_val.into(), first_index_val.into(), next_val.into()],
+                            "apply_list_writeback",
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                crate::semantics::Type::Map(_, _) => {
+                    let boxed_key = self.box_value(first_index_val);
+                    self.builder
+                        .build_call(
+                            self.module
+                                .get_function("mux_map_put_value")
+                                .expect("mux_map_put_value must be declared in runtime"),
+                            &[current_val.into(), boxed_key.into(), next_val.into()],
+                            "apply_map_writeback",
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                _ => unreachable!(),
+            }
+
+            Ok(())
         }
     }
 }

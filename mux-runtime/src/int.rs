@@ -2,8 +2,8 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::result::MuxResult;
 use crate::Value;
+use crate::result::MuxResult;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Int(pub i64);

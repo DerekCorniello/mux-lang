@@ -1,10 +1,14 @@
 ---
 source: mux-compiler/tests/executable_integration.rs
-expression: full_output
+expression: output_to_snapshot
 ---
 ========================================
 LIST OPERATIONS
 ========================================
+Empty list: []
+empty_list.is_empty(): true
+empty_list.size(): 0
+
 Initial list: [10, 20, 30, 40, 50]
 nums[0] = 10
 nums[2] = 30
@@ -50,14 +54,14 @@ After put("Eve", 92): {Alice: 95, Bob: 85, Charlie: 95, David: 88, Eve: 92}
 
 remove() method:
 Removed Bob: Some(85)
-After remove("Bob"): {Alice: 95, Bob: 85, Charlie: 95, David: 88, Eve: 92}
+After remove("Bob"): {Alice: 95, Charlie: 95, David: 88, Eve: 92}
 
 contains() method:
 scores.contains("Alice"): true
-scores.contains("Bob"): true
+scores.contains("Bob"): false
 
 Map properties:
-Size: 5
+Size: 4
 Is empty: false
 
 Map merge: {a:1,b:2} + {b:3,c:4} = {a: 1, b: 3, c: 4}
@@ -75,6 +79,23 @@ contains() method:
 unique_nums.contains(3): true
 unique_nums.contains(99): false
 
+add() method:
+After add(6): {1, 2, 3, 4, 5, 6}
+
+remove() method:
+remove(3) returned: true
+After remove(3): {1, 2, 4, 5, 6}
+remove(99) (not in set) returned: false
+Set still: {1, 2, 4, 5, 6}
+
+String set:
+Initial: {important, urgent}
+tags.contains("urgent"): true
+tags.contains("review"): false
+After add("review"): {important, review, urgent}
+
+Set union: {1,2,3} + {3,4,5} = {1, 2, 3, 4, 5}
+
 ========================================
 NESTED COLLECTIONS
 ========================================
@@ -84,7 +105,7 @@ matrix[0][0]: 1
 matrix[1][2]: 6
 
 After matrix[0][0] = 100:
-Matrix: [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+Matrix: [[100, 2, 3], [4, 5, 6], [7, 8, 9]]
 
 ========================================
 NEGATIVE INDEX WRITE (wraparound)

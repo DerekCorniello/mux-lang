@@ -4,9 +4,9 @@ use std::os::raw::c_char;
 
 use ordered_float;
 
+use crate::Value;
 use crate::refcount::mux_rc_alloc;
 use crate::result::MuxResult;
-use crate::Value;
 
 #[derive(Clone, Debug)]
 pub struct MuxString(pub String);
@@ -175,11 +175,7 @@ pub extern "C" fn mux_string_equal(a: *const c_char, b: *const c_char) -> i32 {
     unsafe {
         let a_str = CStr::from_ptr(a);
         let b_str = CStr::from_ptr(b);
-        if a_str == b_str {
-            1
-        } else {
-            0
-        }
+        if a_str == b_str { 1 } else { 0 }
     }
 }
 
@@ -188,11 +184,7 @@ pub extern "C" fn mux_string_equal(a: *const c_char, b: *const c_char) -> i32 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_not_equal(a: *const c_char, b: *const c_char) -> i32 {
-    if mux_string_equal(a, b) == 1 {
-        0
-    } else {
-        1
-    }
+    if mux_string_equal(a, b) == 1 { 0 } else { 1 }
 }
 
 /// Convert a character to its integer value

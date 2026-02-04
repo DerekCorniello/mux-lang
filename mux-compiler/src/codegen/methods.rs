@@ -924,39 +924,22 @@ impl<'a> CodeGenerator<'a> {
                     return Err("remove() method takes exactly 1 argument".to_string());
                 }
                 let key_val = self.generate_expression(&args[0])?;
-                let extract_map = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_map")
-                            .expect("mux_value_get_map must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_map",
+                let key_ptr = self.box_value(key_val);
+
+                let optional_ptr = self
+                    .generate_runtime_call(
+                        "mux_map_remove_value",
+                        &[obj_value.into(), key_ptr.into()],
                     )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_map should return a basic value");
-                let map_remove_result = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_map_remove")
-                            .expect("mux_map_remove must be declared in runtime"),
-                        &[extract_map.into(), key_val.into()],
-                        "map_remove",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_map_remove should return a basic value");
+                    .ok_or("mux_map_remove_value should return a value")?;
+
                 let optional_value = self
                     .builder
                     .build_call(
                         self.module
                             .get_function("mux_value_from_optional")
                             .expect("mux_value_from_optional must be declared in runtime"),
-                        &[map_remove_result.into()],
+                        &[optional_ptr.into()],
                         "optional_value",
                     )
                     .map_err(|e| e.to_string())?
@@ -1014,20 +997,37 @@ impl<'a> CodeGenerator<'a> {
                     return Err("add() method takes exactly 1 argument".to_string());
                 }
                 let elem_val = self.generate_expression(&args[0])?;
+                let elem_ptr = self.box_value(elem_val);
+
+                // Use mux_set_add_value which modifies the boxed Value directly
+                self.generate_runtime_call(
+                    "mux_set_add_value",
+                    &[obj_value.into(), elem_ptr.into()],
+                );
+                Ok(self.context.i32_type().const_int(0, false).into())
+            }
+            "remove" => {
+                if args.len() != 1 {
+                    return Err("remove() method takes exactly 1 argument".to_string());
+                }
+                let elem_val = self.generate_expression(&args[0])?;
+                let elem_ptr = self.box_value(elem_val);
+
+                // Use mux_set_remove_value which modifies the boxed Value directly
                 let call = self
                     .builder
                     .build_call(
                         self.module
-                            .get_function("mux_set_add")
-                            .expect("mux_set_add must be declared in runtime"),
-                        &[obj_value.into(), elem_val.into()],
-                        "set_add",
+                            .get_function("mux_set_remove_value")
+                            .expect("mux_set_remove_value must be declared in runtime"),
+                        &[obj_value.into(), elem_ptr.into()],
+                        "set_remove_value",
                     )
                     .map_err(|e| e.to_string())?;
                 Ok(call
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_set_add should return a basic value"))
+                    .expect("mux_set_remove_value should return a basic value"))
             }
             "contains" => {
                 if args.len() != 1 {

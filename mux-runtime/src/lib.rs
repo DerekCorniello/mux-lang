@@ -1,10 +1,10 @@
 use ::std::cmp;
-use ::std::rc::Rc;
 use ::std::collections::{BTreeMap, BTreeSet};
 use ::std::ffi::c_void;
 use ::std::fmt;
 use ::std::hash;
 use ::std::mem;
+use ::std::rc::Rc;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type TypeId = u32;

@@ -5,9 +5,15 @@ print("========================================")
 print("LIST OPERATIONS")
 print("========================================")
 
+// Empty list test
+list<int> empty_list = []
+print("Empty list: " + empty_list.to_string())
+print("empty_list.is_empty(): " + empty_list.is_empty().to_string())
+print("empty_list.size(): " + empty_list.size().to_string())
+
 // List creation and basic access
 auto nums = [10, 20, 30, 40, 50]
-print("Initial list: " + nums.to_string())
+print("\nInitial list: " + nums.to_string())
 
 // Direct index access (read)
 print("nums[0] = " + nums[0].to_string())
@@ -114,6 +120,37 @@ print("Is empty: " + unique_nums.is_empty().to_string())
 print("\ncontains() method:")
 print("unique_nums.contains(3): " + unique_nums.contains(3).to_string())
 print("unique_nums.contains(99): " + unique_nums.contains(99).to_string())
+
+// add() method
+print("\nadd() method:")
+unique_nums.add(6)
+print("After add(6): " + unique_nums.to_string())
+
+// remove() method
+print("\nremove() method:")
+auto removed = unique_nums.remove(3)
+print("remove(3) returned: " + removed.to_string())
+print("After remove(3): " + unique_nums.to_string())
+
+// Try to remove something that doesn't exist
+auto removed_missing = unique_nums.remove(99)
+print("remove(99) (not in set) returned: " + removed_missing.to_string())
+print("Set still: " + unique_nums.to_string())
+
+// add() and contains() for strings
+auto tags = {"urgent", "important"}
+print("\nString set:")
+print("Initial: " + tags.to_string())
+print("tags.contains(\"urgent\"): " + tags.contains("urgent").to_string())
+print("tags.contains(\"review\"): " + tags.contains("review").to_string())
+tags.add("review")
+print("After add(\"review\"): " + tags.to_string())
+
+// Set union
+auto set_a = {1, 2, 3}
+auto set_b = {3, 4, 5}
+auto union_set = set_a + set_b
+print("\nSet union: {1,2,3} + {3,4,5} = " + union_set.to_string())
 
 print("\n========================================")
 print("NESTED COLLECTIONS")

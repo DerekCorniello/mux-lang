@@ -6,8 +6,8 @@ use super::CodeGenerator;
 use crate::ast::{PrimitiveType, TypeKind, TypeNode};
 use crate::lexer::Span;
 use crate::semantics::Type;
-use inkwell::types::BasicTypeEnum;
 use inkwell::AddressSpace;
+use inkwell::types::BasicTypeEnum;
 
 impl<'a> CodeGenerator<'a> {
     pub(super) fn llvm_type_from_resolved_type(

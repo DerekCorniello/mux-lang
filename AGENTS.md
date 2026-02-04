@@ -16,10 +16,10 @@ The project is a compiler for a programming langauge, mux. The goal of this lang
 
 ## Quick Reference Commands
 
-### Command line overrides:
-grep -> ripgrep (rg)
-cat -> bat
-cd -> zoxide
+### Recommended Tools:
+- grep -> ripgrep (rg)
+- cat -> bat
+- cd -> zoxide
 
 ### Common issues to watch for:
 Executable's output seems to be cutoff -> this is likely a segfault due to incorrect LLVM IR generation. Check codegen changes carefully.
@@ -46,16 +46,15 @@ cargo clippy
 ```bash
 # Run all tests - user handles this
 cargo test
-```
 
-### Do not do these test commands (user will handle):
-```bash
-# Run insta tests - user handles this
+# Run insta snapshot tests - user handles this
 cargo insta test
 
 # Review insta snapshots - user handles this
 cargo insta review
 ```
+
+### Do not do these test commands (user will handle):
 
 ## Testing Approach
 
@@ -68,7 +67,7 @@ When testing a feature, the agent should:
          ii. remove them if they were only for ad-hoc testing, or
          iii. leave them if they are useful and do not fit into existing tests. this will require tests to be reviewed manually by the user later.
 
-3. Use best understanding based on test file contents to verify correctness
+3. Run `cargo fmt` to ensure consistent formatting
 4. Run `cargo clippy` to ensure no warnings or errors
 
 The user will separately run `cargo test` and insta testing for comprehensive validation.

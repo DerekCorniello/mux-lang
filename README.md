@@ -33,7 +33,7 @@ Mux (fully "MuxLang") is a statically-typed, reference-counted language that com
 - **Statement termination**: by end-of-line only (no semicolons)
 - **Underscore placeholder**: `_` can be used for unused parameters, variables, or pattern matching wildcards
 - **Keywords**:
-  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `as`, `in`, `true`, `false`, `common`
+  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `as`, `in`, `true`, `false`, `common`, `None`
 
 ---
 
@@ -748,6 +748,14 @@ enum Shape {
     Rectangle(float width, float height)
     Square(float size)
 }
+```
+
+```
+enum Shape {
+    Circle(float radius)
+    Rectangle(float width, float height)
+    Square(float size)
+}
 
 // Usage with inference
 auto myShape = Circle.new(5.0)  // type inferred as Shape
@@ -773,7 +781,7 @@ Each variant may carry data. Pattern-match with destructuring and guards. Use `_
 
 ## 10. Classes & Traits
 
-### 9.1 Traits (Interfaces)
+### 10.1 Traits (Interfaces)
 
 ```
 interface Drawable {
@@ -781,7 +789,7 @@ interface Drawable {
 }
 ```
 
-### 9.2 Classes with `is` Clause
+### 10.2 Classes with `is` Clause
 
 ```
 class Circle is Drawable, ShapeLike {
@@ -826,7 +834,7 @@ list<Drawable> shapes = [circle]
 Stack<int> intStack = Stack<int>.new()  // explicit generic instantiation with .new()
 ```
 
-### 9.3 Static Methods with `common`
+### 10.3 Static Methods with `common`
 
 Mux uses the `common` keyword to declare static (class-level) methods that can be called without an instance. This is distinct from `const` which declares immutable values.
 
@@ -875,7 +883,7 @@ stack.push(42)                             // Instance method
 - Static methods cannot access instance fields (no `self` context)
 - Factory patterns commonly use `common func from(...)` to create instances with pre-populated data
 
-### 9.4 Class Instantiation
+### 10.4 Class Instantiation
 
 Classes are instantiated using the `.new()` method pattern:
 
@@ -929,7 +937,7 @@ list<Pair<int, string>> pairs = [Pair.new(1, "one"), Pair.new(2, "two")]
 list<Container<int>> containers = list<Container<int>>()
 ```
 
-### 10.1 Collection Methods
+### 11.1 Collection Methods
 
 All collections provide a consistent API for access, mutation, and inspection.
 
@@ -1034,7 +1042,7 @@ match tags.remove("review") {
 
 ## 12. Error Handling
 
-### 11.1 `Result<T, E>`
+### 12.1 `Result<T, E>`
 
 ```
 func divide(int a, int b) returns Result<int, string> {
@@ -1070,7 +1078,7 @@ match result {
 }
 ```
 
-### 11.2 `Optional<T>`
+### 12.2 `Optional<T>`
 
 ```
 func findEven(list<int> xs) returns Optional<int> {
@@ -1186,9 +1194,9 @@ import utils.logger as _  // imported but not directly used in this scope
 
 ---
 
-## 16. Type Inference Guidelines
+## 15. Type Inference Guidelines
 
-### 15.1 When to Use `auto`
+### 16.1 When to Use `auto`
 
 **Recommended:**
 
@@ -1204,7 +1212,7 @@ import utils.logger as _  // imported but not directly used in this scope
 - When the inferred type is not obvious to readers
 - Long-lived variables where explicit type aids readability
 
-### 15.2 Inference Limitations
+### 16.2 Inference Limitations
 
 ```
 // These require explicit types due to ambiguity
@@ -1218,7 +1226,7 @@ Stack[int] stack = Stack[int]()      // explicit generic parameter
 auto pairs = zip<int, string>(numbers, names)  // when inference is ambiguous
 ```
 
-### 15.3 Using Underscore Effectively
+### 16.3 Using Underscore Effectively
 
 ```
 // Good uses of underscore
@@ -1236,7 +1244,7 @@ func calculate(int width, int height, float _) returns float { }
 
 ---
 
-## 17. Example Program
+## 16. Example Program
 
 ```
 import math
@@ -1308,7 +1316,7 @@ func main() returns void {
 }
 ```
 
-## 18. Compiler Behavior
+## 17. Compiler Behavior
 
 The Mux compiler performs type inference during the semantic analysis phase:
 
@@ -1322,8 +1330,8 @@ Type inference errors are reported with suggestions for explicit typing when amb
 
 The compiler will warn about unused variables unless they are explicitly marked with `_` or have names starting with `_`.
 
-## 19. License
+## 18. License
 
-Mux will be licensed under the MIT license.
+Mux is licensed under the MIT license.
 
 ---

@@ -3,8 +3,8 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::raw::c_char;
 
-use crate::refcount::mux_rc_alloc;
 use crate::Value;
+use crate::refcount::mux_rc_alloc;
 
 #[derive(Debug)]
 pub struct MuxFile(pub std::fs::File);

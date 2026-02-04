@@ -10,7 +10,7 @@ pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
 #[allow(unused_imports)]
 pub use format::{format_span_location, format_unary_op};
-pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
+pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -905,7 +905,9 @@ impl SemanticAnalyzer {
                             return Err(SemanticError {
                                 message: format!(
                                     "Heterogeneous list: expected all elements to be of type {}, but element at index {} has type {}",
-                                    format_type(&first_type), index, format_type(&element_type)
+                                    format_type(&first_type),
+                                    index,
+                                    format_type(&element_type)
                                 ),
                                 span: element.span,
                             });

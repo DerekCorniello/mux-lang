@@ -1997,8 +1997,11 @@ impl<'a> Parser<'a> {
                     let elem = self.parse_expression()?;
                     set_elements.push(elem);
                 }
+                self.skip_newlines();
             }
         }
+
+        self.skip_newlines(); // Allow newlines before closing brace
 
         let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after collection")?;
@@ -2122,6 +2125,8 @@ impl<'a> Parser<'a> {
                         self.skip_newlines();
                     }
                 }
+
+                self.skip_newlines(); // Allow newlines before closing bracket
 
                 let end_span = self
                     .consume_token(TokenType::CloseBracket, "Expected ']' after list elements")?;
