@@ -2347,7 +2347,7 @@ impl<'a> Parser<'a> {
                                     | TokenType::Eq
                                     | TokenType::NewLine
                                     | TokenType::Eof
-                            ) || id.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+                            ) || id.chars().next().is_some_and(|c| c.is_ascii_uppercase())
                         } else {
                             true // end of file, treat as generic
                         }

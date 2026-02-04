@@ -21,7 +21,7 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
     // Check if this is an error case (in error_cases subdirectory)
     let is_error_case = test_file
         .ancestors()
-        .any(|p| p.file_name().map_or(false, |n| n == "error_cases"));
+        .any(|p| p.file_name().is_some_and(|n| n == "error_cases"));
 
     // Compile the file using the mux_compiler
     let mut compile_cmd = Command::new("cargo");
@@ -35,7 +35,6 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
         .output()
         .unwrap_or_else(|e| panic!("Failed to execute compile command for {}: {}", path_str, e));
 
-    let stdout = String::from_utf8_lossy(&compile_output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&compile_output.stderr).to_string();
 
     if !compile_output.status.success() {
