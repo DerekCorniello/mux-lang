@@ -171,24 +171,67 @@ auto good4 = (true).to_int() + (false).to_int()  // OK: 1
 | `string` | `.to_int()` | `Result<int, string>` | Parses string as integer |
 | `string` | `.to_float()` | `Result<float, string>` | Parses string as float |
 
+### 3.2.5 Technical Design: Uniform Value Representation
+
+Mux uses a **single unified type** (`Value` enum) to represent all runtime values, enabling uniform handling in collections and generics.
+
+#### The Value Enum
+
+```rust
+pub enum Value {
+    Bool(bool),
+    Int(i64),
+    Float(OrderedFloat<f64>),
+    String(String),
+    List(Vec<Value>),
+    Map(BTreeMap<Value, Value>),
+    Set(BTreeSet<Value>),
+    Optional(Option<Box<Value>>),
+    Result(Result<Box<Value>, String>),
+    Object(ObjectRef),
+}
+```
+
+#### Boxing Strategy
+
+All primitives are **boxed** into `*mut Value` pointers:
+
+1. **Allocation**: `mux_rc_alloc(value)` allocates RefHeader + Value
+2. **Storage**: Pointers stored in variables, collections, and function returns
+3. **Extraction**: Typed accessors (`mux_value_get_int`, etc.) unwrap values
+
+This design enables:
+- **Generic collections**: `list<T>` works uniformly for all types
+- **Polymorphic functions**: Same function can handle any type
+- **Simple FFI**: C code receives consistent `void*` pointers
+
+#### Type Representations Through Compilation
+
+Mux maintains **three distinct type representations**:
+
+| Representation | Purpose |
+|---------------|---------|
+| `TypeNode` | AST representation, source locations |
+| `Type` | Semantic analysis, type resolution |
+| `BasicTypeEnum` | LLVM IR generation |
+
+```
+TypeNode ──type_node_to_type()──► Type ──llvm_type_from_mux_type()──► BasicTypeEnum
+   │                                    │
+   │  (semantic analysis)               │  (codegen)
+   ▼                                    ▼
+  Errors                          LLVM Type System
+```
+
+The separation enables error reporting with source locations while keeping semantic analysis LLVM-independent.
+
 ### 3.3 Built-in Functions
 
 Mux provides essential built-in functions for output and utility operations. These are always available without imports.
 
 #### Output Functions
 
-**`print(string message)`** - Prints a string to standard output with a trailing newline.
-
-```mux
-print("Hello, World")  // Output: Hello, World\n
-// Multiple prints produce separate lines:
-print("First")
-print("Second")  // First\nSecond\n
-// To print without newline, use multiple arguments or string concatenation:
-print("Hello, " + "World")  // Output: Hello, World\n
-// Or use the runtime function directly (advanced):
-// mux_print_raw("No newline") - if available in runtime
-```
+**Design Note:** `print` is a direct runtime call that outputs to stdout. The runtime handles string formatting and newline appending.
 
 #### Utility Functions
 
@@ -262,6 +305,47 @@ class Stack<T> {
     }
 }
 ```
+
+### 3.5.1 Technical Design: Monomorphization
+
+Mux uses **compile-time monomorphization** for generics, generating specialized code for each type instantiation.
+
+#### Monomorphization Process
+
+1. **Type inference**: Determine concrete types from function arguments
+2. **Name generation**: Create unique identifier: `FunctionName$int$string$`
+3. **Type substitution**: Replace type parameters with concrete types
+4. **Code generation**: Emit specialized function body
+5. **Caching**: Store generated methods to avoid regeneration
+
+#### Example
+
+```mux
+func identity<T>(T value) returns T {
+    return value
+}
+
+auto a = identity(42)        // Generates: identity$$int
+auto b = identity("hello")   // Generates: identity$$string
+```
+
+The compiler substitutes types in the AST before code generation:
+
+```rust
+// Original generic function
+func identity<T>(T value) returns T { ... }
+
+// After substitution for T = int
+func identity$$int(int value) returns int { ... }
+```
+
+#### Why Monomorphization?
+
+- **Zero runtime cost**: No boxing, no vtables, no type checks
+- **Static dispatch**: Methods resolved at compile time
+- **LLVM optimization**: Each specialization can be fully optimized
+
+The tradeoff is increased code size (one copy per type combination).
 
 ### 3.6 Built-in Interfaces
 
@@ -538,6 +622,54 @@ const int MAX = 100
 - `&&` only evaluates right side if left is `true`
 - `||` only evaluates right side if left is `false`
 
+### 6.3.1 Technical Design: Short-Circuit Logical Operators
+
+The `&&` and `||` operators use **LLVM control flow** for short-circuit evaluation, not simple boolean operations.
+
+#### Control Flow Graph
+
+For `a && b`:
+
+```
+          ┌──────────────┐
+          │  evaluate a  │
+          └──────┬───────┘
+                 │
+            ┌────▼────┐
+            │ a true? │  ← conditional branch
+            └────┬────┘
+         false │    │ true
+               ▼    ▼
+          ┌──────┐  ┌──────────┐
+          │ merge│  │ evaluate b│
+          │ false│  └────┬─────┘
+          └──────┘       │
+                        ▼
+                  ┌──────────┐
+                  │  merge   │  ← phi node combines results
+                  └──────────┘
+```
+
+#### Phi Nodes for Result Merging
+
+Phi nodes select a value based on which predecessor block executed:
+
+```llvm
+%result = phi i1 [ 0, %left_block ], [ %b_value, %right_block ]
+```
+
+- From `left_block`: constant `0` (left was false)
+- From `right_block`: computed `%b_value` (left was true)
+
+#### Why This Approach?
+
+If LLVM generated `a && b` as a single expression:
+1. Both `a` and `b` would always be evaluated (no short-circuit)
+2. No opportunity for branch prediction
+3. Can't exploit constant operands
+
+The basic block approach preserves semantics while enabling LLVM optimizations (dead code elimination, inlining, vectorization).
+
 ### 6.4 The `in` Operator
 
 The `in` operator tests for membership/containment with strict type requirements:
@@ -590,6 +722,49 @@ The `+` operator is overloaded for collection types with type-specific semantics
 | `map<K,V> + map<K,V>` | Merge | Combined map (latter overwrites former on key collision) |
 | `set<T> + set<T>` | Union | Set containing all unique elements |
 | `string + string` | Concatenation | Combined string |
+
+### 6.5.1 Technical Design: Operator Overloading
+
+Operators map to interface methods, enabling user-defined operator behavior.
+
+#### Operator to Method Mapping
+
+| Operator | Interface | Method |
+|----------|-----------|--------|
+| `+` | `Add` | `add(Self) -> Self` |
+| `-` | `Sub` | `sub(Self) -> Self` |
+| `*` | `Mul` | `mul(Self) -> Self` |
+| `/` | `Div` | `div(Self) -> Self` |
+| `==` | `Equatable` | `eq(Self) -> bool` |
+| `<` | `Comparable` | `cmp(Self) -> int` |
+
+#### Semantic Validation
+
+The semantic analyzer checks operator types:
+
+```rust
+// For a + b
+let left_type = analyzer.get_expression_type(left_expr)?;
+let right_type = analyzer.get_expression_type(right_expr)?;
+
+if !type_supports_addition(&left_type) {
+    return Err(format!("Type {} does not support +", left_type));
+}
+```
+
+#### Code Generation
+
+For primitive types, direct LLVM operations:
+
+```llvm
+%result = add i64 %a, %b
+```
+
+For interface types, method call:
+
+```llvm
+%result = call i8* @Add.add(i8* %a_ptr, i8* %b_ptr)
+```
 
 **Type Constraints:**
 - Both operands must be the exact same collection type
@@ -901,7 +1076,112 @@ auto prebuilt = Stack<int>.from([1, 2, 3])
 auto pair = Pair<string, int>.from("key", 42)
 ```
 
+### 10.5 Technical Design: Object System
+
+Mux objects use Rust's `Rc<Arc<ObjectData>>` pattern for shared ownership with type information.
+
+#### ObjectRef Structure
+
+```rust
+struct ObjectData {
+    ptr: *mut c_void,      // User's object data
+    type_id: TypeId,       // Runtime type identifier
+    size: usize,           // Size for deallocation
+    ref_count: AtomicUsize, // Reference count
+}
+
+struct ObjectRef {
+    data: Rc<ObjectData>,  // Shared ownership
+}
+```
+
+#### Type Registry
+
+```rust
+lazy_static::lazy_static! {
+    static ref TYPE_REGISTRY: Mutex<HashMap<TypeId, ObjectType>> = ...
+    static ref NEXT_TYPE_ID: AtomicUsize = ...
+}
+
+pub struct ObjectType {
+    pub id: TypeId,
+    pub name: String,
+    pub size: usize,
+    pub destructor: Option<fn(*mut c_void)>,
+}
+```
+
+Each class registers with the runtime, receiving a unique `TypeId`.
+
+#### Allocation
+
+```rust
+pub fn alloc_object(type_id: TypeId) -> *mut Value {
+    let obj_type = TYPE_REGISTRY.lock().get(&type_id);
+    let size = obj_type.size;
+    
+    let ptr = std::alloc::alloc(size);
+    let obj_ref = ObjectRef::new(ptr, type_id, size);
+    
+    mux_rc_alloc(Value::Object(obj_ref))
+}
+```
+
+#### Why This Design?
+
+- **Type information at runtime**: `type_id` enables type checks and casts
+- **Proper cleanup**: `size` and optional destructor for cleanup
+- **Shared ownership**: Multiple references to same object
+
 **Design Note:** Mux uses explicit `.new()` rather than direct constructor calls to distinguish class instantiation from function calls and enum variant construction.
+
+### 10.4.1 Technical Design: Interface Dispatch (Static)
+
+Mux uses **static dispatch** for interfaces - no runtime vtable lookup.
+
+#### VTable Generation
+
+VTables are generated at compile time:
+
+```llvm
+@vtable_Circle = constant {
+    i32,           // type tag
+    void (i8*)*   // draw method pointer
+} {
+    i32 1,         // Circle's type ID
+    void (i8*)* @Circle.draw
+}
+```
+
+#### Method Name Mangling
+
+Methods are prefixed with their class name:
+
+```mux
+class Circle {
+    func draw() returns void { ... }
+}
+```
+
+Generates LLVM function: `Circle.draw`
+
+#### Why Static Dispatch?
+
+- **Zero cost**: No pointer indirection, direct function calls
+- **Inlining**: LLVM can inline interface methods
+- **Optimization**: Better branch prediction, no indirect jumps
+
+#### Comparison to Dynamic Dispatch
+
+```rust
+// Dynamic dispatch (Python, Java)
+circle.draw()  // Look up vtable, find slot, call
+
+// Static dispatch (Mux)
+Circle.draw()  // Direct call to Circle.draw
+```
+
+The tradeoff: interfaces cannot be added to types from other modules (no "extension traits").
 
 ---
 
@@ -1038,6 +1318,48 @@ match tags.remove("review") {
 
 **Design Note:** Collections use consistent method naming across all types. Safe access via `.get()` returns `Optional<T>`, while direct access with `[]` provides unchecked access with runtime bounds checking.
 
+### 11.1 Technical Design: Nested Collections
+
+Mux's collections (`list`, `map`, `set`) can contain any `Value`, enabling arbitrary nesting.
+
+#### Collection Implementations
+
+| Collection | Rust Type | Use Case |
+|------------|-----------|----------|
+| `list<T>` | `Vec<Value>` | Contiguous array, indexed access |
+| `map<K,V>` | `BTreeMap<Value, Value>` | Key-value pairs, sorted keys |
+| `set<T>` | `BTreeSet<Value>` | Unique elements, membership test |
+
+#### Why BTreeMap/BTreeSet?
+
+Unlike HashMap/HashSet, BTree variants provide:
+- **Deterministic iteration order**: Always the same order
+- **Ordered operations**: First/last element, range queries
+- **Reproducible output**: `to_string()` produces consistent results
+
+#### Nested Example
+
+```mux
+auto nested = [
+    {"name": "Alice", "scores": [95, 87, 92]},
+    {"name": "Bob", "scores": [78, 85, 90]}
+]
+// Structure: list<map<string, list<int> | string>>
+```
+
+The type system tracks nesting through:
+1. **Parser**: Creates nested `TypeNode` structures
+2. **Semantic Analyzer**: Resolves to `Type::List(Type::Map(...))`
+3. **Code Generator**: Creates appropriate LLVM types
+
+#### Reference Counting in Collections
+
+Collections are RC-allocated and contain RC-allocated values. When freed:
+1. Collection's refcount reaches zero
+2. Collection's `Vec<Value>` is dropped
+3. Each contained `Value` has its refcount decremented
+4. Nested collections are freed recursively
+
 ---
 
 ## 12. Error Handling
@@ -1118,6 +1440,43 @@ match maybeEven {
 
 Use `match` to unpack results and optionals. Use `_` to ignore unused values in patterns.
 
+### 12.3 Technical Design: Result and Optional
+
+Both `Result<T, E>` and `Optional<T>` use a uniform runtime representation.
+
+#### Memory Layout
+
+```rust
+pub struct Result<T, E> {
+    discriminant: i32,    // 0 = Ok, 1 = Err
+    data: *mut T,        // pointer to value
+}
+
+pub struct Optional<T> {
+    discriminant: i32,    // 0 = None, 1 = Some
+    data: *mut T,        // pointer to value
+}
+```
+
+Same layout enables generic code to work with either type.
+
+#### Runtime Behavior
+
+**Discriminant**: Determines which variant is active
+**Data pointer**: Points to the contained value (boxed like all other values)
+
+```mux
+auto opt = Some(42)      // discriminant=1, data=box(42)
+auto res = Ok("error")   // discriminant=0, data=box("error")
+```
+
+#### Why This Design?
+
+- **Single runtime representation**: Collections can store either
+- **No enum overhead**: No runtime enum tag beyond discriminant
+- **Error propagation**: Easy to implement with match statements
+- **Interop**: Optional and Result can wrap the same types
+
 ---
 
 ## 13. Memory Model
@@ -1125,6 +1484,46 @@ Use `match` to unpack results and optionals. Use `_` to ignore unused values in 
 - **Reference-counted** runtime; deterministic memory management with no manual `free`
 - All objects and collections live on the heap
 - Primitives passed by value, objects by reference
+
+### 13.1 Technical Design: Reference Counting
+
+Mux uses **atomic reference counting** for deterministic memory management. Every heap-allocated value is prefixed with a reference count header.
+
+#### Memory Layout
+
+```
+┌──────────────────┬─────────────┐
+│   RefHeader      │    Value    │
+│ ref_count: u64   │  (payload) │
+└──────────────────┴─────────────┘
+          ↑
+      Allocation pointer
+```
+
+The `RefHeader` uses `AtomicUsize` for thread-safe atomic operations. The `Value` payload contains the actual data.
+
+#### Reference Count Operations
+
+**Increment (`mux_rc_inc`)**: Called when creating a new reference:
+- Assigning to a new variable
+- Passing as a function argument
+- Adding to a collection
+
+**Decrement (`mux_rc_dec`)**: Called when a reference goes out of scope:
+- Variable assignment is overwritten
+- Function returns (cleanup of local variables)
+
+When `mux_rc_dec` returns `true`, the refcount reached zero and memory is freed automatically.
+
+#### Scope-Based Tracking
+
+The compiler generates cleanup code using a **scope stack**:
+
+1. **Enter scope** → `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
+2. **Track variable** → `track_rc_variable(name, alloca)` for each RC-allocated variable
+3. **Exit scope** → `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
+
+This ensures proper cleanup order and handles early returns.
 
 ---
 
@@ -1192,6 +1591,67 @@ import utils.logger as _  // imported but not directly used in this scope
 - Imported symbols can be used with type inference
 - Use `_` alias when importing for side effects only
 
+### 15.1 Technical Design: Module System
+
+Mux uses Python-style module imports with compile-time resolution.
+
+#### Import Resolution
+
+```mux
+import math          // math.mux in same directory
+import shapes.circle // shapes/circle.mux
+```
+
+File paths map to module paths:
+- `import foo` → `foo.mux`
+- `import shapes.circle` → `shapes/circle.mux`
+
+#### Name Mangling for Imported Functions
+
+Functions from imported modules use mangled names:
+
+```mux
+// math.mux
+func fibonacci(int n) returns int { ... }
+
+// main.mux
+import math
+auto result = math.fibonacci(10)
+```
+
+Generates: `math_fibonacci` (not `fibonacci`)
+
+This prevents conflicts when multiple modules define functions with the same name.
+
+#### Top-Level Statements
+
+Top-level statements in modules become a module initialization function:
+
+```mux
+// config.mux
+const int MAX_USERS = 100
+auto initialized = false
+
+func init() returns void {
+    initialized = true
+}
+```
+
+The compiler generates:
+```llvm
+define void @config.init() { ... }
+```
+
+And calls it before `main()` executes.
+
+#### Module Dependencies
+
+The compiler:
+1. Parses all imports
+2. Builds dependency graph
+3. Processes modules in topological order
+4. Generates initialization functions for each module
+
 ---
 
 ## 15. Type Inference Guidelines
@@ -1204,13 +1664,6 @@ import utils.logger as _  // imported but not directly used in this scope
 - Complex generic types that are clear from context
 - Temporary variables in calculations
 - Iterator variables in loops
-
-**Not Recommended:**
-
-- Function parameters and return types (must be explicit)
-- Public class fields (must be explicit)
-- When the inferred type is not obvious to readers
-- Long-lived variables where explicit type aids readability
 
 ### 16.2 Inference Limitations
 
@@ -1316,19 +1769,98 @@ func main() returns void {
 }
 ```
 
-## 17. Compiler Behavior
+---
 
-The Mux compiler performs type inference during the semantic analysis phase:
+## Project File Structure
 
-1. **Parse** the source code into an AST
-2. **Infer** types for `auto` declarations based on initializer expressions
-3. **Resolve** generic type parameters and constraints
-4. **Check** type compatibility and enforce explicit typing rules
-5. **Generate** code with full type information
+```
+mux-lang/
+├── mux-compiler/
+│   ├── src/
+│   │   ├── ast/
+│   │   │   ├── types.rs
+│   │   │   ├── nodes.rs
+│   │   │   ├── literals.rs
+│   │   │   ├── operators.rs
+│   │   │   ├── patterns.rs
+│   │   │   ├── error.rs
+│   │   │   └── mod.rs
+│   │   ├── codegen/
+│   │   │   ├── mod.rs
+│   │   │   ├── expressions.rs
+│   │   │   ├── statements.rs
+│   │   │   ├── functions.rs
+│   │   │   ├── methods.rs
+│   │   │   ├── classes.rs
+│   │   │   ├── constructors.rs
+│   │   │   ├── operators.rs
+│   │   │   ├── generics.rs
+│   │   │   ├── types.rs
+│   │   │   ├── memory.rs
+│   │   │   └── runtime.rs
+│   │   ├── semantics/
+│   │   │   ├── mod.rs
+│   │   │   ├── types.rs
+│   │   │   ├── symbol_table.rs
+│   │   │   ├── unifier.rs
+│   │   │   ├── format.rs
+│   │   │   └── error.rs
+│   │   ├── lexer/
+│   │   │   ├── mod.rs
+│   │   │   ├── token.rs
+│   │   │   ├── span.rs
+│   │   │   └── error.rs
+│   │   ├── parser/
+│   │   │   ├── mod.rs
+│   │   │   └── error.rs
+│   │   ├── diagnostic/
+│   │   │   ├── mod.rs
+│   │   │   ├── emitter.rs
+│   │   │   ├── files.rs
+│   │   │   └── styles.rs
+│   │   ├── module_resolver.rs
+│   │   ├── source.rs
+│   │   ├── lib.rs
+│   │   └── main.rs
+│   └── tests/
+│       ├── lexer_integration.rs
+│       ├── parser_integration.rs
+│       ├── semantics_integration.rs
+│       ├── executable_integration.rs
+│       └── snapshots/
+│
+├── mux-runtime/
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── object.rs
+│   │   ├── value.rs
+│   │   ├── refcount.rs
+│   │   ├── boxing.rs
+│   │   ├── bool.rs
+│   │   ├── int.rs
+│   │   ├── float.rs
+│   │   ├── string.rs
+│   │   ├── list.rs
+│   │   ├── map.rs
+│   │   ├── set.rs
+│   │   ├── optional.rs
+│   │   ├── result.rs
+│   │   ├── io.rs
+│   │   ├── math.rs
+│   │   └── std.rs
+│   └── Cargo.toml
+│
+├── test_scripts/
+│   ├── error_cases/
+│   │   ├── *.mux
+│   └── *.mux
+│
+├── Cargo.toml
+├── Cargo.lock
+└── AGENTS.md
+```
 
-Type inference errors are reported with suggestions for explicit typing when ambiguous. Generic type resolution follows Go's approach with clear constraint satisfaction checking.
-
-The compiler will warn about unused variables unless they are explicitly marked with `_` or have names starting with `_`.
+---
 
 ## 18. License
 
