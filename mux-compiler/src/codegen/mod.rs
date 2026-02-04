@@ -87,6 +87,7 @@ impl<'a> CodeGenerator<'a> {
             void_type.fn_type(&[i8_ptr.into()], false),
             None,
         );
+        module.add_function("mux_read_line", i8_ptr.fn_type(&[], false), None);
         module.add_function(
             "exit",
             void_type.fn_type(&[context.i32_type().into()], false),

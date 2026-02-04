@@ -1778,6 +1778,25 @@ impl<'a> CodeGenerator<'a> {
                             // return void, but since BasicValueEnum, return a dummy
                             Ok(self.context.i32_type().const_int(0, false).into())
                         }
+                        "read_line" => {
+                            if !args.is_empty() {
+                                return Err("read_line takes 0 arguments".to_string());
+                            }
+                            let func_read_line = self
+                                .module
+                                .get_function("mux_read_line")
+                                .ok_or("mux_read_line not found")?;
+                            let call = self
+                                .builder
+                                .build_call(func_read_line, &[], "read_line_call")
+                                .map_err(|e| e.to_string())?;
+                            let cstr_ptr = call
+                                .try_as_basic_value()
+                                .left()
+                                .ok_or("mux_read_line returned no value")?
+                                .into_pointer_value();
+                            self.box_string_value(cstr_ptr)
+                        }
                         "Err" => {
                             if args.len() != 1 {
                                 return Err("Err takes 1 argument".to_string());
