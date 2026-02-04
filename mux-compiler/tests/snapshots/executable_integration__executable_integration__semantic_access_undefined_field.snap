@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_access_undefined_field.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_access_undefined_field.mux, line 6:
-    auto y = c.undefined_field
-             ^
-Unknown field 'undefined_field' on type C
+error: Unknown field 'undefined_field' on type C
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_access_undefined_field.mux:6:10
+   |
+ 6 | auto y = c.undefined_field
+   |          ^

@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_binary_rhs.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_binary_rhs.mux, line 2:
-    auto z = 1 +
-                ^
-Expected expression, found 'NewLine'
+error: Expected expression, found 'NewLine'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_binary_rhs.mux:2:13
+   |
+ 2 | auto z = 1 +
+   |             ^

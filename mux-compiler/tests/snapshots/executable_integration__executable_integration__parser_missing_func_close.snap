@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_func_close.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_func_close.mux, line 0:
-    // Should fail: Expected '}' after function body
-    ^
-Expected '}' after block
+error: Expected '}' after block
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_func_close.mux:2:26
+   |
+ 2 | func foo() returns void {
+   |                          ^

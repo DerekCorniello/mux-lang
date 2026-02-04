@@ -4,9 +4,10 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unclosed_char.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unclosed_char.mux, line 2:
-    auto c = '
-             ^
-Unterminated character literal
-  = help: Make sure to close the character with a matching quote
+error: Unterminated character literal
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unclosed_char.mux:2:10
+   |
+ 2 | auto c = '
+   |          ^
+   |
+= help: Make sure to close the character with a matching quote

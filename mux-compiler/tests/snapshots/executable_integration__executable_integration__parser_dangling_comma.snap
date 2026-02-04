@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_dangling_comma.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_dangling_comma.mux, line 2:
-    auto x = [1, 2, 3,]
-                      ^
-Expected expression, found 'CloseBracket'
+error: Expected expression, found 'CloseBracket'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_dangling_comma.mux:2:19
+   |
+ 2 | auto x = [1, 2, 3,]
+   |                   ^

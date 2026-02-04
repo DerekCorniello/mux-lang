@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_duplicate_field.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_duplicate_field.mux, line 4:
-        int x
-        ^
-Duplicate field 'x' in class 'C'
+error: Duplicate field 'x' in class 'C'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_duplicate_field.mux:4:5
+   |
+ 4 |     int x
+   |     ^^^

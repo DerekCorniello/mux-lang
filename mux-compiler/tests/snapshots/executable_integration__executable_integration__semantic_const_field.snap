@@ -4,14 +4,16 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux`
+error: 2 errors found
 
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux, line 3:
-      const int f
-                ^
-Const fields must have a default value
+error: Const fields must have a default value
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux:3:13
+   |
+ 3 |   const int f
+   |             ^
 
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux, line 4:
-    }
-    ^
-Expected expression, found '}'
+error: Expected expression, found '}'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux:4:1
+   |
+ 4 | }
+   | ^

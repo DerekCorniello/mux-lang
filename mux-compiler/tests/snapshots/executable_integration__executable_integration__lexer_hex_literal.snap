@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_hex_literal.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_hex_literal.mux, line 2:
-    auto x = 0xGHI
-             ^
-Invalid integer literal: 0xGHI
+error: Invalid integer literal: 0xGHI
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_hex_literal.mux:2:10
+   |
+ 2 | auto x = 0xGHI
+   |          ^^^^^

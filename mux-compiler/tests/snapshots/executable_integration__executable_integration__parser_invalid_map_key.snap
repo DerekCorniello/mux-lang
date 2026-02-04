@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_map_key.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_map_key.mux, line 2:
-    auto m = {[]: 1}
-              ^
-Map keys must be hashable (primitive types only). Found '[?]'
+error: Map keys must be hashable (primitive types only). Found '[?]'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_map_key.mux:2:11
+   |
+ 2 | auto m = {[]: 1}
+   |           ^

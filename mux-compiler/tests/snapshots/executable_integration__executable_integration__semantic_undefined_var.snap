@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_undefined_var.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_undefined_var.mux, line 2:
-    print(x)
-          ^
-Undefined variable 'x'
+error: Undefined variable 'x'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_undefined_var.mux:2:7
+   |
+ 2 | print(x)
+   |       ^

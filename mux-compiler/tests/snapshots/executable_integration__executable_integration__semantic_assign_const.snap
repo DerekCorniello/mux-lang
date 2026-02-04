@@ -4,9 +4,10 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_assign_const.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_assign_const.mux, line 3:
-    c = 6
-    ^
-Cannot assign to constant 'c'
-  = help: Constants cannot be modified after initialization
+error: Cannot assign to constant 'c'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_assign_const.mux:3:1
+   |
+ 3 | c = 6
+   | ^^^^^
+   |
+= help: Constants cannot be modified after initialization

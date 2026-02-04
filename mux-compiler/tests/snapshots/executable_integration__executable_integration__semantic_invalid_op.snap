@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_invalid_op.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_invalid_op.mux, line 2:
-    auto a = "str" + 1
-                     ^
-Binary operator '+' is not supported for types string and int
+error: Binary operator '+' is not supported for types string and int
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_invalid_op.mux:2:18
+   |
+ 2 | auto a = "str" + 1
+   |                  ^

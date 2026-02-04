@@ -4,9 +4,10 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unknown_escape.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unknown_escape.mux, line 2:
-    auto = "hi\z"
-               ^
-Unknown escape sequence: \z
-  = help: Valid escape sequences: \n, \t, \r, \0, \\, \', \"
+error: Unknown escape sequence: \z
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unknown_escape.mux:2:12
+   |
+ 2 | auto = "hi\z"
+   |            ^
+   |
+= help: Valid escape sequences: \n, \t, \r, \0, \\, \', \"

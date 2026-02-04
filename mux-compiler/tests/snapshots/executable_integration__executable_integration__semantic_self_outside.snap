@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_self_outside.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_self_outside.mux, line 2:
-    auto s = self
-             ^
-Cannot use 'self' outside of a method
+error: Cannot use 'self' outside of a method
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_self_outside.mux:2:10
+   |
+ 2 | auto s = self
+   |          ^^^^
