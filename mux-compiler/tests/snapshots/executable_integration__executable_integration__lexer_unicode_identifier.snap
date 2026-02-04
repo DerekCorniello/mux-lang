@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unicode_identifier.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unicode_identifier.mux, line 2:
-    auto café = 5
-            ^
-unexpected character: 'é'
+error: unexpected character: 'é'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unicode_identifier.mux:2:9
+   |
+ 2 | auto café = 5
+   |         ^

@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_field_on_primitive.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_field_on_primitive.mux, line 2:
-    auto x = 5.x
-             ^
-Undefined method 'x' on type int
+error: Undefined method 'x' on type int
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_field_on_primitive.mux:2:10
+   |
+ 2 | auto x = 5.x
+   |          ^

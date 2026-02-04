@@ -1865,16 +1865,22 @@ impl<'a> Parser<'a> {
 
     fn peek(&self) -> &Token {
         if self.is_at_end() {
-            static EOF_TOKEN: Token = Token {
-                token_type: TokenType::Eof,
-                span: Span {
-                    row_start: 0,
-                    row_end: None,
-                    col_start: 0,
-                    col_end: None,
-                },
-            };
-            &EOF_TOKEN
+            // Return the last token if available, otherwise use a default EOF token
+            // This prevents "line 0" errors
+            if let Some(last_token) = self.tokens.last() {
+                last_token
+            } else {
+                static EOF_TOKEN: Token = Token {
+                    token_type: TokenType::Eof,
+                    span: Span {
+                        row_start: 1,
+                        row_end: None,
+                        col_start: 1,
+                        col_end: None,
+                    },
+                };
+                &EOF_TOKEN
+            }
         } else {
             self.tokens[self.current]
         }
@@ -2024,9 +2030,16 @@ impl<'a> Parser<'a> {
 
     fn parse_primary(&mut self) -> ParserResult<ExpressionNode> {
         if self.is_at_end() {
+            // Use the last token's span to show where we expected an expression
+            let error_span = self.tokens.last().map(|t| t.span).unwrap_or_else(|| Span {
+                row_start: 1,
+                row_end: None,
+                col_start: 1,
+                col_end: None,
+            });
             return Err(ParserError::new(
                 "Expected expression, found end of input",
-                Span::new(0, 0),
+                error_span,
             ));
         }
 
@@ -2437,9 +2450,9 @@ impl<'a> Parser<'a> {
             return Err(ParserError::new(
                 error_msg,
                 self.tokens.last().map(|t| t.span).unwrap_or_else(|| Span {
-                    row_start: 0,
+                    row_start: 1,
                     row_end: None,
-                    col_start: 0,
+                    col_start: 1,
                     col_end: None,
                 }),
             ));

@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_generic_inference.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_generic_inference.mux, line 2:
-    auto empty = []
-                 ^
-Cannot infer type for empty list literal; use explicit type annotation (e.g., `list<int> myvar = {}`).
+error: Cannot infer type for empty list literal; use explicit type annotation (e.g., `list<int> myvar = {}`).
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_generic_inference.mux:2:14
+   |
+ 2 | auto empty = []
+   |              ^

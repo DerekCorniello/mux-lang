@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_return_outside_func.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_return_outside_func.mux, line 2:
-    return 5
-           ^
-Cannot use 'return' outside of a function
+error: Cannot use 'return' outside of a function
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_return_outside_func.mux:2:8
+   |
+ 2 | return 5
+   |        ^

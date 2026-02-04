@@ -1,4 +1,5 @@
 use crate::ast::AstNode;
+use crate::diagnostic::{ColorConfig, DiagnosticEmitter, Files, StandardEmitter};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::source::Source;
@@ -29,6 +30,7 @@ impl ModuleResolver {
         &mut self,
         module_path: &str,
         current_file: Option<&Path>,
+        files: &mut Files,
     ) -> Result<Vec<AstNode>, String> {
         // Determine the actual file path based on import type
         let file_path = if module_path.starts_with("./") || module_path.starts_with("../") {
@@ -86,7 +88,7 @@ impl ModuleResolver {
         self.import_stack.push(module_path.to_string());
 
         // Parse module
-        let nodes = self.parse_module(&canonical_path)?;
+        let nodes = self.parse_module(&canonical_path, files)?;
 
         // Cache the canonical path
         self.canonical_cache
@@ -130,7 +132,13 @@ impl ModuleResolver {
         Ok(path)
     }
 
-    fn parse_module(&self, file_path: &Path) -> Result<Vec<AstNode>, String> {
+    fn parse_module(&self, file_path: &Path, files: &mut Files) -> Result<Vec<AstNode>, String> {
+        // Read and register the source file
+        let source = std::fs::read_to_string(file_path)
+            .map_err(|e| format!("Failed to open module: {}", e))?;
+
+        let file_id = files.add(file_path, source);
+
         let mut src = Source::new(
             file_path
                 .to_str()
@@ -139,20 +147,27 @@ impl ModuleResolver {
         .map_err(|e| format!("Failed to open module: {}", e))?;
 
         let mut lex = Lexer::new(&mut src);
-        let tokens = lex
-            .lex_all()
-            .map_err(|e| format!("Lexer error in module: {}", e.message))?;
+        let tokens = match lex.lex_all() {
+            Ok(t) => t,
+            Err(e) => {
+                // Use diagnostic system for lexer errors
+                let emitter = StandardEmitter::new(ColorConfig::Auto);
+                let diagnostic = e.to_diagnostic(file_id);
+                emitter.emit(&diagnostic, files);
+                return Err(format!("Lexer error in module {}", file_path.display()));
+            }
+        };
 
         let mut parser = Parser::new(&tokens);
         match parser.parse() {
             Ok(nodes) => Ok(nodes),
-            Err((_, errors)) => Err(format!(
-                "Parse error in module: {}",
-                errors
-                    .first()
-                    .map(|e| e.message.as_str())
-                    .unwrap_or("unknown")
-            )),
+            Err((_, errors)) => {
+                // Use diagnostic system for parser errors
+                let emitter = StandardEmitter::new(ColorConfig::Auto);
+                let diagnostics: Vec<_> = errors.iter().map(|e| e.to_diagnostic(file_id)).collect();
+                emitter.emit_batch(&diagnostics, files);
+                Err(format!("Parse error in module {}", file_path.display()))
+            }
         }
     }
 }

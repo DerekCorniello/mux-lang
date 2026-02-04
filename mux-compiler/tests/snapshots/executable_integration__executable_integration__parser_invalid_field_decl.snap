@@ -4,14 +4,16 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_field_decl.mux`
+error: 2 errors found
 
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_field_decl.mux, line 3:
-        int
-           ^
-Expected field name
+error: Expected field name
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_field_decl.mux:3:8
+   |
+ 3 |     int
+   |        ^
 
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_field_decl.mux, line 4:
-    }
-    ^
-Expected expression, found '}'
+error: Expected expression, found '}'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_field_decl.mux:4:1
+   |
+ 4 | }
+   | ^

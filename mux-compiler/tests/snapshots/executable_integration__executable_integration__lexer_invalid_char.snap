@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_invalid_char.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_invalid_char.mux, line 2:
-    §
-    ^
-unexpected character: '§'
+error: unexpected character: '§'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_invalid_char.mux:2:1
+   |
+ 2 | §
+   | ^

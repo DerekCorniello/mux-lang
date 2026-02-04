@@ -4,9 +4,10 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unterminated_string.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unterminated_string.mux, line 2:
-    "hello
-    ^
-Unterminated string
-  = help: Make sure to close the string with a matching quote
+error: Unterminated string
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unterminated_string.mux:2:1
+   |
+ 2 | "hello
+   | ^^^^^
+   |
+= help: Make sure to close the string with a matching quote

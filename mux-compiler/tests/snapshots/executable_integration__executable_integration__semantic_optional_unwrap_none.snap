@@ -4,14 +4,16 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_optional_unwrap_none.mux`
+error: 2 errors found
 
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_optional_unwrap_none.mux, line 6:
-    auto x = match opt {
-             ^
-match cannot be used as an expression; it can only be used as a statement
+error: match cannot be used as an expression; it can only be used as a statement
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_optional_unwrap_none.mux:6:10
+   |
+ 6 | auto x = match opt {
+   |          ^^^^^
 
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_optional_unwrap_none.mux, line 6:
-    auto x = match opt {
-                       ^
-Expected newline before statement
+error: Expected newline before statement
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_optional_unwrap_none.mux:6:20
+   |
+ 6 | auto x = match opt {
+   |                    ^

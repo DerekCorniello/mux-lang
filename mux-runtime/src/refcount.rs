@@ -298,6 +298,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::mutable_key_type)]
     fn test_nested_collections() {
         use std::collections::BTreeMap;
 

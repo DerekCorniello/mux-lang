@@ -4,14 +4,16 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_type_annotation.mux`
+error: 2 errors found
 
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_type_annotation.mux, line 2:
-    auto x: invalid = 5
-          ^
-Expected '=' after variable name
+error: Expected '=' after variable name
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_type_annotation.mux:2:7
+   |
+ 2 | auto x: invalid = 5
+   |       ^
 
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_type_annotation.mux, line 2:
-    auto x: invalid = 5
-          ^
-Expected expression, found 'Colon'
+error: Expected expression, found 'Colon'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_type_annotation.mux:2:7
+   |
+ 2 | auto x: invalid = 5
+   |       ^

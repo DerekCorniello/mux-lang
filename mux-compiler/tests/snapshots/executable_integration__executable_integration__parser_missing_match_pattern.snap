@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_match_pattern.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_match_pattern.mux, line 4:
-    }
-    ^
-Expected expression, found '}'
+error: Expected expression, found '}'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_match_pattern.mux:4:1
+   |
+ 4 | }
+   | ^

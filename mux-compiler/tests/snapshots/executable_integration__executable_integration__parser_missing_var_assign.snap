@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_var_assign.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_var_assign.mux, line 0:
-    // Should fail: Expected '=' after variable name
-    ^
-Expected expression, found end of input
+error: Expected expression, found end of input
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_var_assign.mux:2:7
+   |
+ 2 | int x =
+   |       ^

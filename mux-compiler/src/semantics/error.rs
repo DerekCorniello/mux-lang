@@ -1,3 +1,4 @@
+use crate::diagnostic::{Diagnostic, FileId, Label};
 use crate::lexer::Span;
 use crate::semantics::format::format_span_location;
 
@@ -29,6 +30,20 @@ impl SemanticError {
             message: format!("{}\n  = help: {}", message.into(), suggestion),
             span,
         }
+    }
+
+    /// Convert to a Diagnostic for formatted output.
+    pub fn to_diagnostic(&self, file_id: FileId) -> Diagnostic {
+        // Split message and help if present
+        let parts: Vec<&str> = self.message.splitn(2, "\n  = help: ").collect();
+        let main_message = parts[0];
+        let help_message = parts.get(1).copied();
+
+        Diagnostic::error()
+            .with_message(main_message)
+            .with_label(Label::primary(self.span, ""))
+            .with_help(help_message)
+            .with_file_id(file_id)
     }
 }
 

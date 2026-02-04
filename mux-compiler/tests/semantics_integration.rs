@@ -39,7 +39,7 @@ fn test_semantic_analysis() {
 
         // Analyze semantics
         let mut analyzer = SemanticAnalyzer::new();
-        let errors = analyzer.analyze(&ast);
+        let errors = analyzer.analyze(&ast, None);
 
         if errors.is_empty() {
             println!("✓ Successfully analyzed: {}", operator_test_path.display());
@@ -84,7 +84,7 @@ fn test_semantic_analysis() {
 
             // Analyze semantics
             let mut analyzer = SemanticAnalyzer::new();
-            let errors = analyzer.analyze(&ast);
+            let errors = analyzer.analyze(&ast, None);
 
             if errors.is_empty() {
                 println!("✓ Successfully analyzed: {}", path.display());

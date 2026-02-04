@@ -4,26 +4,28 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux`
+error: 4 errors found
 
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux, line 2:
-    func foo(int a int b) returns int {
-                   ^
-Expected ')' after parameters
+error: Expected ')' after parameters
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux:2:16
+   |
+ 2 | func foo(int a int b) returns int {
+   |                ^^^
 
+error: Expected expression, found ')'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux:2:21
+   |
+ 2 | func foo(int a int b) returns int {
+   |                     ^
 
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux, line 2:
-    func foo(int a int b) returns int {
-                        ^
-Expected expression, found ')'
+error: Expected expression, found 'Returns'
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux:2:23
+   |
+ 2 | func foo(int a int b) returns int {
+   |                       ^^^^^^^
 
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux, line 2:
-    func foo(int a int b) returns int {
-                          ^
-Expected expression, found 'Returns'
-
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux, line 2:
-    func foo(int a int b) returns int {
-                                      ^
-Expected newline before statement
+error: Expected newline before statement
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux:2:35
+   |
+ 2 | func foo(int a int b) returns int {
+   |                                   ^

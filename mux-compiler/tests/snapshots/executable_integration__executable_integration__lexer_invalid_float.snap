@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_invalid_float.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_invalid_float.mux, line 2:
-    auto x = 1.2.3
-             ^
-Invalid float literal: 1.2.3
+error: Invalid float literal: 1.2.3
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_invalid_float.mux:2:10
+   |
+ 2 | auto x = 1.2.3
+   |          ^^^^^

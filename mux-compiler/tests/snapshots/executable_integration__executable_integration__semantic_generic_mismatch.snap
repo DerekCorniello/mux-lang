@@ -4,8 +4,8 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_generic_mismatch.mux`
-
-In /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_generic_mismatch.mux, line 3:
-    auto p = Pair<int>
-             ^
-Generic type 'Pair' requires 2 type argument(s), got 1
+error: Generic type 'Pair' requires 2 type argument(s), got 1
+--> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_generic_mismatch.mux:3:10
+   |
+ 3 | auto p = Pair<int>
+   |          ^^^^^^^^^
