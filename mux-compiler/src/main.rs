@@ -1,5 +1,6 @@
 mod ast;
 mod codegen;
+mod diagnostic;
 mod lexer;
 mod module_resolver;
 mod parser;
@@ -7,7 +8,8 @@ mod semantics;
 mod source;
 
 use clap::{Parser as ClapParser, Subcommand};
-use lexer::{Lexer, LexerError, Span};
+use diagnostic::{ColorConfig, DiagnosticEmitter, FileId, Files, StandardEmitter};
+use lexer::{Lexer, LexerError};
 use module_resolver::ModuleResolver;
 use parser::{Parser, ParserError};
 use semantics::SemanticAnalyzer;
@@ -18,53 +20,22 @@ use std::path::PathBuf;
 use std::process::{self, Command};
 use std::rc::Rc;
 
-fn print_error_with_location(
-    file_path: &str,
-    source: &str,
-    message: &str,
-    span: Span,
-    help: Option<&str>,
-) {
-    let lines: Vec<&str> = source.lines().collect();
-    let row = span.row_start.saturating_sub(1);
-    let col = span.col_start.saturating_sub(1);
-
-    eprintln!();
-    if row < lines.len() {
-        eprintln!("In {}, line {}:", file_path, span.row_start);
-        eprintln!("    {}", lines[row].trim_end());
-        let indicator = "^".to_string();
-        eprint!("    ");
-        for _ in 0..col {
-            eprint!(" ");
-        }
-        eprintln!("{}", indicator);
-
-        eprintln!("{}", message);
-        if let Some(help_text) = help {
-            eprintln!("Help: {}", help_text);
-        }
-    } else {
-        eprintln!("In {}, line {}:", file_path, span.row_start);
-        eprintln!("{}", message);
-    }
-    eprintln!();
+fn handle_lexer_error(files: &Files, file_id: FileId, error: &LexerError) {
+    let emitter = StandardEmitter::new(ColorConfig::Auto);
+    let diagnostic = error.to_diagnostic(file_id);
+    emitter.emit(&diagnostic, files);
 }
 
-fn handle_lexer_error(file_path: &str, source: &str, error: &LexerError) {
-    print_error_with_location(file_path, source, &error.message, error.span, None);
+fn handle_parser_errors(files: &Files, file_id: FileId, errors: &[ParserError]) {
+    let emitter = StandardEmitter::new(ColorConfig::Auto);
+    let diagnostics: Vec<_> = errors.iter().map(|e| e.to_diagnostic(file_id)).collect();
+    emitter.emit_batch(&diagnostics, files);
 }
 
-fn handle_parser_errors(file_path: &str, source: &str, errors: &[ParserError]) {
-    for error in errors {
-        print_error_with_location(file_path, source, &error.message, error.span, None);
-    }
-}
-
-fn handle_semantic_errors(file_path: &str, source: &str, errors: &[SemanticError]) {
-    for error in errors {
-        print_error_with_location(file_path, source, &error.message, error.span, None);
-    }
+fn handle_semantic_errors(files: &Files, file_id: FileId, errors: &[SemanticError]) {
+    let emitter = StandardEmitter::new(ColorConfig::Auto);
+    let diagnostics: Vec<_> = errors.iter().map(|e| e.to_diagnostic(file_id)).collect();
+    emitter.emit_batch(&diagnostics, files);
 }
 
 /// Mux compiler CLI
@@ -144,6 +115,19 @@ fn main() {
         process::exit(1);
     }
 
+    // Create Files registry for diagnostic tracking
+    let mut files = Files::new();
+
+    // Read source and register it
+    let source_str = match std::fs::read_to_string(file_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error opening file: {}", e);
+            process::exit(1);
+        }
+    };
+    let file_id = files.add(file_path, source_str.clone());
+
     let mut src = match Source::new(
         file_path
             .to_str()
@@ -160,17 +144,7 @@ fn main() {
     let tokens = match lex.lex_all() {
         Ok(t) => t,
         Err(e) => {
-            if let Ok(source_str) = std::fs::read_to_string(file_path) {
-                handle_lexer_error(
-                    file_path
-                        .to_str()
-                        .expect("file path should be valid Unicode"),
-                    &source_str,
-                    &e,
-                );
-            } else {
-                eprintln!("Lexer error: {}", e);
-            }
+            handle_lexer_error(&files, file_id, &e);
             process::exit(1);
         }
     };
@@ -179,19 +153,7 @@ fn main() {
     let nodes = match parser.parse() {
         Ok(n) => n,
         Err((_, errors)) => {
-            if let Ok(source_str) = std::fs::read_to_string(file_path) {
-                handle_parser_errors(
-                    file_path
-                        .to_str()
-                        .expect("file path should be valid Unicode"),
-                    &source_str,
-                    &errors,
-                );
-            } else {
-                for error in &errors {
-                    eprintln!("{}", error);
-                }
-            }
+            handle_parser_errors(&files, file_id, &errors);
             process::exit(1);
         }
     };
@@ -205,19 +167,7 @@ fn main() {
     let mut analyzer = SemanticAnalyzer::new_with_resolver(resolver);
     let errors = analyzer.analyze(&nodes);
     if !errors.is_empty() {
-        if let Ok(source_str) = std::fs::read_to_string(file_path) {
-            handle_semantic_errors(
-                file_path
-                    .to_str()
-                    .expect("file path should be valid Unicode"),
-                &source_str,
-                &errors,
-            );
-        } else {
-            for error in &errors {
-                eprintln!("{}", error);
-            }
-        }
+        handle_semantic_errors(&files, file_id, &errors);
         process::exit(1);
     }
 
@@ -274,7 +224,21 @@ fn main() {
         .output();
 
     match clang_output {
-        Ok(output) if output.status.success() => {}
+        Ok(output) if output.status.success() => {
+            // Show success message only for build command (not run)
+            if !do_run {
+                let emitter = StandardEmitter::new(ColorConfig::Auto);
+                let file_name = file_path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown");
+                eprintln!(
+                    "\n   {} `{}`\n",
+                    emitter.styles.success("Finished building"),
+                    file_name
+                );
+            }
+        }
         Ok(output) => {
             eprintln!("clang failed: {}", String::from_utf8_lossy(&output.stderr));
         }
