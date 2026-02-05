@@ -1,0 +1,387 @@
+/**
+ * Mux Language Documentation - Custom Styles
+ * Inspired by Rust documentation design principles
+ */
+
+/* Color Palette - Clean technical blue */
+:root {
+  /* Primary colors - professional blue tones */
+  --ifm-color-primary: #2C75B8;
+  --ifm-color-primary-dark: #2669a5;
+  --ifm-color-primary-darker: #24629b;
+  --ifm-color-primary-darkest: #1e5180;
+  --ifm-color-primary-light: #3481cb;
+  --ifm-color-primary-lighter: #3c88cf;
+  --ifm-color-primary-lightest: #589ddb;
+  
+  /* Neutrals */
+  --ifm-background-color: #ffffff;
+  --ifm-background-surface-color: #f9f9f9;
+  --ifm-color-emphasis-100: #f5f5f5;
+  --ifm-color-emphasis-200: #ebebeb;
+  --ifm-color-emphasis-300: #d4d4d4;
+  
+  /* Code colors */
+  --ifm-code-background: #f6f6f6;
+  --ifm-code-color: #37352f;
+  
+  /* Typography */
+  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --ifm-font-family-monospace: "Source Code Pro", "SF Mono", Monaco, Inconsolata, "Fira Code", "Fira Mono", "Droid Sans Mono", "Courier New", monospace;
+  --ifm-heading-font-weight: 600;
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.65;
+  
+  /* Code blocks */
+  --ifm-code-font-size: 0.9em;
+  --docusaurus-highlighted-code-line-bg: rgba(206, 66, 43, 0.1);
+  
+  /* Spacing */
+  --ifm-leading: 1.65;
+  --ifm-global-spacing: 1rem;
+  
+  /* Navbar */
+  --ifm-navbar-height: 60px;
+  --ifm-navbar-background-color: #ffffff;
+  --ifm-navbar-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  
+  /* Container */
+  --ifm-container-width: 1280px;
+  --ifm-container-width-xl: 1440px;
+}
+
+/* Dark mode - high contrast, easy on the eyes */
+[data-theme='dark'] {
+  --ifm-color-primary: #4a9eff;
+  --ifm-color-primary-dark: #318dff;
+  --ifm-color-primary-darker: #2482ff;
+  --ifm-color-primary-darkest: #0066e6;
+  --ifm-color-primary-light: #63afff;
+  --ifm-color-primary-lighter: #76baff;
+  --ifm-color-primary-lightest: #a3d1ff;
+  
+  --ifm-background-color: #1b1b1d;
+  --ifm-background-surface-color: #222224;
+  --ifm-color-emphasis-100: #2c2c2e;
+  --ifm-color-emphasis-200: #38383a;
+  --ifm-color-emphasis-300: #48484a;
+  
+  --ifm-code-background: #2c2c2e;
+  --ifm-code-color: #e8e8e8;
+  
+  --docusaurus-highlighted-code-line-bg: rgba(232, 105, 72, 0.2);
+  
+  --ifm-navbar-background-color: #1b1b1d;
+  --ifm-navbar-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Typography improvements */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-feature-settings: "kern" 1;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: var(--ifm-heading-font-weight);
+  letter-spacing: -0.02em;
+}
+
+/* Code styling - like Rust docs */
+code {
+  background-color: var(--ifm-code-background);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 3px;
+  padding: 0.15em 0.4em;
+  font-size: var(--ifm-code-font-size);
+  font-weight: 400;
+}
+
+pre code {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.prism-code {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  font-weight: 400;
+  background: var(--ifm-code-background) !important;
+}
+
+pre[class*="language-"] {
+  background: var(--ifm-code-background);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 6px;
+  padding: 1.25rem;
+  margin: 1rem 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Navbar styling */
+.navbar {
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  box-shadow: none;
+}
+
+.navbar__logo {
+  height: 32px;
+}
+
+.navbar__title {
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.navbar__link {
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.navbar__link--active {
+  color: var(--ifm-color-primary);
+}
+
+/* Hero section */
+.hero {
+  background: linear-gradient(135deg, var(--ifm-background-color) 0%, var(--ifm-background-surface-color) 100%);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.hero__title {
+  font-size: 3.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.hero__subtitle {
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: var(--ifm-color-emphasis-700);
+  margin-top: 1rem;
+}
+
+/* Buttons */
+.button {
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.button--primary {
+  background-color: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+}
+
+.button--primary:hover {
+  background-color: var(--ifm-color-primary-dark);
+  border-color: var(--ifm-color-primary-dark);
+  text-decoration: none;
+}
+
+.button--secondary {
+  background-color: transparent;
+  border: 2px solid var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+
+.button--secondary:hover {
+  background-color: var(--ifm-color-primary);
+  color: white;
+  text-decoration: none;
+}
+
+.button--lg {
+  font-size: 1.125rem;
+  padding: 1rem 2rem;
+}
+
+/* Consistent link hover */
+a {
+  transition: all 0.2s ease;
+}
+
+a:hover {
+  text-decoration: none;
+}
+
+.navbar__link:hover {
+  color: var(--ifm-color-primary);
+}
+
+.footer__link-item:hover {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+}
+
+/* Feature cards */
+.feature-card {
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  padding: 2rem;
+  height: 100%;
+}
+
+.feature-card h3 {
+  color: var(--ifm-color-primary);
+  margin-bottom: 1rem;
+  font-size: 1.25rem;
+}
+
+/* Documentation improvements */
+.markdown {
+  --ifm-h1-font-size: 2.5rem;
+  --ifm-h2-font-size: 2rem;
+  --ifm-h3-font-size: 1.5rem;
+}
+
+.markdown > h2 {
+  margin-top: 3rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.markdown > h3 {
+  margin-top: 2rem;
+}
+
+/* Sidebar */
+.menu__link {
+  border-radius: 4px;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.menu__link--active {
+  background-color: var(--ifm-color-primary);
+  color: white;
+}
+
+.menu__link:hover {
+  background-color: var(--ifm-color-emphasis-100);
+  text-decoration: none;
+}
+
+.menu__link--active:hover {
+  background-color: var(--ifm-color-primary-dark);
+}
+
+/* Table of contents */
+.table-of-contents {
+  font-size: 0.875rem;
+}
+
+.table-of-contents__link {
+  color: var(--ifm-color-emphasis-700);
+  transition: all 0.2s ease;
+}
+
+.table-of-contents__link--active {
+  color: var(--ifm-color-primary);
+  font-weight: 600;
+}
+
+.table-of-contents__link:hover {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+}
+
+/* Admonitions - clean and professional */
+.admonition {
+  border-radius: 6px;
+  border-left-width: 4px;
+}
+
+/* Footer */
+.footer {
+  background-color: var(--ifm-background-surface-color);
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+  padding: 2rem 0;
+}
+
+.footer__title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.footer__link-item {
+  font-size: 0.875rem;
+}
+
+/* Quick Start section on homepage */
+.quick-start {
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  padding: 2rem;
+  margin: 2rem 0;
+}
+
+.quick-start pre {
+  background: var(--ifm-background-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 6px;
+  margin: 1rem 0;
+}
+
+/* Code example tabs */
+.tabs {
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.tabs__item {
+  font-weight: 500;
+}
+
+.tabs__item--active {
+  border-bottom-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+
+/* Responsive improvements */
+@media (max-width: 996px) {
+  .hero__title {
+    font-size: 2.5rem;
+  }
+  
+  .hero__subtitle {
+    font-size: 1.25rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .hero__title {
+    font-size: 2rem;
+  }
+  
+  .hero__subtitle {
+    font-size: 1.125rem;
+  }
+  
+  .button--lg {
+    font-size: 1rem;
+    padding: 0.875rem 1.5rem;
+  }
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Selection color */
+::selection {
+  background-color: var(--ifm-color-primary-lighter);
+  color: white;
+}

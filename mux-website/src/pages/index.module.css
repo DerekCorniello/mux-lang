@@ -1,0 +1,296 @@
+/**
+ * CSS files with the .module.css suffix will be treated as CSS modules
+ * and scoped locally.
+ */
+
+/* Homepage Styles */
+
+.heroBanner {
+  padding: 6rem 0 4rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.heroContent {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.logoContainer {
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: center;
+}
+
+.heroLogo {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+}
+
+.heroTitle {
+  font-size: 3.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.03em;
+  color: var(--ifm-font-color-base);
+}
+
+.heroSubtitle {
+  font-size: 1.25rem;
+  line-height: 1.6;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 2rem;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.installBar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 2rem auto;
+  max-width: 800px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.installCommand {
+  flex: 1;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.875rem;
+  color: var(--ifm-code-color);
+  background: transparent;
+  border: none;
+  padding: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.copyButton {
+  background: var(--ifm-color-primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.copyButton:hover {
+  background: var(--ifm-color-primary-dark);
+}
+
+.copyButton:active {
+  transform: scale(0.98);
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Quick Start Section */
+.quickStart {
+  padding: 4rem 0;
+  background: var(--ifm-background-surface-color);
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.quickStart h2 {
+  margin-bottom: 1.5rem;
+  font-size: 2rem;
+}
+
+.installCode,
+.codeExample {
+  background: var(--ifm-code-background);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 6px;
+  padding: 1.5rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.installCode code,
+.codeExample code {
+  font-family: var(--ifm-font-family-monospace);
+  color: var(--ifm-code-color);
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-weight: 400;
+}
+
+/* Features Section */
+.features {
+  padding: 4rem 0;
+  background: var(--ifm-background-color);
+}
+
+.features h2 {
+  text-align: center;
+  margin-bottom: 3rem;
+  font-size: 2.5rem;
+}
+
+/* Code Showcase Section */
+.codeShowcase {
+  padding: 4rem 0;
+  background: var(--ifm-background-surface-color);
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.codeShowcase h2 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.codeShowcase h3 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: var(--ifm-color-primary);
+}
+
+.showcaseCode {
+  background: var(--ifm-code-background);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 6px;
+  padding: 1.5rem;
+  overflow-x: auto;
+  margin: 1rem 0 2rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.showcaseCode code {
+  font-family: var(--ifm-font-family-monospace);
+  color: var(--ifm-code-color);
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-weight: 400;
+}
+
+/* CTA Section */
+.cta {
+  padding: 5rem 0;
+  background: var(--ifm-background-color);
+}
+
+.cta h2 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Responsive Design */
+@media (max-width: 996px) {
+  .heroBanner {
+    padding: 4rem 0 3rem;
+  }
+
+  .heroTitle {
+    font-size: 2.5rem;
+  }
+
+  .heroSubtitle {
+    font-size: 1.125rem;
+  }
+
+  .heroLogo {
+    width: 100px;
+    height: 100px;
+  }
+
+  .installBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .installCommand {
+    text-align: center;
+  }
+
+  .copyButton {
+    width: 100%;
+  }
+
+  .quickStart .row {
+    flex-direction: column;
+  }
+
+  .features .row {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .codeShowcase .row {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 768px) {
+  .heroBanner {
+    padding: 3rem 0 2rem;
+  }
+
+  .heroTitle {
+    font-size: 2rem;
+  }
+
+  .heroSubtitle {
+    font-size: 1rem;
+  }
+
+  .heroLogo {
+    width: 80px;
+    height: 80px;
+  }
+
+  .installBar {
+    padding: 0.875rem 1rem;
+  }
+
+  .installCommand {
+    font-size: 0.75rem;
+  }
+
+  .buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .buttons .button {
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .codeShowcase h2,
+  .features h2,
+  .cta h2 {
+    font-size: 2rem;
+  }
+
+  .codeShowcase h3 {
+    font-size: 1.25rem;
+  }
+}
