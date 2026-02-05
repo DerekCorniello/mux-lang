@@ -9,9 +9,9 @@
 //! - Match statements for pattern matching
 //! - RC scope management for statements
 
-use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
+use inkwell::AddressSpace;
 
 use crate::ast::{
     ExpressionKind, ExpressionNode, LiteralNode, PatternNode, PrimitiveType, StatementKind,
@@ -1288,7 +1288,7 @@ impl<'a> CodeGenerator<'a> {
                     .current_function_name
                     .as_ref()
                     .ok_or("Nested function outside of parent function")?;
-                let mangled_name = format!("{}_{}", parent_name, func.name);
+                let mangled_name = format!("{}!{}", parent_name, func.name);
 
                 // Store the original function node with its mangled name
                 self.function_nodes

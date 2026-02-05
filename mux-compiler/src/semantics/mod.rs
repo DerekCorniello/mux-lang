@@ -10,7 +10,7 @@ pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
 #[allow(unused_imports)]
 pub use format::{format_span_location, format_unary_op};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -2903,7 +2903,7 @@ impl SemanticAnalyzer {
                             // For functions, set the mangled LLVM name
                             if matches!(symbol.kind, SymbolKind::Function) {
                                 mangled_symbol.llvm_name =
-                                    Some(format!("{}_{}", module_name_for_mangling, name));
+                                    Some(format!("{}!{}", module_name_for_mangling, name));
                             }
                             self.symbol_table
                                 .all_symbols
@@ -3576,7 +3576,7 @@ impl SemanticAnalyzer {
             let mut mangled_symbol = symbol.clone();
             // Set llvm_name for functions
             if matches!(symbol.kind, SymbolKind::Function) {
-                mangled_symbol.llvm_name = Some(format!("{}_{}", module_name_for_mangling, name));
+                mangled_symbol.llvm_name = Some(format!("{}!{}", module_name_for_mangling, name));
             }
             mangled_symbols.insert(name, mangled_symbol);
         }
@@ -3630,7 +3630,7 @@ impl SemanticAnalyzer {
         // Set llvm_name for functions (mangled with module path)
         if matches!(symbol.kind, SymbolKind::Function) {
             let module_name_for_mangling = module_path.replace(['.', '/'], "_");
-            imported_symbol.llvm_name = Some(format!("{}_{}", module_name_for_mangling, item_name));
+            imported_symbol.llvm_name = Some(format!("{}!{}", module_name_for_mangling, item_name));
         }
 
         self.symbol_table.add_symbol(local_name, imported_symbol)?;
@@ -3655,7 +3655,7 @@ impl SemanticAnalyzer {
                 // Set llvm_name for functions (mangled with module path)
                 if matches!(symbol.kind, SymbolKind::Function) {
                     imported_symbol.llvm_name =
-                        Some(format!("{}_{}", module_name_for_mangling, name));
+                        Some(format!("{}!{}", module_name_for_mangling, name));
                 }
 
                 // Try to add, but ignore duplicate errors since we already checked

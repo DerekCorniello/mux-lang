@@ -258,17 +258,33 @@ fn main() {
     }
 
     if do_run {
-        let status = Command::new(&exe_file).status();
-        match status {
-            Ok(status) if status.success() => {}
-            Ok(status) => {
-                eprintln!("Program exited with status: {}", status);
-                process::exit(1);
+    let output = Command::new(&exe_file)
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            // Optional: print stdout on success
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            print!("{}", stdout);
+        }
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            if !stdout.is_empty() {
+                eprintln!("stdout:\n{}", stdout);
             }
-            Err(e) => {
-                eprintln!("Failed to execute program: {}", e);
-                process::exit(1);
+            if !stderr.is_empty() {
+                eprintln!("stderr:\n{}", stderr);
             }
+
+            eprintln!("Program exited with status: {}", output.status);
+            process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Failed to execute program: {}", e);
+            process::exit(1);
         }
     }
+}
 }

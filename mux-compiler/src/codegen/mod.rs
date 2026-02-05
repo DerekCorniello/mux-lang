@@ -14,12 +14,12 @@
 //! - statements: Statement code generation
 //! - types: Type conversion functions
 
-use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{FunctionValue, PointerValue};
+use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 use crate::ast::{AstNode, Field, FunctionNode, StatementKind, StatementNode, TypeNode};
@@ -976,7 +976,7 @@ impl<'a> CodeGenerator<'a> {
             self.function_nodes.insert(func.name.clone(), func.clone());
 
             // Declare with mangled name
-            let mangled_name = format!("{}_{}", module_name, func.name);
+            let mangled_name = format!("{}!{}", module_name, func.name);
             self.declare_function_with_name(func, &mangled_name)?;
         }
 
@@ -1168,7 +1168,7 @@ impl<'a> CodeGenerator<'a> {
 
         // Generate user-defined functions for imported modules
         for (module_name_mangled, func) in imported_functions {
-            let mangled_name = format!("{}_{}", module_name_mangled, func.name);
+            let mangled_name = format!("{}!{}", module_name_mangled, func.name);
             self.generate_function_with_llvm_name(&func, &mangled_name)?;
         }
 

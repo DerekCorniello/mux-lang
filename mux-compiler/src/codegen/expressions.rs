@@ -10,9 +10,9 @@
 //! - Index access
 //! - Match expressions
 
-use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
+use inkwell::AddressSpace;
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,
@@ -1628,7 +1628,7 @@ impl<'a> CodeGenerator<'a> {
                                         }
                                     } else if symbol.kind == crate::semantics::SymbolKind::Enum {
                                         // handle enum constructor calls like Shape.Circ
-                                        let constructor_name = format!("{}_{}", name, field);
+                                        let constructor_name = format!("{}!{}", name, field);
                                         if let Some(constructor_func) =
                                             self.module.get_function(&constructor_name)
                                         {
@@ -2289,22 +2289,22 @@ impl<'a> CodeGenerator<'a> {
                                 // First check if this is a nested function call
                                 let mut lookup_name = name.to_string();
 
-                                // Check for nested function: try parent_name_function_name mangling
+                                // Check for nested function: try parent_name!function_name mangling
                                 // For deeply nested functions, try all parent levels
                                 if let Some(parent_fn) = &self.current_function_name {
                                     // First try direct parent mangling
-                                    let mangled_name = format!("{}_{}", parent_fn, name);
+                                    let mangled_name = format!("{}!{}", parent_fn, name);
                                     if self.module.get_function(&mangled_name).is_some() {
                                         lookup_name = mangled_name;
                                     } else {
                                         // If not found, try stripping nested layers
-                                        // e.g., outer_compute -> outer
-                                        let parts: Vec<&str> = parent_fn.split('_').collect();
+                                        // e.g., outer!compute -> outer
+                                        let parts: Vec<&str> = parent_fn.split('!').collect();
                                         if parts.len() > 1 {
                                             // Try each prefix level (from shortest to longest)
                                             for i in 1..parts.len() {
-                                                let prefix = parts[0..i].join("_");
-                                                let mangled_name = format!("{}_{}", prefix, name);
+                                                let prefix = parts[0..i].join("!");
+                                                let mangled_name = format!("{}!{}", prefix, name);
                                                 if self.module.get_function(&mangled_name).is_some()
                                                 {
                                                     lookup_name = mangled_name;

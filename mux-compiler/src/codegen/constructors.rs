@@ -5,9 +5,9 @@
 use super::CodeGenerator;
 use crate::ast::{EnumVariant, ExpressionNode, Field, PrimitiveType, TypeKind};
 use crate::semantics::{GenericContext, MethodSig, Type};
-use inkwell::AddressSpace;
 use inkwell::types::BasicType;
 use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 impl<'a> CodeGenerator<'a> {
@@ -18,7 +18,7 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<(), String> {
         for variant in variants {
             let variant_name = &variant.name;
-            let full_name = format!("{}_{}", name, variant_name);
+            let full_name = format!("{}!{}", name, variant_name);
 
             // params: variant.data
             let data_types = if let Some(ref d) = variant.data {

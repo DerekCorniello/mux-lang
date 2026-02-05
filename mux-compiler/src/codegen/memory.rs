@@ -4,8 +4,8 @@
 
 use super::CodeGenerator;
 use crate::semantics::Type;
-use inkwell::AddressSpace;
 use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::AddressSpace;
 
 impl<'a> CodeGenerator<'a> {
     /// Push a new RC scope onto the stack. Call this when entering a new scope
