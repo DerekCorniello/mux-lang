@@ -3,7 +3,7 @@ name: Feature request
 about: Suggest a new feature or improvement
 title: "[Feature] - "
 labels: feature
-assignees: ""
+assignees: "DerekCorniello"
 ---
 
 **Is your feature request related to a problem? Please describe.**

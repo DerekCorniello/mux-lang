@@ -3,7 +3,7 @@ name: Bug report
 about: Report a bug or incorrect behavior
 title: "[Bug] - "
 labels: bug
-assignees: ""
+assignees: "DerekCorniello"
 ---
 
 **Description**
