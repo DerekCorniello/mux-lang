@@ -22,10 +22,9 @@ target
 
 # Build artifacts
 *.so
-test_scripts/*.ll
 *.ll
-*.mux
 test_scripts/*
 !test_scripts/*.mux
-!test_scripts/error_cases/
+test_scripts/error_cases/*.mux
 !test_scripts/error_cases/*.mux
+test_scripts/error_cases/*
