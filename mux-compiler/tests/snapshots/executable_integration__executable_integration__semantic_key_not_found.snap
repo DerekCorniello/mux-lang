@@ -4,4 +4,7 @@ expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
      Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_key_not_found.mux`
+stdout:
+Key not found in map
+
 Program exited with status: exit status: 1
