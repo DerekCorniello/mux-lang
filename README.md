@@ -144,7 +144,6 @@ auto bad5 = "a" == 1       // ERROR: cannot compare string and int
 // Function argument type mismatches
 func takes_string(string s) returns void { }
 takes_string(123)          // ERROR: expected string, got int
-
 // Correct usage requires explicit conversion
 auto good1 = 1 + (1.0).to_int()           // OK: 2
 auto good2 = "hello" + (3).to_string()    // OK: "hello3"
@@ -214,14 +213,6 @@ Mux maintains **three distinct type representations**:
 | `TypeNode` | AST representation, source locations |
 | `Type` | Semantic analysis, type resolution |
 | `BasicTypeEnum` | LLVM IR generation |
-
-```
-TypeNode ──type_node_to_type()──► Type ──llvm_type_from_mux_type()──► BasicTypeEnum
-   │                                    │
-   │  (semantic analysis)               │  (codegen)
-   ▼                                    ▼
-  Errors                          LLVM Type System
-```
 
 The separation enables error reporting with source locations while keeping semantic analysis LLVM-independent.
 
@@ -325,8 +316,8 @@ func identity<T>(T value) returns T {
     return value
 }
 
-auto a = identity(42)        // Generates: identity$$int
-auto b = identity("hello")   // Generates: identity$$string
+auto a = identity(42)        // Generates: identity$int
+auto b = identity("hello")   // Generates: identity$string
 ```
 
 The compiler substitutes types in the AST before code generation:
@@ -336,7 +327,7 @@ The compiler substitutes types in the AST before code generation:
 func identity<T>(T value) returns T { ... }
 
 // After substitution for T = int
-func identity$$int(int value) returns int { ... }
+func identity$int(int value) returns int { ... }
 ```
 
 #### Why Monomorphization?
@@ -561,8 +552,8 @@ Mux supports standard arithmetic operations with strict type requirements (no im
 | `-` | Subtraction | `int`, `float` | `10 - 4` |
 | `*` | Multiplication | `int`, `float` | `6 * 7` |
 | `/` | Division | `int`, `float` | `15 / 3` |
-| `%` | Modulo | `int`, `float` | `10 % 3` // 1 |
-| `**` | Exponentiation | `int`, `float` | `2 ** 3` // 8 |
+| `%` | Modulo | `int`, `float` | `10 % 3` |
+| `**` | Exponentiation | `int`, `float` | `2 ** 3` |
 
 **Exponentiation Operator (`**`):**
 - Right-associative: `2 ** 3 ** 2` equals `2 ** (3 ** 2)` = 512
@@ -625,30 +616,6 @@ const int MAX = 100
 ### 6.3.1 Technical Design: Short-Circuit Logical Operators
 
 The `&&` and `||` operators use **LLVM control flow** for short-circuit evaluation, not simple boolean operations.
-
-#### Control Flow Graph
-
-For `a && b`:
-
-```
-          ┌──────────────┐
-          │  evaluate a  │
-          └──────┬───────┘
-                 │
-            ┌────▼────┐
-            │ a true? │  ← conditional branch
-            └────┬────┘
-         false │    │ true
-               ▼    ▼
-          ┌──────┐  ┌──────────┐
-          │ merge│  │ evaluate b│
-          │ false│  └────┬─────┘
-          └──────┘       │
-                        ▼
-                  ┌──────────┐
-                  │  merge   │  ← phi node combines results
-                  └──────────┘
-```
 
 #### Phi Nodes for Result Merging
 
@@ -1494,10 +1461,10 @@ Mux uses **atomic reference counting** for deterministic memory management. Ever
 ```
 ┌──────────────────┬─────────────┐
 │   RefHeader      │    Value    │
-│ ref_count: u64   │  (payload) │
+│ ref_count: u64   │  (payload)  │
 └──────────────────┴─────────────┘
-          ↑
-      Allocation pointer
+    ^
+    Allocation pointer
 ```
 
 The `RefHeader` uses `AtomicUsize` for thread-safe atomic operations. The `Value` payload contains the actual data.
@@ -1619,7 +1586,7 @@ import math
 auto result = math.fibonacci(10)
 ```
 
-Generates: `math_fibonacci` (not `fibonacci`)
+Generates: `math!fibonacci` (not `fibonacci`)
 
 This prevents conflicts when multiple modules define functions with the same name.
 

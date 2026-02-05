@@ -853,6 +853,7 @@ impl<'a> Parser<'a> {
                 if !self.matches(&[TokenType::Comma]) {
                     break;
                 }
+                self.skip_newlines();
             }
         }
 
@@ -1378,6 +1379,7 @@ impl<'a> Parser<'a> {
                             if !self.matches(&[TokenType::Comma]) {
                                 break;
                             }
+                            self.skip_newlines();
                         }
                     }
                     self.consume_token(
@@ -1786,6 +1788,7 @@ impl<'a> Parser<'a> {
                         if !self.matches(&[TokenType::Comma]) {
                             break;
                         }
+                        self.skip_newlines();
                     }
                 }
 
@@ -1815,6 +1818,7 @@ impl<'a> Parser<'a> {
             if !self.matches(&[TokenType::Comma]) {
                 break;
             }
+            self.skip_newlines();
         }
         Ok(args)
     }
@@ -1986,8 +1990,49 @@ impl<'a> Parser<'a> {
             }
 
             // parse remaining entries
-            while self.matches(&[TokenType::Comma]) {
+            loop {
                 self.skip_newlines();
+
+                if self.matches(&[TokenType::Comma]) {
+                    // Trailing comma: if next is closing brace, just stop
+                    if self.check(TokenType::CloseBrace) {
+                        break;
+                    }
+                    self.skip_newlines();
+                } else {
+                    // Look ahead past any remaining newlines to find comma
+                    let mut i = 0;
+                    let mut found_newlines = false;
+                    while let Some(t) = self.peek_ahead(i) {
+                        if t.token_type == TokenType::NewLine {
+                            found_newlines = true;
+                            i += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    // Check if we found comma after newlines AND there's an expression after
+                    if found_newlines
+                        && self
+                            .peek_ahead(i)
+                            .is_some_and(|t| t.token_type == TokenType::Comma)
+                        && self.peek_ahead(i + 1).is_some_and(|t| {
+                            !matches!(
+                                t.token_type,
+                                TokenType::CloseBrace | TokenType::NewLine | TokenType::Comma
+                            )
+                        })
+                    {
+                        // Consume the newlines and comma
+                        for _ in 0..=i {
+                            self.current += 1;
+                        }
+                        self.skip_newlines();
+                    } else {
+                        break;
+                    }
+                }
+
                 if is_map {
                     let key = self.parse_expression()?;
                     self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
@@ -1997,7 +2042,6 @@ impl<'a> Parser<'a> {
                     let elem = self.parse_expression()?;
                     set_elements.push(elem);
                 }
-                self.skip_newlines();
             }
         }
 
@@ -2118,11 +2162,47 @@ impl<'a> Parser<'a> {
 
                         self.skip_newlines();
 
-                        if !self.matches(&[TokenType::Comma]) {
-                            break;
+                        if self.matches(&[TokenType::Comma]) {
+                            // Trailing comma: if next is closing bracket, just stop
+                            if self.check(TokenType::CloseBracket) {
+                                break;
+                            }
+                            self.skip_newlines();
+                        } else {
+                            // Look ahead past any remaining newlines to find comma
+                            let mut i = 0;
+                            let mut found_newlines = false;
+                            while let Some(t) = self.peek_ahead(i) {
+                                if t.token_type == TokenType::NewLine {
+                                    found_newlines = true;
+                                    i += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            // Check if we found comma after newlines AND there's an expression after
+                            if found_newlines
+                                && self
+                                    .peek_ahead(i)
+                                    .is_some_and(|t| t.token_type == TokenType::Comma)
+                                && self.peek_ahead(i + 1).is_some_and(|t| {
+                                    !matches!(
+                                        t.token_type,
+                                        TokenType::CloseBracket
+                                            | TokenType::NewLine
+                                            | TokenType::Comma
+                                    )
+                                })
+                            {
+                                // Consume the newlines and comma
+                                for _ in 0..=i {
+                                    self.current += 1;
+                                }
+                                self.skip_newlines();
+                            } else {
+                                break;
+                            }
                         }
-
-                        self.skip_newlines();
                     }
                 }
 
@@ -2164,6 +2244,7 @@ impl<'a> Parser<'a> {
                         if !self.matches(&[TokenType::Comma]) {
                             break;
                         }
+                        self.skip_newlines();
                     }
                 }
 
@@ -2284,7 +2365,9 @@ impl<'a> Parser<'a> {
                 let mut args = Vec::new();
                 if !self.check(TokenType::CloseParen) {
                     loop {
+                        self.skip_newlines();
                         args.push(self.parse_expression()?);
+                        self.skip_newlines();
 
                         if !self.matches(&[TokenType::Comma]) {
                             break;
@@ -2418,6 +2501,29 @@ impl<'a> Parser<'a> {
                     span: expr_span.combine(&op_span),
                 };
             } else {
+                // Look ahead past newlines to see if a postfix operator follows
+                let mut lookahead = self.current;
+                let mut found_newlines = false;
+                while let Some(token) = self.tokens.get(lookahead) {
+                    if token.token_type == TokenType::NewLine {
+                        found_newlines = true;
+                        lookahead += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                if found_newlines {
+                    if let Some(next) = self.tokens.get(lookahead) {
+                        match next.token_type {
+                            TokenType::Dot | TokenType::OpenParen | TokenType::OpenBracket => {
+                                self.current = lookahead;
+                                continue;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 break;
             }
         }
