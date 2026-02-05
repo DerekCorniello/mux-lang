@@ -127,24 +127,44 @@ pre[class*="language-"] {
 .navbar {
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
   box-shadow: none;
+  align-items: center;
+}
+
+.navbar__inner {
+  align-items: center;
+}
+
+.navbar__items {
+  align-items: center;
 }
 
 .navbar__logo {
   height: 32px;
+  display: flex;
+  align-items: center;
 }
 
 .navbar__title {
   font-weight: 700;
   font-size: 1.25rem;
+  display: flex;
+  align-items: center;
 }
 
 .navbar__link {
   font-weight: 500;
   font-size: 0.95rem;
+  display: flex;
+  align-items: center;
 }
 
 .navbar__link--active {
   color: var(--ifm-color-primary);
+}
+
+.navbar__item {
+  display: flex;
+  align-items: center;
 }
 
 /* Hero section */

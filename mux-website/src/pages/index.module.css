@@ -21,12 +21,27 @@
   margin-bottom: 2rem;
   display: flex;
   justify-content: center;
+  position: relative;
+}
+
+.logoContainer::before {
+  content: '';
+  position: absolute;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(44, 117, 184, 0.12) 0%, transparent 70%);
+  filter: blur(20px);
+  z-index: 0;
 }
 
 .heroLogo {
   width: 120px;
   height: 120px;
   object-fit: contain;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 4px 12px rgba(44, 117, 184, 0.2));
 }
 
 .heroTitle {

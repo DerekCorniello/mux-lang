@@ -20,7 +20,7 @@ function HomepageHeader() {
             A Programming Language<br />For The People
           </Heading>
           <p className={styles.heroSubtitle}>
-            Combining Python's ease of use with Rust-inspired safety and Go-like minimalism.<br />
+            Python's ease of use with a Rust-like type system and Go's simplicity.<br />
             Strong static typing, LLVM-powered performance, and reference-counted memory management.
           </p>
           
