@@ -3,6 +3,7 @@
 ## Critical Rules
 - **MOST IMPORTANT: No hacks or workarounds** - write clean, production-ready code. No hardcoding, no temporary solutions, no fighting the type system. If something is hard, ask for clarification. Then, do it the right way.
 - **Thoroughly understand existing code** - read relevant modules before implementing anything new. Follow existing patterns.
+- **If unsure about code or design** - it is useful to be more conversational with the user in order to get the best help. If the user is unsure, explore more to find an answer based on your best judgement
 - **Ensure edits are small and tested often** - build and test frequently during development.
 - **Follow Rust best practices** - idiomatic code, proper error handling, clear naming.
 - **NEVER touch git** - do not run git commands, do not create commits, do not modify git config
