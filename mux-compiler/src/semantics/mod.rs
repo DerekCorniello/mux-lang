@@ -229,6 +229,7 @@ impl SemanticAnalyzer {
                         original_name: None,
                         llvm_name: None,
                         default_param_count: 0,
+                        variants: None,
                     },
                 )
                 .expect("builtin function registration should not fail");
@@ -991,6 +992,7 @@ impl SemanticAnalyzer {
                             original_name: None,
                             llvm_name: None,
                             default_param_count: 0,
+                            variants: None,
                         },
                     )?;
                 }
@@ -1940,6 +1942,7 @@ impl SemanticAnalyzer {
                             original_name: None,
                             llvm_name: None,
                             default_param_count: default_count,
+                            variants: None,
                         },
                     ) {
                         self.errors.push(e);
@@ -2019,6 +2022,7 @@ impl SemanticAnalyzer {
                                 original_name: None,
                                 llvm_name: None,
                                 default_param_count: 0,
+                                variants: None,
                             },
                         );
                     }
@@ -2177,6 +2181,7 @@ impl SemanticAnalyzer {
                             original_name: None,
                             llvm_name: None,
                             default_param_count: 0,
+                            variants: None,
                         },
                     ) {
                         self.errors.push(e);
@@ -2184,7 +2189,9 @@ impl SemanticAnalyzer {
                 }
                 AstNode::Enum { name, variants, .. } => {
                     let mut methods = std::collections::HashMap::new();
+                    let mut variant_names = Vec::new();
                     for variant in variants {
+                        variant_names.push(variant.name.clone());
                         let params = variant
                             .data
                             .clone()
@@ -2215,6 +2222,7 @@ impl SemanticAnalyzer {
                             original_name: None,
                             llvm_name: None,
                             default_param_count: 0,
+                            variants: Some(variant_names),
                         },
                     ) {
                         self.errors.push(e);
@@ -2287,6 +2295,7 @@ impl SemanticAnalyzer {
                             original_name: None,
                             llvm_name: None,
                             default_param_count: 0,
+                            variants: None,
                         },
                     ) {
                         self.errors.push(e);
@@ -2406,6 +2415,7 @@ impl SemanticAnalyzer {
                     original_name: None,
                     llvm_name: None,
                     default_param_count: 0,
+                    variants: None,
                 },
             )?;
         }
@@ -2425,6 +2435,7 @@ impl SemanticAnalyzer {
                     original_name: None,
                     llvm_name: None,
                     default_param_count: 0,
+                    variants: None,
                 },
             )?;
         }
@@ -2444,6 +2455,7 @@ impl SemanticAnalyzer {
                     original_name: None,
                     llvm_name: None,
                     default_param_count: 0,
+                    variants: None,
                 },
             )?;
         }
@@ -2556,6 +2568,7 @@ impl SemanticAnalyzer {
                         original_name: None,
                         llvm_name: None,
                         default_param_count: default_count,
+                        variants: None,
                     },
                 )?;
             }
@@ -2606,6 +2619,7 @@ impl SemanticAnalyzer {
                         original_name: None,
                         llvm_name: None,
                         default_param_count: 0,
+                        variants: None,
                     },
                 )?;
             }
@@ -2627,6 +2641,7 @@ impl SemanticAnalyzer {
                         original_name: None,
                         llvm_name: None,
                         default_param_count: 0,
+                        variants: None,
                     },
                 )?;
             }
@@ -2656,6 +2671,7 @@ impl SemanticAnalyzer {
                         original_name: None,
                         llvm_name: None,
                         default_param_count: 0,
+                        variants: None,
                     },
                 )?;
             }
@@ -2706,6 +2722,7 @@ impl SemanticAnalyzer {
                         original_name: None,
                         llvm_name: None,
                         default_param_count: 0,
+                        variants: None,
                     },
                 )?;
                 self.analyze_block(body, files.as_deref_mut())?;
@@ -2782,6 +2799,10 @@ impl SemanticAnalyzer {
                         }
                     }
                 }
+
+                // Check exhaustiveness
+                self.check_match_exhaustiveness(&expr_type, arms, expr.span)?;
+
                 return Ok(());
             }
             StatementKind::Return(Some(expr)) => {
@@ -2980,6 +3001,75 @@ impl SemanticAnalyzer {
         }
         Ok(())
     }
+
+    // Check if a match expression covers all variants of an enum
+    fn check_match_exhaustiveness(
+        &self,
+        expr_type: &Type,
+        arms: &[crate::ast::MatchArm],
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        // Only check for Named types (user-defined enums)
+        if let Type::Named(type_name, _) = expr_type {
+            // Look up the enum symbol
+            if let Some(symbol) = self.symbol_table.lookup(type_name) {
+                if let Some(variant_names) = &symbol.variants {
+                    let mut covered: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
+                    let mut has_wildcard = false;
+
+                    for arm in arms {
+                        match &arm.pattern {
+                            PatternNode::Wildcard => {
+                                has_wildcard = true;
+                                break;
+                            }
+                            PatternNode::EnumVariant { name, .. } => {
+                                covered.insert(name.clone());
+                            }
+                            PatternNode::Identifier(name) => {
+                                // Check if this identifier is actually a variant name
+                                if variant_names.contains(name) {
+                                    covered.insert(name.clone());
+                                }
+                                // Otherwise it's a variable binding, doesn't cover a specific variant
+                            }
+                            // Literals don't cover specific variants
+                            _ => {}
+                        }
+                    }
+
+                    // If there's a wildcard, pattern is exhaustive by design
+                    if has_wildcard {
+                        return Ok(());
+                    }
+
+                    // Check if all variants are covered
+                    let uncovered: Vec<&String> = variant_names
+                        .iter()
+                        .filter(|v| !covered.contains(*v))
+                        .collect();
+
+                    if !uncovered.is_empty() {
+                        let uncovered_list = uncovered
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return Err(SemanticError {
+                            message: format!(
+                                "Non-exhaustive match: patterns not covering all variants of '{}'. Missing: {}",
+                                type_name, uncovered_list
+                            ),
+                            span: expr_span,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     // Set types for pattern variables based on expected type
     // Uses expr.span for pattern errors to point to the match expression
     fn set_pattern_types(
@@ -3003,6 +3093,7 @@ impl SemanticAnalyzer {
                         original_name: None,
                         llvm_name: None,
                         default_param_count: 0,
+                        variants: None,
                     },
                 )?;
             }
@@ -3476,6 +3567,7 @@ impl SemanticAnalyzer {
                             original_name: None,
                             llvm_name: None,
                             default_param_count: 0,
+                            variants: None,
                         },
                     )?;
                 }
@@ -3599,6 +3691,7 @@ impl SemanticAnalyzer {
                 original_name: None,
                 llvm_name: None,
                 default_param_count: 0,
+                variants: None,
             },
         )?;
 
@@ -3701,6 +3794,7 @@ impl SemanticAnalyzer {
                             original_name: None,
                             llvm_name: None,
                             default_param_count: 0,
+                            variants: None,
                         },
                     )?;
                 } else if symbol_name == "None" {
@@ -3717,6 +3811,7 @@ impl SemanticAnalyzer {
                             original_name: None,
                             llvm_name: None,
                             default_param_count: 0,
+                            variants: None,
                         },
                     )?;
                 }
@@ -3742,6 +3837,7 @@ impl SemanticAnalyzer {
                             original_name: None,
                             llvm_name: None,
                             default_param_count: 0,
+                            variants: None,
                         },
                     )?;
                 }

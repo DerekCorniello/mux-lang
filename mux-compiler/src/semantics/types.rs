@@ -26,6 +26,7 @@ pub struct Symbol {
     pub original_name: Option<String>, // For imported symbols with aliases, stores the original source name
     pub llvm_name: Option<String>,     // For imported symbols, stores the mangled LLVM name
     pub default_param_count: usize, // Number of parameters with default values (must be at the end)
+    pub variants: Option<Vec<String>>, // For enums: list of variant names. None for non-enums
 }
 
 #[derive(Debug, Clone, PartialEq)]

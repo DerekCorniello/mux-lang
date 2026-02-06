@@ -2,8 +2,6 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
-     Running `target/debug/mux run /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field_modify.mux`
 error: Cannot assign to const field 'x'
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field_modify.mux:6:1
    |
