@@ -43,6 +43,9 @@ function HomepageHeader() {
               </svg>
             </button>
           </div>
+          <p style={{fontSize: '0.875rem', color: 'var(--ifm-color-emphasis-600)', marginTop: '0.5rem'}}>
+            Requires LLVM and clang. Run <code>mux doctor</code> to verify your setup.
+          </p>
         </div>
       </div>
     </header>

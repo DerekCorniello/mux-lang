@@ -7,32 +7,51 @@ Get up and running with Mux in just a few minutes.
 Before you begin, make sure you have the following installed:
 
 - **Rust** (1.70 or later) - [Install Rust](https://rustup.rs/)
-- **LLVM** (14 or later)
-- **clang** (for linking compiled programs)
+- **LLVM** (14 or later) - Required for code generation
+- **clang** - Required for linking compiled programs
 - **Git**
 
 ## Installation
 
-### 1. Clone the Repository
+### Option 1: Install from crates.io (Recommended)
+
+The easiest way to install Mux is using cargo:
+
+```bash
+cargo install mux-lang
+```
+
+This will install the Mux compiler and runtime to your cargo bin directory.
+
+**Note:** Make sure LLVM and clang are installed on your system first, as they are required for compilation and linking.
+
+### Option 2: Build from Source
+
+If you prefer to build from source:
 
 ```bash
 git clone https://github.com/derekcorniello/mux-lang
 cd mux-lang
-```
-
-### 2. Build the Compiler
-
-```bash
 cargo build --release
 ```
 
 The compiler will be built in `target/release/mux-compiler`.
 
-### 3. Verify Installation
+## Verify Installation
+
+After installation, verify everything is working:
 
 ```bash
-cargo run -- --version
+mux --version
 ```
+
+Or use the built-in doctor command to check your setup:
+
+```bash
+mux doctor
+```
+
+The `mux doctor` command will verify that all required dependencies (LLVM, clang) are properly installed and accessible.
 
 ## Your First Mux Program
 
@@ -49,7 +68,7 @@ func main() returns void {
 ### 2. Run the Program
 
 ```bash
-cargo run -- run hello.mux
+mux run hello.mux
 ```
 
 You should see:
@@ -76,7 +95,7 @@ func main() returns void {
 
 Run it:
 ```bash
-cargo run -- run numbers.mux
+mux run numbers.mux
 ```
 
 ### Explore the Language
@@ -90,16 +109,19 @@ cargo run -- run numbers.mux
 
 ```bash
 # Run a Mux program
-cargo run -- run <file.mux>
+mux run <file.mux>
 
-# Build the compiler in release mode
+# Check installation and dependencies
+mux doctor
+
+# Show version
+mux --version
+
+# Build the compiler from source (if developing)
 cargo build --release
 
-# Run tests
+# Run tests (if developing)
 cargo test
-
-# Check code without building
-cargo check
 ```
 
 ## Getting Help
