@@ -8,7 +8,7 @@ import Heading from '@theme/Heading';
 import styles from './index.module.css';
 
 function HomepageHeader() {
-  const {siteConfig} = useDocusaurusContext();
+  useDocusaurusContext();
   return (
     <header className={clsx('hero', styles.heroBanner)}>
       <div className="container">
@@ -27,16 +27,20 @@ function HomepageHeader() {
           {/* Install command bar */}
           <div className={styles.installBar}>
             <code className={styles.installCommand}>
-              git clone https://github.com/DerekCorniello/mux-lang && cd mux-lang && cargo build --release
+                cargo install mux-lang
             </code>
             <button 
               className={styles.copyButton}
               onClick={() => {
-                navigator.clipboard.writeText('git clone https://github.com/DerekCorniello/mux-lang && cd mux-lang && cargo build --release');
+                navigator.clipboard.writeText('cargo install mux-lang');
               }}
               title="Copy to clipboard"
+              type="button"
             >
-              Copy
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
             </button>
           </div>
         </div>
@@ -51,37 +55,33 @@ function QuickStartSection() {
       <div className="container">
         <div className="row">
           <div className="col col--6">
-            <Heading as="h2">Quick Start</Heading>
-            <p>Install the Mux compiler and get started in minutes:</p>
-            <pre className={styles.installCode}>
-              <code>
-{`# Clone the repository
-git clone https://github.com/derekcorniello/mux-lang
-cd mux-lang
-
-# Build the compiler
-cargo build --release
-
-# Run your first program
-cargo run -- run examples/hello.mux`}
-              </code>
-            </pre>
-          </div>
-          <div className="col col--6">
             <Heading as="h2">Hello, Mux!</Heading>
             <p>Your first Mux program:</p>
             <pre className={styles.codeExample}>
               <code>
 {`func main() returns void {
     print("Hello, Mux!")
-    
-    auto numbers = [1, 2, 3, 4, 5]
-    for num in numbers {
-        print(num.to_string())
-    }
 }`}
               </code>
             </pre>
+            <p>
+              <Link to="/docs/getting-started/quick-start">Get Started</Link> with the full installation guide.
+            </p>
+          </div>
+          <div className="col col--6">
+            <Heading as="h2">Quick Examples</Heading>
+            <p>Pattern matching with Result types:</p>
+            <pre className={styles.codeExample}>
+              <code>
+{`match result {
+    Ok(value) { print(value.to_string()) }
+    Err(error) { print("Error: " + error) }
+}`}
+              </code>
+            </pre>
+            <p>
+              <Link to="/docs/language-guide">Explore the Language Guide</Link> for more.
+            </p>
           </div>
         </div>
       </div>
@@ -99,8 +99,8 @@ function FeaturesSection() {
               <Heading as="h3">Simple Yet Powerful</Heading>
               <p>
                 Clean, readable syntax inspired by modern languages. No semicolons,
-                clear type inference with <code>auto</code>, and explicit error handling
-                with <code>Result</code> and <code>Optional</code>.
+                clear type inference with `auto`, and explicit error handling
+                with `Result` and `Optional`.
               </p>
             </div>
           </div>
@@ -119,7 +119,7 @@ function FeaturesSection() {
               <Heading as="h3">LLVM-Powered</Heading>
               <p>
                 Native performance through LLVM code generation.
-                Fast compilation and optimized runtime with
+                Fast running time, and runtime with
                 reference-counted memory management.
               </p>
             </div>
@@ -151,7 +151,7 @@ function FeaturesSection() {
               <Heading as="h3">Modern Features</Heading>
               <p>
                 Generics, interfaces, enums as tagged unions, collection literals,
-                lambda functions, and a comprehensive standard library.
+                lambda functions, and const/common data.
               </p>
             </div>
           </div>
@@ -212,7 +212,7 @@ match result {
 }
 
 auto stack = Stack<int>.new()
-stack.push(42)`}
+stack.push(100)`}
               </code>
             </pre>
           </div>
@@ -233,17 +233,17 @@ function CTASection() {
         <div className={styles.buttons}>
           <Link
             className="button button--primary button--lg"
-            to="/docs/quick-start">
+            to="/docs/getting-started/quick-start">
             Get Started
           </Link>
           <Link
             className="button button--secondary button--lg"
-            to="/docs/examples">
-            View Examples
+            to="/docs/language-guide">
+            Language Guide
           </Link>
         </div>
         <p style={{marginTop: '2rem', fontSize: '0.875rem', color: 'var(--ifm-color-emphasis-600)'}}>
-          Mux is open source and licensed under MIT. Contributions welcome!
+          Mux is open source and licensed under MIT.
         </p>
       </div>
     </section>
@@ -251,7 +251,7 @@ function CTASection() {
 }
 
 export default function Home(): ReactNode {
-  const {siteConfig} = useDocusaurusContext();
+  useDocusaurusContext();
   return (
     <Layout
       title="A Programming Language For The People"

@@ -103,7 +103,7 @@ Explore the detailed language documentation:
 
 ## Getting Help
 
-- [Quick Start Guide](../quick-start.md)
+- [Quick Start Guide](../getting-started/quick-start.md)
 - [GitHub Issues](https://github.com/derekcorniello/mux-lang/issues)
 
 <!-- TODO: Add examples page link when created -->

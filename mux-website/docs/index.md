@@ -25,7 +25,9 @@ func main() returns void {
 
 ## Getting Started
 
-Ready to dive in? Check out the [Quick Start](./quick-start.md) guide to install Mux and write your first program.
+Ready to dive in? Check out the [Quick Start](./getting-started/quick-start.md) guide to install Mux and write your first program.
+
+Or learn [Why Mux exists](./getting-started/why-mux.md) and what problems it aims to solve.
 
 ## Language Features
 

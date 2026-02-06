@@ -58,6 +58,11 @@ const config: Config = {
       defaultMode: 'light',
       respectPrefersColorScheme: true,
     },
+    docs: {
+      sidebar: {
+        hideable: true,
+      },
+    },
     navbar: {
       title: 'Mux',
       logo: {
@@ -72,65 +77,20 @@ const config: Config = {
           label: 'Documentation',
         },
         {
-          to: '/docs/quick-start',
+          to: '/docs/getting-started/quick-start',
           label: 'Quick Start',
           position: 'left',
-        },
-        {
-          href: 'https://github.com/derekcorniello/mux-lang',
-          label: 'GitHub',
-          position: 'right',
         },
       ],
     },
     footer: {
       style: 'dark',
-      links: [
-        {
-          title: 'Documentation',
-          items: [
-            {
-              label: 'Getting Started',
-              to: '/docs/quick-start',
-            },
-            {
-              label: 'Language Reference',
-              to: '/docs/language',
-            },
-            {
-              label: 'Examples',
-              to: '/docs/examples',
-            },
-          ],
-        },
-        {
-          title: 'Community',
-          items: [
-            {
-              label: 'GitHub Discussions',
-              href: 'https://github.com/derekcorniello/mux-lang/discussions',
-            },
-            {
-              label: 'Issues',
-              href: 'https://github.com/derekcorniello/mux-lang/issues',
-            },
-          ],
-        },
-        {
-          title: 'More',
-          items: [
-            {
-              label: 'GitHub',
-              href: 'https://github.com/derekcorniello/mux-lang',
-            },
-            {
-              label: 'Contributing',
-              href: 'https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md',
-            },
-          ],
-        },
-      ],
-      copyright: `Copyright © ${new Date().getFullYear()} Derek Corniello. Licensed under MIT.`,
+      links: [],
+      copyright: `<p>Copyright © ${new Date().getFullYear()} Derek Corniello. Licensed under MIT.</p><br>
+        <a href="https://github.com/derekcorniello/mux-lang" target="_blank" rel="noopener noreferrer">Source Code</a> ·
+        <a href="https://github.com/derekcorniello/mux-lang/discussions" target="_blank" rel="noopener noreferrer">Discussions</a> ·
+        <a href="https://github.com/derekcorniello/mux-lang/issues" target="_blank" rel="noopener noreferrer">Issues</a> ·
+        <a href="https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing</a>`,
     },
     prism: {
       theme: prismThemes.github,

@@ -81,14 +81,10 @@ cargo run -- run numbers.mux
 
 ### Explore the Language
 
-- Read the [Language Reference](./language/index.md) to learn about Mux's features
-- Learn about [Types and Variables](./language/types.md)
-- Understand [Variable Declarations](./language/variables.md)
-
-<!-- TODO: Add links when these pages are created:
-- Check out Examples for more code samples
-- Learn about Error Handling with Result and Optional
--->
+- Read the [Language Guide](../language-guide/index.md) to learn about Mux's features
+- Learn about [Types and Variables](../language-guide/types.md)
+- Understand [Variable Declarations](../language-guide/variables.md)
+- Discover [Why Mux exists](./why-mux.md)
 
 ## Common Commands
 
@@ -108,22 +104,15 @@ cargo check
 
 ## Getting Help
 
-- [Language Reference](./language/index.md)
+- [Language Guide](../language-guide/index.md)
+- [Why Mux?](./why-mux.md)
 - [GitHub Issues](https://github.com/derekcorniello/mux-lang/issues)
-
-<!-- TODO: Add contributing guide link when page is created -->
 
 ## What's Next?
 
 Now that you have Mux installed, explore the documentation:
 
-- [Language Reference](./language/index.md) - Complete language overview
-- [Types and Variables](./language/types.md) - Type system and conversions
-- [Variable Declarations](./language/variables.md) - Using auto and const
-
-<!-- TODO: Add links when these pages are created:
-- Functions
-- Control Flow
-- Classes and Interfaces
-- Error Handling
--->
+- [Language Guide](../language-guide/index.md) - Complete language overview
+- [Types and Variables](../language-guide/types.md) - Type system and conversions
+- [Variable Declarations](../language-guide/variables.md) - Using auto and const
+- [Design Philosophy](../design-notes/philosophy.md) - Why Mux is designed the way it is

@@ -91,14 +91,29 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -0.02em;
 }
 
+h2 {
+  margin-bottom: 1rem;
+}
+
+.markdown > h2 {
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+}
+
+.markdown > h2:first-of-type {
+  margin-top: 0;
+}
+
 /* Code styling - like Rust docs */
 code {
   background-color: var(--ifm-code-background);
   border: 1px solid var(--ifm-color-emphasis-200);
   border-radius: 3px;
-  padding: 0.15em 0.4em;
-  font-size: var(--ifm-code-font-size);
+  padding: 0.05em 0.3em;
+  font-size: 0.8em;
   font-weight: 400;
+  position: relative;
+  top: -0.05em;
 }
 
 pre code {
@@ -186,44 +201,6 @@ pre[class*="language-"] {
   margin-top: 1rem;
 }
 
-/* Buttons */
-.button {
-  font-weight: 600;
-  border-radius: 6px;
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.button--primary {
-  background-color: var(--ifm-color-primary);
-  border-color: var(--ifm-color-primary);
-}
-
-.button--primary:hover {
-  background-color: var(--ifm-color-primary-dark);
-  border-color: var(--ifm-color-primary-dark);
-  text-decoration: none;
-}
-
-.button--secondary {
-  background-color: transparent;
-  border: 2px solid var(--ifm-color-primary);
-  color: var(--ifm-color-primary);
-}
-
-.button--secondary:hover {
-  background-color: var(--ifm-color-primary);
-  color: white;
-  text-decoration: none;
-}
-
-.button--lg {
-  font-size: 1.125rem;
-  padding: 1rem 2rem;
-}
-
 /* Consistent link hover */
 a {
   transition: all 0.2s ease;
@@ -295,14 +272,10 @@ a:hover {
   background-color: var(--ifm-color-primary-dark);
 }
 
-/* Table of contents */
-.table-of-contents {
-  font-size: 0.875rem;
-}
-
 .table-of-contents__link {
   color: var(--ifm-color-emphasis-700);
   transition: all 0.2s ease;
+  padding: 0.25rem 0;
 }
 
 .table-of-contents__link--active {
@@ -395,6 +368,13 @@ a:hover {
   }
 }
 
+/* Horizontal rule styling */
+hr {
+  border: 0;
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+  margin: 2rem 0;
+}
+
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
@@ -404,4 +384,131 @@ html {
 ::selection {
   background-color: var(--ifm-color-primary-lighter);
   color: white;
+}
+
+/* Hide edit this page link */
+.theme-edit-this-page {
+  display: none !important;
+}
+
+/* Footer links styling */
+.footer__links {
+  margin-top: 0;
+}
+
+.footer__link-item {
+  color: var(--ifm-color-content-secondary);
+  font-size: 0.875rem;
+  margin-right: 1.5rem;
+}
+
+.footer__link-item:hover {
+  color: var(--ifm-color-primary);
+}
+
+.footer__copyright {
+  color: var(--ifm-color-content-secondary);
+  font-size: 0.875rem;
+}
+
+.footer__copyright a {
+  color: var(--ifm-color-content-secondary);
+  margin: 0 0.5rem;
+}
+
+.footer__copyright a:hover {
+  color: var(--ifm-color-primary);
+}
+
+/* Sidebar collapse toggle button - positioned at bottom center */
+.theme-doc-sidebar-collapse-button {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  padding: 0;
+  z-index: 10;
+}
+
+.theme-doc-sidebar-collapse-button:hover {
+  background: var(--ifm-color-emphasis-100);
+}
+
+/* Replace the default chevron icon with a simple arrow */
+.theme-doc-sidebar-collapse-button svg {
+  display: none;
+}
+
+.theme-doc-sidebar-collapse-button::before {
+  content: '';
+  display: block;
+  width: 16px;
+  height: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a7a7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='15 18 9 12 15 6'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+/* When sidebar is collapsed, show expand icon (pointing right) */
+.theme-doc-sidebar-collapse-button[aria-label="Expand sidebar"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a7a7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 18 15 12 9 6'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+/* Ensure sidebar menu has padding for the toggle button */
+.theme-doc-sidebar-menu {
+  padding-bottom: 4rem;
+}
+
+/* Footer styling */
+.footer {
+  padding: 1.5rem 0;
+}
+
+.footer__title {
+  display: none;
+}
+
+.footer__links {
+  margin-top: 0;
+}
+
+.footer__items {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.footer__link-item {
+  color: var(--ifm-color-content-secondary);
+  font-size: 0.875rem;
+  margin: 0 0.75rem;
+}
+
+.footer__link-item:hover {
+  color: var(--ifm-color-primary);
+}
+
+.footer__copyright {
+  color: var(--ifm-color-content-secondary);
+  font-size: 0.875rem;
+  margin-top: 1rem;
+}
+
+.footer__copyright a {
+  color: var(--ifm-color-content-secondary);
+  margin: 0 0.5rem;
+}
+
+.footer__copyright a:hover {
+  color: var(--ifm-color-primary);
 }
