@@ -14,12 +14,12 @@
 //! - statements: Statement code generation
 //! - types: Type conversion functions
 
+use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{FunctionValue, PointerValue};
-use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 use crate::ast::{AstNode, Field, FunctionNode, StatementKind, StatementNode, TypeNode};

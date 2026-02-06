@@ -6,9 +6,9 @@
 //! - Module initialization functions
 //! - Main function generation
 
+use inkwell::AddressSpace;
 use inkwell::types::BasicMetadataTypeEnum;
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::AddressSpace;
 
 use crate::ast::{AstNode, FunctionNode, PrimitiveType, StatementNode, TypeKind};
 use crate::semantics::Type;

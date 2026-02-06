@@ -10,9 +10,9 @@
 //! - Index access
 //! - Match expressions
 
+use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
-use inkwell::AddressSpace;
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,

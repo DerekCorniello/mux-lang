@@ -5,9 +5,9 @@
 use super::CodeGenerator;
 use crate::ast::{AstNode, EnumVariant, Field, PrimitiveType, TypeKind, TypeNode};
 use crate::semantics::MethodSig;
+use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, IntValue};
-use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 impl<'a> CodeGenerator<'a> {

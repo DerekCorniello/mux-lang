@@ -2,6 +2,21 @@
 name = "mux"
 version = "0.1.0"
 edition = "2024"
+description = "The Mux Programming Language Compiler"
+authors = ["Derek Corniello"]
+repository = "https://github.com/DerekCorniello/mux-lang"
+license = "MIT"
+keywords = ["mux", "compiler", "language"]
+categories = ["development-tools", "language-bindings"]
+exclude = [
+    "../test_scripts/",
+    "tests/",
+    "../run_all_test_scripts.sh",
+    "../run_all_error_cases.sh",
+    "../mux-website/",
+    "../AGENTS.md",
+    "../CONTRIBUTING.md"
+]
 
 [dependencies]
 ordered-float = "4.2"
