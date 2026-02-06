@@ -44,6 +44,12 @@ Or learn [Why Mux exists](./getting-started/why-mux.md) and what problems it aim
 
 Mux is currently in active development. The language specification, compiler, and tooling are evolving. Expect breaking changes and incomplete features as we work towards a stable release.
 
+**Current Limitations:**
+- No LSP (Language Server Protocol) support yet
+- No code formatter available
+- Standard library is under active development
+- Breaking changes are expected
+
 ## Community
 
 - [GitHub Repository](https://github.com/derekcorniello/mux-lang)

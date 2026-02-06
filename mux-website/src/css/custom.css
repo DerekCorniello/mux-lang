@@ -1,119 +1,141 @@
 /**
  * Mux Language Documentation - Custom Styles
- * Inspired by Rust documentation design principles
+ * Modern, distinctive design with Space Grotesk and Source Sans 3
  */
 
-/* Color Palette - Clean technical blue */
+/* Import distinctive fonts */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* Color Palette - Refined technical blue */
 :root {
-  /* Primary colors - professional blue tones */
-  --ifm-color-primary: #2C75B8;
-  --ifm-color-primary-dark: #2669a5;
-  --ifm-color-primary-darker: #24629b;
-  --ifm-color-primary-darkest: #1e5180;
-  --ifm-color-primary-light: #3481cb;
-  --ifm-color-primary-lighter: #3c88cf;
-  --ifm-color-primary-lightest: #589ddb;
+  /* Primary colors - refined blue */
+  --ifm-color-primary: #2563eb;
+  --ifm-color-primary-dark: #1d4ed8;
+  --ifm-color-primary-darker: #1e40af;
+  --ifm-color-primary-darkest: #1e3a8a;
+  --ifm-color-primary-light: #3b82f6;
+  --ifm-color-primary-lighter: #60a5fa;
+  --ifm-color-primary-lightest: #93c5fd;
   
-  /* Neutrals */
-  --ifm-background-color: #ffffff;
-  --ifm-background-surface-color: #f9f9f9;
-  --ifm-color-emphasis-100: #f5f5f5;
-  --ifm-color-emphasis-200: #ebebeb;
-  --ifm-color-emphasis-300: #d4d4d4;
+  /* Neutrals - warmer, more sophisticated */
+  --ifm-background-color: #fafafa;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-color-emphasis-100: #f3f4f6;
+  --ifm-color-emphasis-200: #e5e7eb;
+  --ifm-color-emphasis-300: #d1d5db;
+  --ifm-color-emphasis-700: #374151;
+  --ifm-color-emphasis-800: #1f2937;
   
-  /* Code colors */
-  --ifm-code-background: #f6f6f6;
-  --ifm-code-color: #37352f;
+  /* Code colors - refined */
+  --ifm-code-background: #f3f4f6;
+  --ifm-code-color: #1f2937;
   
-  /* Typography */
-  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --ifm-font-family-monospace: "Source Code Pro", "SF Mono", Monaco, Inconsolata, "Fira Code", "Fira Mono", "Droid Sans Mono", "Courier New", monospace;
+  /* Typography - distinctive font stack */
+  --ifm-font-family-base: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+  --ifm-heading-font-family: 'Space Grotesk', sans-serif;
   --ifm-heading-font-weight: 600;
-  --ifm-font-size-base: 16px;
-  --ifm-line-height-base: 1.65;
+  --ifm-font-size-base: 17px;
+  --ifm-line-height-base: 1.7;
   
   /* Code blocks */
-  --ifm-code-font-size: 0.9em;
-  --docusaurus-highlighted-code-line-bg: rgba(206, 66, 43, 0.1);
+  --ifm-code-font-size: 0.875em;
+  --docusaurus-highlighted-code-line-bg: rgba(37, 99, 235, 0.1);
   
   /* Spacing */
-  --ifm-leading: 1.65;
-  --ifm-global-spacing: 1rem;
+  --ifm-leading: 1.7;
+  --ifm-global-spacing: 1.25rem;
   
   /* Navbar */
-  --ifm-navbar-height: 60px;
-  --ifm-navbar-background-color: #ffffff;
-  --ifm-navbar-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --ifm-navbar-height: 64px;
+  --ifm-navbar-background-color: rgba(255, 255, 255, 0.95);
+  --ifm-navbar-shadow: none;
+  --ifm-navbar-border-bottom: 1px solid var(--ifm-color-emphasis-200);
   
   /* Container */
   --ifm-container-width: 1280px;
   --ifm-container-width-xl: 1440px;
 }
 
-/* Dark mode - high contrast, easy on the eyes */
+/* Dark mode - refined contrast */
 [data-theme='dark'] {
-  --ifm-color-primary: #4a9eff;
-  --ifm-color-primary-dark: #318dff;
-  --ifm-color-primary-darker: #2482ff;
-  --ifm-color-primary-darkest: #0066e6;
-  --ifm-color-primary-light: #63afff;
-  --ifm-color-primary-lighter: #76baff;
-  --ifm-color-primary-lightest: #a3d1ff;
+  --ifm-color-primary: #60a5fa;
+  --ifm-color-primary-dark: #3b82f6;
+  --ifm-color-primary-darker: #2563eb;
+  --ifm-color-primary-darkest: #1d4ed8;
+  --ifm-color-primary-light: #93c5fd;
+  --ifm-color-primary-lighter: #bfdbfe;
+  --ifm-color-primary-lightest: #dbeafe;
   
-  --ifm-background-color: #1b1b1d;
-  --ifm-background-surface-color: #222224;
-  --ifm-color-emphasis-100: #2c2c2e;
-  --ifm-color-emphasis-200: #38383a;
-  --ifm-color-emphasis-300: #48484a;
+  --ifm-background-color: #0f172a;
+  --ifm-background-surface-color: #1e293b;
+  --ifm-color-emphasis-100: #1e293b;
+  --ifm-color-emphasis-200: #334155;
+  --ifm-color-emphasis-300: #475569;
+  --ifm-color-emphasis-700: #cbd5e1;
+  --ifm-color-emphasis-800: #e2e8f0;
   
-  --ifm-code-background: #2c2c2e;
-  --ifm-code-color: #e8e8e8;
+  --ifm-code-background: #1e293b;
+  --ifm-code-color: #e2e8f0;
   
-  --docusaurus-highlighted-code-line-bg: rgba(232, 105, 72, 0.2);
+  --docusaurus-highlighted-code-line-bg: rgba(96, 165, 250, 0.15);
   
-  --ifm-navbar-background-color: #1b1b1d;
-  --ifm-navbar-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --ifm-navbar-background-color: rgba(15, 23, 42, 0.95);
+  --ifm-navbar-shadow: none;
 }
 
 /* Typography improvements */
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
 }
 
 body {
   font-feature-settings: "kern" 1;
   text-rendering: optimizeLegibility;
+  letter-spacing: -0.01em;
 }
 
+/* Headings use Space Grotesk for distinctive look */
 h1, h2, h3, h4, h5, h6 {
+  font-family: var(--ifm-heading-font-family);
   font-weight: var(--ifm-heading-font-weight);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+h1 {
+  font-size: 2.75rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
 }
 
 h2 {
+  font-size: 2rem;
+  font-weight: 600;
   margin-bottom: 1rem;
+  margin-top: 2.5rem;
 }
 
-.markdown > h2 {
-  margin-top: 3rem;
-  margin-bottom: 1rem;
+h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  margin-top: 2rem;
 }
 
-.markdown > h2:first-of-type {
-  margin-top: 0;
-}
-
-/* Code styling - like Rust docs */
+/* Code styling - refined inline code */
 code {
+  font-family: var(--ifm-font-family-monospace);
   background-color: var(--ifm-code-background);
   border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 3px;
-  padding: 0.05em 0.3em;
-  font-size: 0.8em;
-  font-weight: 400;
-  position: relative;
-  top: -0.05em;
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+  font-size: 0.85em;
+  font-weight: 500;
+  vertical-align: middle;
+  line-height: 1;
 }
 
 pre code {
@@ -129,20 +151,170 @@ pre code {
   background: var(--ifm-code-background) !important;
 }
 
-pre[class*="language-"] {
-  background: var(--ifm-code-background);
+/* Unified Terminal Code Block - Used everywhere */
+.terminal-code {
+  background: #1e1e1e;
   border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 6px;
-  padding: 1.25rem;
+  border-radius: 8px;
+  padding: 0;
   margin: 1rem 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  position: relative;
+  overflow: hidden;
 }
 
-/* Navbar styling */
+/* Terminal header bar */
+.terminal-code::before {
+  content: '';
+  display: block;
+  height: 32px;
+  background: linear-gradient(to bottom, #323232 0%, #2b2b2b 100%);
+  border-bottom: 1px solid #404040;
+}
+
+/* Mac-style window buttons (left side) */
+.terminal-code::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  width: 12px;
+  height: 12px;
+  background: #ff5f57;
+  border-radius: 50%;
+  box-shadow: 
+    20px 0 0 #febc2e,
+    40px 0 0 #28c840;
+}
+
+/* Filename display in header (centered) */
+.terminal-code[data-filename]::before {
+  content: attr(data-filename);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  background: linear-gradient(to bottom, #323232 0%, #2b2b2b 100%);
+  border-bottom: 1px solid #404040;
+  color: #9ca3af;
+  font-size: 0.75rem;
+  font-family: var(--ifm-font-family-monospace);
+  padding: 0 80px; /* Make room for buttons on left and copy on right */
+}
+
+/* Terminal code content */
+.terminal-code code {
+  display: block;
+  padding: 1rem 1.25rem;
+  background: transparent;
+  border: none;
+  color: #e8e8e8;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  margin: 0;
+  font-family: var(--ifm-font-family-monospace);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* Copy button in terminal header */
+.terminal-code .terminal-copy-button {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 4px;
+  color: #9ca3af;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.terminal-code .terminal-copy-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.terminal-code .terminal-copy-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Documentation code blocks (markdown) - EXACT SAME properties as .terminal-code */
+pre[class*="language-"] {
+  background: #1e1e1e;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  padding: 0;
+  margin: 1rem 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+pre[class*="language-"]::before {
+  content: '';
+  display: block;
+  height: 32px;
+  background: linear-gradient(to bottom, #323232 0%, #2b2b2b 100%);
+  border-bottom: 1px solid #404040;
+}
+
+pre[class*="language-"]::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  width: 12px;
+  height: 12px;
+  background: #ff5f57;
+  border-radius: 50%;
+  box-shadow: 
+    20px 0 0 #febc2e,
+    40px 0 0 #28c840;
+}
+
+pre[class*="language-"][data-filename]::before {
+  content: attr(data-filename);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  background: linear-gradient(to bottom, #323232 0%, #2b2b2b 100%);
+  border-bottom: 1px solid #404040;
+  color: #9ca3af;
+  font-size: 0.75rem;
+  font-family: var(--ifm-font-family-monospace);
+  padding: 0 80px;
+}
+
+pre[class*="language-"] code {
+  display: block;
+  padding: 1rem 1.25rem;
+  background: transparent;
+  border: none;
+  color: #e8e8e8;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  margin: 0;
+  font-family: var(--ifm-font-family-monospace);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* Navbar styling - refined */
 .navbar {
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
   box-shadow: none;
-  align-items: center;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .navbar__inner {
@@ -154,16 +326,19 @@ pre[class*="language-"] {
 }
 
 .navbar__logo {
-  height: 32px;
+  height: 36px;
   display: flex;
   align-items: center;
+  margin-right: 0.75rem;
 }
 
 .navbar__title {
+  font-family: var(--ifm-heading-font-family);
   font-weight: 700;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   display: flex;
   align-items: center;
+  letter-spacing: -0.02em;
 }
 
 .navbar__link {
@@ -171,6 +346,13 @@ pre[class*="language-"] {
   font-size: 0.95rem;
   display: flex;
   align-items: center;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.navbar__link:hover {
+  color: var(--ifm-color-primary);
 }
 
 .navbar__link--active {
@@ -182,23 +364,35 @@ pre[class*="language-"] {
   align-items: center;
 }
 
-/* Hero section */
+/* Hero section - more impactful */
 .hero {
-  background: linear-gradient(135deg, var(--ifm-background-color) 0%, var(--ifm-background-surface-color) 100%);
+  background: linear-gradient(180deg, var(--ifm-background-surface-color) 0%, var(--ifm-background-color) 100%);
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  padding: 5rem 0 4rem;
 }
 
 .hero__title {
+  font-family: var(--ifm-heading-font-family);
   font-size: 3.5rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, var(--ifm-color-primary-darkest) 0%, var(--ifm-color-primary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .hero__subtitle {
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 400;
   color: var(--ifm-color-emphasis-700);
-  margin-top: 1rem;
+  margin-top: 0;
+  line-height: 1.6;
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* Consistent link hover */
@@ -223,15 +417,18 @@ a:hover {
 .feature-card {
   background: var(--ifm-background-surface-color);
   border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 2rem;
   height: 100%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .feature-card h3 {
+  font-family: var(--ifm-heading-font-family);
   color: var(--ifm-color-primary);
   margin-bottom: 1rem;
   font-size: 1.25rem;
+  font-weight: 600;
 }
 
 /* Documentation improvements */

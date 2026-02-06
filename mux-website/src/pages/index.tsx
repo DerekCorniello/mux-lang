@@ -1,4 +1,5 @@
 import type {ReactNode} from 'react';
+import {useState} from 'react';
 import clsx from 'clsx';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
@@ -7,8 +8,68 @@ import Heading from '@theme/Heading';
 
 import styles from './index.module.css';
 
+// Copy button icon component
+function CopyIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </svg>
+  );
+}
+
+// Checkmark icon for copied state
+function CheckIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+  );
+}
+
+// Terminal code block component with copy button
+function TerminalCodeBlock({ 
+  filename, 
+  children, 
+  className = '' 
+}: { 
+  filename: string; 
+  children: string; 
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <pre className={`terminal-code ${className}`} data-filename={filename}>
+      <button 
+        className="terminal-copy-button"
+        onClick={handleCopy}
+        title={copied ? "Copied!" : "Copy to clipboard"}
+        type="button"
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </button>
+      <code>{children}</code>
+    </pre>
+  );
+}
+
 function HomepageHeader() {
+  const [copied, setCopied] = useState(false);
   useDocusaurusContext();
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText('cargo install mux-lang');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <header className={clsx('hero', styles.heroBanner)}>
       <div className="container">
@@ -24,27 +85,22 @@ function HomepageHeader() {
             Strong static typing, LLVM-powered performance, and reference-counted memory management.
           </p>
           
-          {/* Install command bar */}
+          {/* Install command bar - kept as is */}
           <div className={styles.installBar}>
             <code className={styles.installCommand}>
                 cargo install mux-lang
             </code>
             <button 
               className={styles.copyButton}
-              onClick={() => {
-                navigator.clipboard.writeText('cargo install mux-lang');
-              }}
-              title="Copy to clipboard"
+              onClick={handleCopy}
+              title={copied ? "Copied!" : "Copy to clipboard"}
               type="button"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
+              {copied ? <CheckIcon /> : <CopyIcon />}
             </button>
           </div>
           <p style={{fontSize: '0.875rem', color: 'var(--ifm-color-emphasis-600)', marginTop: '0.5rem'}}>
-            Requires LLVM and clang. Run <code>mux doctor</code> to verify your setup.
+            Requires LLVM 17 and clang. Run <code>mux doctor</code> to verify your setup.
           </p>
         </div>
       </div>
@@ -60,13 +116,11 @@ function QuickStartSection() {
           <div className="col col--6">
             <Heading as="h2">Hello, Mux!</Heading>
             <p>Your first Mux program:</p>
-            <pre className={styles.codeExample}>
-              <code>
+            <TerminalCodeBlock filename="hello.mux" className={styles.codeExample}>
 {`func main() returns void {
     print("Hello, Mux!")
 }`}
-              </code>
-            </pre>
+            </TerminalCodeBlock>
             <p>
               <Link to="/docs/getting-started/quick-start">Get Started</Link> with the full installation guide.
             </p>
@@ -74,14 +128,12 @@ function QuickStartSection() {
           <div className="col col--6">
             <Heading as="h2">Quick Examples</Heading>
             <p>Pattern matching with Result types:</p>
-            <pre className={styles.codeExample}>
-              <code>
+            <TerminalCodeBlock filename="example.mux" className={styles.codeExample}>
 {`match result {
     Ok(value) { print(value.to_string()) }
     Err(error) { print("Error: " + error) }
 }`}
-              </code>
-            </pre>
+            </TerminalCodeBlock>
             <p>
               <Link to="/docs/language-guide">Explore the Language Guide</Link> for more.
             </p>
@@ -96,34 +148,37 @@ function FeaturesSection() {
   return (
     <section className={styles.features}>
       <div className="container">
+        <Heading as="h2" style={{textAlign: 'center', marginBottom: '3rem'}}>
+          Why Choose Mux?
+        </Heading>
         <div className="row">
           <div className="col col--4">
             <div className="feature-card">
-              <Heading as="h3">Simple Yet Powerful</Heading>
+              <Heading as="h3">Simple & Readable</Heading>
               <p>
-                Clean, readable syntax inspired by modern languages. No semicolons,
-                clear type inference with `auto`, and explicit error handling
-                with `Result` and `Optional`.
+                Clean syntax with no semicolons, clear type inference using `auto`,
+                and explicit error handling with `Result` and `Optional` types.
+                Code that is easy to read and maintain.
               </p>
             </div>
           </div>
           <div className="col col--4">
             <div className="feature-card">
-              <Heading as="h3">Strong Static Typing</Heading>
+              <Heading as="h3">Type Safe</Heading>
               <p>
-                Catch errors at compile time with strict type checking.
-                No implicit conversions, generics with monomorphization,
-                and zero-cost abstractions.
+                Strong static typing catches errors at compile time. No implicit
+                conversions, powerful generics with monomorphization, and
+                compile-time exhaustiveness checking.
               </p>
             </div>
           </div>
           <div className="col col--4">
             <div className="feature-card">
-              <Heading as="h3">LLVM-Powered</Heading>
+              <Heading as="h3">Fast & Efficient</Heading>
               <p>
-                Native performance through LLVM code generation.
-                Fast running time, and runtime with
-                reference-counted memory management.
+                Native performance through LLVM code generation. Reference-counted
+                memory management provides safety without garbage collection
+                pauses or complex ownership rules.
               </p>
             </div>
           </div>
@@ -133,9 +188,9 @@ function FeaturesSection() {
             <div className="feature-card">
               <Heading as="h3">Pattern Matching</Heading>
               <p>
-                Rust-style pattern matching with guards for elegant control flow.
-                Match on enums, optionals, results, and primitives with
-                exhaustiveness checking.
+                Expressive pattern matching with guards for elegant control flow.
+                Match on enums, Optionals, Results, and primitives with complete
+                type safety.
               </p>
             </div>
           </div>
@@ -143,18 +198,19 @@ function FeaturesSection() {
             <div className="feature-card">
               <Heading as="h3">Memory Safe</Heading>
               <p>
-                Automatic memory management through reference counting.
-                No manual memory allocation, no garbage collection pauses,
-                deterministic cleanup.
+                Automatic memory management using reference counting. No manual
+                allocation, no garbage collector, and deterministic cleanup
+                without a complex borrow checker.
               </p>
             </div>
           </div>
           <div className="col col--4">
             <div className="feature-card">
-              <Heading as="h3">Modern Features</Heading>
+              <Heading as="h3">Modern & Expressive</Heading>
               <p>
-                Generics, interfaces, enums as tagged unions, collection literals,
-                lambda functions, and const/common data.
+                Full-featured with generics, interfaces, tagged union enums,
+                collection literals, and lambda functions. A modern language
+                for modern development.
               </p>
             </div>
           </div>
@@ -174,8 +230,7 @@ function CodeExampleSection() {
         <div className="row">
           <div className="col col--6">
             <Heading as="h3">Type-Safe Error Handling</Heading>
-            <pre className={styles.showcaseCode}>
-              <code>
+            <TerminalCodeBlock filename="error-handling.mux" className={styles.showcaseCode}>
 {`func divide(int a, int b) returns Result<int, string> {
     if b == 0 {
         return Err("division by zero")
@@ -192,13 +247,11 @@ match result {
         print("Error: " + error)
     }
 }`}
-              </code>
-            </pre>
+            </TerminalCodeBlock>
           </div>
           <div className="col col--6">
             <Heading as="h3">Generics & Collections</Heading>
-            <pre className={styles.showcaseCode}>
-              <code>
+            <TerminalCodeBlock filename="generics.mux" className={styles.showcaseCode}>
 {`class Stack<T> {
     list<T> items
     
@@ -216,8 +269,7 @@ match result {
 
 auto stack = Stack<int>.new()
 stack.push(100)`}
-              </code>
-            </pre>
+            </TerminalCodeBlock>
           </div>
         </div>
       </div>

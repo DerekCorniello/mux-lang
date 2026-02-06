@@ -6,8 +6,8 @@ Get up and running with Mux in just a few minutes.
 
 Before you begin, make sure you have the following installed:
 
-- **Rust** (1.70 or later) - [Install Rust](https://rustup.rs/)
-- **LLVM** (14 or later) - Required for code generation
+- **Rust** (1.85 or later) - [Install Rust](https://rustup.rs/)
+- **LLVM** (17) - Required for code generation
 - **clang** - Required for linking compiled programs
 - **Git**
 
@@ -129,6 +129,17 @@ cargo test
 - [Language Guide](../language-guide/index.md)
 - [Why Mux?](./why-mux.md)
 - [GitHub Issues](https://github.com/derekcorniello/mux-lang/issues)
+
+## Current Limitations
+
+Mux is actively being developed. Here are some things to be aware of:
+
+- **No LSP (Language Server Protocol)** - Editor support is limited to basic syntax highlighting
+- **No Code Formatter** - There is currently no automated code formatting tool
+- **Standard Library Under Development** - The stdlib is incomplete and APIs may change
+- **Breaking Changes Expected** - The language is evolving, so expect syntax and semantic changes
+
+We are working on these features, but they are not yet available. Contributions are welcome!
 
 ## What's Next?
 
