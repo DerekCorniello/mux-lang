@@ -1,4 +1,5 @@
 mod ast;
+mod build_config;
 mod codegen;
 mod diagnostic;
 mod lexer;
@@ -16,7 +17,7 @@ use semantics::SemanticAnalyzer;
 use semantics::SemanticError;
 use source::Source;
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::rc::Rc;
 
@@ -228,23 +229,45 @@ fn main() {
     }
 
     // build executable
+    // Use ./ prefix to ensure we run the local executable, not a system command
+    // (e.g., "test" would find the shell built-in instead of ./test)
+    // Executable goes next to the source file unless -o is specified
     let exe_file = if let Some(out) = &output {
-        out.to_path_buf()
+        let out_path = out.to_path_buf();
+        if out_path.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
+            out_path
+        } else {
+            PathBuf::from("./").join(out_path)
+        }
     } else {
-        PathBuf::from(file_path.to_string_lossy().trim_end_matches(".mux"))
+        let source_path = PathBuf::from(file_path.to_string_lossy().trim_end_matches(".mux"));
+        let parent = source_path.parent().unwrap_or(Path::new("."));
+        let file_stem = source_path
+            .file_stem()
+            .expect("executable name should be valid Unicode");
+        parent.join(file_stem)
     };
 
-    let exe_path = std::env::current_exe().expect("current executable path should exist");
-    let lib_path = exe_path
-        .parent()
-        .expect("executable should be in a directory")
-        .parent()
-        .expect("parent directory should exist (expected target/debug structure)")
-        .parent()
-        .expect("grandparent directory should exist (expected workspace structure)")
-        .join("target")
-        .join("debug");
-    let lib_path_str = lib_path
+    use crate::build_config::{MUX_RUNTIME_DYNAMIC, MUX_RUNTIME_STATIC};
+
+    let static_path = PathBuf::from(MUX_RUNTIME_STATIC);
+    let dynamic_path = PathBuf::from(MUX_RUNTIME_DYNAMIC);
+
+    let (lib_dir, _lib_name) = if static_path.exists() {
+        (static_path.parent().unwrap(), "mux_runtime")
+    } else if dynamic_path.exists() {
+        (dynamic_path.parent().unwrap(), "mux_runtime")
+    } else {
+        eprintln!();
+        eprintln!("Please ensure the runtime is built:");
+        eprintln!("  cargo build --workspace");
+        eprintln!();
+        eprintln!("Or set MUX_RUNTIME_LIB environment variable to override:");
+        eprintln!("  MUX_RUNTIME_LIB=/path/to/libmux_runtime.a cargo run -- run file.mux");
+        process::exit(1);
+    };
+
+    let lib_path_str = lib_dir
         .to_str()
         .expect("library path should be valid Unicode");
 
