@@ -232,17 +232,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mux-runtime"
-version = "0.1.0"
-dependencies = [
- "gc",
- "lazy_static",
- "libc",
- "ordered-float",
-]
-
-[[package]]
-name = "mux_compiler"
+name = "mux"
 version = "0.1.0"
 dependencies = [
  "clap",
@@ -251,6 +241,16 @@ dependencies = [
  "lazy_static",
  "ordered-float",
  "unicode-width",
+]
+
+[[package]]
+name = "mux-runtime"
+version = "0.1.0"
+dependencies = [
+ "gc",
+ "lazy_static",
+ "libc",
+ "ordered-float",
 ]
 
 [[package]]

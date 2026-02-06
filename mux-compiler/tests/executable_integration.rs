@@ -23,10 +23,10 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
         .ancestors()
         .any(|p| p.file_name().is_some_and(|n| n == "error_cases"));
 
-    // Compile the file using the mux_compiler
+    // Compile the file using the mux compiler
     let mut compile_cmd = Command::new("cargo");
     compile_cmd
-        .args(["run", "--bin", "mux_compiler", "--", "run", &path_str])
+        .args(["run", "--bin", "mux", "--", "run", &path_str])
         .current_dir("../") // Run from project root
         .env("RUST_BACKTRACE", "1");
 

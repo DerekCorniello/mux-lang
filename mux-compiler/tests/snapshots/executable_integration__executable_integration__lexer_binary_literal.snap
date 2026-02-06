@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
-     Running `target/debug/mux_compiler run /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_binary_literal.mux`
+     Running `target/debug/mux run /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_binary_literal.mux`
 error: Invalid integer literal: 0b102
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_binary_literal.mux:2:10
    |

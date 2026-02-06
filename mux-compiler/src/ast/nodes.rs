@@ -1,11 +1,11 @@
 use crate::lexer::Span;
 
-use super::Spanned;
 use super::literals::{EnumVariant, Field, LiteralNode, Param, TraitBound, TraitRef};
 use super::operators::BinaryOp;
 use super::operators::UnaryOp;
 use super::patterns::MatchArm;
 use super::types::TypeNode;
+use super::Spanned;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstNode {

@@ -59,6 +59,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Compile a Mux file without running it
     Build {
         file: PathBuf,
         #[arg(short, long)]
@@ -66,6 +67,7 @@ enum Commands {
         #[arg(short, long)]
         intermediate: bool,
     },
+    /// Compile and run a Mux file
     Run {
         file: PathBuf,
         #[arg(short, long)]
@@ -73,13 +75,28 @@ enum Commands {
         #[arg(short, long)]
         intermediate: bool,
     },
-    Format {
-        file: PathBuf,
-    },
-    Try {
-        file: PathBuf,
-    },
+    /// Format a Mux file
+    Format { file: PathBuf },
+    /// Try running a Mux file (for quick experimentation)
+    Try { file: PathBuf },
+    /// Check system dependencies for the Mux compiler
+    Doctor {},
+    /// Print the Mux version
     Version {},
+}
+
+fn validate_llvm_installed() -> bool {
+    match Command::new("clang").arg("--version").output() {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
+}
+
+fn validate_clang_installed() -> bool {
+    match Command::new("clang").arg("--version").output() {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
 }
 
 fn main() {
@@ -88,6 +105,29 @@ fn main() {
         Commands::Version {} => {
             // Print version from Cargo.toml automatically
             println!("mux version {}", env!("CARGO_PKG_VERSION"));
+            return;
+        }
+        Commands::Doctor {} => {
+            let llvm_installed = validate_llvm_installed();
+            let clang_installed = validate_clang_installed();
+
+            if llvm_installed {
+                println!("LLVM is installed.");
+            } else {
+                println!("LLVM is not installed. Please install LLVM to use the Mux compiler.");
+            }
+
+            if clang_installed {
+                println!("Clang is installed.");
+            } else {
+                println!("Clang is not installed. Please install Clang to use the Mux compiler.");
+            }
+
+            if llvm_installed && clang_installed {
+                println!("Your system is ready to use the Mux compiler!");
+            } else {
+                println!("Please install the missing dependencies and try again.");
+            }
             return;
         }
         Commands::Build {
@@ -258,33 +298,32 @@ fn main() {
     }
 
     if do_run {
-    let output = Command::new(&exe_file)
-        .output();
+        let output = Command::new(&exe_file).output();
 
-    match output {
-        Ok(output) if output.status.success() => {
-            // Optional: print stdout on success
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            print!("{}", stdout);
-        }
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            if !stdout.is_empty() {
-                eprintln!("stdout:\n{}", stdout);
+        match output {
+            Ok(output) if output.status.success() => {
+                // Optional: print stdout on success
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                print!("{}", stdout);
             }
-            if !stderr.is_empty() {
-                eprintln!("stderr:\n{}", stderr);
-            }
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
 
-            eprintln!("Program exited with status: {}", output.status);
-            process::exit(1);
-        }
-        Err(e) => {
-            eprintln!("Failed to execute program: {}", e);
-            process::exit(1);
+                if !stdout.is_empty() {
+                    eprintln!("stdout:\n{}", stdout);
+                }
+                if !stderr.is_empty() {
+                    eprintln!("stderr:\n{}", stderr);
+                }
+
+                eprintln!("Program exited with status: {}", output.status);
+                process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("Failed to execute program: {}", e);
+                process::exit(1);
+            }
         }
     }
-}
 }
