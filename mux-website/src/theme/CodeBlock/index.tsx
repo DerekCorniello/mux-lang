@@ -7,11 +7,6 @@ import {CopyIcon, CheckIcon} from '@site/src/components/CodeIcons';
 import {usePrismTheme} from '@docusaurus/theme-common';
 import {Highlight} from 'prism-react-renderer';
 import Line from '@theme/CodeBlock/Line';
-import {
-  createCodeBlockMetadata,
-  useCodeWordWrap,
-  CodeBlockContextProvider,
-} from '@docusaurus/theme-common/internal';
 import {useThemeConfig} from '@docusaurus/theme-common';
 
 /**

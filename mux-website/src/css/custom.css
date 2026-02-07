@@ -55,6 +55,17 @@
   /* Container */
   --ifm-container-width: 1280px;
   --ifm-container-width-xl: 1440px;
+  
+  /* Terminal styling - light mode */
+  --terminal-bg: #f8fafc;
+  --terminal-border: #e2e8f0;
+  --terminal-header-top: #f1f5f9;
+  --terminal-header-bottom: #e2e8f0;
+  --terminal-header-border: #cbd5e1;
+  --terminal-filename-color: #475569;
+  --terminal-code-color: #1e293b;
+  --terminal-copy-btn-color: #64748b;
+  --terminal-copy-btn-hover: #334155;
 }
 
 /* Dark mode - refined contrast */
@@ -82,6 +93,17 @@
   
   --ifm-navbar-background-color: rgba(15, 23, 42, 0.95);
   --ifm-navbar-shadow: none;
+  
+  /* Terminal styling - dark mode */
+  --terminal-bg: #1e1e1e;
+  --terminal-border: #334155;
+  --terminal-header-top: #323232;
+  --terminal-header-bottom: #2b2b2b;
+  --terminal-header-border: #404040;
+  --terminal-filename-color: #94a3b8;
+  --terminal-code-color: #e2e8f0;
+  --terminal-copy-btn-color: #9ca3af;
+  --terminal-copy-btn-hover: #fff;
 }
 
 /* Typography improvements */
@@ -151,10 +173,10 @@ pre code {
   background: var(--ifm-code-background) !important;
 }
 
-/* Unified Terminal Code Block - Used everywhere */
+/* Unified Terminal Code Block */
 .terminal-code {
-  background: var(--terminal-bg, #1e1e1e);
-  border: 1px solid var(--terminal-border, var(--ifm-color-emphasis-200));
+  background: var(--terminal-bg);
+  border: 1px solid var(--terminal-border);
   border-radius: 8px;
   padding: 0;
   margin: 1rem 0;
@@ -168,11 +190,11 @@ pre code {
   content: '';
   display: block;
   height: 32px;
-  background: linear-gradient(to bottom, var(--terminal-header-top, #323232) 0%, var(--terminal-header-bottom, #2b2b2b) 100%);
-  border-bottom: 1px solid var(--terminal-header-border, #404040);
+  background: linear-gradient(to bottom, var(--terminal-header-top) 0%, var(--terminal-header-bottom) 100%);
+  border-bottom: 1px solid var(--terminal-header-border);
 }
 
-/* Mac-style window buttons (left side) */
+/* Mac-style window buttons */
 .terminal-code::after {
   content: '';
   position: absolute;
@@ -182,27 +204,24 @@ pre code {
   height: 12px;
   background: #ff5f57;
   border-radius: 50%;
-  box-shadow: 
-    20px 0 0 #febc2e,
-    40px 0 0 #28c840;
+  box-shadow: 20px 0 0 #febc2e, 40px 0 0 #28c840;
 }
 
-/* Filename display in header (centered) */
+/* Filename display in header */
 .terminal-code[data-filename]::before {
   content: attr(data-filename);
   display: flex;
   align-items: center;
   justify-content: center;
   height: 32px;
-  background: linear-gradient(to bottom, var(--terminal-header-top, #323232) 0%, var(--terminal-header-bottom, #2b2b2b) 100%);
-  border-bottom: 1px solid var(--terminal-header-border, #404040);
-  color: var(--terminal-filename-color, #9ca3af);
+  background: linear-gradient(to bottom, var(--terminal-header-top) 0%, var(--terminal-header-bottom) 100%);
+  border-bottom: 1px solid var(--terminal-header-border);
+  color: var(--terminal-filename-color);
   font-size: 0.75rem;
   font-family: var(--ifm-font-family-monospace);
-  padding: 0 80px; /* Make room for buttons on left and copy on right */
+  padding: 0 80px;
 }
 
-/* Terminal code content - the pre tag inside */
 .terminal-code pre {
   background: transparent !important;
   border: none !important;
@@ -217,7 +236,7 @@ pre code {
   padding: 1rem 1.25rem;
   background: transparent;
   border: none;
-  color: var(--terminal-code-color, #e8e8e8);
+  color: var(--terminal-code-color);
   font-size: 0.875rem;
   line-height: 1.7;
   margin: 0;
@@ -236,7 +255,7 @@ pre code {
   background: rgba(255, 255, 255, 0.1);
   border: none;
   border-radius: 4px;
-  color: var(--terminal-copy-btn-color, #9ca3af);
+  color: var(--terminal-copy-btn-color);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -248,7 +267,7 @@ pre code {
 
 .terminal-code .terminal-copy-button:hover {
   background: rgba(255, 255, 255, 0.2);
-  color: var(--terminal-copy-btn-hover, #fff);
+  color: var(--terminal-copy-btn-hover);
 }
 
 .terminal-code .terminal-copy-button svg {
@@ -256,39 +275,12 @@ pre code {
   height: 12px;
 }
 
-/* Hide Docusaurus copy button inside terminal-code blocks (we have our own) */
+/* Hide Docusaurus copy button inside terminal blocks */
 .terminal-code .buttonGroup {
   display: none !important;
 }
 
-/* Light mode terminal styling */
-:root {
-  --terminal-bg: var(--terminal-light-bg, #f8fafc);
-  --terminal-border: var(--terminal-light-border, #e2e8f0);
-  --terminal-header-top: var(--terminal-light-header-top, #f1f5f9);
-  --terminal-header-bottom: var(--terminal-light-header-bottom, #e2e8f0);
-  --terminal-header-border: var(--terminal-light-header-border, #cbd5e1);
-  --terminal-filename-color: var(--terminal-light-filename-color, #475569);
-  --terminal-code-color: var(--terminal-light-code-color, #1e293b);
-  --terminal-copy-btn-color: var(--terminal-light-copy-btn-color, #64748b);
-  --terminal-copy-btn-hover: var(--terminal-light-copy-btn-hover, #334155);
-}
-
-/* Dark mode terminal styling */
-[data-theme='dark'] {
-  --terminal-bg: var(--terminal-dark-bg, #1e1e1e);
-  --terminal-border: var(--terminal-dark-border, #334155);
-  --terminal-header-top: var(--terminal-dark-header-top, #323232);
-  --terminal-header-bottom: var(--terminal-dark-header-bottom, #2b2b2b);
-  --terminal-header-border: var(--terminal-dark-header-border, #404040);
-  --terminal-filename-color: var(--terminal-dark-filename-color, #94a3b8);
-  --terminal-code-color: var(--terminal-dark-code-color, #e2e8f0);
-  --terminal-copy-btn-color: var(--terminal-dark-copy-btn-color, #9ca3af);
-  --terminal-copy-btn-hover: var(--terminal-dark-copy-btn-hover, #fff);
-}
-
-
-/* Navbar styling - refined */
+/* Navbar styling */
 .navbar {
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
   box-shadow: none;
@@ -304,7 +296,6 @@ pre code {
 
 .navbar__items {
   align-items: center;
-  justify-content: flex-start;
 }
 
 .navbar__items > .navbar__item {
@@ -342,7 +333,7 @@ pre code {
   transition: all 0.2s ease;
 }
 
-/* Hero section - more impactful */
+/* Hero section */
 .hero {
   background: linear-gradient(180deg, var(--ifm-background-surface-color) 0%, var(--ifm-background-color) 100%);
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
@@ -373,7 +364,7 @@ pre code {
   margin-right: auto;
 }
 
-/* Consistent link hover */
+/* Links */
 a {
   transition: all 0.2s ease;
 }
@@ -384,11 +375,6 @@ a:hover {
 
 .navbar__link:hover {
   color: var(--ifm-color-primary);
-}
-
-.footer__link-item:hover {
-  color: var(--ifm-color-primary);
-  text-decoration: none;
 }
 
 /* Feature cards */
@@ -463,7 +449,7 @@ a:hover {
   text-decoration: none;
 }
 
-/* Admonitions - clean and professional */
+/* Admonitions */
 .admonition {
   border-radius: 6px;
   border-left-width: 4px;
@@ -473,37 +459,52 @@ a:hover {
 .footer {
   background-color: var(--ifm-background-surface-color);
   border-top: 1px solid var(--ifm-color-emphasis-200);
-  padding: 2rem 0;
+  padding: 1.5rem 0;
 }
 
 .footer__title {
-  font-weight: 600;
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  display: none;
+}
+
+.footer__links {
+  margin-top: 0;
+}
+
+.footer__items {
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .footer__link-item {
+  color: var(--ifm-color-content-secondary);
   font-size: 0.875rem;
+  margin: 0 0.75rem;
+  transition: color 0.2s ease;
 }
 
-/* Quick Start section on homepage */
-.quick-start {
-  background: var(--ifm-background-surface-color);
-  border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 8px;
-  padding: 2rem;
-  margin: 2rem 0;
+.footer__link-item:hover {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
 }
 
-.quick-start pre {
-  background: var(--ifm-background-color);
-  border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 6px;
-  margin: 1rem 0;
+.footer__copyright {
+  color: var(--ifm-color-content-secondary);
+  font-size: 0.875rem;
+  margin-top: 1rem;
+  text-align: center;
 }
 
-/* Code example tabs */
+.footer__copyright a {
+  color: var(--ifm-color-content-secondary);
+  margin: 0 0.5rem;
+  transition: color 0.2s ease;
+}
+
+.footer__copyright a:hover {
+  color: var(--ifm-color-primary);
+}
+
+/* Tabs */
 .tabs {
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
 }
@@ -517,42 +518,11 @@ a:hover {
   color: var(--ifm-color-primary);
 }
 
-/* Responsive improvements */
-@media (max-width: 996px) {
-  .hero__title {
-    font-size: 2.5rem;
-  }
-  
-  .hero__subtitle {
-    font-size: 1.25rem;
-  }
-}
-
-@media (max-width: 768px) {
-  .hero__title {
-    font-size: 2rem;
-  }
-  
-  .hero__subtitle {
-    font-size: 1.125rem;
-  }
-  
-  .button--lg {
-    font-size: 1rem;
-    padding: 0.875rem 1.5rem;
-  }
-}
-
-/* Horizontal rule styling */
+/* Horizontal rule */
 hr {
   border: 0;
   border-top: 1px solid var(--ifm-color-emphasis-200);
   margin: 2rem 0;
-}
-
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
 }
 
 /* Selection color */
@@ -566,36 +536,7 @@ html {
   display: none !important;
 }
 
-/* Footer links styling */
-.footer__links {
-  margin-top: 0;
-}
-
-.footer__link-item {
-  color: var(--ifm-color-content-secondary);
-  font-size: 0.875rem;
-  margin-right: 1.5rem;
-}
-
-.footer__link-item:hover {
-  color: var(--ifm-color-primary);
-}
-
-.footer__copyright {
-  color: var(--ifm-color-content-secondary);
-  font-size: 0.875rem;
-}
-
-.footer__copyright a {
-  color: var(--ifm-color-content-secondary);
-  margin: 0 0.5rem;
-}
-
-.footer__copyright a:hover {
-  color: var(--ifm-color-primary);
-}
-
-/* Sidebar collapse toggle button - positioned at bottom center */
+/* Sidebar collapse button */
 .theme-doc-sidebar-collapse-button {
   position: absolute;
   bottom: 1rem;
@@ -619,7 +560,6 @@ html {
   background: var(--ifm-color-emphasis-100);
 }
 
-/* Replace the default chevron icon with a simple arrow */
 .theme-doc-sidebar-collapse-button svg {
   display: none;
 }
@@ -635,60 +575,15 @@ html {
   background-size: contain;
 }
 
-/* When sidebar is collapsed, show expand icon (pointing right) */
 .theme-doc-sidebar-collapse-button[aria-label="Expand sidebar"]::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a7a7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 18 15 12 9 6'%3E%3C/polyline%3E%3C/svg%3E");
 }
 
-/* Ensure sidebar menu has padding for the toggle button */
 .theme-doc-sidebar-menu {
   padding-bottom: 4rem;
 }
 
-/* Footer styling */
-.footer {
-  padding: 1.5rem 0;
-}
-
-.footer__title {
-  display: none;
-}
-
-.footer__links {
-  margin-top: 0;
-}
-
-.footer__items {
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.footer__link-item {
-  color: var(--ifm-color-content-secondary);
-  font-size: 0.875rem;
-  margin: 0 0.75rem;
-}
-
-.footer__link-item:hover {
-  color: var(--ifm-color-primary);
-}
-
-.footer__copyright {
-  color: var(--ifm-color-content-secondary);
-  font-size: 0.875rem;
-  margin-top: 1rem;
-}
-
-.footer__copyright a {
-  color: var(--ifm-color-content-secondary);
-  margin: 0 0.5rem;
-}
-
-.footer__copyright a:hover {
-  color: var(--ifm-color-primary);
-}
-
-/* Center and size the search bar */
+/* Search bar - centered and sized */
 .dsla-search-wrapper {
   position: absolute;
   left: 50%;
@@ -703,19 +598,38 @@ html {
   width: 100%;
 }
 
-/* Mobile: shrink search bar */
 @media (max-width: 768px) {
   .dsla-search-wrapper {
     width: 40%;
     min-width: 150px;
   }
+  
+  .hero__title {
+    font-size: 2.5rem;
+  }
+  
+  .hero__subtitle {
+    font-size: 1.25rem;
+  }
+  
+  .button--lg {
+    font-size: 1rem;
+    padding: 0.875rem 1.5rem;
+  }
 }
 
-/* Small mobile: even smaller */
 @media (max-width: 480px) {
   .dsla-search-wrapper {
     width: 50%;
     min-width: 120px;
+  }
+  
+  .hero__title {
+    font-size: 2rem;
+  }
+  
+  .hero__subtitle {
+    font-size: 1.125rem;
   }
 }
 
@@ -746,7 +660,6 @@ html {
   color: var(--ifm-color-primary);
 }
 
-/* Dark mode overrides */
 [data-theme='dark'] .dsla-search-wrapper .aa-DetachedSearchButton,
 [data-theme='dark'] .dsla-search-wrapper .aa-Form,
 [data-theme='dark'] .dsla-search-wrapper .aa-InputWrapper {

@@ -2,7 +2,6 @@ import type {ReactNode} from 'react';
 import {useState} from 'react';
 import clsx from 'clsx';
 import Link from '@docusaurus/Link';
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import CodeBlock from '@theme/CodeBlock';
@@ -14,7 +13,6 @@ import styles from './index.module.css';
 
 function HomepageHeader() {
   const [copied, setCopied] = useState(false);
-  useDocusaurusContext();
 
   const handleCopy = () => {
     navigator.clipboard.writeText('cargo install mux-lang');
@@ -265,7 +263,6 @@ function CTASection() {
 }
 
 export default function Home(): ReactNode {
-  useDocusaurusContext();
   return (
     <Layout
       title="A Programming Language For The People"
