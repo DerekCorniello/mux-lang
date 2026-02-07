@@ -321,7 +321,12 @@ fn main() {
     }
 
     if do_run {
-        let output = Command::new(&exe_file).output();
+        let run_path = if exe_file.is_absolute() {
+            exe_file.clone()
+        } else {
+            PathBuf::from("./").join(&exe_file)
+        };
+        let output = Command::new(&run_path).output();
 
         match output {
             Ok(output) if output.status.success() => {
