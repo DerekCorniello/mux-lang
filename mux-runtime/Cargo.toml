@@ -19,7 +19,7 @@ exclude = [
 
 [lib]
 name = "mux_runtime"
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 gc = "0.4"

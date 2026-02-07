@@ -1,7 +1,7 @@
-use mux::lexer::Lexer;
-use mux::parser::Parser;
-use mux::semantics::SemanticAnalyzer;
-use mux::source::Source;
+use mux_lang::lexer::Lexer;
+use mux_lang::parser::Parser;
+use mux_lang::semantics::SemanticAnalyzer;
+use mux_lang::source::Source;
 use std::fs;
 use std::path::Path;
 
@@ -26,7 +26,7 @@ fn test_semantic_analysis() {
         // Lex
         let mut lexer = Lexer::new(&mut source);
         let tokens: Vec<_> = std::iter::from_fn(|| match lexer.next_token() {
-            Ok(token) if token.token_type == mux::lexer::TokenType::Eof => None,
+            Ok(token) if token.token_type == mux_lang::lexer::TokenType::Eof => None,
             Ok(token) => Some(Ok(token)),
             Err(e) => Some(Err(e)),
         })
@@ -71,7 +71,7 @@ fn test_semantic_analysis() {
             // Lex
             let mut lexer = Lexer::new(&mut source);
             let tokens: Vec<_> = std::iter::from_fn(|| match lexer.next_token() {
-                Ok(token) if token.token_type == mux::lexer::TokenType::Eof => None,
+                Ok(token) if token.token_type == mux_lang::lexer::TokenType::Eof => None,
                 Ok(token) => Some(Ok(token)),
                 Err(e) => Some(Err(e)),
             })

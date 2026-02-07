@@ -232,13 +232,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "mux"
+name = "mux-lang"
 version = "0.1.0"
 dependencies = [
  "clap",
  "inkwell",
  "insta",
  "lazy_static",
+ "mux-runtime",
  "ordered-float",
  "unicode-width",
 ]

@@ -1,5 +1,5 @@
 [package]
-name = "mux"
+name = "mux-lang"
 version = "0.1.0"
 edition = "2024"
 description = "The Mux Programming Language Compiler"
@@ -18,12 +18,17 @@ exclude = [
     "../CONTRIBUTING.md"
 ]
 
+[[bin]]
+name = "mux"
+path = "src/main.rs"
+
 [dependencies]
 ordered-float = "4.2"
 unicode-width = "0.1.11"
 lazy_static = "1.4"
 inkwell = { version = "0.6.0", features = ["llvm17-0"] }
 clap = { version = "4", features = ["derive"] }
+mux-runtime = { version = "0.1.0", path = "../mux-runtime" }
 
 [dev-dependencies]
 insta = { version = "1.43.1", features = ["yaml"] }

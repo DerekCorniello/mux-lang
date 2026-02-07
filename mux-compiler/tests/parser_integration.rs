@@ -1,7 +1,7 @@
 use insta::assert_debug_snapshot;
-use mux::lexer::Lexer;
-use mux::parser::Parser;
-use mux::source::Source;
+use mux_lang::lexer::Lexer;
+use mux_lang::parser::Parser;
+use mux_lang::source::Source;
 use std::fs;
 use std::path::{Path, PathBuf};
 
