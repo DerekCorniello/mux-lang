@@ -17,6 +17,8 @@ use semantics::SemanticAnalyzer;
 use semantics::SemanticError;
 use source::Source;
 use std::cell::RefCell;
+use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::rc::Rc;
@@ -42,7 +44,7 @@ fn handle_semantic_errors(files: &Files, file_id: FileId, errors: &[SemanticErro
 /// Mux compiler CLI
 #[derive(ClapParser)]
 #[command(name = "mux")]
-#[command(version = "0.1.0")]
+#[command(version)]
 #[command(about = "CLI tool for Mux Programming Language", long_about = None)]
 struct Cli {
     /// Name of the output executable
@@ -100,6 +102,204 @@ fn validate_clang_installed() -> bool {
     }
 }
 
+fn runtime_profile() -> &'static str {
+    if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    }
+}
+
+fn find_runtime_lib_in_dir(dir: &Path) -> Option<PathBuf> {
+    let static_lib = if cfg!(target_family = "windows") {
+        dir.join("mux_runtime.lib")
+    } else {
+        dir.join("libmux_runtime.a")
+    };
+    if static_lib.exists() {
+        return Some(static_lib);
+    }
+
+    let dynamic_lib = if cfg!(target_family = "windows") {
+        dir.join("mux_runtime.dll")
+    } else if cfg!(target_os = "macos") {
+        dir.join("libmux_runtime.dylib")
+    } else {
+        dir.join("libmux_runtime.so")
+    };
+    if dynamic_lib.exists() {
+        return Some(dynamic_lib);
+    }
+
+    None
+}
+
+fn runtime_lib_from_env() -> Option<PathBuf> {
+    let path = env::var("MUX_RUNTIME_LIB").ok()?;
+    let path = PathBuf::from(path);
+    if path.exists() {
+        return path.parent().map(|p| p.to_path_buf());
+    }
+
+    eprintln!("MUX_RUNTIME_LIB is set but does not exist: {}", path.display());
+    None
+}
+
+fn runtime_lib_from_build_config() -> Option<PathBuf> {
+    use crate::build_config::{MUX_RUNTIME_DYNAMIC, MUX_RUNTIME_STATIC};
+
+    let static_path = PathBuf::from(MUX_RUNTIME_STATIC);
+    if static_path.exists() {
+        return static_path.parent().map(|p| p.to_path_buf());
+    }
+
+    let dynamic_path = PathBuf::from(MUX_RUNTIME_DYNAMIC);
+    if dynamic_path.exists() {
+        return dynamic_path.parent().map(|p| p.to_path_buf());
+    }
+
+    None
+}
+
+fn cargo_home_dir() -> Option<PathBuf> {
+    if let Ok(val) = env::var("CARGO_HOME") {
+        return Some(PathBuf::from(val));
+    }
+
+    if cfg!(target_family = "windows") {
+        let user = env::var("USERPROFILE").ok()?;
+        return Some(PathBuf::from(user).join(".cargo"));
+    }
+
+    let home = env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".cargo"))
+}
+
+fn default_cache_root() -> PathBuf {
+    if let Ok(val) = env::var("MUX_RUNTIME_CACHE_DIR") {
+        return PathBuf::from(val);
+    }
+
+    if cfg!(target_family = "windows") {
+        if let Ok(base) = env::var("LOCALAPPDATA") {
+            return PathBuf::from(base).join("mux-lang");
+        }
+        if let Ok(base) = env::var("USERPROFILE") {
+            return PathBuf::from(base).join(".mux-lang");
+        }
+    } else if cfg!(target_os = "macos") {
+        if let Ok(home) = env::var("HOME") {
+            return PathBuf::from(home).join("Library").join("Caches").join("mux-lang");
+        }
+    } else {
+        if let Ok(base) = env::var("XDG_CACHE_HOME") {
+            return PathBuf::from(base).join("mux-lang");
+        }
+        if let Ok(home) = env::var("HOME") {
+            return PathBuf::from(home).join(".cache").join("mux-lang");
+        }
+    }
+
+    env::temp_dir().join("mux-lang")
+}
+
+fn find_runtime_source_dir() -> Option<PathBuf> {
+    if let Ok(src) = env::var("MUX_RUNTIME_SRC") {
+        let path = PathBuf::from(src);
+        if path.join("Cargo.toml").exists() {
+            return Some(path);
+        }
+        eprintln!(
+            "MUX_RUNTIME_SRC is set but Cargo.toml was not found: {}",
+            path.display()
+        );
+    }
+
+    let cargo_home = cargo_home_dir()?;
+    let registry_src = cargo_home.join("registry").join("src");
+    let version = env!("CARGO_PKG_VERSION");
+    let dir_name = format!("mux-runtime-{}", version);
+
+    for entry in fs::read_dir(registry_src).ok()? {
+        let entry = entry.ok()?;
+        let candidate = entry.path().join(&dir_name);
+        if candidate.join("Cargo.toml").exists() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+fn build_runtime_in_cache(profile: &str) -> Option<PathBuf> {
+    let cache_root = default_cache_root().join("runtime").join(env!("CARGO_PKG_VERSION"));
+    let profile_dir = cache_root.join(profile);
+
+    if let Some(lib) = find_runtime_lib_in_dir(&profile_dir) {
+        return lib.parent().map(|p| p.to_path_buf());
+    }
+
+    let runtime_src = match find_runtime_source_dir() {
+        Some(path) => path,
+        None => {
+            eprintln!("Could not locate mux-runtime source in cargo registry.");
+            return None;
+        }
+    };
+
+    if fs::create_dir_all(&cache_root).is_err() {
+        eprintln!(
+            "Failed to create runtime cache directory: {}",
+            cache_root.display()
+        );
+        return None;
+    }
+
+    eprintln!("Building mux-runtime (first run)...");
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build")
+        .arg("--manifest-path")
+        .arg(runtime_src.join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", &cache_root);
+
+    if profile == "release" {
+        cmd.arg("--release");
+    }
+
+    let output = match cmd.output() {
+        Ok(output) => output,
+        Err(err) => {
+            eprintln!("Failed to run cargo: {}", err);
+            return None;
+        }
+    };
+
+    if !output.status.success() {
+        eprintln!("Failed to build mux-runtime.");
+        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+        return None;
+    }
+
+    if let Some(lib) = find_runtime_lib_in_dir(&profile_dir) {
+        return lib.parent().map(|p| p.to_path_buf());
+    }
+
+    eprintln!("mux-runtime build completed but library was not found.");
+    None
+}
+
+fn resolve_runtime_lib_dir(profile: &str) -> Option<PathBuf> {
+    if let Some(dir) = runtime_lib_from_env() {
+        return Some(dir);
+    }
+
+    if let Some(dir) = runtime_lib_from_build_config() {
+        return Some(dir);
+    }
+
+    build_runtime_in_cache(profile)
+}
+
 fn main() {
     let cli = Cli::parse();
     let (file_path, do_run, output, intermediate) = match &cli.command {
@@ -124,10 +324,24 @@ fn main() {
                 println!("Clang is not installed. Please install Clang to use the Mux compiler.");
             }
 
-            if llvm_installed && clang_installed {
+            let profile = runtime_profile();
+            let mut runtime_ready = resolve_runtime_lib_dir(profile).is_some();
+            if !runtime_ready {
+                println!("Mux runtime not found. Building it now...");
+                runtime_ready = build_runtime_in_cache(profile).is_some();
+            }
+
+            if runtime_ready {
+                println!("Mux runtime is available.");
+            } else {
+                println!("Mux runtime is not available.");
+            }
+
+            if llvm_installed && clang_installed && runtime_ready {
                 println!("Your system is ready to use the Mux compiler!");
             } else {
                 println!("Please install the missing dependencies and try again.");
+                process::exit(1);
             }
             return;
         }
@@ -248,23 +462,18 @@ fn main() {
         parent.join(file_stem)
     };
 
-    use crate::build_config::{MUX_RUNTIME_DYNAMIC, MUX_RUNTIME_STATIC};
-
-    let static_path = PathBuf::from(MUX_RUNTIME_STATIC);
-    let dynamic_path = PathBuf::from(MUX_RUNTIME_DYNAMIC);
-
-    let (lib_dir, _lib_name) = if static_path.exists() {
-        (static_path.parent().unwrap(), "mux_runtime")
-    } else if dynamic_path.exists() {
-        (dynamic_path.parent().unwrap(), "mux_runtime")
-    } else {
-        eprintln!();
-        eprintln!("Please ensure the runtime is built:");
-        eprintln!("  cargo build --workspace");
-        eprintln!();
-        eprintln!("Or set MUX_RUNTIME_LIB environment variable to override:");
-        eprintln!("  MUX_RUNTIME_LIB=/path/to/libmux_runtime.a cargo run -- run file.mux");
-        process::exit(1);
+    let profile = runtime_profile();
+    let lib_dir = match resolve_runtime_lib_dir(profile) {
+        Some(dir) => dir,
+        None => {
+            eprintln!();
+            eprintln!("Could not locate mux-runtime.");
+            eprintln!("You can set MUX_RUNTIME_LIB to a built library path.");
+            eprintln!("You can set MUX_RUNTIME_SRC to a local mux-runtime source.");
+            eprintln!("Example:");
+            eprintln!("  MUX_RUNTIME_LIB=/path/to/libmux_runtime.a mux run file.mux");
+            process::exit(1);
+        }
     };
 
     let lib_path_str = lib_dir

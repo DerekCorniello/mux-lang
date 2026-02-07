@@ -233,32 +233,20 @@ dependencies = [
 
 [[package]]
 name = "mux-lang"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "inkwell",
  "insta",
  "lazy_static",
- "mux-runtime 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mux-runtime",
  "ordered-float",
  "unicode-width",
 ]
 
 [[package]]
 name = "mux-runtime"
-version = "0.1.0"
-dependencies = [
- "gc",
- "lazy_static",
- "libc",
- "ordered-float",
-]
-
-[[package]]
-name = "mux-runtime"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a0a41ea3bb9295d1bc18924729747840fb7261d5012b2fb3afccc236a3678f5"
+version = "0.1.1"
 dependencies = [
  "gc",
  "lazy_static",

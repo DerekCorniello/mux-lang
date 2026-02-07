@@ -1,6 +1,6 @@
 [package]
 name = "mux-lang"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "The Mux Programming Language Compiler"
 authors = ["Derek Corniello"]
@@ -28,7 +28,7 @@ unicode-width = "0.1.11"
 lazy_static = "1.4"
 inkwell = { version = "0.6.0", features = ["llvm17-0"] }
 clap = { version = "4", features = ["derive"] }
-mux-runtime = "0.1.0"
+mux-runtime = "0.1.1"
 
 [dev-dependencies]
 insta = { version = "1.43.1", features = ["yaml"] }

@@ -20,7 +20,8 @@ The easiest way to install Mux is using cargo:
 cargo install mux-lang
 ```
 
-This will install the Mux compiler and runtime to your cargo bin directory.
+This installs the Mux compiler to your cargo bin directory.
+The runtime library is built on first use or by running `mux doctor`.
 
 **Note:** Make sure LLVM and clang are installed on your system first, as they are required for compilation and linking.
 
@@ -50,7 +51,7 @@ Use the built-in doctor command to check your setup:
 mux doctor
 ```
 
-The `mux doctor` command will verify that all required dependencies (LLVM, clang) are properly installed and accessible.
+The `mux doctor` command verifies LLVM and clang, and builds the Mux runtime library if it is missing.
 
 ## Your First Mux Program
 

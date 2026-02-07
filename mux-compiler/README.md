@@ -1,5 +1,5 @@
 
-  ![MuxLang Version](https://img.shields.io/badge/MuxLang-0.1.0-4c1?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang/releases)&nbsp;
+  ![MuxLang Version](https://img.shields.io/badge/MuxLang-0.1.1-4c1?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang/releases)&nbsp;
   ![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white&link=https://www.rust-lang.org/)&nbsp;
   ![LLVM](https://img.shields.io/badge/LLVM-262D3A?style=for-the-badge&logo=llvm&logoColor=white&link=https://llvm.org/)&nbsp;
   ![crates.io](https://img.shields.io/badge/crates.io-MuxLang-orange?style=for-the-badge&logo=rust&link=https://crates.io/crates/mux-lang)&nbsp;
@@ -25,6 +25,16 @@ By Derek Corniello
 ## Quick Start Guide
 
 Check out the [docs](https://mux-lang.dev)!
+
+### Runtime Setup
+
+Mux builds a small runtime library the first time you compile or run a program. If you want to do this up front, run:
+
+```bash
+mux doctor
+```
+
+This verifies dependencies and builds the runtime if it is missing.
 
 ## Repository Structure
 

@@ -1,3 +1,6 @@
 [workspace]
 members = ["mux-compiler", "mux-runtime"]
 resolver = "2"
+
+[patch.crates-io]
+mux-runtime = { path = "mux-runtime" }
