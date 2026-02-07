@@ -5,8 +5,8 @@ func test_basic_primitives() returns void {
     print("Test 1: Basic primitives")
     auto t1 = (42, "hello")
     print("  Created tuple: (42, hello)")
-    print("  t1.left = " + t1.left.to_string())
-    print("  t1.right = " + t1.right.to_string())
+    print("  t1.left = " + t1.left.to_string() + " (should be 42)")
+    print("  t1.right = " + t1.right.to_string() + " (should be hello)")
 }
 
 // Test 2: Float, bool, char
@@ -14,15 +14,15 @@ func test_float_bool_char() returns void {
     print("Test 2: Float, bool, char")
     auto t_float = (3.14, 2.71)
     print("  Created float tuple")
-    print("  t_float.left = " + t_float.left.to_string())
+    print("  t_float.left = " + t_float.left.to_string() + " (should be 3.14)")
 
     auto t_bool = (true, false)
     print("  Created bool tuple")
-    print("  t_bool.left = " + t_bool.left.to_string())
+    print("  t_bool.left = " + t_bool.left.to_string() + " (should be true)")
 
     auto t_char = ('a', 'z')
     print("  Created char tuple")
-    print("  t_char.left = " + t_char.left.to_string())
+    print("  t_char.left = " + t_char.left.to_string() + " (should be a)")
 }
 
 // Test 3: Nested tuples
@@ -30,8 +30,19 @@ func test_nested_tuples() returns void {
     print("Test 3: Nested tuples")
     auto nested = ((1, 2), ("a", "b"))
     print("  Created nested tuple")
-    print("  nested.left.left = " + nested.left.left.to_string())
-    print("  nested.right.right = " + nested.right.right.to_string())
+    print("  nested.left.left = " + nested.left.left.to_string() + " (should be 1)")
+    print("  nested.right.right = " + nested.right.right.to_string() + " (should be b)")
+
+    auto triple_nested = (((1, 2), (3, 4)), (("x", "y"), ("p", "q")))
+    print("  Created triple nested tuple")
+    print( "  triple_nested.left.right.left = " + triple_nested.left.right.left.to_string() + " (should be 3)")
+    print( "  triple_nested.right.left.right = " + triple_nested.right.left.right.to_string() + " (should be y)")
+
+    auto mixed_nested = (((1, "a"), (true, 'z')), ((3.5, "b"), (false, 'y')))
+    print("  Created mixed nested tuple")
+    print( "  mixed_nested.left.left.right = " + mixed_nested.left.left.right.to_string() + " (should be a)")
+    print( "  mixed_nested.left.right.right = " + mixed_nested.left.right.right.to_string() + " (should be z)")
+    print( "  mixed_nested.right.left.left = " + mixed_nested.right.left.left.to_string() + " (should be 3.5)")
 }
 
 // Test 4: to_string
@@ -39,7 +50,7 @@ func test_to_string() returns void {
     print("Test 4: to_string")
     auto t = (1, "two")
     auto s = t.to_string()
-    print("  t.to_string() = " + s)
+    print("  t.to_string() = " + s + " (should be (1, two))")
 }
 
 // Test 5: Custom class
@@ -57,8 +68,8 @@ func test_custom_class() returns void {
 
     auto pt = (p.x, p.y)
     print("  Created tuple from fields")
-    print("  pt.left = " + pt.left.to_string())
-    print("  pt.right = " + pt.right.to_string())
+    print("  pt.left = " + pt.left.to_string() + " (should be 1.0)")
+    print("  pt.right = " + pt.right.to_string() + " (should be 2.0)")
 }
 
 // Test 6: Collections with tuples
@@ -66,8 +77,18 @@ func test_collections() returns void {
     print("Test 6: Collections with tuples")
     auto tuple_list = [(1, "a"), (2, "b")]
     print("  Created list of tuples")
-    print("  tuple_list[0].left = " + tuple_list[0].left.to_string())
-    print("  tuple_list[0].right = " + tuple_list[0].right.to_string())
+    print("  tuple_list[0].left = " + tuple_list[0].left.to_string() + " (should be 1)")
+    print("  tuple_list[0].right = " + tuple_list[0].right.to_string() + " (should be a)")
+
+    auto nested_tuple_list = [((1, 2), ("a", "b")), ((3, 4), ("c", "d"))]
+    print("  Created list of nested tuples")
+    print( "  nested_tuple_list[1].left.right = " + nested_tuple_list[1].left.right.to_string() + " (should be 4)")
+    print( "  nested_tuple_list[0].right.left = " + nested_tuple_list[0].right.left.to_string() + " (should be a)")
+
+    auto tuple_with_list = ([1, 2, 3], ("x", "y"))
+    print("  Created tuple with list and tuple")
+    print( "  tuple_with_list.left[2] = " + tuple_with_list.left[2].to_string() + " (should be 3)")
+    print( "  tuple_with_list.right.left = " + tuple_with_list.right.left.to_string() + " (should be x)")
 }
 
 // Main entry point

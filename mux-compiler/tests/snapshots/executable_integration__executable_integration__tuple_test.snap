@@ -1,0 +1,52 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+Running tuple tests...
+
+Test 1: Basic primitives
+  Created tuple: (42, hello)
+  t1.left = 42 (should be 42)
+  t1.right = hello (should be hello)
+
+Test 2: Float, bool, char
+  Created float tuple
+  t_float.left = 3.14 (should be 3.14)
+  Created bool tuple
+  t_bool.left = true (should be true)
+  Created char tuple
+  t_char.left = a (should be a)
+
+Test 3: Nested tuples
+  Created nested tuple
+  nested.left.left = 1 (should be 1)
+  nested.right.right = b (should be b)
+  Created triple nested tuple
+  triple_nested.left.right.left = 3 (should be 3)
+  triple_nested.right.left.right = y (should be y)
+  Created mixed nested tuple
+  mixed_nested.left.left.right = a (should be a)
+  mixed_nested.left.right.right = z (should be z)
+  mixed_nested.right.left.left = 3.5 (should be 3.5)
+
+Test 4: to_string
+  t.to_string() = (1, two) (should be (1, two))
+
+Test 5: Custom class with tuple
+  Created Point with x=1.0, y=2.0
+  Created tuple from fields
+  pt.left = 1.0 (should be 1.0)
+  pt.right = 2.0 (should be 2.0)
+
+Test 6: Collections with tuples
+  Created list of tuples
+  tuple_list[0].left = 1 (should be 1)
+  tuple_list[0].right = a (should be a)
+  Created list of nested tuples
+  nested_tuple_list[1].left.right = 4 (should be 4)
+  nested_tuple_list[0].right.left = a (should be a)
+  Created tuple with list and tuple
+  tuple_with_list.left[2] = 3 (should be 3)
+  tuple_with_list.right.left = x (should be x)
+
+All tuple tests completed!
