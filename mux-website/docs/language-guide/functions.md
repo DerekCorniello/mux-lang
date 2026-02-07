@@ -1,10 +1,11 @@
 # Functions
 
-Mux functions use the `func` keyword with explicit parameter types and return type declarations.
+Mux functions use the `func` keyword with explicit parameter types and return type declarations in the form of:
+<br/>`func <function_name>(<parameter_types> <parameters>) returns <return_type> { ... }`
 
 ## Basic Function Definition
 
-```mux
+```mux title="functions.mux"
 func add(int a, int b) returns int {
     return a + b
 }
@@ -20,16 +21,16 @@ func getCurrentTime() returns int {
 ```
 
 - Keyword `func` declares a function
-- Parameter list with explicit types (no type inference allowed)
+- Parameter list with explicit types (no type inference with `auto` allowed)
 - `returns` clause specifies return type (explicit, no inference)
 - Body enclosed in `{...}` with no semicolons
 - Local variables within functions can use `auto` inference
 
 ## Default Parameters
 
-```mux
+```mux title="default_params.mux"
 func greet(string name, int times = 1) returns void {
-    for i in range(0, times) {
+    for int i in range(0, times) {
         print("Hello, " + name)
     }
 }
@@ -45,7 +46,7 @@ greet("Bob", 3)         // Prints greeting 3 times
 
 All functions must explicitly declare their return type:
 
-```mux
+```mux title="return_types.mux"
 // Returns a value
 func square(int n) returns int {
     return n * n
@@ -82,25 +83,11 @@ func findFirst(list<int> items) returns Optional<int> {
 }
 ```
 
-## Type Inference in Function Bodies
-
-While parameters and return types must be explicit, local variables can use `auto`:
-
-```mux
-func calculate(int x, int y) returns int {
-    auto sum = x + y           // inferred as int
-    auto doubled = sum * 2     // inferred as int
-    auto message = "Result: " + doubled.to_string()  // inferred as string
-    print(message)
-    return doubled
-}
-```
-
 ## Unused Parameters
 
 Use `_` for parameters you don't need:
 
-```mux
+```mux title="unused_params.mux"
 // Second parameter ignored
 func processFirst(int first, int _) returns int {
     return first * 2
@@ -118,7 +105,7 @@ This is useful when implementing interfaces or callbacks that require specific s
 
 Mux supports anonymous functions (lambdas) using block syntax:
 
-```mux
+```mux title="lambdas.mux"
 // Block-form lambda with explicit types
 auto square = func(int n) returns int {
     return n * n
@@ -141,10 +128,10 @@ auto processFirst = func(int first, int _) returns int {
 
 ### Using Lambdas with Collections
 
-```mux
+```mux title="lambda_collections.mux"
 func filter(list<int> nums, func(int) returns bool cond) returns list<int> {
     list<int> out = []
-    for n in nums {
+    for int n in nums {
         if cond(n) {
             out.push_back(n)
         }
@@ -161,9 +148,9 @@ auto evens = filter(numbers, func(int n) returns bool {
 
 ## Generic Functions
 
-Functions can be generic over type parameters:
+Functions can be generic (see [generics and interfaces](./generics.md)) over type parameters:
 
-```mux
+```mux title="generic_functions.mux"
 // Generic function with type constraint
 func max<T is Comparable>(T a, T b) returns T {
     if a > b {
@@ -182,8 +169,6 @@ auto max_int = max<int>(3, 7)
 auto max_float = max<float>(3.14, 2.71)
 ```
 
-See [Generics](./generics.md) for more details.
-
 ## Built-in Functions
 
 Mux provides essential built-in functions available without imports:
@@ -192,7 +177,7 @@ Mux provides essential built-in functions available without imports:
 
 **`print(string message) -> void`** - Outputs to stdout with newline:
 
-```mux
+```mux title="print_example.mux"
 print("Hello, World!")
 auto x = 42
 print("Value: " + x.to_string())
@@ -202,7 +187,7 @@ print("Value: " + x.to_string())
 
 **`read_line() -> string`** - Reads a line from stdin:
 
-```mux
+```mux title="read_line_example.mux"
 print("Enter your name: ")
 auto name = read_line()
 print("Hello, " + name)
@@ -210,11 +195,11 @@ print("Hello, " + name)
 
 ### Utility
 
-**`range(int start, int end) -> list<int>`** - Creates a list of integers:
+**`range(int start, int end) -> list<int>`** - Creates a list of integers, inclusive of start and exclusive of end:
 
-```mux
+```mux title="range_example.mux"
 // Generate indices for iteration
-for i in range(0, 5) {
+for int i in range(0, 5) {
     print(i.to_string())  // Prints 0, 1, 2, 3, 4
 }
 
@@ -226,7 +211,7 @@ auto numbers = range(10, 15)  // [10, 11, 12, 13, 14]
 
 ## Function Calling
 
-```mux
+```mux title="function_calls.mux"
 // Basic call
 auto sum = add(5, 3)
 

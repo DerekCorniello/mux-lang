@@ -1,6 +1,6 @@
 # Error Handling
 
-Mux uses explicit error handling through the `Result<T, E>` and `Optional<T>` types, avoiding exceptions entirely.
+Mux uses explicit error handling through the `Result&lt;T, E&gt;` and `Optional&lt;T&gt;` types, avoiding exceptions entirely.
 
 ## Result&lt;T, E&gt;
 
@@ -8,7 +8,7 @@ The `Result` type represents operations that can succeed with a value of type `T
 
 ### Basic Usage
 
-```mux
+```mux title="result_basic.mux"
 func divide(int a, int b) returns Result<int, string> {
     if b == 0 {
         return Err("division by zero")
@@ -30,7 +30,7 @@ match result {
 
 ### Result Variants
 
-```mux
+```mux title="result_variants.mux"
 enum Result<T, E> {
     Ok(T)      // Success case with value
     Err(E)     // Error case with error value
@@ -39,7 +39,7 @@ enum Result<T, E> {
 
 ### Creating Result Values
 
-```mux
+```mux title="creating_results.mux"
 // Success
 auto success = Ok(42)                    // Result<int, E>
 auto success2 = Ok("completed")          // Result<string, E>
@@ -54,7 +54,7 @@ Result<int, string> result = Ok(100)
 
 ### Pattern Matching Results
 
-```mux
+```mux title="pattern_matching_results.mux"
 func parse_int(string s) returns Result<int, string> {
     auto result = s.to_int()  // returns Result<int, string>
     return result
@@ -77,7 +77,7 @@ match parsed {
 
 Use `_` when you don't need the error value:
 
-```mux
+```mux title="ignoring_error_details.mux"
 match result {
     Ok(value) {
         print("Success: " + value.to_string())
@@ -94,7 +94,7 @@ The `Optional` type represents values that may or may not exist.
 
 ### Basic Usage
 
-```mux
+```mux title="optional_basic.mux"
 func findEven(list<int> xs) returns Optional<int> {
     for x in xs {
         if x % 2 == 0 {
@@ -118,7 +118,7 @@ match maybeEven {
 
 ### Optional Variants
 
-```mux
+```mux title="optional_variants.mux"
 enum Optional<T> {
     Some(T)    // Value present
     None       // Value absent
@@ -127,7 +127,7 @@ enum Optional<T> {
 
 ### Creating Optional Values
 
-```mux
+```mux title="creating_optionals.mux"
 // With value
 auto present = Some(42)           // Optional<int>
 auto present2 = Some("hello")     // Optional<string>
@@ -144,7 +144,7 @@ Optional<string> maybeText = None
 
 Collections return `Optional<T>` for safe access:
 
-```mux
+```mux title="safe_collection_access.mux"
 auto nums = [10, 20, 30]
 
 // Safe access with .get()
@@ -170,7 +170,7 @@ match nums.get(100) {
 
 ### Map Lookups
 
-```mux
+```mux title="map_lookups.mux"
 auto scores = {"Alice": 90, "Bob": 85}
 
 match scores.get("Alice") {
@@ -196,7 +196,7 @@ match scores.get("Charlie") {
 
 Use `_` when you only care about presence/absence:
 
-```mux
+```mux title="ignoring_values.mux"
 match maybeValue {
     Some(_) {
         print("Got a value")  // don't care what it is
@@ -211,7 +211,7 @@ match maybeValue {
 
 ### Optional of Result
 
-```mux
+```mux title="optional_of_result.mux"
 func tryParse(Optional<string> maybeStr) returns Optional<Result<int, string>> {
     match maybeStr {
         Some(s) {
@@ -226,7 +226,7 @@ func tryParse(Optional<string> maybeStr) returns Optional<Result<int, string>> {
 
 ### Result of Optional
 
-```mux
+```mux title="result_of_optional.mux"
 func getRequired(map<string, int> data, string key) returns Result<int, string> {
     match data.get(key) {
         Some(value) {
@@ -243,7 +243,7 @@ func getRequired(map<string, int> data, string key) returns Result<int, string> 
 
 ### Early Returns
 
-```mux
+```mux title="early_returns.mux"
 func processData(string input) returns Result<int, string> {
     // Validate input
     if input == "" {
@@ -269,7 +269,7 @@ func processData(string input) returns Result<int, string> {
 
 ### Nested Matching
 
-```mux
+```mux title="nested_matching.mux"
 func complexOperation() returns Result<string, string> {
     auto step1 = firstOperation()
     
@@ -297,7 +297,7 @@ func complexOperation() returns Result<string, string> {
 
 String and char parsing return `Result` because they can fail:
 
-```mux
+```mux title="fallible_conversions.mux"
 // String to int
 auto num_str = "42"
 auto result = num_str.to_int()  // Result<int, string>
@@ -340,7 +340,7 @@ match letter_result {
 
 Both types use a uniform runtime representation:
 
-```rust
+```rust title="memory_layout.rs"
 pub struct Result<T, E> {
     discriminant: i32,    // 0 = Ok, 1 = Err
     data: *mut T,        // pointer to value
@@ -364,7 +364,7 @@ pub struct Optional<T> {
 
 Very similar:
 
-```rust
+```rust title="rust_comparison.rs"
 // Rust
 fn divide(a: i32, b: i32) -> Result<i32, String> {
     if b == 0 {
@@ -391,7 +391,7 @@ Differences:
 
 Similar philosophy, different syntax:
 
-```go
+```go title="go_comparison.go"
 // Go
 func divide(a, b int) (int, error) {
     if b == 0 {
@@ -417,7 +417,7 @@ Mux advantage:
 
 Different paradigm:
 
-```python
+```python title="python_comparison.py"
 # Python
 def divide(a, b):
     if b == 0:
@@ -456,7 +456,7 @@ Mux advantages:
 
 ### Validation
 
-```mux
+```mux title="validation_pattern.mux"
 func validateAge(int age) returns Result<int, string> {
     if age < 0 {
         return Err("age cannot be negative")
@@ -470,7 +470,7 @@ func validateAge(int age) returns Result<int, string> {
 
 ### Lookup with Default
 
-```mux
+```mux title="lookup_default.mux"
 func getOrDefault(map<string, int> data, string key, int default) returns int {
     match data.get(key) {
         Some(value) { return value }
@@ -481,7 +481,7 @@ func getOrDefault(map<string, int> data, string key, int default) returns int {
 
 ### Transform Result
 
-```mux
+```mux title="transform_result.mux"
 func doubleIfEven(int n) returns Result<int, string> {
     if n % 2 == 0 {
         return Ok(n * 2)

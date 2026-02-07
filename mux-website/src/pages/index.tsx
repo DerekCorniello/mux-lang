@@ -5,60 +5,12 @@ import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
+import CodeBlock from '@theme/CodeBlock';
+import {CopyIcon, CheckIcon} from '@site/src/components/CodeIcons';
 
 import styles from './index.module.css';
 
-// Copy button icon component
-function CopyIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-    </svg>
-  );
-}
 
-// Checkmark icon for copied state
-function CheckIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="20 6 9 17 4 12"></polyline>
-    </svg>
-  );
-}
-
-// Terminal code block component with copy button
-function TerminalCodeBlock({ 
-  filename, 
-  children, 
-  className = '' 
-}: { 
-  filename: string; 
-  children: string; 
-  className?: string;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(children);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <pre className={`terminal-code ${className}`} data-filename={filename}>
-      <button 
-        className="terminal-copy-button"
-        onClick={handleCopy}
-        title={copied ? "Copied!" : "Copy to clipboard"}
-        type="button"
-      >
-        {copied ? <CheckIcon /> : <CopyIcon />}
-      </button>
-      <code>{children}</code>
-    </pre>
-  );
-}
 
 function HomepageHeader() {
   const [copied, setCopied] = useState(false);
@@ -102,6 +54,13 @@ function HomepageHeader() {
           <p style={{fontSize: '0.875rem', color: 'var(--ifm-color-emphasis-600)', marginTop: '0.5rem'}}>
             Requires LLVM 17 and clang. Run <code>mux doctor</code> to verify your setup.
           </p>
+          <div style={{marginTop: '1.5rem'}}>
+            <Link
+              className="button button--secondary"
+              to="/docs/getting-started/quick-start">
+              Read the Docs
+            </Link>
+          </div>
         </div>
       </div>
     </header>
@@ -116,11 +75,11 @@ function QuickStartSection() {
           <div className="col col--6">
             <Heading as="h2">Hello, Mux!</Heading>
             <p>Your first Mux program:</p>
-            <TerminalCodeBlock filename="hello.mux" className={styles.codeExample}>
+            <CodeBlock title="hello.mux" className={styles.codeExample}>
 {`func main() returns void {
     print("Hello, Mux!")
 }`}
-            </TerminalCodeBlock>
+            </CodeBlock>
             <p>
               <Link to="/docs/getting-started/quick-start">Get Started</Link> with the full installation guide.
             </p>
@@ -128,12 +87,12 @@ function QuickStartSection() {
           <div className="col col--6">
             <Heading as="h2">Quick Examples</Heading>
             <p>Pattern matching with Result types:</p>
-            <TerminalCodeBlock filename="example.mux" className={styles.codeExample}>
+            <CodeBlock title="example.mux" className={styles.codeExample}>
 {`match result {
     Ok(value) { print(value.to_string()) }
     Err(error) { print("Error: " + error) }
 }`}
-            </TerminalCodeBlock>
+            </CodeBlock>
             <p>
               <Link to="/docs/language-guide">Explore the Language Guide</Link> for more.
             </p>
@@ -230,7 +189,7 @@ function CodeExampleSection() {
         <div className="row">
           <div className="col col--6">
             <Heading as="h3">Type-Safe Error Handling</Heading>
-            <TerminalCodeBlock filename="error-handling.mux" className={styles.showcaseCode}>
+            <CodeBlock title="error-handling.mux" className={styles.showcaseCode}>
 {`func divide(int a, int b) returns Result<int, string> {
     if b == 0 {
         return Err("division by zero")
@@ -247,11 +206,11 @@ match result {
         print("Error: " + error)
     }
 }`}
-            </TerminalCodeBlock>
+            </CodeBlock>
           </div>
           <div className="col col--6">
             <Heading as="h3">Generics & Collections</Heading>
-            <TerminalCodeBlock filename="generics.mux" className={styles.showcaseCode}>
+            <CodeBlock title="generics.mux" className={styles.showcaseCode}>
 {`class Stack<T> {
     list<T> items
     
@@ -269,7 +228,7 @@ match result {
 
 auto stack = Stack<int>.new()
 stack.push(100)`}
-            </TerminalCodeBlock>
+            </CodeBlock>
           </div>
         </div>
       </div>
@@ -292,7 +251,7 @@ function CTASection() {
             Get Started
           </Link>
           <Link
-            className="button button--secondary button--lg"
+            className="button button--link button--lg"
             to="/docs/language-guide">
             Language Guide
           </Link>

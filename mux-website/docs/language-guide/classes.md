@@ -4,7 +4,7 @@ Mux provides object-oriented programming through classes and interfaces (traits)
 
 ## Basic Class Definition
 
-```mux
+```mux title="basic_class.mux"
 class Circle {
     float radius  // explicit type required for fields
     
@@ -29,7 +29,7 @@ class Circle {
 
 Classes use the `.new()` method pattern:
 
-```mux
+```mux title="class_instantiation.mux"
 // Basic instantiation
 auto circle = Circle.new()
 
@@ -42,13 +42,15 @@ auto area = circle.area()
 print("Area: " + area.to_string())
 ```
 
-**Design Note:** Mux uses explicit `.new()` rather than direct constructor calls to distinguish class instantiation from function calls and enum variant construction.
+**Design Note:** Mux uses explicit `.new()` rather than direct constructor calls to distinguish class instantiation from function calls and enum variant construction. The `.new()` method will *always* instantiate a new object with all default "zero" values for fields, and then you can set fields afterward. This is a simple and consistent pattern for object creation.
+
+The "Mux" style for a constructors is to use a `common` (see [below](./classes.md#static-methods-with-common)) method that creates and initializes the object, rather than defining a special constructor syntax. This allows for more flexible object creation patterns while keeping the core class definition simple.
 
 ## Interfaces (Traits)
 
 Interfaces define required methods that classes must implement:
 
-```mux
+```mux title="interfaces.mux"
 interface Drawable {
     func draw() returns void
 }
@@ -63,7 +65,7 @@ interface Measurable {
 
 Use the `is` keyword to implement interfaces:
 
-```mux
+```mux title="implementing_interfaces.mux"
 class Circle is Drawable, Measurable {
     float radius
     
@@ -109,7 +111,7 @@ class Rectangle is Drawable, Measurable {
 
 Access instance data via `self`:
 
-```mux
+```mux title="instance_methods.mux"
 class Counter {
     int value
     
@@ -134,7 +136,7 @@ print(counter.get().to_string())  // "2"
 
 ### Methods with Unused Parameters
 
-```mux
+```mux title="class_unused_params.mux"
 class Config {
     string name
     
@@ -148,7 +150,7 @@ class Config {
 
 The `common` keyword declares static (class-level) methods:
 
-```mux
+```mux title="static_methods.mux"
 class Stack<T> {
     list<T> items
     
@@ -175,7 +177,7 @@ print(Stack.who_am_i())                    // "I'm a Stack!"
 auto s = Stack<int>.from([1, 2, 3])        // Factory method
 
 // Calling instance methods
-auto stack = Stack<int>.new()
+auto stack = Stack<int>.new()              // creates a new, empty `items` in the stack
 stack.push(42)
 ```
 
@@ -196,7 +198,7 @@ stack.push(42)
 
 Classes can have constant (immutable) fields:
 
-```mux
+```mux title="class_constants.mux"
 class Config {
     const int MAX_RETRIES
     int current_retry
@@ -221,7 +223,7 @@ cfg.current_retry = 1  // OK - mutable field
 
 Classes can be generic over type parameters:
 
-```mux
+```mux title="class_generics.mux"
 class Pair<T, U> {
     T first
     U second
@@ -255,9 +257,9 @@ See [Generics](./generics.md) for more details.
 
 Mux uses **static dispatch** for interfaces - no runtime vtable lookup:
 
-```mux
+```mux title="static_dispatch.mux"
 func drawAll(list<Drawable> shapes) returns void {
-    for shape in shapes {
+    for Shape shape in shapes {
         shape.draw()  // Resolved at compile time
     }
 }
@@ -269,55 +271,6 @@ func drawAll(list<Drawable> shapes) returns void {
 - **Optimization**: Better branch prediction, no indirect jumps
 
 The tradeoff: interfaces cannot be added to types from other modules (no "extension traits").
-
-## Object System
-
-Mux objects use reference counting for memory management:
-
-```mux
-auto circle1 = Circle.new(5.0)
-auto circle2 = circle1  // Both reference the same object
-
-circle2.radius = 10.0
-print(circle1.radius.to_string())  // "10.0" - same object
-```
-
-Objects are freed automatically when their reference count reaches zero.
-
-## Complete Example
-
-```mux
-interface Shape {
-    func area() returns float
-}
-
-class Circle is Shape {
-    float radius
-    
-    func area() returns float {
-        const float PI = 3.1415
-        return PI * self.radius * self.radius
-    }
-    
-    common func unit() returns Circle {
-        auto c = Circle.new()
-        c.radius = 1.0
-        return c
-    }
-}
-
-func main() returns void {
-    auto shapes = [Circle.new(2.0), Circle.new(3.5)]
-    
-    for shape in shapes {
-        auto area = shape.area()
-        print("Area: " + area.to_string())
-    }
-    
-    auto unit = Circle.unit()
-    print("Unit circle area: " + unit.area().to_string())
-}
-```
 
 ## Best Practices
 

@@ -4,7 +4,7 @@ Mux uses **strict static typing** with **NO implicit type conversions**. All typ
 
 ## Primitive Types
 
-```mux
+```mux title="primitive_types.mux"
 int      // 64-bit signed integer
 float    // 64-bit IEEE-754
 bool     // true | false
@@ -16,7 +16,7 @@ string   // UTF-8 sequence
 
 ### Numeric Conversions
 
-```mux
+```mux title="numeric_conversions.mux"
 // Integer conversions
 auto x = 42
 auto x_float = x.to_float()     // int -> float
@@ -49,7 +49,7 @@ auto val = (42).to_float()      // Valid
 
 String and char parsing methods return `Result<T, string>` because they can fail:
 
-```mux
+```mux title="string_parsing.mux"
 // String to number (returns Result)
 auto num_str = "42"
 auto result = num_str.to_int()
@@ -83,7 +83,7 @@ match digit_result {
 
 The following operations are **compile-time errors**:
 
-```mux
+```mux title="implicit_conversions.mux"
 // Type mismatches in binary operations
 auto bad1 = 1 + 1.0        // ERROR: cannot add int and float
 auto bad2 = "hello" + 3    // ERROR: cannot add string and int
@@ -120,7 +120,7 @@ auto good3 = 1.to_float() < 1.0           // OK: true
 
 ## Composite Types
 
-```mux
+```mux title="composite_types.mux"
 Optional<T>        // Represents a value that may or may not exist
 Result<T, E>       // Represents success (T) or error (E)
 list<T>            // Ordered collection
@@ -132,7 +132,7 @@ set<T>             // Unique elements
 
 Mux supports references for safe memory access:
 
-```mux
+```mux title="references.mux"
 // Basic reference usage
 int x = 10
 auto r = &x      // r is of type &int
@@ -160,12 +160,6 @@ print("val after update: " + x.to_string())  // 21
 - Dereference: `*reference` (required for both reading and writing)
 - Pass to functions: `func(&int ref)` declares parameter, `update(&x)` passes reference
 - References to references: Not supported
-
-## Technical Implementation
-
-<!-- TODO: Add more details about the Value enum implementation and boxing strategy once runtime details are finalized -->
-
-Mux uses a unified `Value` enum to represent all runtime values, enabling uniform handling in collections and generics. All primitives are boxed into `*mut Value` pointers for consistent memory management.
 
 ## See Also
 

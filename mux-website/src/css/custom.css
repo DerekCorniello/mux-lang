@@ -134,8 +134,8 @@ code {
   padding: 0.1em 0.3em;
   font-size: 0.85em;
   font-weight: 500;
-  vertical-align: middle;
-  line-height: 1;
+  vertical-align: baseline;
+  line-height: inherit;
 }
 
 pre code {
@@ -153,8 +153,8 @@ pre code {
 
 /* Unified Terminal Code Block - Used everywhere */
 .terminal-code {
-  background: #1e1e1e;
-  border: 1px solid var(--ifm-color-emphasis-200);
+  background: var(--terminal-bg, #1e1e1e);
+  border: 1px solid var(--terminal-border, var(--ifm-color-emphasis-200));
   border-radius: 8px;
   padding: 0;
   margin: 1rem 0;
@@ -168,8 +168,8 @@ pre code {
   content: '';
   display: block;
   height: 32px;
-  background: linear-gradient(to bottom, #323232 0%, #2b2b2b 100%);
-  border-bottom: 1px solid #404040;
+  background: linear-gradient(to bottom, var(--terminal-header-top, #323232) 0%, var(--terminal-header-bottom, #2b2b2b) 100%);
+  border-bottom: 1px solid var(--terminal-header-border, #404040);
 }
 
 /* Mac-style window buttons (left side) */
@@ -194,21 +194,30 @@ pre code {
   align-items: center;
   justify-content: center;
   height: 32px;
-  background: linear-gradient(to bottom, #323232 0%, #2b2b2b 100%);
-  border-bottom: 1px solid #404040;
-  color: #9ca3af;
+  background: linear-gradient(to bottom, var(--terminal-header-top, #323232) 0%, var(--terminal-header-bottom, #2b2b2b) 100%);
+  border-bottom: 1px solid var(--terminal-header-border, #404040);
+  color: var(--terminal-filename-color, #9ca3af);
   font-size: 0.75rem;
   font-family: var(--ifm-font-family-monospace);
   padding: 0 80px; /* Make room for buttons on left and copy on right */
 }
 
-/* Terminal code content */
+/* Terminal code content - the pre tag inside */
+.terminal-code pre {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
 .terminal-code code {
   display: block;
   padding: 1rem 1.25rem;
   background: transparent;
   border: none;
-  color: #e8e8e8;
+  color: var(--terminal-code-color, #e8e8e8);
   font-size: 0.875rem;
   line-height: 1.7;
   margin: 0;
@@ -227,7 +236,7 @@ pre code {
   background: rgba(255, 255, 255, 0.1);
   border: none;
   border-radius: 4px;
-  color: #9ca3af;
+  color: var(--terminal-copy-btn-color, #9ca3af);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -239,7 +248,7 @@ pre code {
 
 .terminal-code .terminal-copy-button:hover {
   background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  color: var(--terminal-copy-btn-hover, #fff);
 }
 
 .terminal-code .terminal-copy-button svg {
@@ -247,67 +256,37 @@ pre code {
   height: 12px;
 }
 
-/* Documentation code blocks (markdown) - EXACT SAME properties as .terminal-code */
-pre[class*="language-"] {
-  background: #1e1e1e;
-  border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 8px;
-  padding: 0;
-  margin: 1rem 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  position: relative;
-  overflow: hidden;
+/* Hide Docusaurus copy button inside terminal-code blocks (we have our own) */
+.terminal-code .buttonGroup {
+  display: none !important;
 }
 
-pre[class*="language-"]::before {
-  content: '';
-  display: block;
-  height: 32px;
-  background: linear-gradient(to bottom, #323232 0%, #2b2b2b 100%);
-  border-bottom: 1px solid #404040;
+/* Light mode terminal styling */
+:root {
+  --terminal-bg: var(--terminal-light-bg, #f8fafc);
+  --terminal-border: var(--terminal-light-border, #e2e8f0);
+  --terminal-header-top: var(--terminal-light-header-top, #f1f5f9);
+  --terminal-header-bottom: var(--terminal-light-header-bottom, #e2e8f0);
+  --terminal-header-border: var(--terminal-light-header-border, #cbd5e1);
+  --terminal-filename-color: var(--terminal-light-filename-color, #475569);
+  --terminal-code-color: var(--terminal-light-code-color, #1e293b);
+  --terminal-copy-btn-color: var(--terminal-light-copy-btn-color, #64748b);
+  --terminal-copy-btn-hover: var(--terminal-light-copy-btn-hover, #334155);
 }
 
-pre[class*="language-"]::after {
-  content: '';
-  position: absolute;
-  top: 10px;
-  left: 12px;
-  width: 12px;
-  height: 12px;
-  background: #ff5f57;
-  border-radius: 50%;
-  box-shadow: 
-    20px 0 0 #febc2e,
-    40px 0 0 #28c840;
+/* Dark mode terminal styling */
+[data-theme='dark'] {
+  --terminal-bg: var(--terminal-dark-bg, #1e1e1e);
+  --terminal-border: var(--terminal-dark-border, #334155);
+  --terminal-header-top: var(--terminal-dark-header-top, #323232);
+  --terminal-header-bottom: var(--terminal-dark-header-bottom, #2b2b2b);
+  --terminal-header-border: var(--terminal-dark-header-border, #404040);
+  --terminal-filename-color: var(--terminal-dark-filename-color, #94a3b8);
+  --terminal-code-color: var(--terminal-dark-code-color, #e2e8f0);
+  --terminal-copy-btn-color: var(--terminal-dark-copy-btn-color, #9ca3af);
+  --terminal-copy-btn-hover: var(--terminal-dark-copy-btn-hover, #fff);
 }
 
-pre[class*="language-"][data-filename]::before {
-  content: attr(data-filename);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 32px;
-  background: linear-gradient(to bottom, #323232 0%, #2b2b2b 100%);
-  border-bottom: 1px solid #404040;
-  color: #9ca3af;
-  font-size: 0.75rem;
-  font-family: var(--ifm-font-family-monospace);
-  padding: 0 80px;
-}
-
-pre[class*="language-"] code {
-  display: block;
-  padding: 1rem 1.25rem;
-  background: transparent;
-  border: none;
-  color: #e8e8e8;
-  font-size: 0.875rem;
-  line-height: 1.7;
-  margin: 0;
-  font-family: var(--ifm-font-family-monospace);
-  white-space: pre;
-  overflow-x: auto;
-}
 
 /* Navbar styling - refined */
 .navbar {
@@ -315,30 +294,42 @@ pre[class*="language-"] code {
   box-shadow: none;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  min-height: var(--ifm-navbar-height);
 }
 
 .navbar__inner {
   align-items: center;
+  justify-content: space-between;
 }
 
 .navbar__items {
   align-items: center;
+  justify-content: flex-start;
+}
+
+.navbar__items > .navbar__item {
+  margin-right: 0.25rem;
+}
+
+.navbar__items--right {
+  margin-left: auto;
 }
 
 .navbar__logo {
-  height: 36px;
+  height: 32px;
   display: flex;
   align-items: center;
-  margin-right: 0.75rem;
+  margin-right: 0.5rem;
 }
 
 .navbar__title {
   font-family: var(--ifm-heading-font-family);
   font-weight: 700;
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   display: flex;
   align-items: center;
   letter-spacing: -0.02em;
+  margin-right: 1rem;
 }
 
 .navbar__link {
@@ -346,22 +337,9 @@ pre[class*="language-"] code {
   font-size: 0.95rem;
   display: flex;
   align-items: center;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
   border-radius: 6px;
   transition: all 0.2s ease;
-}
-
-.navbar__link:hover {
-  color: var(--ifm-color-primary);
-}
-
-.navbar__link--active {
-  color: var(--ifm-color-primary);
-}
-
-.navbar__item {
-  display: flex;
-  align-items: center;
 }
 
 /* Hero section - more impactful */
@@ -707,5 +685,79 @@ html {
 }
 
 .footer__copyright a:hover {
+  color: var(--ifm-color-primary);
+}
+
+/* Center and size the search bar */
+.dsla-search-wrapper {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 25%;
+  min-width: 250px;
+  max-width: 500px;
+}
+
+.dsla-search-field {
+  width: 100%;
+}
+
+/* Mobile: shrink search bar */
+@media (max-width: 768px) {
+  .dsla-search-wrapper {
+    width: 40%;
+    min-width: 150px;
+  }
+}
+
+/* Small mobile: even smaller */
+@media (max-width: 480px) {
+  .dsla-search-wrapper {
+    width: 50%;
+    min-width: 120px;
+  }
+}
+
+/* Search bar color overrides - match site theme */
+.dsla-search-wrapper .aa-DetachedSearchButton,
+.dsla-search-wrapper .aa-Form,
+.dsla-search-wrapper .aa-InputWrapper {
+  background-color: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 6px;
+}
+
+.dsla-search-wrapper .aa-DetachedSearchButton {
+  color: var(--ifm-color-emphasis-700);
+}
+
+.dsla-search-wrapper .aa-DetachedSearchButton:focus,
+.dsla-search-wrapper .aa-DetachedSearchButton:hover {
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+
+.dsla-search-wrapper .aa-Input {
+  color: var(--ifm-color-emphasis-800);
+}
+
+.dsla-search-wrapper .aa-DetachedSearchButtonIcon {
+  color: var(--ifm-color-primary);
+}
+
+/* Dark mode overrides */
+[data-theme='dark'] .dsla-search-wrapper .aa-DetachedSearchButton,
+[data-theme='dark'] .dsla-search-wrapper .aa-Form,
+[data-theme='dark'] .dsla-search-wrapper .aa-InputWrapper {
+  background-color: var(--ifm-background-surface-color);
+  border-color: var(--ifm-color-emphasis-200);
+}
+
+[data-theme='dark'] .dsla-search-wrapper .aa-Input {
+  color: var(--ifm-color-emphasis-800);
+}
+
+[data-theme='dark'] .dsla-search-wrapper .aa-DetachedSearchButtonIcon {
   color: var(--ifm-color-primary);
 }

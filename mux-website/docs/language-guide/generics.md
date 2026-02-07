@@ -6,7 +6,7 @@ Mux supports generics with type parameters and interface bounds, similar to Go a
 
 Functions can be generic over type parameters:
 
-```mux
+```mux title="generic_identity.mux"
 // Simple generic function
 func identity<T>(T value) returns T {
     return value
@@ -21,7 +21,7 @@ auto b = identity<string>("hello")
 
 Use the `is` keyword to constrain type parameters to specific interfaces:
 
-```mux
+```mux title="generic_constraints.mux"
 // Generic function with Comparable bound
 func max<T is Comparable>(T a, T b) returns T {
     if a > b {
@@ -48,7 +48,7 @@ auto greeting = greet<string>("World")  // T = string
 
 ### Multiple Type Parameters
 
-```mux
+```mux title="multiple_type_params.mux"
 func pair<T, U>(T first, U second) returns Pair<T, U> {
     auto p = Pair<T, U>.new()
     p.first = first
@@ -63,7 +63,7 @@ auto result = pair<int, string>(42, "answer")
 
 Type parameters can have multiple constraints:
 
-```mux
+```mux title="multiple_bounds.mux"
 // Type must implement BOTH Add AND Stringable
 func combine<T is Add & Stringable>(T a, T b) returns string {
     return (a.add(b)).to_string()
@@ -77,7 +77,7 @@ auto result = combine<int>(5, 3)  // "8"
 
 Classes can be generic over type parameters:
 
-```mux
+```mux title="generic_classes.mux"
 class Stack<T> {
     list<T> items
     
@@ -110,7 +110,7 @@ string_stack.push("world")
 
 ### Generic Classes with Multiple Type Parameters
 
-```mux
+```mux title="generic_pair.mux"
 class Pair<T, U> {
     T first
     U second
@@ -142,10 +142,6 @@ Mux provides built-in interfaces for common operations:
 | Interface | Methods | Description |
 |-----------|---------|-------------|
 | `Stringable` | `to_string() -> string` | Types that can be converted to string |
-| `Add` | `add(Self) -> Self` | Types that support `+` operator |
-| `Sub` | `sub(Self) -> Self` | Types that support `-` operator |
-| `Mul` | `mul(Self) -> Self` | Types that support `*` operator |
-| `Div` | `div(Self) -> Self` | Types that support `/` operator |
 | `Arithmetic` | `add`, `sub`, `mul`, `div` | Types that support all arithmetic operators |
 | `Equatable` | `eq(Self) -> bool` | Types that support `==` and `!=` operators |
 | `Comparable` | `cmp(Self) -> int` | Types that support `<`, `<=`, `>`, `>=` operators |
@@ -167,7 +163,7 @@ Mux provides built-in interfaces for common operations:
 
 ## Implementing Interfaces for Custom Types
 
-```mux
+```mux title="custom_interfaces.mux"
 interface Add {
     func add(Self) returns Self
 }
@@ -199,7 +195,7 @@ auto total = sum_points<Point>(points)
 
 ## Generic Functions with Collections
 
-```mux
+```mux title="generic_collections_funcs.mux"
 // Generic map function
 func map<T, U>(list<T> items, func(T) returns U transform) returns list<U> {
     auto result = list<U>()
@@ -235,7 +231,7 @@ auto evens = filter<int>(numbers, func(int n) returns bool {
 
 Mux uses **compile-time monomorphization** for generics - specialized code is generated for each type instantiation:
 
-```mux
+```mux title="monomorphization.mux"
 func identity<T>(T value) returns T {
     return value
 }
@@ -260,30 +256,30 @@ auto b = identity<string>("hello") // Generates: identity$$string
 
 ### Tradeoff
 
-- **Increased code size**: One copy per type combination
+- **Increased intermediate code size and compilation time**: One copy per type combination
 
 ## Type Inference in Generics
 
 Type parameters can often be inferred from context:
 
-```mux
-func identity<T>(T value) returns T {
-    return value
+```mux title="type_inference_generics.mux"
+func identity<T is Stringable>(T value) returns T {
+    return value.to_string()
 }
 
 // Explicit type parameter
 auto a = identity<int>(42)
 
 // Type inferred from argument
-auto b = identity(42)  // T inferred as int
-auto c = identity("hello")  // T inferred as string
+auto b = identity(42)  // T is a int
+auto c = identity("hello")  // T is a string
 ```
 
 However, when ambiguous, explicit types are required:
 
-```mux
+```mux title="explicit_generic_types.mux"
 // Ambiguous - need explicit types
-Stack<int> stack = Stack<int>.new()
+list<int> stack = []
 
 // Clear from context - can use auto
 auto numbers = [1, 2, 3]  // list<int> inferred
@@ -293,7 +289,7 @@ auto numbers = [1, 2, 3]  // list<int> inferred
 
 Enums can be generic:
 
-```mux
+```mux title="generic_enums.mux"
 enum Optional<T> {
     Some(T)
     None
@@ -316,7 +312,7 @@ See [Enums](./enums.md) and [Error Handling](./error-handling.md) for more detai
 
 ### Single Constraint
 
-```mux
+```mux title="single_constraint.mux"
 func process<T is Stringable>(list<T> items) returns void {
     for item in items {
         print(item.to_string())
@@ -326,9 +322,12 @@ func process<T is Stringable>(list<T> items) returns void {
 
 ### Multiple Constraints (AND)
 
-```mux
-func combine<T is Add & Stringable>(T a, T b) returns string {
-    return (a.add(b)).to_string()
+```mux title="multiple_constraints.mux"
+func max<T is Comparable & Stringable>(T a, T b) returns string {
+    if a > b {
+        return a.to_string()
+    }
+    return b.to_string()
 }
 ```
 
@@ -344,62 +343,9 @@ Type `T` must implement **all** specified interfaces.
 6. **Keep generic functions simple** - Complex logic harder to debug
 7. **Document constraints** - Make requirements clear
 
-## Comparison with Other Languages
-
-### vs Rust
-
-Similar approach:
-
-```rust
-// Rust
-fn max<T: Ord>(a: T, b: T) -> T { ... }
-
-// Mux
-func max<T is Comparable>(T a, T b) returns T { ... }
-```
-
-Differences:
-- Mux uses `is` instead of `:` for bounds
-- Mux uses `&` for multiple bounds instead of `+`
-- Both use monomorphization
-
-### vs Go
-
-Similar syntax:
-
-```go
-// Go
-func Max[T comparable](a, b T) T { ... }
-
-// Mux
-func max<T is Comparable>(T a, T b) returns T { ... }
-```
-
-Differences:
-- Mux uses `<>` instead of `[]` for type parameters
-- Both use interface constraints
-- Both use monomorphization
-
-### vs Java/TypeScript
-
-Different approach:
-
-```java
-// Java (type erasure)
-<T> T identity(T value) { return value; }
-
-// Mux (monomorphization)
-func identity<T>(T value) returns T { return value }
-```
-
-Mux advantage:
-- No runtime type erasure
-- Better performance (static dispatch)
-- Full type information at compile time
-
 ## See Also
 
 - [Functions](./functions.md) - Generic functions
 - [Classes](./classes.md) - Generic classes
 - [Enums](./enums.md) - Generic enums
-- [Error Handling](./error-handling.md) - Optional&lt;T&gt; and Result&lt;T,E&gt;
+- [Error Handling](./error-handling.md) - Optional&lt;T&gt; and Result&lt;T, E&gt;

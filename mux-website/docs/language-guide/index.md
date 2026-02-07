@@ -19,7 +19,7 @@ Mux (fully "MuxLang") is designed with the following principles:
 
 Mux uses strict static typing with no implicit type conversions. All type conversions must be explicit.
 
-```mux
+```mux title="type_inference.mux"
 auto x = 42              // Type inferred as int
 auto y = 3.14            // Type inferred as float
 auto name = "Mux"        // Type inferred as string
@@ -33,7 +33,7 @@ auto sum = x + y.to_int()           // OK
 
 Statements are terminated by end-of-line only:
 
-```mux
+```mux title="no_semicolons.mux"
 auto x = 10
 auto y = 20
 auto sum = x + y
@@ -43,7 +43,7 @@ auto sum = x + y
 
 Rust-style pattern matching with guards:
 
-```mux
+```mux title="pattern_matching.mux"
 match value {
     Some(v) if v > 10 {
         print("Large value: " + v.to_string())
@@ -104,6 +104,5 @@ Explore the detailed language documentation:
 ## Getting Help
 
 - [Quick Start Guide](../getting-started/quick-start.md)
+- [Examples](./examples.md) - Code examples for common patterns
 - [GitHub Issues](https://github.com/derekcorniello/mux-lang/issues)
-
-<!-- TODO: Add examples page link when created -->

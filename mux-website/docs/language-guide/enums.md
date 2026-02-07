@@ -1,10 +1,10 @@
-# Enums (Tagged Unions)
+# Enums / Tagged Unions
 
 Enums in Mux are tagged unions (also called algebraic data types or sum types) that can hold different variants with associated data.
 
 ## Basic Enum Definition
 
-```mux
+```mux title="basic_enum.mux"
 enum Status {
     Pending
     Active
@@ -25,7 +25,7 @@ enum Shape {
 
 ## Creating Enum Instances
 
-```mux
+```mux title="creating_enums.mux"
 // Variant without data
 auto status = Pending.new()
 
@@ -42,7 +42,7 @@ auto myShape = Circle.new(5.0)  // type inferred as Shape
 
 Use `match` to handle different enum variants:
 
-```mux
+```mux title="pattern_matching_enums.mux"
 enum Shape {
     Circle(float radius)
     Rectangle(float width, float height)
@@ -71,7 +71,7 @@ match myShape {
 
 Use `_` to ignore data you don't need:
 
-```mux
+```mux title="ignoring_enum_data.mux"
 match shape {
     Circle(_) {
         print("It's a circle")  // radius ignored
@@ -89,7 +89,7 @@ match shape {
 
 Add conditional logic with guards:
 
-```mux
+```mux title="enum_guards.mux"
 enum MaybeValue<T> {
     Some(T)
     None
@@ -117,7 +117,7 @@ match value {
 
 Enums can be generic over type parameters:
 
-```mux
+```mux title="enum_generics.mux"
 enum Option<T> {
     Some(T)
     None
@@ -141,7 +141,7 @@ auto failure = Err.new("error msg")   // Result<T, string>
 
 ### Optional Values
 
-```mux
+```mux title="optional_values.mux"
 enum Optional<T> {
     Some(T)
     None
@@ -170,7 +170,7 @@ match result {
 
 ### Result Types for Error Handling
 
-```mux
+```mux title="result_types.mux"
 enum Result<T, E> {
     Ok(T)
     Err(E)
@@ -199,7 +199,7 @@ See [Error Handling](./error-handling.md) for more details on Result and Optiona
 
 ### State Machines
 
-```mux
+```mux title="state_machines.mux"
 enum Connection {
     Disconnected
     Connecting(string address)
@@ -227,7 +227,7 @@ func handleConnection(Connection conn) returns void {
 
 ### Nested Enums
 
-```mux
+```mux title="nested_enums.mux"
 enum Message {
     Text(string content)
     Image(string url, int width, int height)
@@ -267,7 +267,7 @@ match event {
 
 ## Enums in Collections
 
-```mux
+```mux title="enums_in_collections.mux"
 enum Shape {
     Circle(float radius)
     Rectangle(float width, float height)
@@ -281,7 +281,7 @@ list<Shape> shapes = [
     Square.new(4.0)
 ]
 
-for shape in shapes {
+for Shape shape in shapes {
     match shape {
         Circle(r) {
             print("Circle: " + r.to_string())
@@ -300,7 +300,7 @@ for shape in shapes {
 
 Mux enforces exhaustive pattern matching - all variants must be covered:
 
-```mux
+```mux title="exhaustiveness_checking.mux"
 enum Color {
     Red
     Green
@@ -328,53 +328,6 @@ match color {
 }
 ```
 
-## Comparison with Other Languages
-
-### vs Rust
-
-Similar to Rust enums:
-
-```rust
-// Rust
-enum Option<T> {
-    Some(T),
-    None,
-}
-
-// Mux
-enum Optional<T> {
-    Some(T)
-    None
-}
-```
-
-Differences:
-- Mux uses `.new()` for construction
-- No semicolons or commas in Mux
-- Mux uses `match` with curly braces
-
-### vs TypeScript/JavaScript
-
-TypeScript's discriminated unions:
-
-```typescript
-// TypeScript
-type Shape =
-  | { kind: 'circle'; radius: number }
-  | { kind: 'rectangle'; width: number; height: number }
-
-// Mux
-enum Shape {
-    Circle(float radius)
-    Rectangle(float width, float height)
-}
-```
-
-Mux advantages:
-- Compile-time exhaustiveness checking
-- No manual discriminant field
-- Type-safe variant construction
-
 ## Best Practices
 
 1. **Use enums for mutually exclusive states** - Better than multiple booleans
@@ -383,7 +336,7 @@ Mux advantages:
 4. **Ignore unused data with `_`** - Makes intent explicit
 5. **Prefer Result over exceptions** - Explicit error handling
 6. **Prefer Optional over null** - No null pointer errors
-7. **Use generic enums for reusable patterns** - Option&lt;T&gt;, Result&lt;T,E&gt;
+7. **Use generic enums for reusable patterns** - Option&lt;T&gt;, Result&lt;T, E&gt;
 
 ## See Also
 

@@ -9,7 +9,6 @@ Before you begin, make sure you have the following installed:
 - **Rust** (1.85 or later) - [Install Rust](https://rustup.rs/)
 - **LLVM** (17) - Required for code generation
 - **clang** - Required for linking compiled programs
-- **Git**
 
 ## Installation
 
@@ -17,7 +16,7 @@ Before you begin, make sure you have the following installed:
 
 The easiest way to install Mux is using cargo:
 
-```bash
+```bash title="bash"
 cargo install mux-lang
 ```
 
@@ -27,9 +26,9 @@ This will install the Mux compiler and runtime to your cargo bin directory.
 
 ### Option 2: Build from Source
 
-If you prefer to build from source:
+If you prefer to build from source, maybe to even help [contribute](https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md) to the project:
 
-```bash
+```bash title="bash"
 git clone https://github.com/derekcorniello/mux-lang
 cd mux-lang
 cargo build --release
@@ -41,13 +40,13 @@ The compiler will be built in `target/release/mux-compiler`.
 
 After installation, verify everything is working:
 
-```bash
+```bash title="bash"
 mux --version
 ```
 
-Or use the built-in doctor command to check your setup:
+Use the built-in doctor command to check your setup:
 
-```bash
+```bash title="bash"
 mux doctor
 ```
 
@@ -59,7 +58,7 @@ The `mux doctor` command will verify that all required dependencies (LLVM, clang
 
 Create a new file called `hello.mux`:
 
-```mux
+```mux title="hello.mux"
 func main() returns void {
     print("Hello, Mux!")
 }
@@ -67,12 +66,12 @@ func main() returns void {
 
 ### 2. Run the Program
 
-```bash
+```bash title="bash"
 mux run hello.mux
 ```
 
 You should see:
-```
+``` title="output"
 Hello, Mux!
 ```
 
@@ -82,11 +81,11 @@ Hello, Mux!
 
 Create a file called `numbers.mux`:
 
-```mux
+```mux title="numbers.mux"
 func main() returns void {
     auto numbers = [1, 2, 3, 4, 5]
     
-    for num in numbers {
+    for int num in numbers {
         auto squared = num * num
         print("Square of " + num.to_string() + " is " + squared.to_string())
     }
@@ -94,7 +93,7 @@ func main() returns void {
 ```
 
 Run it:
-```bash
+```bash title="bash"
 mux run numbers.mux
 ```
 
@@ -105,23 +104,25 @@ mux run numbers.mux
 - Understand [Variable Declarations](../language-guide/variables.md)
 - Discover [Why Mux exists](./why-mux.md)
 
-## Common Commands
+## Commands and Options
 
-```bash
-# Run a Mux program
-mux run <file.mux>
+```bash title="bash"
+Usage: mux [OPTIONS] <COMMAND>
 
-# Check installation and dependencies
-mux doctor
+Commands:
+  build    Compile a Mux file without running it
+  run      Compile and run a Mux file
+  format   Format a Mux file
+  try      Try running a Mux file (for quick experimentation)
+  doctor   Check system dependencies for the Mux compiler
+  version  Print the Mux version
+  help     Print this message or the help of the given subcommand(s)
 
-# Show version
-mux --version
-
-# Build the compiler from source (if developing)
-cargo build --release
-
-# Run tests (if developing)
-cargo test
+Options:
+  -o, --output <OUTPUT>  Name of the output executable
+  -i, --intermediate     Emit intermediate LLVM IR (.ll)
+  -h, --help             Print help
+  -V, --version          Print version
 ```
 
 ## Getting Help
@@ -139,7 +140,7 @@ Mux is actively being developed. Here are some things to be aware of:
 - **Standard Library Under Development** - The stdlib is incomplete and APIs may change
 - **Breaking Changes Expected** - The language is evolving, so expect syntax and semantic changes
 
-We are working on these features, but they are not yet available. Contributions are welcome!
+I am working on these features, but they are not yet available. Contributions are welcome!
 
 ## What's Next?
 

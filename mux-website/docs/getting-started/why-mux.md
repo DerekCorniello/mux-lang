@@ -2,24 +2,23 @@
 
 ## The Origin Story
 
-<!-- TODO: Add the actual story of how Mux got its name from Derek -->
-
-Mux (short for "MuxLang") was created to explore what a modern programming language could look like when combining the best aspects of existing languages while maintaining simplicity and clarity.
+My goals of this language were primarily to learn. I wanted to understand how programming languages work under the hood, and to explore what a modern language could look like if I designed it from scratch.
+<br/>
+From the beginning, I wanted to create a language that combined the best aspects of languages I use a lot, such as Python, Go, and Rust. Another motivation was to create a language that is easy to learn and read, while still providing strong safety guarantees and good performance for new programmers.
+<br/>
+Mux (short for "MuxLang") was created to explore what a modern programming language could look like when combining the best aspects of existing languages while maintaining simplicity and clarity. In electrical engineering, a "mux" (multiplexer) is a device that selects one of many inputs and forwards it to a single output. Similarly, Mux the language aims to select the best features from various languages and combine them into a cohesive whole.
 
 ## What Problems Does Mux Solve?
 
 ### 1. **The Python Ease-of-Use Problem**
 
-Python is beloved for its readability and ease of use, but it lacks:
-- Strong static typing (until recently, and even then it's optional)
-- Compile-time error checking
-- Native performance
+Python is beloved for its readability and ease of use, but it lacks strong static typing and compile-time error checking.
 
 **Mux's Approach:** Combine Python's clean syntax and ease of use with mandatory static typing and LLVM-powered native compilation.
 
 ### 2. **The Rust-Inspired Safety Path**
 
-Rust sets the bar for memory safety, using an innovative ownership model. It is an amazing achievement, but requires significant learning investment.
+Rust sets the bar for memory safety, using an innovative ownership model, while also providing an awesome type system.
 
 **Mux's Approach:** Achieve memory safety through reference counting instead of compile-time borrow checking. This provides excellent safety with a gentler learning curve, letting you focus on your problem instead of fighting the type system.
 
@@ -36,14 +35,11 @@ Go excels at simplicity, fast compilation, and building reliable network service
 **Readability First**
 Code should be easy to read and understand. No semicolons, clear syntax, explicit types.
 
-**Explicit Over Implicit**
+**Everything Is Explicit**
 No implicit type conversions. No hidden behavior. What you see is what you get.
 
 **Safety Without Complexity**
 Memory safety through reference counting. No manual memory management, no borrow checker.
-
-**Fast Compilation**
-LLVM backend for native performance, but optimized for quick iteration during development.
 
 **Beginner Friendly**
 If you know Python or JavaScript, you should be able to read Mux code immediately.
@@ -53,7 +49,7 @@ If you know Python or JavaScript, you should be able to read Mux code immediatel
 Mux is focused on getting the fundamentals right first:
 
 **Core Language Features**
-Solid foundations matter more than adding every possible feature. We're building a complete, well-designed language, not rushing to add every bell and whistle.
+Solid foundations matter more than adding every possible feature. I'm building a complete, well-designed language, not rushing to add every bell and whistle.
 
 **Runtime Performance**
 Reference counting provides excellent performance for most use cases while keeping the memory model simple and predictable.
@@ -67,19 +63,17 @@ Thread-safe reference counting is in place. Higher-level concurrency features wi
 ## Honest Tradeoffs
 
 Every language makes tradeoffs. Here is what to expect:
-
+<br/>
 **Mux Gives You:**
-- Easy-to-understand memory model (reference counting)
+- Worry-free memory management with reference counting
 - Simple, readable syntax
 - Strong compile-time guarantees
-- Native performance (faster than Python/JavaScript)
-- Predictable behavior with no garbage collection pauses
-
+- Native performance
+<br/>
 **Tradeoffs to Know:**
-- Reference counting has overhead (faster than GC languages, slower than Rust in some cases)
-- Explicit type conversions (more verbose than dynamic languages, but safer)
-- Early-stage ecosystem (growing, but not yet mature)
-- Active development (we're building toward stability)
+- Reference counting has overhead
+- Explicit type conversions
+- Early-stage ecosystem and Active development
 
 ## Who Is Mux For?
 
@@ -91,7 +85,7 @@ Every language makes tradeoffs. Here is what to expect:
 - You're building applications where developer productivity matters
 
 **Mux is growing toward:**
-- Maximum performance (getting closer with each release)
+- Maximum performance
 - A rich ecosystem of libraries
 - Production-ready concurrency features
 - Long-term stability
@@ -100,35 +94,27 @@ Every language makes tradeoffs. Here is what to expect:
 
 Mux follows these core principles:
 
-**Clarity over completeness**  
-Better to have fewer, well-understood features than many half-baked ones.
-
-**Intentional design over feature accumulation**  
-Every feature must justify its complexity by improving understanding or safety.
-
-**Documentation as a tool for thinking**  
-Writing good docs reveals design flaws. If you can't explain it simply, it's probably not simple enough.
-
-**Honest communication**  
-No marketing hype. No promises we can't keep. Just honest assessment of what works and what doesn't.
+- **Clarity over completeness** : Better to have fewer, well-understood features than many half-baked ones.
+- **Intentional design over feature accumulation** - Every feature must justify its complexity by improving understanding or safety.
+- **Documentation as a tool for thinking** - Writing good docs reveals design flaws. If you can't explain it simply, it's probably not simple enough.
 
 ## Coming from Other Languages?
 
 ### From Python
-You will love: The familiar syntax, ease of use, and clean code style
-You will appreciate: Compile-time type checking catching bugs before they happen
-
-### From JavaScript/TypeScript
-You will love: No more `undefined` surprises, Result/Optional instead of null
-You will appreciate: A stricter type system that catches bugs at compile time
+You will love: The familiar syntax, ease of use, and clean code style<br/>
+You will appreciate: Compile-time type checking catching bugs before they happen<br/>
 
 ### From Go
-You will love: The simplicity and minimalism
-You will enjoy: Pattern matching and generics (familiar if you used Go 1.18+)
+You will love: The simplicity and minimalism<br/>
+You will enjoy: Pattern matching and generics (familiar if you used Go 1.18+)<br/>
 
 ### From Rust
-You will love: No borrow checker, simpler lifetime management
-You will appreciate: Reference counting with predictable performance
+You will love: No borrow checker, simpler lifetime management<br/>
+You will appreciate: Reference counting with predictable performance<br/>
+
+### From JavaScript/TypeScript
+You will love: No more `undefined` surprises, Result/Optional instead of null<br/>
+You will appreciate: A stricter type system that catches bugs at compile time<br/>
 
 ## What's Next?
 
@@ -138,13 +124,6 @@ Want to understand the design decisions? Check out the [Design Notes](../design-
 
 ## Current Status
 
-**Mux is in active development.** The language is growing and improving rapidly:
-
-- Core language features are stabilizing
-- The compiler and runtime are getting faster with each release
-- Documentation is expanding
-- We're building toward a stable 1.0 release
-
-This is an exciting time to get involved and help shape Mux's future.
+**Mux is in active development.** The language is growing and improving. This is an exciting time to get involved and help shape Mux's future.
 
 If you're interested in following along or contributing, check out the [GitHub repository](https://github.com/derekcorniello/mux-lang).

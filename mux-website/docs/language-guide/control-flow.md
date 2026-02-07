@@ -6,7 +6,7 @@ Mux provides familiar control flow constructs with some unique features like pat
 
 Standard if-else branching with curly braces:
 
-```mux
+```mux title="if_else.mux"
 if x > 0 {
     print("positive")
 } else if x < 0 {
@@ -20,7 +20,7 @@ if x > 0 {
 
 In Mux, `if` can be used as an expression that returns a value:
 
-```mux
+```mux title="if_expression.mux"
 auto message = if x > 0 { "positive" } else { "non-positive" }
 
 auto status = if score >= 90 {
@@ -32,36 +32,26 @@ auto status = if score >= 90 {
 }
 ```
 
-### Type Inference with If
-
-```mux
-// Type inferred from branches
-auto result = if condition {
-    calculateValue()
-} else {
-    defaultValue()
-}
-```
-
 ## For Loops
 
 Mux uses range-based for loops only (no C-style `for (int i = 0; i < n; i++)`):
 
-```mux
+```mux title="for_loops.mux"
 // Iterating over a list
 auto items = [1, 2, 3, 4, 5]
-for item in items {
+for int item in items {
     print(item.to_string())
 }
 
 // Using range() for numeric iteration
-for i in range(0, 10) {
+for int i in range(0, 10) {
     print("Iteration: " + i.to_string())
 }
 
-// Iterating with type inference
-for item in collection {
-    auto processed = transform(item)  // item type inferred
+// Explicit typing for clarity
+auto collection = ["Bob", "Alice", "Eve"]
+for string name in collection {
+    auto processed = create_message_to(name)
     print(processed)
 }
 ```
@@ -70,38 +60,48 @@ for item in collection {
 
 Use `_` when you don't need the loop variable:
 
-```mux
+```mux title="ignoring_loop_vars.mux"
 // Execute 10 times, don't care about index
-for _ in range(0, 10) {
+for int _ in range(0, 10) {
     doSomething()
-}
-
-// Destructuring with unused parts
-for (key, _) in keyValuePairs {
-    print("Key: " + key)  // value ignored
 }
 ```
 
 ### Iterating Collections
 
-```mux
+```mux title="iterating_collections.mux"
 // List iteration
 auto nums = [10, 20, 30]
-for n in nums {
+for int n in nums {
     print(n.to_string())
 }
 
-// Map iteration (future feature)
-// for (key, value) in myMap {
-//     print(key + ": " + value.to_string())
-// }
+auto myMap = {
+    "a": 1,
+    "b": 2,
+    "c": 3
+}
+// Map iteration on keys
+for key in myMap.keys() {
+    print(key)
+}
+
+// Map iteration on vals
+for value in myMap.keys() {
+    print(value)
+}
+
+auto mySet = {"a", "b", "c"}
+for char in mySet {
+    print(char.to_string())
+}
 ```
 
 ## While Loops
 
 Standard while loops with boolean conditions:
 
-```mux
+```mux title="while_loops.mux"
 auto count = 0
 while count < 10 {
     print(count.to_string())
@@ -121,9 +121,9 @@ while condition {
 
 Control loop execution:
 
-```mux
+```mux title="break_continue.mux"
 // Break exits the loop
-for i in range(0, 100) {
+for int i in range(0, 100) {
     if i > 10 {
         break
     }
@@ -131,7 +131,7 @@ for i in range(0, 100) {
 }
 
 // Continue skips to next iteration
-for i in range(0, 10) {
+for int i in range(0, 10) {
     if i % 2 == 0 {
         continue  // skip even numbers
     }
@@ -139,15 +139,13 @@ for i in range(0, 10) {
 }
 ```
 
-**Note:** `break` and `continue` work in both `for` and `while` loops.
-
 ## Match Statements
 
 Pattern matching with guards and destructuring:
 
 ### Basic Matching
 
-```mux
+```mux title="basic_matching.mux"
 match value {
     1 {
         print("one")
@@ -161,9 +159,21 @@ match value {
 }
 ```
 
+This is equivalent to:
+
+```mux title="if_else_equivalent.mux"
+if value == 1 {
+    print("one")
+} else if value == 2 {
+    print("two")
+} else {
+    print("other")
+}
+```
+
 ### Matching Optional
 
-```mux
+```mux title="matching_optional.mux"
 func findEven(list<int> xs) returns Optional<int> {
     for x in xs {
         if x % 2 == 0 {
@@ -187,7 +197,7 @@ match maybeEven {
 
 ### Matching Result
 
-```mux
+```mux title="matching_result.mux"
 func divide(int a, int b) returns Result<int, string> {
     if b == 0 {
         return Err("division by zero")
@@ -211,7 +221,7 @@ match result {
 
 Guards add conditional logic to patterns:
 
-```mux
+```mux title="pattern_guards.mux"
 match value {
     Some(v) if v > 10 {
         print("large: " + v.to_string())
@@ -232,7 +242,7 @@ match value {
 
 Use `_` to ignore parts of patterns you don't need:
 
-```mux
+```mux title="pattern_ignore.mux"
 // Ignore the wrapped value
 match maybeValue {
     Some(_) {
@@ -256,7 +266,7 @@ match result {
 
 ### Matching Enums
 
-```mux
+```mux title="matching_enums.mux"
 enum Shape {
     Circle(float radius)
     Rectangle(float width, float height)
@@ -295,7 +305,7 @@ match shape {
 
 The `_` pattern matches anything:
 
-```mux
+```mux title="wildcard_pattern.mux"
 match status {
     0 { print("success") }
     1 { print("warning") }
@@ -304,11 +314,23 @@ match status {
 }
 ```
 
+### Exhaustive Matching
+
+Mux requires that all possible cases are handled in a match statement. If you miss a case, the compiler will give an error:
+
+```mux title="exhaustive_matching.mux"
+match value {
+    1 { print("one") }
+    2 { print("two") }
+    // Missing wildcard or other cases will cause a compile error!
+}
+```
+
 ## Return Statement
 
 Exit a function early:
 
-```mux
+```mux title="return_statement.mux"
 func findFirst(list<int> items, int target) returns Optional<int> {
     for i in range(0, items.size()) {
         if items[i] == target {
@@ -326,33 +348,6 @@ func validate(int value) returns Result<int, string> {
         return Err("value too large")
     }
     return Ok(value)
-}
-```
-
-## Combining Control Flow
-
-```mux
-func process(list<int> items) returns void {
-    for item in items {
-        // Skip negatives
-        if item < 0 {
-            continue
-        }
-        
-        // Stop at large values
-        if item > 100 {
-            break
-        }
-        
-        // Process based on value
-        auto message = if item % 2 == 0 {
-            "even: " + item.to_string()
-        } else {
-            "odd: " + item.to_string()
-        }
-        
-        print(message)
-    }
 }
 ```
 

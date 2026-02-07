@@ -11,7 +11,7 @@ Mux is built on clear principles that guide every design decision. This page exp
 **What this means in practice:**
 - Mux doesn't try to support every programming paradigm
 - Features must have clear, explainable semantics
-- When in doubt, leave it out (for now)
+- When in doubt, leave it out
 
 **Example:** Mux doesn't have complex macro systems or compile-time code generation. While powerful, these features make code harder to understand and debug.
 
@@ -22,9 +22,9 @@ Mux is built on clear principles that guide every design decision. This page exp
 **What this means in practice:**
 - New features require strong justification
 - Complexity must provide proportional value
-- We say "no" more often than "yes"
+- I say "no" more often than "yes"
 
-**Example:** Mux uses reference counting instead of a borrow checker. This is intentional, we trade some performance for dramatically simpler mental models.
+**Example:** Mux uses reference counting instead of a borrow checker. This is intentional, I trade some performance for dramatically simpler mental models.
 
 ### 3. Explicit Over Implicit
 
@@ -36,12 +36,12 @@ Mux is built on clear principles that guide every design decision. This page exp
 - Function calls are obvious, not disguised as operators
 
 **Example:**
-```mux
+```mux title="explicit_conversions.mux"
 // ERROR: No implicit conversion
 auto x = 1 + 1.5  
 
 // Explicit: You must choose how to convert
-auto x = 1.to_float() + 1.5  // 2.5 as float
+auto x = (1).to_float() + 1.5  // 2.5 as float
 auto y = 1 + (1.5).to_int()   // 2 as int
 ```
 
@@ -55,7 +55,7 @@ auto y = 1 + (1.5).to_int()   // 2 as int
 - Obvious control flow
 
 **Example:**
-```mux
+```mux title="readable_syntax.mux"
 // Clean and readable
 func calculate(int x) returns int {
     if x > 10 {
@@ -67,7 +67,7 @@ func calculate(int x) returns int {
 
 ### 5. Safety Without Complexity
 
-**Principle:** Memory safety shouldn't require a PhD to understand.
+**Principle:** Memory safety doesn't mean slow performance or difficult code.
 
 **What this means in practice:**
 - Reference counting for automatic memory management
@@ -92,12 +92,6 @@ Mux has clear opinions about what belongs in the language. It does not try to be
 Mux prioritizes readability, safety, and developer productivity over absolute maximum performance.
 
 **Why:** Most programs are not CPU-bound. For those that are, profile first, optimize later. Reference counting provides excellent performance for most use cases.
-
-### Evolution Over Compatibility (During Early Development)
-
-Mux is in early development. We are refining the design to get it right.
-
-**Why:** Now is the time to make fundamental changes. Once Mux stabilizes, backward compatibility will be a priority.
 
 ## Key Design Decisions
 
@@ -145,7 +139,7 @@ Mux is in early development. We are refining the design to get it right.
 - Compiler checks exhaustiveness
 - Natural for `Result` and `Optional`
 
-```mux
+```mux title="pattern_matching_errors.mux"
 match divide(10, 0) {
     Ok(result) { print("Success: " + result.to_string()) }
     Err(error) { print("Error: " + error) }
@@ -167,12 +161,12 @@ match divide(10, 0) {
 
 Mux's design will evolve, but guided by these principles:
 
-**Changes we might make:**
+**Changes I might make:**
 - Adding new features that fit the philosophy
 - Improving syntax based on real-world usage
 - Better error messages and tooling
 
-**Changes we won't make:**
+**Changes I won't make:**
 - Adding implicit conversions
 - Introducing a garbage collector
 - Making the type system optional
@@ -181,12 +175,12 @@ Mux's design will evolve, but guided by these principles:
 
 The best place to discuss Mux's design decisions is on [GitHub Discussions](https://github.com/derekcorniello/mux-lang/discussions).
 
-We value:
+I value:
 - Thoughtful critique
 - Real-world use cases
 - Honest feedback
 
-We don't promise to agree with every suggestion, but we promise to consider them seriously.
+I don't promise to agree with every suggestion, but I promise to consider them seriously.
 
 ---
 

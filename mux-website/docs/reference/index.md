@@ -14,23 +14,44 @@ This is different from the [Language Guide](../language-guide/index.md), which f
 
 ## Contents
 
-<!-- TODO: Add reference pages as the language stabilizes -->
+### Core Reference
 
-Coming soon:
-- **Lexical Structure** - Tokens, keywords, identifiers
-- **Grammar** - Formal syntax definitions
-- **Type System** - Complete type rules and inference
-- **Operators** - Precedence, associativity, behavior
-- **Statements** - Detailed semantics of each statement type
-- **Expressions** - Expression evaluation rules
-- **Memory Model** - Reference counting specifics
-- **ABI** - Binary interface for external interop
+| Topic | Description |
+|-------|-------------|
+| [Lexical Structure](./lexical-structure.md) | Tokens, keywords, identifiers, literals, comments |
+| [Grammar](./grammar.md) | Formal BNF-style syntax definitions |
+| [Type System](./type-system.md) | Type rules, conversions, inference, generics |
+| [Operators](./operators.md) | Operator precedence, associativity, behavior |
 
-## Current Status
+### Behavior Reference
 
-The Mux language is still evolving. As such, this reference section is under development.
+| Topic | Description |
+|-------|-------------|
+| [Statements](./statements.md) | Detailed semantics of each statement type |
+| [Expressions](./expressions.md) | Expression evaluation rules |
+| [Memory Model](./memory-model.md) | Reference counting specifics |
+| [ABI](./abi.md) | Binary interface for external interop |
 
-For now, please refer to:
+### Quick Reference
+
+| Topic | Description |
+|-------|-------------|
+| [Operators](./operators.md#operator-precedence) | Operator precedence table |
+| [Grammar](./grammar.md) | Reserved keywords |
+| [Type System](./type-system.md#primitive-types) | Primitive type specifications |
+| [Memory Model](./memory-model.md#memory-layout) | Memory layout diagrams |
+
+## Reference vs Guide
+
+| Language Guide | Language Reference |
+|----------------|-------------------|
+| Learning-oriented | Reference-oriented |
+| Concept explanations | Precise rules |
+| Practical examples | Formal definitions |
+| Progressive complexity | Topic-by-topic organization |
+
+## Additional Resources
+
 - [Language Guide](../language-guide/index.md) - Practical language documentation
 - [README.md](https://github.com/derekcorniello/mux-lang/blob/main/README.md) - Comprehensive language specification
 - [Source Code](https://github.com/derekcorniello/mux-lang) - The compiler itself is the ultimate reference

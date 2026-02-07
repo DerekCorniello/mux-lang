@@ -8,7 +8,7 @@ Ordered, mutable collections of elements of the same type.
 
 ### Creating Lists
 
-```mux
+```mux title="creating_lists.mux"
 // Explicit typing
 list<int> nums = [1, 2, 3, 4]
 list<string> names = ["Alice", "Bob", "Charlie"]
@@ -34,15 +34,15 @@ auto matrix2 = [[1, 2], [3, 4]]    // inferred
 | `.is_empty()` | `bool` | Returns `true` if list has no elements |
 | `.get(int index)` | `Optional<T>` | Safe access; returns `Some(value)` or `None` if out of bounds |
 | `[int index]` | `T` | Direct access; runtime error if out of bounds |
-| `.push(T item)` | `void` | Appends item to the end (alias for push_back) |
+| `.push(T item)` | `void` | Appends item to the front |
 | `.push_back(T item)` | `void` | Appends item to the end |
-| `.pop()` | `Optional<T>` | Removes and returns last item, or `None` if empty |
+| `.pop()` | `Optional<T>` | Removes and returns first item, or `None` if empty |
 | `.pop_back()` | `Optional<T>` | Removes and returns last item, or `None` if empty |
 | `.to_string()` | `string` | String representation of the list |
 
 ### List Operations
 
-```mux
+```mux title="list_operations.mux"
 auto nums = [1, 2, 3]
 
 // Safe access with Optional
@@ -56,7 +56,7 @@ auto second = nums[1]  // 2
 
 // Mutation
 nums.push_back(4)      // [1, 2, 3, 4]
-nums.push(5)           // [1, 2, 3, 4, 5]
+nums.push(5)           // [5, 1, 2, 3, 4]
 
 match nums.pop_back() {
     Some(last) { print(last.to_string()) }  // "5"
@@ -75,16 +75,16 @@ auto combined = list1 + list2        // [1, 2, 3, 4]
 
 ### Iterating Lists
 
-```mux
+```mux title="iterating_lists.mux"
 auto items = [10, 20, 30, 40, 50]
 
 // For loop
-for item in items {
+for int item in items {
     print(item.to_string())
 }
 
 // With indices using range
-for i in range(0, items.size()) {
+for int i in range(0, items.size()) {
     auto item = items[i]
     print("Index " + i.to_string() + ": " + item.to_string())
 }
@@ -96,7 +96,7 @@ Key-value pairs with unique keys.
 
 ### Creating Maps
 
-```mux
+```mux title="creating_maps.mux"
 // Explicit typing
 map<string, int> scores = {"Alice": 90, "Bob": 85}
 
@@ -126,10 +126,13 @@ map<string, map<string, int>> data = {
 | `.contains(K key)` | `bool` | Returns `true` if key exists in map |
 | `.remove(K key)` | `Optional<V>` | Removes key and returns value, or `None` if key not found |
 | `.to_string()` | `string` | String representation of the map |
+| `.get_keys()` | `list<K>` | List of keys from the map |
+| `.get_values()` | `list<V>` | List of values from the map |
+| `.get_pairs()` | `list<Tuple<K, V>>` | List of key-value pairs |
 
 ### Map Operations
 
-```mux
+```mux title="map_operations.mux"
 auto scores = {"Alice": 90, "Bob": 85}
 
 // Safe access
@@ -162,22 +165,11 @@ auto map2 = {"b": 3, "c": 4}
 auto merged = map1 + map2        // {"a": 1, "b": 3, "c": 4}
 ```
 
-### Map Implementation
-
-Mux uses `BTreeMap` (not `HashMap`):
-
-**Benefits:**
-- **Deterministic iteration order**: Always the same order
-- **Ordered operations**: First/last element, range queries
-- **Reproducible output**: `to_string()` produces consistent results
-
 ## Sets
-
-Collections of unique elements.
 
 ### Creating Sets
 
-```mux
+```mux title="creating_sets.mux"
 // Explicit typing
 set<int> numbers = {1, 2, 3, 4}
 set<string> tags = {"urgent", "important", "review"}
@@ -201,10 +193,11 @@ auto empty2 = set<int>()
 | `.contains(T item)` | `bool` | Returns `true` if item exists in set |
 | `.remove(T item)` | `Optional<T>` | Removes item and returns it, or `None` if not found |
 | `.to_string()` | `string` | String representation of the set |
+| `.to_list()` | `list<T>` | Creates a list from the set |
 
 ### Set Operations
 
-```mux
+```mux title="set_operations.mux"
 auto tags = {"urgent", "important", "review"}
 
 print(tags.size().to_string())  // "3"
@@ -227,15 +220,11 @@ auto set2 = {3, 4, 5}
 auto unioned = set1 + set2       // {1, 2, 3, 4, 5}
 ```
 
-### Set Implementation
-
-Mux uses `BTreeSet` for deterministic ordering.
-
 ## The `in` Operator
 
 Test for membership/containment:
 
-```mux
+```mux title="in_operator.mux"
 // List containment
 auto nums = [1, 2, 3, 4, 5]
 auto hasThree = 3 in nums     // true
@@ -263,7 +252,7 @@ auto hasZ = 'z' in msg              // false
 
 Collections can be arbitrarily nested:
 
-```mux
+```mux title="nested_collections.mux"
 // List of maps
 auto users = [
     {"name": "Alice", "age": 30},
@@ -289,7 +278,7 @@ auto complex = {
 
 **No automatic conversions** - collections must have exact type match:
 
-```mux
+```mux title="collection_conversions.mux"
 // ERROR: Type mismatch
 // auto bad = [1, 2] + [3.0, 4.0]  // list<int> + list<float>
 
@@ -304,7 +293,7 @@ auto combined = ints_as_floats + floats  // list<float>
 
 Collections work seamlessly with generics:
 
-```mux
+```mux title="generic_collections.mux"
 func first<T>(list<T> items) returns Optional<T> {
     if items.is_empty() {
         return None.new()
@@ -326,7 +315,7 @@ auto aliceScore = lookup<string, int>(scores, "Alice")
 
 ## Collection Literals vs Constructors
 
-```mux
+```mux title="collection_literals.mux"
 // Literal syntax (preferred when possible)
 auto nums = [1, 2, 3]
 auto scores = {"Alice": 90, "Bob": 85}
@@ -355,40 +344,6 @@ set<string> tags = {}
    - **Map**: Key-value pairs, unique keys
    - **Set**: Unique elements, membership testing
 7. **Match on fallible operations** - Handle `None` cases explicitly
-
-## Technical Implementation
-
-### Uniform Value Representation
-
-All collection elements are stored as `Value` enum:
-
-```rust
-pub enum Value {
-    Bool(bool),
-    Int(i64),
-    Float(OrderedFloat<f64>),
-    String(String),
-    List(Vec<Value>),
-    Map(BTreeMap<Value, Value>),
-    Set(BTreeSet<Value>),
-    Optional(Option<Box<Value>>),
-    Result(Result<Box<Value>, String>),
-    Object(ObjectRef),
-}
-```
-
-This enables:
-- **Generic collections**: `list<T>` works uniformly for all types
-- **Arbitrary nesting**: Any collection can contain any other collection
-- **Polymorphic functions**: Same function can handle any type
-
-### Reference Counting
-
-Collections are RC-allocated and contain RC-allocated values. When freed:
-1. Collection's refcount reaches zero
-2. Collection's container is dropped
-3. Each contained `Value` has its refcount decremented
-4. Nested collections are freed recursively
 
 ## See Also
 

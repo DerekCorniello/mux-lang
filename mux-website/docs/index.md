@@ -12,7 +12,7 @@ Mux is a statically-typed, reference-counted programming language that combines 
 
 ## Quick Example
 
-```mux
+```mux title="hello_world.mux"
 func main() returns void {
     print("Hello, Mux!")
     
@@ -22,12 +22,6 @@ func main() returns void {
     }
 }
 ```
-
-## Getting Started
-
-Ready to dive in? Check out the [Quick Start](./getting-started/quick-start.md) guide to install Mux and write your first program.
-
-Or learn [Why Mux exists](./getting-started/why-mux.md) and what problems it aims to solve.
 
 ## Language Features
 
@@ -42,11 +36,11 @@ Or learn [Why Mux exists](./getting-started/why-mux.md) and what problems it aim
 
 ## Project Status
 
-Mux is currently in active development. The language specification, compiler, and tooling are evolving. Expect breaking changes and incomplete features as we work towards a stable release.
+Mux is currently in active development. The language specification, compiler, and tooling are evolving. Expect breaking changes and incomplete features as I work towards a stable release.
 
 **Current Limitations:**
-- No LSP (Language Server Protocol) support yet
-- No code formatter available
+- No LSP (Language Server Protocol) or code formatter support yet
+    - This will be added in future releases as the language, for my senior Project, likely around May 2027 for sure!
 - Standard library is under active development
 - Breaking changes are expected
 

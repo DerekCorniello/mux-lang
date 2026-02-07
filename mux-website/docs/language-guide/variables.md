@@ -6,7 +6,7 @@ Mux supports both explicit type declarations and type inference with the `auto` 
 
 ### Explicit Typing
 
-```mux
+```mux title="variables.mux"
 int x = 5
 bool flag = true
 string name = "MuxLang"
@@ -15,7 +15,7 @@ float pi = 3.14159
 
 ### Type Inference with `auto`
 
-```mux
+```mux title="type_inference.mux"
 // Type inferred from initializer
 auto x = 42          // inferred as int
 auto pi = 3.14159    // inferred as float
@@ -32,7 +32,7 @@ auto numbers = [1, 2, 3]
 
 ### Important Rules
 
-```mux
+```mux title="variable_rules.mux"
 // Invalid - no initializer with 'auto'
 // auto x  // ERROR: cannot infer type without initializer
 
@@ -50,7 +50,7 @@ All declarations require either an explicit type or `auto` with an initializer. 
 
 Constants are immutable values that cannot be reassigned or modified after initialization:
 
-```mux
+```mux title="constants.mux"
 // Top-level constants
 const int MAX = 100
 const float PI = 3.14159
@@ -98,7 +98,7 @@ cfg.current_retry = 1  // OK - mutable field
 
 ### Explicit Types Recommended
 
-```mux
+```mux title="explicit_types.mux"
 // Empty collections need explicit types
 list<int> empty = []           // explicit type needed
 auto empty = list<int>()       // or explicit constructor
@@ -117,12 +117,12 @@ Stack<int> stack = Stack<int>.new()
 
 The underscore `_` is a placeholder for values you don't need:
 
-```mux
+```mux title="underscore.mux"
 // Unused function parameters
 func process(int data, string _) returns void { }
 
 // Unused loop counters
-for _ in range(0, 10) {
+for int _ in range(0, 10) { // still need a type annotation
     doSomething()
 }
 
@@ -131,22 +131,15 @@ match result {
     Ok(_) { print("Success") }  // don't care about the value
     Err(_) { print("Error") }   // don't care about the error details
 }
-
-// Destructuring with unused parts
-for (key, _) in keyValuePairs {
-    print("Key: " + key)  // value ignored
-}
 ```
 
 **Best Practice:** Use `_` when a value is required by syntax but not needed in your code. Don't overuse it when descriptive names would improve readability.
 
 ## Variable Scope
 
-<!-- TODO: Add detailed scoping rules once finalized -->
-
 Variables are scoped to the block in which they are declared:
 
-```mux
+```mux title="scope.mux"
 func example() returns void {
     auto x = 10  // Scoped to function
     
@@ -157,6 +150,22 @@ func example() returns void {
     
     // print(y.to_string())  // ERROR: y is out of scope
 }
+```
+
+Unless you create a closure, then you can capture variables from the enclosing scope:
+
+```mux title="closure_scope.mux"
+func makeCounter() returns func() returns int {
+    auto count = 0  // Captured variable
+    return func() returns int {
+        count++  // Modifies captured variable
+        print(count.to_string())
+        return count
+    }
+}
+auto counter = makeCounter()
+counter()  // prints 1
+counter()  // prints 2
 ```
 
 ## See Also

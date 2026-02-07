@@ -52,6 +52,18 @@ const config: Config = {
     ],
   ],
 
+  themes: [],
+
+  plugins: [
+    [
+      require.resolve('@cmfcmf/docusaurus-search-local'),
+      {
+        language: 'en',
+        indexBlog: false,
+      },
+    ],
+  ],
+
   themeConfig: {
     image: 'img/mux-social-card.jpg',
     colorMode: {

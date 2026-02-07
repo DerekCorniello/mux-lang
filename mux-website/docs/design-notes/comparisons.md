@@ -1,14 +1,14 @@
 # Language Comparisons
 
 This page shows how Mux approaches common programming tasks compared to Rust, Go, Python, and TypeScript. The goal is clarity, not criticism, each language makes different tradeoffs.
-
+<br/>
 **Why TypeScript?** TypeScript is included to show the difference between "static types that exist only at compile time" versus "static types that exist at runtime." Many developers know TypeScript as their "typed language," so seeing what you lose without runtime type information helps explain Mux's design decisions.
 
 ## Type Conversions
 
 ### Mux: Explicit Only
 
-```mux
+```mux title="mux_explicit.mux"
 auto x = 42
 auto y = 3.14
 
@@ -23,7 +23,7 @@ auto sum = x.to_float() + y  // 45.14
 
 ### Python: Implicit
 
-```python
+```python title="python_implicit.py"
 x = 42
 y = 3.14
 sum = x + y  # 45.14 (int becomes float automatically)
@@ -33,7 +33,7 @@ sum = x + y  # 45.14 (int becomes float automatically)
 
 ### Rust: Explicit
 
-```rust
+```rust title="rust_explicit.rs"
 let x: i32 = 42;
 let y: f64 = 3.14;
 // let sum = x + y;  // ERROR
@@ -45,7 +45,7 @@ let sum = (x as f64) + y;  // 45.14
 
 ### Go: Explicit
 
-```go
+```go title="go_explicit.go"
 x := 42
 y := 3.14
 // sum := x + y  // ERROR
@@ -57,7 +57,7 @@ sum := float64(x) + y  // 45.14
 
 ### TypeScript: Compile-Time Types Only
 
-```typescript
+```typescript title="typescript_types.ts"
 let x: number = 42;
 let y: number = 3.14;
 let sum = x + y;  // 45.14 (both are 'number' type)
@@ -71,7 +71,7 @@ let sum = x + y;  // 45.14 (both are 'number' type)
 
 ### Mux: Result Type
 
-```mux
+```mux title="mux_result.mux"
 func divide(int a, int b) returns Result<int, string> {
     if b == 0 {
         return Err("division by zero")
@@ -89,7 +89,7 @@ match divide(10, 2) {
 
 ### Rust: Result Type
 
-```rust
+```rust title="rust_result.rs"
 fn divide(a: i32, b: i32) -> Result<i32, String> {
     if b == 0 {
         return Err("division by zero".to_string());
@@ -107,7 +107,7 @@ match divide(10, 2) {
 
 ### Go: Explicit Error Returns
 
-```go
+```go title="go_errors.go"
 func divide(a, b int) (int, error) {
     if b == 0 {
         return 0, errors.New("division by zero")
@@ -127,7 +127,7 @@ if err != nil {
 
 ### Python: Exceptions
 
-```python
+```python title="python_exceptions.py"
 def divide(a, b):
     if b == 0:
         raise ValueError("division by zero")
@@ -144,7 +144,7 @@ except ValueError as e:
 
 ### TypeScript: Exceptions (Runtime Types Only)
 
-```typescript
+```typescript title="typescript_exceptions.ts"
 function divide(a: number, b: number): number {
     if (b === 0) {
         throw new Error("division by zero");
@@ -168,7 +168,7 @@ try {
 
 ### Mux: Reference Counting
 
-```mux
+```mux title="mux_memory.mux"
 auto data = [1, 2, 3, 4, 5]
 // Reference count = 1
 
@@ -185,7 +185,7 @@ auto data2 = data
 
 ### Rust: Ownership + Borrow Checker
 
-```rust
+```rust title="rust_memory.rs"
 let data = vec![1, 2, 3, 4, 5];
 // Owned by 'data'
 
@@ -200,7 +200,7 @@ let data2 = &data;  // Borrowed
 
 ### Go: Garbage Collection
 
-```go
+```go title="go_memory.go"
 data := []int{1, 2, 3, 4, 5}
 // Managed by GC
 
@@ -212,7 +212,7 @@ data2 := data
 
 ### Python: Reference Counting + GC
 
-```python
+```python title="python_memory.py"
 data = [1, 2, 3, 4, 5]
 # Reference counted
 
@@ -224,7 +224,7 @@ data2 = data
 
 ### TypeScript: Garbage Collection (V8/Node.js)
 
-```typescript
+```typescript title="typescript_memory.ts"
 let data = [1, 2, 3, 4, 5];
 // Managed by V8's GC, no compile-time guarantees
 
@@ -239,7 +239,7 @@ let data2 = data;
 
 ### Mux: Monomorphization
 
-```mux
+```mux title="mux_generics.mux"
 func identity<T>(T value) returns T {
     return value
 }
@@ -254,7 +254,7 @@ auto y = identity("hello")   // Generates identity$$string
 
 ### Rust: Monomorphization
 
-```rust
+```rust title="rust_generics.rs"
 fn identity<T>(value: T) -> T {
     value
 }
@@ -267,7 +267,7 @@ let y = identity("hello");   // Monomorphized to &str
 
 ### Go: Generics (Recent)
 
-```go
+```go title="go_generics.go"
 func identity[T any](value T) T {
     return value
 }
@@ -280,7 +280,7 @@ y := identity("hello")
 
 ### Python: Duck Typing
 
-```python
+```python title="python_duck_typing.py"
 def identity(value):
     return value
 
@@ -292,7 +292,7 @@ y = identity("hello")
 
 ### TypeScript: Type Erasure (No Runtime Types)
 
-```typescript
+```typescript title="typescript_generics.ts"
 function identity<T>(value: T): T {
     return value;
 }
@@ -309,7 +309,7 @@ let y = identity("hello");
 
 ### Mux: Match with Guards
 
-```mux
+```mux title="mux_pattern_matching.mux"
 match value {
     Some(x) if x > 10 { print("Large: " + x.to_string()) }
     Some(x) { print("Small: " + x.to_string()) }
@@ -321,7 +321,7 @@ match value {
 
 ### Rust: Match
 
-```rust
+```rust title="rust_pattern_matching.rs"
 match value {
     Some(x) if x > 10 => println!("Large: {}", x),
     Some(x) => println!("Small: {}", x),
@@ -333,7 +333,7 @@ match value {
 
 ### Go: Switch
 
-```go
+```go title="go_switch.go"
 switch {
 case value != nil && *value > 10:
     fmt.Println("Large:", *value)
@@ -348,7 +348,7 @@ default:
 
 ### Python: Match (3.10+)
 
-```python
+```python title="python_pattern_matching.py"
 match value:
     case x if x > 10:
         print(f"Large: {x}")
@@ -364,7 +364,7 @@ match value:
 
 TypeScript doesn't have pattern matching. You'd use if/else or switch:
 
-```typescript
+```typescript title="typescript_conditionals.ts"
 if (value !== null && value > 10) {
     console.log(`Large: ${value}`);
 } else if (value !== null) {
@@ -390,37 +390,5 @@ if (value !== null && value > 10) {
 | **Pattern Matching** | Yes, with guards | Yes, with guards | Switch only | Yes (3.10+) | No (no runtime types) |
 | **Learning Curve** | Low-Medium | High | Low | Low | Low-Medium |
 | **Performance** | Medium-High | Highest | High | Low | Medium (runtime dependent) |
-
----
-
-## When to Choose What?
-
-**Choose Mux if:**
-- You want Python's ease of use with compile-time type safety
-- You value simplicity and readability
-- You want memory safety without complexity
-- You're building applications where developer productivity matters
-
-**Choose Rust if:**
-- You need maximum performance and control
-- Zero-cost abstractions are critical
-- You're building systems programming where every cycle counts
-
-**Choose Go if:**
-- You need fast compilation
-- Simplicity is paramount
-- You're building network services or distributed systems
-
-**Choose Python if:**
-- Rapid prototyping is the priority
-- The ecosystem matters more than performance
-- Dynamic typing fits your use case
-
-**Choose TypeScript if:**
-- You're building web applications
-- You need JavaScript interop
-- Gradual typing is beneficial
-
----
 
 **Next:** Learn about [Mux's design philosophy](./philosophy.md)

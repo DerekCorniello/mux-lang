@@ -4,7 +4,7 @@ Mux uses Python-style imports for code organization and reuse.
 
 ## Basic Import Syntax
 
-```mux
+```mux title="basic_import.mux"
 import math
 import shapes.circle
 import utils.logger as log
@@ -18,7 +18,7 @@ import utils.logger as log
 
 Module paths map to file paths:
 
-```mux
+```mux title="module_resolution.mux"
 import math          // math.mux in same directory
 import shapes.circle // shapes/circle.mux
 import lib.core.util // lib/core/util.mux
@@ -41,7 +41,7 @@ project/
 
 ### Basic Usage
 
-```mux
+```mux title="math_module.mux"
 // math.mux
 func add(int a, int b) returns int {
     return a + b
@@ -54,7 +54,7 @@ func multiply(int a, int b) returns int {
 const float PI = 3.14159
 ```
 
-```mux
+```mux title="main_import.mux"
 // main.mux
 import math
 
@@ -72,7 +72,7 @@ func main() returns void {
 
 Use `as` to rename imported modules:
 
-```mux
+```mux title="aliased_imports.mux"
 import shapes.circle as circle
 import utils.logger as log
 
@@ -86,7 +86,7 @@ func main() returns void {
 
 Use `_` when importing only for side effects:
 
-```mux
+```mux title="side_effect_import.mux"
 import utils.logger as _  // imported but not directly used
 ```
 
@@ -94,7 +94,7 @@ import utils.logger as _  // imported but not directly used
 
 Functions from imported modules use mangled names to prevent conflicts:
 
-```mux
+```mux title="fibonacci_module.mux"
 // math.mux
 func fibonacci(int n) returns int {
     if n <= 1 {
@@ -104,7 +104,7 @@ func fibonacci(int n) returns int {
 }
 ```
 
-```mux
+```mux title="using_imported_func.mux"
 // main.mux
 import math
 
@@ -122,18 +122,19 @@ This prevents conflicts when multiple modules define functions with the same nam
 
 Top-level statements in modules become initialization functions:
 
-```mux
+```mux title="module_init.mux"
 // config.mux
 const int MAX_USERS = 100
 auto initialized = false
 
-func init() returns void {
+func initialize() returns void {
     initialized = true
     print("Config initialized")
 }
 
 // Top-level code runs on import
 print("Loading config module...")
+initialize()
 ```
 
 The compiler:
@@ -145,7 +146,7 @@ The compiler:
 
 The compiler processes modules in dependency order:
 
-```mux
+```mux title="module_a.mux"
 // a.mux
 import b
 
@@ -154,7 +155,7 @@ func useB() returns void {
 }
 ```
 
-```mux
+```mux title="module_b.mux"
 // b.mux
 import c
 
@@ -163,7 +164,7 @@ func doSomething() returns void {
 }
 ```
 
-```mux
+```mux title="module_c.mux"
 // c.mux
 func helper() returns void {
     print("helper called")
@@ -178,7 +179,7 @@ Initialization order: `c` → `b` → `a` → `main`
 
 All functions and types are public by default:
 
-```mux
+```mux title="public_module.mux"
 // math.mux
 func add(int a, int b) returns int {  // Public
     return a + b
@@ -187,11 +188,9 @@ func add(int a, int b) returns int {  // Public
 const float PI = 3.14159  // Public
 ```
 
-<!-- TODO: Private/internal visibility once implemented -->
-
 ### Module-Level Variables
 
-```mux
+```mux title="module_variables.mux"
 // config.mux
 const string VERSION = "1.0.0"
 auto request_count = 0
@@ -205,7 +204,7 @@ func get_request_count() returns int {
 }
 ```
 
-```mux
+```mux title="using_module_vars.mux"
 // main.mux
 import config
 
@@ -220,7 +219,7 @@ func main() returns void {
 
 **Warning:** Avoid circular imports:
 
-```mux
+```mux title="circular_a.mux"
 // a.mux
 import b  // ERROR: a imports b, b imports a
 
@@ -229,7 +228,7 @@ func useB() returns void {
 }
 ```
 
-```mux
+```mux title="circular_b.mux"
 // b.mux
 import a  // ERROR: circular dependency
 
@@ -244,7 +243,7 @@ func doSomething() returns void {
 
 ### Utility Module
 
-```mux
+```mux title="utility_module.mux"
 // utils.mux
 func max(int a, int b) returns int {
     if a > b {
@@ -273,7 +272,7 @@ func clamp(int value, int low, int high) returns int {
 
 ### Type Module
 
-```mux
+```mux title="type_module.mux"
 // types.mux
 class Point {
     int x
@@ -296,7 +295,7 @@ enum Color {
 
 ### Constants Module
 
-```mux
+```mux title="constants_module.mux"
 // constants.mux
 const int MAX_CONNECTIONS = 100
 const float TIMEOUT_SECONDS = 30.0
@@ -362,7 +361,7 @@ calculator/
     └── format.mux
 ```
 
-```mux
+```mux title="basic_operations.mux"
 // operations/basic.mux
 func add(int a, int b) returns int {
     return a + b
@@ -373,7 +372,7 @@ func subtract(int a, int b) returns int {
 }
 ```
 
-```mux
+```mux title="advanced_operations.mux"
 // operations/advanced.mux
 func power(int base, int exp) returns int {
     auto result = 1
@@ -384,14 +383,14 @@ func power(int base, int exp) returns int {
 }
 ```
 
-```mux
+```mux title="format_module.mux"
 // utils/format.mux
 func format_result(int value) returns string {
     return "Result: " + value.to_string()
 }
 ```
 
-```mux
+```mux title="calculator_main.mux"
 // main.mux
 import operations.basic as basic
 import operations.advanced as advanced
@@ -405,25 +404,6 @@ func main() returns void {
     print(fmt.format_result(powered))
 }
 ```
-
-## Module System Limitations
-
-<!-- TODO: Update when these features are implemented -->
-
-### Currently Not Supported
-
-- Private/internal visibility
-- Re-exporting from other modules
-- Wildcard imports (`import math.*`)
-- Conditional imports
-- Runtime dynamic imports
-
-### Future Considerations
-
-- Package manager integration
-- Module versioning
-- Namespace management
-- Import optimization
 
 ## Technical Implementation
 
@@ -439,7 +419,7 @@ func main() returns void {
 
 Module functions are prefixed with their module path:
 
-```mux
+```mux title="shapes_circle.mux"
 // shapes/circle.mux
 func area(float radius) returns float {
     return 3.14159 * radius * radius

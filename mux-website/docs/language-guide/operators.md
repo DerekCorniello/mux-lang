@@ -17,7 +17,7 @@ Standard arithmetic operations with strict type requirements:
 
 ### Examples
 
-```mux
+```mux title="arithmetic_ops.mux"
 // Integer arithmetic
 auto sum = 5 + 3        // 8
 auto diff = 10 - 4      // 6
@@ -43,7 +43,7 @@ auto name = "Age: " + (30).to_string()  // "Age: 30"
 - **Higher precedence than `*` and `/`**: `2 * 3 ** 2` equals `2 * 9` = 18
 - Works on both `int` and `float` types
 
-```mux
+```mux title="exponentiation.mux"
 auto squared = 5 ** 2        // 25
 auto cubed = 2.0 ** 3.0      // 8.0
 auto complex = 2 ** 3 ** 2   // 512 (right-associative)
@@ -51,9 +51,9 @@ auto complex = 2 ** 3 ** 2   // 512 (right-associative)
 
 ### Type Constraints
 
-**No implicit conversions** - operands must be the same type:
+As previously stated, **No implicit conversions**, operands must be the same type:
 
-```mux
+```mux title="type_constraints.mux"
 // ERROR: Type mismatches
 // auto bad1 = 1 + 1.0        // cannot add int and float
 // auto bad2 = "hello" + 3    // cannot add string and int
@@ -80,7 +80,7 @@ Postfix-only operators for incrementing/decrementing:
 - **Only on mutable variables**: Cannot be used on `const` or literals
 - **Type preservation**: Operates on `int` types only
 
-```mux
+```mux title="increment_decrement.mux"
 auto counter = 0
 counter++         // Valid: counter is now 1
 counter--         // Valid: counter is now 0
@@ -114,7 +114,7 @@ Compare values of compatible types:
 
 ### Examples
 
-```mux
+```mux title="comparison_ops.mux"
 // Numeric comparisons
 auto isEqual = 5 == 5       // true
 auto isNotEqual = 5 != 3    // true
@@ -134,7 +134,7 @@ auto boolNeq = true != false        // true
 
 Both operands must have the same type:
 
-```mux
+```mux title="comparison_types.mux"
 // ERROR: Type mismatches
 // auto bad1 = 1 < 1.0        // cannot compare int and float
 // auto bad2 = "a" == 1       // cannot compare string and int
@@ -160,7 +160,7 @@ Boolean operations with short-circuit evaluation:
 - `&&` only evaluates right side if left is `true`
 - `||` only evaluates right side if left is `false`
 
-```mux
+```mux title="short_circuit.mux"
 // AND short-circuit
 auto result1 = false && expensiveCheck()  // expensiveCheck() not called
 
@@ -178,7 +178,7 @@ auto isInvalid = !valid
 
 Mux uses LLVM control flow for short-circuit evaluation:
 
-```mux
+```mux title="short_circuit_codegen.mux"
 auto result = a && b
 ```
 
@@ -204,33 +204,11 @@ Test for membership/containment:
 | `string` | `string` | Check if substring exists |
 | `char` | `string` | Check if character exists in string |
 
-### Examples
-
-```mux
-// List containment
-auto nums = [1, 2, 3, 4, 5]
-auto hasThree = 3 in nums     // true
-auto hasTen = 10 in nums      // false
-
-// Set containment
-auto tags = {"urgent", "important"}
-auto isUrgent = "urgent" in tags    // true
-
-// String containment
-auto msg = "hello world"
-auto hasWorld = "world" in msg      // true
-auto hasFoo = "foo" in msg          // false
-
-// Character in string
-auto hasO = 'o' in msg              // true
-auto hasZ = 'z' in msg              // false
-```
-
 ### Type Constraints
 
 Both operands must have compatible element types:
 
-```mux
+```mux title="membership_types.mux"
 // ERROR: Type mismatch
 // auto bad = "1" in nums           // string not in list<int>
 // auto bad2 = 1 in msg             // int not in string
@@ -251,7 +229,7 @@ The `+` operator is overloaded for collection types:
 
 ### Examples
 
-```mux
+```mux title="collection_ops.mux"
 // List concatenation
 auto list1 = [1, 2]
 auto list2 = [3, 4]
@@ -275,7 +253,7 @@ auto greeting = "Hello, " + "World"  // "Hello, World"
 
 Collections must be the exact same type:
 
-```mux
+```mux title="collection_types.mux"
 // ERROR: Type mismatch
 // auto bad = [1, 2] + {3, 4}       // cannot add list and set
 // auto bad2 = [1, 2] + [3.0, 4.0]  // list<int> + list<float>
@@ -292,7 +270,7 @@ Create and dereference references:
 
 ### Examples
 
-```mux
+```mux title="reference_ops.mux"
 // Create reference
 int x = 10
 auto r = &x      // r is of type &int
@@ -327,7 +305,7 @@ From highest to lowest precedence:
 
 ### Examples
 
-```mux
+```mux title="precedence_example.mux"
 auto result1 = 2 + 3 * 4        // 14 (not 20)
 auto result2 = 2 * 3 ** 2       // 18 (not 36)
 auto result3 = 10 - 5 - 2       // 3 (left-to-right)
@@ -353,7 +331,7 @@ Operators map to interface methods:
 
 ### Custom Type Example
 
-```mux
+```mux title="operator_overloading.mux"
 interface Add {
     func add(Self) returns Self
 }
@@ -392,7 +370,7 @@ Simple assignment (no compound assignment):
 
 **Note:** Mux does NOT support compound assignment operators like `+=`, `-=`, etc.
 
-```mux
+```mux title="assignment_ops.mux"
 auto x = 10
 x = x + 5     // Must write explicitly
 // x += 5     // ERROR: Not supported
