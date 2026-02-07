@@ -76,18 +76,14 @@ fn detect_runtime_library(
     let dynamic_lib = profile_path.join("libmux_runtime.so");
 
     if !static_lib.exists() && !dynamic_lib.exists() {
-        panic!(
-            "Could not find libmux_runtime library.\n\
-             Searched in:\n\
+        println!(
+            "cargo:warning=Could not find libmux_runtime yet. Expected locations:\n\
              - {} (profile-specific)\n\
              - {}\n\
              - {}\n\
              - {}\n\
-             - {}\n\n\
-             Please ensure mux-runtime is built first with:\n\
-             cargo build --workspace\n\
-             or\n\
-             cargo build -p mux-runtime",
+             - {}\n\
+             The mux CLI will request a runtime build if needed.",
             profile_path.display(),
             release_path.display(),
             debug_path.display(),
@@ -151,18 +147,14 @@ fn detect_runtime_library(
     let dynamic_lib = profile_path.join("mux_runtime.dll");
 
     if !static_lib.exists() && !dynamic_lib.exists() {
-        panic!(
-            "Could not find mux_runtime library.\n\
-             Searched in:\n\
+        println!(
+            "cargo:warning=Could not find mux_runtime yet. Expected locations:\n\
              - {} (profile-specific)\n\
              - {}\n\
              - {}\n\
              - {}\n\
-             - {}\n\n\
-             Please ensure mux-runtime is built first with:\n\
-             cargo build --workspace\n\
-             or\n\
-             cargo build -p mux-runtime",
+             - {}\n\
+             The mux CLI will request a runtime build if needed.",
             profile_path.display(),
             release_path.display(),
             debug_path.display(),
