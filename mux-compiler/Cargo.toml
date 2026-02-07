@@ -7,7 +7,7 @@ authors = ["Derek Corniello"]
 repository = "https://github.com/DerekCorniello/mux-lang"
 license = "MIT"
 keywords = ["mux", "compiler", "language"]
-categories = ["development-tools", "language-bindings"]
+categories = ["development-tools", "compilers", "programming-languages"]
 exclude = [
     "../test_scripts/",
     "tests/",
