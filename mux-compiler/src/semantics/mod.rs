@@ -10,7 +10,7 @@ pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
 #[allow(unused_imports)]
 pub use format::{format_span_location, format_unary_op};
-pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
+pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 

@@ -5,9 +5,9 @@
 use super::CodeGenerator;
 use crate::ast::{EnumVariant, ExpressionNode, Field, PrimitiveType, TypeKind};
 use crate::semantics::{GenericContext, MethodSig, Type};
+use inkwell::AddressSpace;
 use inkwell::types::BasicType;
 use inkwell::values::{BasicValueEnum, PointerValue};
-use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 impl<'a> CodeGenerator<'a> {
@@ -464,7 +464,8 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         mux_type: &Type,
     ) -> Result<PointerValue<'a>, String> {
-        match mux_type {
+        let resolved_type = self.resolve_type(mux_type)?;
+        match resolved_type {
             Type::Primitive(PrimitiveType::Int) => {
                 let zero = self.context.i64_type().const_zero();
                 Ok(self.box_value(zero.into()))
@@ -517,10 +518,49 @@ impl<'a> CodeGenerator<'a> {
                     .expect("mux_set_value should always return a value");
                 Ok(value_ptr.into_pointer_value())
             }
-            _ => {
-                // User-defined classes and other types: return null for now
+            Type::Tuple(left_type, right_type) => {
+                let tuple_value = self.generate_tuple_constructor(&left_type, &right_type)?;
+                Ok(tuple_value.into_pointer_value())
+            }
+            Type::Optional(_) => {
+                let optional_ptr = self
+                    .generate_runtime_call("mux_optional_none", &[])
+                    .expect("mux_optional_none should always return a value");
+                Ok(optional_ptr.into_pointer_value())
+            }
+            Type::Named(name, type_args) => {
+                if name == "Optional" {
+                    let optional_ptr = self
+                        .generate_runtime_call("mux_optional_none", &[])
+                        .expect("mux_optional_none should always return a value");
+                    return Ok(optional_ptr.into_pointer_value());
+                }
+                if name == "Result" {
+                    if let Some(ok_type) = type_args.first() {
+                        let ok_value = self.create_default_value_ptr(ok_type)?;
+                        let result_ptr = self
+                            .generate_runtime_call("mux_result_ok_value", &[ok_value.into()])
+                            .expect("mux_result_ok_value should always return a value");
+                        return Ok(result_ptr.into_pointer_value());
+                    }
+                    return Ok(self.context.ptr_type(AddressSpace::default()).const_zero());
+                }
+                if self.classes.contains_key(&name) {
+                    let obj_value =
+                        self.generate_constructor_call_with_types(&name, &type_args, &[])?;
+                    return Ok(obj_value.into_pointer_value());
+                }
                 Ok(self.context.ptr_type(AddressSpace::default()).const_zero())
             }
+            Type::Instantiated(name, type_args) => {
+                if self.classes.contains_key(&name) {
+                    let obj_value =
+                        self.generate_constructor_call_with_types(&name, &type_args, &[])?;
+                    return Ok(obj_value.into_pointer_value());
+                }
+                Ok(self.context.ptr_type(AddressSpace::default()).const_zero())
+            }
+            _ => Ok(self.context.ptr_type(AddressSpace::default()).const_zero()),
         }
     }
 
