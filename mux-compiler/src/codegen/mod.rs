@@ -654,6 +654,24 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_map_keys",
+            i8_ptr.fn_type(&[map_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_values",
+            i8_ptr.fn_type(&[map_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_pairs",
+            i8_ptr.fn_type(&[map_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_int_value",
             i8_ptr.fn_type(&[i64_type.into()], false),
             None,

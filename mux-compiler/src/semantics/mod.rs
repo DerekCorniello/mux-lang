@@ -1730,6 +1730,24 @@ impl SemanticAnalyzer {
                     return_type: Type::Optional(value_type.clone()),
                     is_static: false,
                 }),
+                "get_keys" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::List(key_type.clone()),
+                    is_static: false,
+                }),
+                "get_values" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::List(value_type.clone()),
+                    is_static: false,
+                }),
+                "get_pairs" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::List(Box::new(Type::Tuple(
+                        Box::new(*key_type.clone()),
+                        Box::new(*value_type.clone()),
+                    ))),
+                    is_static: false,
+                }),
                 "contains" => Some(MethodSig {
                     params: vec![*key_type.clone()],
                     return_type: Type::Primitive(PrimitiveType::Bool),

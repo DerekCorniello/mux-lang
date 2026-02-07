@@ -1,3 +1,4 @@
+use crate::Tuple;
 use crate::Value;
 use crate::refcount::mux_rc_alloc;
 use std::collections::BTreeMap;
@@ -154,6 +155,42 @@ pub extern "C" fn mux_map_to_string(map: *const Map) -> *mut c_char {
     // Safe: to_string produces valid UTF-8 without null bytes
     let c_str = CString::new(s).expect("to_string should produce valid UTF-8");
     c_str.into_raw()
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_keys(map: *const Map) -> *mut Value {
+    if map.is_null() {
+        return mux_rc_alloc(Value::List(Vec::new()));
+    }
+    let keys: Vec<Value> = unsafe { (*map).0.keys().cloned().collect() };
+    mux_rc_alloc(Value::List(keys))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_values(map: *const Map) -> *mut Value {
+    if map.is_null() {
+        return mux_rc_alloc(Value::List(Vec::new()));
+    }
+    let values: Vec<Value> = unsafe { (*map).0.values().cloned().collect() };
+    mux_rc_alloc(Value::List(values))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_pairs(map: *const Map) -> *mut Value {
+    if map.is_null() {
+        return mux_rc_alloc(Value::List(Vec::new()));
+    }
+    let pairs: Vec<Value> = unsafe {
+        (*map)
+            .0
+            .iter()
+            .map(|(k, v)| Value::Tuple(Box::new(Tuple(k.clone(), v.clone()))))
+            .collect()
+    };
+    mux_rc_alloc(Value::List(pairs))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

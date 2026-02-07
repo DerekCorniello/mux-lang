@@ -823,6 +823,102 @@ impl<'a> CodeGenerator<'a> {
                     .expect("mux_value_from_optional should return a basic value");
                 Ok(optional_value)
             }
+            "get_keys" => {
+                if !args.is_empty() {
+                    return Err("get_keys() method takes no arguments".to_string());
+                }
+                let extract_map = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_value_get_map")
+                            .expect("mux_value_get_map must be declared in runtime"),
+                        &[obj_value.into()],
+                        "extract_map",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_value_get_map should return a basic value");
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_map_keys")
+                            .expect("mux_map_keys must be declared in runtime"),
+                        &[extract_map.into()],
+                        "map_keys",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_map_keys should return a basic value"))
+            }
+            "get_values" => {
+                if !args.is_empty() {
+                    return Err("get_values() method takes no arguments".to_string());
+                }
+                let extract_map = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_value_get_map")
+                            .expect("mux_value_get_map must be declared in runtime"),
+                        &[obj_value.into()],
+                        "extract_map",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_value_get_map should return a basic value");
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_map_values")
+                            .expect("mux_map_values must be declared in runtime"),
+                        &[extract_map.into()],
+                        "map_values",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_map_values should return a basic value"))
+            }
+            "get_pairs" => {
+                if !args.is_empty() {
+                    return Err("get_pairs() method takes no arguments".to_string());
+                }
+                let extract_map = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_value_get_map")
+                            .expect("mux_value_get_map must be declared in runtime"),
+                        &[obj_value.into()],
+                        "extract_map",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_value_get_map should return a basic value");
+                let call = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_map_pairs")
+                            .expect("mux_map_pairs must be declared in runtime"),
+                        &[extract_map.into()],
+                        "map_pairs",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_map_pairs should return a basic value"))
+            }
             "contains" => {
                 if args.len() != 1 {
                     return Err("contains() method takes exactly 1 argument".to_string());

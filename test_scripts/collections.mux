@@ -92,6 +92,15 @@ print("\ncontains() method:")
 print("scores.contains(\"Alice\"): " + scores.contains("Alice").to_string())
 print("scores.contains(\"Bob\"): " + scores.contains("Bob").to_string())
 
+// get_keys(), get_values(), get_pairs()
+print("\nMap keys, values, pairs:")
+auto score_keys = scores.get_keys()
+auto score_values = scores.get_values()
+auto score_pairs = scores.get_pairs()
+print("scores.get_keys() = " + score_keys.to_string())
+print("scores.get_values() = " + score_values.to_string())
+print("scores.get_pairs() = " + score_pairs.to_string())
+
 // Map methods
 print("\nMap properties:")
 print("Size: " + scores.size().to_string())
