@@ -17,7 +17,7 @@ func main() returns void {
     print("Hello, Mux!")
     
     auto numbers = [1, 2, 3, 4, 5]
-    for num in numbers {
+    for int num in numbers {
         print(num.to_string())
     }
 }

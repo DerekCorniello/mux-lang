@@ -51,7 +51,7 @@ Mux (fully "MuxLang") is a statically-typed, reference-counted language that com
 - **Statement termination**: by end-of-line only (no semicolons)
 - **Underscore placeholder**: `_` can be used for unused parameters, variables, or pattern matching wildcards
 - **Keywords**:
-  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `as`, `in`, `true`, `false`, `common`, `None`
+  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `as`, `in`, `true`, `false`, `common`, `None`, `Optional`, `Result`, `Ok`, `Err`
 
 ---
 
