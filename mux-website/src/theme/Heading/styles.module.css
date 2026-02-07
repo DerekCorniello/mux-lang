@@ -1,0 +1,27 @@
+:global(.hash-link) {
+  opacity: 0;
+  padding-left: 0.5rem;
+  transition: opacity var(--ifm-transition-fast);
+  user-select: none;
+}
+
+:global(.hash-link::before) {
+  content: '#';
+}
+
+:global(.hash-link:focus),
+:global(*:hover > .hash-link) {
+  opacity: 1;
+}
+
+:global(.hash-link-copied) {
+  opacity: 1 !important;
+  font-size: 0.75rem;
+  color: var(--ifm-color-primary);
+  text-decoration: none !important;
+  font-weight: 500;
+}
+
+:global(.hash-link-copied::before) {
+  content: '';
+}

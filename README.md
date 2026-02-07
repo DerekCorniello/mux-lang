@@ -1,4 +1,4 @@
-# Mux Language Specification
+# Mux - A Programming Language For The People
 
 By Derek Corniello
 
@@ -7,8 +7,26 @@ By Derek Corniello
 - **Simple yet powerful:** Combines Go-like minimalism with Rust-inspired safety.
 - **Strong static typing:** Helps catch errors early and ensures safer code.
 - **LLVM-powered:** Fast compilation and native performance.
-- **Flexible memory management:** Safe defaults with potential for advanced control.
+- **Flexible memory management:** Ease of use through reference counting.
 - **Extensible:** Designed to evolve with features like traits, concurrency, and a standard library.
+
+## Quick Start Guide
+
+TBD! See #77
+
+## Wanna Contribute?
+
+Mux is an open-source project, and I welcome contributions from the community! Whether you're interested in adding new features, fixing bugs, improving documentation, or helping with testing, your contributions are valuable. Please check out the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to get started.
+
+## Important Notes!
+
+While I take pride in this project, please be aware that Mux is still in its early stages of development. The language specification, compiler, and tooling are actively evolving. Expect breaking changes and incomplete features as I work towards a stable release.
+
+I also want to acknowlege that I am aware that there are likely far better ways to do some of the things I have done here. This is a personal project and learning experience for me, and I appreciate your understanding as I continue to improve Mux. 
+
+Finally, I want to acknowledge that I have also been using this project as a way to experiment with AI tools to help me write, review, test and document code. While I have made every effort to ensure the accuracy and quality of the content, there may be occasional "bad code", errors, or inconsistencies. I appreciate your understanding as I continue to refine both the language and my use of these tools.
+
+# Mux Language Specification
 
 ## 1. Overview
 
@@ -1800,7 +1818,6 @@ mux-lang/
 │   ├── src/
 │   │   ├── lib.rs
 │   │   ├── object.rs
-│   │   ├── value.rs
 │   │   ├── refcount.rs
 │   │   ├── boxing.rs
 │   │   ├── bool.rs

@@ -1,0 +1,302 @@
+/**
+ * CSS files with the .module.css suffix will be treated as CSS modules
+ * and scoped locally.
+ */
+
+/* Homepage Styles */
+
+.heroBanner {
+  padding: 6rem 0 4rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.heroContent {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.logoContainer {
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.logoContainer::before {
+  content: '';
+  position: absolute;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(44, 117, 184, 0.12) 0%, transparent 70%);
+  filter: blur(20px);
+  z-index: 0;
+}
+
+.heroLogo {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 4px 12px rgba(44, 117, 184, 0.2));
+}
+
+.heroTitle {
+  font-size: 3.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.03em;
+  color: var(--ifm-font-color-base);
+}
+
+.heroSubtitle {
+  font-size: 1.25rem;
+  line-height: 1.6;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 2rem;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.installBar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  margin: 2rem 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  vertical-align: middle;
+}
+
+.installCommand {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.875rem;
+  color: var(--ifm-code-color);
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.copyButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ifm-color-primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.copyButton svg {
+  width: 10px;
+  height: 10px;
+}
+
+.copyButton:hover {
+  background: var(--ifm-color-primary-dark);
+  opacity: 1;
+}
+
+.copyButton:active {
+  transform: scale(0.95);
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.buttons :global(.button) {
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.buttons :global(.button--primary) {
+  background-color: var(--ifm-color-primary);
+  border: 2px solid var(--ifm-color-primary);
+  color: white;
+}
+
+.buttons :global(.button--primary):hover {
+  background-color: var(--ifm-color-primary-dark);
+  border-color: var(--ifm-color-primary-dark);
+  text-decoration: none;
+  color: white;
+}
+
+.buttons :global(.button--secondary) {
+  background-color: transparent;
+  border: 2px solid var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+
+.buttons :global(.button--secondary):hover {
+  background-color: var(--ifm-color-primary);
+  color: white;
+  text-decoration: none;
+}
+
+.buttons :global(.button--lg) {
+  font-size: 1.125rem;
+  padding: 1rem 2rem;
+}
+
+/* Quick Start Section */
+.quickStart {
+  padding: 5rem 0;
+  background: var(--ifm-background-surface-color);
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.quickStart h2 {
+  margin-bottom: 1.5rem;
+  font-size: 2rem;
+}
+
+/* Terminal code blocks - use global .terminal-code class */
+.installCode,
+.codeExample,
+.showcaseCode {
+  composes: terminal-code from global;
+}
+
+/* Features Section */
+.features {
+  padding: 5rem 0 6rem;
+  background: var(--ifm-background-color);
+  margin-bottom: 1rem;
+}
+
+.features h2 {
+  text-align: center;
+  margin-bottom: 3rem;
+  font-size: 2.5rem;
+}
+
+/* Code Showcase Section */
+.codeShowcase {
+  padding: 5rem 0 6rem;
+  background: var(--ifm-background-surface-color);
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  margin-bottom: 1rem;
+}
+
+.codeShowcase h2 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.codeShowcase h3 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: var(--ifm-color-primary);
+}
+
+/* CTA Section */
+.cta {
+  padding: 5rem 0;
+  background: var(--ifm-background-color);
+}
+
+.cta h2 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Responsive Design */
+@media (max-width: 996px) {
+  .heroBanner {
+    padding: 4rem 0 3rem;
+  }
+
+  .heroTitle {
+    font-size: 2.5rem;
+  }
+
+  .heroSubtitle {
+    font-size: 1.125rem;
+  }
+
+  .heroLogo {
+    width: 100px;
+    height: 100px;
+  }
+
+  .quickStart .row {
+    flex-direction: column;
+  }
+
+  .features .row {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .codeShowcase .row {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 768px) {
+  .heroBanner {
+    padding: 3rem 0 2rem;
+  }
+
+  .heroTitle {
+    font-size: 2rem;
+  }
+
+  .heroSubtitle {
+    font-size: 1rem;
+  }
+
+  .heroLogo {
+    width: 80px;
+    height: 80px;
+  }
+
+  .buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .buttons .button {
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .codeShowcase h2,
+  .features h2,
+  .cta h2 {
+    font-size: 2rem;
+  }
+
+  .codeShowcase h3 {
+    font-size: 1.25rem;
+  }
+}
