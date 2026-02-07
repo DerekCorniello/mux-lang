@@ -73,6 +73,10 @@ impl Unifier {
                 self.unify(v1, v2, span)?;
             }
             (Type::Set(t1), Type::Set(t2)) => self.unify(t1, t2, span)?,
+            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
+                self.unify(l1, l2, span)?;
+                self.unify(r1, r2, span)?;
+            }
 
             (Type::Optional(t1), Type::Optional(t2)) => self.unify(t1, t2, span)?,
             (Type::Void, Type::Void) => {}
@@ -112,6 +116,7 @@ impl Unifier {
             | Type::Set(inner)
             | Type::Optional(inner) => self.occurs(var, inner),
             Type::Map(k, v) => self.occurs(var, k) || self.occurs(var, v),
+            Type::Tuple(l, r) => self.occurs(var, l) || self.occurs(var, r),
 
             _ => false,
         }
@@ -141,6 +146,7 @@ impl Unifier {
             Type::List(inner) => Type::List(Box::new(self.apply(inner))),
             Type::Map(k, v) => Type::Map(Box::new(self.apply(k)), Box::new(self.apply(v))),
             Type::Set(inner) => Type::Set(Box::new(self.apply(inner))),
+            Type::Tuple(l, r) => Type::Tuple(Box::new(self.apply(l)), Box::new(self.apply(r))),
             Type::Optional(inner) => Type::Optional(Box::new(self.apply(inner))),
             _ => t.clone(),
         }

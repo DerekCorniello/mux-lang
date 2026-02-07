@@ -1,6 +1,6 @@
-use crate::refcount::mux_rc_alloc;
 use crate::Tuple;
 use crate::Value;
+use crate::refcount::mux_rc_alloc;
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -52,4 +52,24 @@ pub extern "C" fn mux_tuple_left(tuple: *mut Tuple) -> *mut Value {
 pub extern "C" fn mux_tuple_right(tuple: *mut Tuple) -> *mut Value {
     let tuple = unsafe { &*tuple };
     mux_rc_alloc(tuple.1.clone())
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_get_tuple(value: *mut Value) -> *mut Tuple {
+    if value.is_null() {
+        return std::ptr::null_mut();
+    }
+    // The Value::Tuple variant contains a Box<Tuple>
+    // We need to cast the Value pointer to access the inner Box<Tuple>
+    // This is safe because we're just reinterpreting the pointer
+    unsafe {
+        let value_ref = &mut *value;
+        if let Value::Tuple(tuple_box) = value_ref {
+            let tuple_ptr: *mut Tuple = &mut **tuple_box;
+            tuple_ptr
+        } else {
+            std::ptr::null_mut()
+        }
+    }
 }

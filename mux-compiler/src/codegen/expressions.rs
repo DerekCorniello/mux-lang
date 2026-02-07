@@ -10,9 +10,9 @@
 //! - Index access
 //! - Match expressions
 
+use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
-use inkwell::AddressSpace;
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,
@@ -1014,50 +1014,6 @@ impl<'a> CodeGenerator<'a> {
                                 } else {
                                     self.generate_expression(expr)?.into_pointer_value()
                                 };
-
-                                // Check if this is a tuple type - handle .left and .right specially
-                                let expr_type = self
-                                    .analyzer
-                                    .get_expression_type(expr)
-                                    .map_err(|e| e.to_string())?;
-                                if let Type::Tuple(_, _) = expr_type {
-                                    let tuple_value = self.generate_expression(expr)?;
-                                    let tuple_ptr = tuple_value.into_pointer_value();
-
-                                    let field_index = match field.as_str() {
-                                        "left" => 0,
-                                        "right" => 1,
-                                        _ => {
-                                            return Err(format!(
-                                                "Unknown field '{}' for tuple type",
-                                                field
-                                            ))
-                                        }
-                                    };
-
-                                    let get_field_func = self
-                                        .module
-                                        .get_function(if field_index == 0 {
-                                            "mux_tuple_left"
-                                        } else {
-                                            "mux_tuple_right"
-                                        })
-                                        .ok_or(if field_index == 0 {
-                                            "mux_tuple_left not found"
-                                        } else {
-                                            "mux_tuple_right not found"
-                                        })?;
-
-                                    let field_value = self
-                                        .builder
-                                        .build_call(get_field_func, &[tuple_ptr.into()], &field)
-                                        .map_err(|e| e.to_string())?
-                                        .try_as_basic_value()
-                                        .left()
-                                        .ok_or("mux_tuple_left/right should return a value")?;
-
-                                    return Ok(field_value);
-                                }
 
                                 // for non-self class objects, get the data pointer
                                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
@@ -2935,6 +2891,95 @@ impl<'a> CodeGenerator<'a> {
                 body,
             } => Ok(self.generate_lambda_expression(expr, params, return_type, body)?),
             ExpressionKind::FieldAccess { expr, field } => {
+                // Check if this is a tuple type - handle .left and .right specially
+                let expr_type = self
+                    .analyzer
+                    .get_expression_type(expr)
+                    .map_err(|e| e.to_string())?;
+                if let Type::Tuple(_, _) = expr_type {
+                    let tuple_value = self.generate_expression(expr)?;
+                    let tuple_value_ptr = tuple_value.into_pointer_value();
+
+                    // Extract the actual Tuple pointer from the Value
+                    let get_tuple_fn = self
+                        .module
+                        .get_function("mux_value_get_tuple")
+                        .ok_or("mux_value_get_tuple not found")?;
+                    let tuple_ptr = self
+                        .builder
+                        .build_call(get_tuple_fn, &[tuple_value_ptr.into()], "get_tuple")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("mux_value_get_tuple should return a value")?
+                        .into_pointer_value();
+
+                    let field_index = match field.as_str() {
+                        "left" => 0,
+                        "right" => 1,
+                        _ => return Err(format!("Unknown field '{}' for tuple type", field)),
+                    };
+
+                    let get_field_func = self
+                        .module
+                        .get_function(if field_index == 0 {
+                            "mux_tuple_left"
+                        } else {
+                            "mux_tuple_right"
+                        })
+                        .ok_or(if field_index == 0 {
+                            "mux_tuple_left not found"
+                        } else {
+                            "mux_tuple_right not found"
+                        })?;
+
+                    let field_value = self
+                        .builder
+                        .build_call(get_field_func, &[tuple_ptr.into()], field)
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("mux_tuple_left/right should return a value")?;
+
+                    let field_type = match expr_type {
+                        Type::Tuple(left_type, right_type) => {
+                            if field_index == 0 {
+                                *left_type
+                            } else {
+                                *right_type
+                            }
+                        }
+                        _ => return Err("Expected tuple type for field access".to_string()),
+                    };
+
+                    let field_value = match field_type {
+                        Type::Primitive(PrimitiveType::Int) => {
+                            let raw_int = self.get_raw_int_value(field_value)?;
+                            raw_int.into()
+                        }
+                        Type::Primitive(PrimitiveType::Float) => {
+                            let raw_float = self.get_raw_float_value(field_value)?;
+                            raw_float.into()
+                        }
+                        Type::Primitive(PrimitiveType::Bool) => {
+                            let raw_bool = self.get_raw_bool_value(field_value)?;
+                            raw_bool.into()
+                        }
+                        Type::Primitive(PrimitiveType::Char) => {
+                            let raw_char = self.get_raw_int_value(field_value)?;
+                            raw_char.into()
+                        }
+                        Type::Primitive(PrimitiveType::Str) => field_value,
+                        Type::Primitive(PrimitiveType::Void)
+                        | Type::Primitive(PrimitiveType::Auto) => {
+                            return Err(format!("Unsupported tuple field type {:?}", field_type));
+                        }
+                        _ => field_value,
+                    };
+
+                    return Ok(field_value);
+                }
+
                 let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name == "self" {
                         // special case: accessing field of 'self' - load actual object pointer from alloca first
@@ -3506,7 +3551,10 @@ impl<'a> CodeGenerator<'a> {
                         }
                     }
                 }
-                Err("Field access not supported".to_string())
+                Err(format!(
+                    "Field access not supported for expression type {:?}",
+                    expr.kind
+                ))
             }
             ExpressionKind::Unary {
                 op,

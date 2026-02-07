@@ -378,6 +378,44 @@ impl<'a> CodeGenerator<'a> {
         module.add_function("mux_new_set", list_ptr.fn_type(&[], false), None);
 
         module.add_function(
+            "mux_new_tuple",
+            list_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_value",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_left",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_right",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_eq",
+            context
+                .bool_type()
+                .fn_type(&[list_ptr.into(), list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_to_string",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_value_get_tuple",
+            list_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_value_add",
             i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
             None,

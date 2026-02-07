@@ -35,6 +35,7 @@ impl<'a> CodeGenerator<'a> {
             Type::List(_) => self.generate_list_method_call(obj_value, method_name, args),
             Type::Map(_, _) => self.generate_map_method_call(obj_value, method_name, args),
             Type::Set(_) => self.generate_set_method_call(obj_value, method_name, args),
+            Type::Tuple(_, _) => self.generate_tuple_method_call(obj_value, method_name, args),
             Type::Named(name, type_args) => {
                 if let Some(class) = self.analyzer.symbol_table().lookup(name) {
                     if let Some(method) = class.methods.get(method_name) {
@@ -1176,6 +1177,65 @@ impl<'a> CodeGenerator<'a> {
                 "Method {} not implemented for Optionals",
                 method_name
             )),
+        }
+    }
+
+    fn generate_tuple_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "to_string" => {
+                if !args.is_empty() {
+                    return Err("to_string() method takes no arguments".to_string());
+                }
+                let tuple_ptr = if obj_value.is_pointer_value() {
+                    let get_tuple_fn = self
+                        .module
+                        .get_function("mux_value_get_tuple")
+                        .ok_or("mux_value_get_tuple not found")?;
+                    self.builder
+                        .build_call(get_tuple_fn, &[obj_value.into()], "get_tuple")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("mux_value_get_tuple should return a value")?
+                        .into_pointer_value()
+                } else {
+                    return Err("Tuple method receiver must be a pointer value".to_string());
+                };
+                let func = self
+                    .module
+                    .get_function("mux_tuple_to_string")
+                    .ok_or("mux_tuple_to_string not found")?;
+                let call = self
+                    .builder
+                    .build_call(func, &[tuple_ptr.into()], "tuple_to_str")
+                    .map_err(|e| e.to_string())?;
+                let func_new = self
+                    .module
+                    .get_function("mux_new_string_from_cstr")
+                    .ok_or("mux_new_string_from_cstr not found")?;
+                let call2 = self
+                    .builder
+                    .build_call(
+                        func_new,
+                        &[call
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_tuple_to_string should return a basic value")
+                            .into()],
+                        "new_str",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call2
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_new_string_from_cstr should return a basic value"))
+            }
+            _ => Err(format!("Method {} not implemented for tuples", method_name)),
         }
     }
 }

@@ -1,5 +1,5 @@
-use crate::refcount::mux_rc_alloc;
 use crate::Value;
+use crate::refcount::mux_rc_alloc;
 use std::collections::BTreeSet;
 use std::ffi::CString;
 use std::fmt;
