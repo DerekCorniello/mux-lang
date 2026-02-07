@@ -5,9 +5,9 @@
 use super::CodeGenerator;
 use crate::ast::{EnumVariant, ExpressionNode, Field, PrimitiveType, TypeKind};
 use crate::semantics::{GenericContext, MethodSig, Type};
-use inkwell::AddressSpace;
 use inkwell::types::BasicType;
 use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 impl<'a> CodeGenerator<'a> {
@@ -441,12 +441,100 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
+    pub(super) fn generate_tuple_constructor(
+        &mut self,
+        left_type: &Type,
+        right_type: &Type,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let left_ptr = self.create_default_value_ptr(left_type)?;
+        let right_ptr = self.create_default_value_ptr(right_type)?;
+
+        let tuple_value = self
+            .generate_runtime_call("mux_new_tuple", &[left_ptr.into(), right_ptr.into()])
+            .expect("mux_new_tuple should always return a value");
+
+        let wrapped_value = self
+            .generate_runtime_call("mux_tuple_value", &[tuple_value.into()])
+            .expect("mux_tuple_value should always return a value");
+
+        Ok(wrapped_value)
+    }
+
+    pub(super) fn create_default_value_ptr(
+        &mut self,
+        mux_type: &Type,
+    ) -> Result<PointerValue<'a>, String> {
+        match mux_type {
+            Type::Primitive(PrimitiveType::Int) => {
+                let zero = self.context.i64_type().const_zero();
+                Ok(self.box_value(zero.into()))
+            }
+            Type::Primitive(PrimitiveType::Float) => {
+                let zero = self.context.f64_type().const_zero();
+                Ok(self.box_value(zero.into()))
+            }
+            Type::Primitive(PrimitiveType::Bool) => {
+                let zero = self.context.bool_type().const_zero();
+                Ok(self.box_value(zero.into()))
+            }
+            Type::Primitive(PrimitiveType::Str) => {
+                let str_ptr = self
+                    .builder
+                    .build_global_string_ptr("", "empty_str")
+                    .map_err(|e| e.to_string())?;
+                let value_ptr = self
+                    .generate_runtime_call(
+                        "mux_new_string_from_cstr",
+                        &[str_ptr.as_pointer_value().into()],
+                    )
+                    .expect("mux_new_string_from_cstr should always return a value");
+                Ok(value_ptr.into_pointer_value())
+            }
+            Type::List(_) => {
+                let list_ptr = self
+                    .generate_runtime_call("mux_new_list", &[])
+                    .expect("mux_new_list should always return a value");
+                let value_ptr = self
+                    .generate_runtime_call("mux_list_value", &[list_ptr.into()])
+                    .expect("mux_list_value should always return a value");
+                Ok(value_ptr.into_pointer_value())
+            }
+            Type::Map(_, _) => {
+                let map_ptr = self
+                    .generate_runtime_call("mux_new_map", &[])
+                    .expect("mux_new_map should always return a value");
+                let value_ptr = self
+                    .generate_runtime_call("mux_map_value", &[map_ptr.into()])
+                    .expect("mux_map_value should always return a value");
+                Ok(value_ptr.into_pointer_value())
+            }
+            Type::Set(_) => {
+                let set_ptr = self
+                    .generate_runtime_call("mux_new_set", &[])
+                    .expect("mux_new_set should always return a value");
+                let value_ptr = self
+                    .generate_runtime_call("mux_set_value", &[set_ptr.into()])
+                    .expect("mux_set_value should always return a value");
+                Ok(value_ptr.into_pointer_value())
+            }
+            _ => {
+                // User-defined classes and other types: return null for now
+                Ok(self.context.ptr_type(AddressSpace::default()).const_zero())
+            }
+        }
+    }
+
     pub(super) fn generate_constructor_call_with_types(
         &mut self,
         class_name: &str,
         type_args: &[Type],
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
+        if class_name == "tuple" && type_args.len() == 2 {
+            if let [left_type, right_type] = type_args {
+                return self.generate_tuple_constructor(left_type, right_type);
+            }
+        }
         // create generic context for this instantiation
         let context = GenericContext {
             type_params: self.build_type_param_map(class_name, type_args)?,

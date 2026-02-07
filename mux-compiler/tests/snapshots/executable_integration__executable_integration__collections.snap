@@ -60,6 +60,11 @@ contains() method:
 scores.contains("Alice"): true
 scores.contains("Bob"): false
 
+Map keys, values, pairs:
+scores.get_keys() = [Alice, Charlie, David, Eve]
+scores.get_values() = [95, 95, 88, 92]
+scores.get_pairs() = [(Alice, 95), (Charlie, 95), (David, 88), (Eve, 92)]
+
 Map properties:
 Size: 4
 Is empty: false

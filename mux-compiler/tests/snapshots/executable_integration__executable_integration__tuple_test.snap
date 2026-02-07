@@ -8,6 +8,9 @@ Test 1: Basic primitives
   Created tuple: (42, hello)
   t1.left = 42 (should be 42)
   t1.right = hello (should be hello)
+  Created empty tuple: (0, "")
+  empty.left = 0 (should be 0)
+  empty.right =  (should be empty)
 
 Test 2: Float, bool, char
   Created float tuple

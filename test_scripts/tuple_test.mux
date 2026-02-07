@@ -8,7 +8,7 @@ func test_basic_primitives() returns void {
     print("  t1.left = " + t1.left.to_string() + " (should be 42)")
     print("  t1.right = " + t1.right.to_string() + " (should be hello)")
 
-    Tuple<int, string> empty = tuple<int, string>.new()
+    tuple<int, string> empty = tuple<int, string>.new()
     print("  Created empty tuple: (0, \"\")")
     print("  empty.left = " + empty.left.to_string() + " (should be 0)")
     print("  empty.right = " + empty.right.to_string() + " (should be empty)")

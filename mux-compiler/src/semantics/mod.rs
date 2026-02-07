@@ -10,7 +10,7 @@ pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
 #[allow(unused_imports)]
 pub use format::{format_span_location, format_unary_op};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -1066,6 +1066,21 @@ impl SemanticAnalyzer {
                 Ok(Type::Tuple(Box::new(left_type), Box::new(right_type)))
             }
             ExpressionKind::GenericType(name, type_args) => {
+                if name == "tuple" {
+                    if type_args.len() != 2 {
+                        return Err(SemanticError {
+                            message: format!(
+                                "Tuple type requires exactly 2 type arguments, got {}",
+                                type_args.len()
+                            ),
+                            span: expr.span,
+                        });
+                    }
+                    let left_type = Box::new(self.resolve_type(&type_args[0])?);
+                    let right_type = Box::new(self.resolve_type(&type_args[1])?);
+                    return Ok(Type::Tuple(left_type, right_type));
+                }
+
                 if !self.symbol_table.exists(name) {
                     return Err(SemanticError {
                         message: format!("Undefined type '{}'", name),
@@ -1821,6 +1836,14 @@ impl SemanticAnalyzer {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Str),
                     is_static: false,
+                }),
+                "new" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Tuple(
+                        Box::new(Type::Primitive(PrimitiveType::Int)),
+                        Box::new(Type::Primitive(PrimitiveType::Str)),
+                    ),
+                    is_static: true,
                 }),
                 _ => None,
             },
@@ -3681,7 +3704,22 @@ impl SemanticAnalyzer {
                 Ok(())
             }
             // Instantiate generic types (e.g., Stack<int>)
-            ExpressionKind::GenericType(name, _) => {
+            ExpressionKind::GenericType(name, type_args) => {
+                if name == "tuple" {
+                    if type_args.len() != 2 {
+                        return Err(SemanticError {
+                            message: format!(
+                                "Tuple type requires exactly 2 type arguments, got {}",
+                                type_args.len()
+                            ),
+                            span: expr.span,
+                        });
+                    }
+                    for arg in type_args {
+                        self.resolve_type(arg)?;
+                    }
+                    return Ok(());
+                }
                 if !self.symbol_table.exists(name) {
                     return Err(SemanticError {
                         message: format!("Undefined type '{}'", name),
