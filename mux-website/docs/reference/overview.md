@@ -1,4 +1,4 @@
-# Language Reference
+# Overview
 
 This section provides detailed, technical documentation of Mux's syntax and semantics.
 
@@ -10,7 +10,7 @@ The Language Reference is the authoritative source for:
 - Edge cases and corner cases
 - Implementation details
 
-This is different from the [Language Guide](../language-guide/index.md), which focuses on teaching and examples.
+This is different from the [Language Guide](../language-guide/overview.md), which focuses on teaching and examples.
 
 ## Contents
 
@@ -19,8 +19,6 @@ This is different from the [Language Guide](../language-guide/index.md), which f
 | Topic | Description |
 |-------|-------------|
 | [Lexical Structure](./lexical-structure.md) | Tokens, keywords, identifiers, literals, comments |
-| [Grammar](./grammar.md) | Formal BNF-style syntax definitions |
-| [Type System](./type-system.md) | Type rules, conversions, inference, generics |
 | [Operators](./operators.md) | Operator precedence, associativity, behavior |
 
 ### Behavior Reference
@@ -30,15 +28,12 @@ This is different from the [Language Guide](../language-guide/index.md), which f
 | [Statements](./statements.md) | Detailed semantics of each statement type |
 | [Expressions](./expressions.md) | Expression evaluation rules |
 | [Memory Model](./memory-model.md) | Reference counting specifics |
-| [ABI](./abi.md) | Binary interface for external interop |
 
 ### Quick Reference
 
 | Topic | Description |
 |-------|-------------|
 | [Operators](./operators.md#operator-precedence) | Operator precedence table |
-| [Grammar](./grammar.md) | Reserved keywords |
-| [Type System](./type-system.md#primitive-types) | Primitive type specifications |
 | [Memory Model](./memory-model.md#memory-layout) | Memory layout diagrams |
 
 ## Reference vs Guide
@@ -52,7 +47,7 @@ This is different from the [Language Guide](../language-guide/index.md), which f
 
 ## Additional Resources
 
-- [Language Guide](../language-guide/index.md) - Practical language documentation
+- [Language Guide](../language-guide/overview.md) - Practical language documentation
 - [README.md](https://github.com/derekcorniello/mux-lang/blob/main/README.md) - Comprehensive language specification
 - [Source Code](https://github.com/derekcorniello/mux-lang) - The compiler itself is the ultimate reference
 

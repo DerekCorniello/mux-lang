@@ -30,13 +30,13 @@
   --ifm-code-background: #f3f4f6;
   --ifm-code-color: #1f2937;
   
-  /* Typography - distinctive font stack */
-  --ifm-font-family-base: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
-  --ifm-font-family-monospace: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
-  --ifm-heading-font-family: 'Space Grotesk', sans-serif;
-  --ifm-heading-font-weight: 600;
-  --ifm-font-size-base: 17px;
-  --ifm-line-height-base: 1.7;
+/* Typography - distinctive font stack */
+--ifm-font-family-base: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
+--ifm-font-family-monospace: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+--ifm-heading-font-family: 'Space Grotesk', sans-serif;
+--ifm-heading-font-weight: 600;
+--ifm-font-size-base: 16px;
+--ifm-line-height-base: 1.65;
   
   /* Code blocks */
   --ifm-code-font-size: 0.875em;
@@ -48,7 +48,8 @@
   
   /* Navbar */
   --ifm-navbar-height: 64px;
-  --ifm-navbar-background-color: rgba(255, 255, 255, 0.95);
+  --ifm-navbar-padding-horizontal: 0.75rem;
+  --ifm-navbar-background-color: #ffffff;
   --ifm-navbar-shadow: none;
   --ifm-navbar-border-bottom: 1px solid var(--ifm-color-emphasis-200);
   
@@ -91,7 +92,7 @@
   
   --docusaurus-highlighted-code-line-bg: rgba(96, 165, 250, 0.15);
   
-  --ifm-navbar-background-color: rgba(15, 23, 42, 0.95);
+  --ifm-navbar-background-color: #0f172a;
   --ifm-navbar-shadow: none;
   
   /* Terminal styling - dark mode */
@@ -128,23 +129,23 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 h1 {
-  font-size: 2.75rem;
+  font-size: 2.5rem;
   font-weight: 700;
   margin-bottom: 1.5rem;
 }
 
 h2 {
-  font-size: 2rem;
+  font-size: 1.875rem;
   font-weight: 600;
   margin-bottom: 1rem;
-  margin-top: 2.5rem;
+  margin-top: 2.25rem;
 }
 
 h3 {
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 600;
   margin-bottom: 0.75rem;
-  margin-top: 2rem;
+  margin-top: 1.75rem;
 }
 
 /* Code styling - refined inline code */
@@ -242,7 +243,22 @@ pre code {
   margin: 0;
   font-family: var(--ifm-font-family-monospace);
   white-space: pre;
-  overflow-x: auto;
+  overflow-x: scroll;
+  scrollbar-width: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
+.terminal-code code::-webkit-scrollbar {
+  height: 10px;
+}
+
+.terminal-code code::-webkit-scrollbar-track {
+  background: var(--ifm-scrollbar-track-background-color);
+}
+
+.terminal-code code::-webkit-scrollbar-thumb {
+  background: var(--ifm-scrollbar-thumb-background-color);
+  border-radius: 8px;
 }
 
 /* Copy button in terminal header */
@@ -284,9 +300,9 @@ pre code {
 .navbar {
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
   box-shadow: none;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   min-height: var(--ifm-navbar-height);
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
 }
 
 .navbar__inner {
@@ -296,11 +312,13 @@ pre code {
 
 .navbar__items {
   align-items: center;
+  gap: 0.5rem;
 }
 
-.navbar__items > .navbar__item {
-  margin-right: 0.25rem;
+.navbar__items:not(.navbar__items--right) {
+  flex: 0 0 auto;
 }
+
 
 .navbar__items--right {
   margin-left: auto;
@@ -310,7 +328,12 @@ pre code {
   height: 32px;
   display: flex;
   align-items: center;
+  margin-left: 0;
   margin-right: 0.5rem;
+}
+
+.navbar__brand {
+  margin-left: 0;
 }
 
 .navbar__title {
@@ -333,20 +356,24 @@ pre code {
   transition: all 0.2s ease;
 }
 
+.navbar__toggle {
+  margin-left: 0;
+}
+
 /* Hero section */
 .hero {
   background: linear-gradient(180deg, var(--ifm-background-surface-color) 0%, var(--ifm-background-color) 100%);
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
-  padding: 5rem 0 4rem;
+  padding: 4rem 0 3rem;
 }
 
 .hero__title {
   font-family: var(--ifm-heading-font-family);
-  font-size: 3.5rem;
+  font-size: 2.5rem;
   font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 1.1;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
   background: linear-gradient(135deg, var(--ifm-color-primary-darkest) 0%, var(--ifm-color-primary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -354,12 +381,12 @@ pre code {
 }
 
 .hero__subtitle {
-  font-size: 1.35rem;
+  font-size: 1.125rem;
   font-weight: 400;
   color: var(--ifm-color-emphasis-700);
   margin-top: 0;
   line-height: 1.6;
-  max-width: 700px;
+  max-width: 600px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -382,7 +409,7 @@ a:hover {
   background: var(--ifm-background-surface-color);
   border: 1px solid var(--ifm-color-emphasis-200);
   border-radius: 12px;
-  padding: 2rem;
+  padding: 1.5rem;
   height: 100%;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
@@ -390,9 +417,36 @@ a:hover {
 .feature-card h3 {
   font-family: var(--ifm-heading-font-family);
   color: var(--ifm-color-primary);
-  margin-bottom: 1rem;
-  font-size: 1.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 1.125rem;
   font-weight: 600;
+}
+
+.feature-card p {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+
+/* Features grid */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+@media (max-width: 996px) {
+  .features-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .features-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
 }
 
 /* Documentation improvements */
@@ -583,45 +637,102 @@ hr {
   padding-bottom: 4rem;
 }
 
-/* Search bar - centered and sized */
+.navbar-sidebar,
+.navbar-sidebar__backdrop {
+  z-index: 1000;
+}
+
+/* Search bar - responsive centered */
+.navbar__items:not(.navbar__items--right) {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
 .dsla-search-wrapper {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 25%;
-  min-width: 250px;
-  max-width: 500px;
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.navbar__items--right .dsla-search-wrapper {
+  margin: 0;
+  max-width: none;
+}
+
+.navbar__items--right .dsla-search-wrapper .aa-DetachedSearchButton {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  justify-content: center;
+}
+
+.navbar__items--right .dsla-search-wrapper .aa-DetachedSearchButtonPlaceholder {
+  display: none;
+}
+
+.navbar__items--right .dsla-search-wrapper .aa-DetachedSearchButtonIcon {
+  margin: 0;
 }
 
 .dsla-search-field {
   width: 100%;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 996px) {
+  .navbar__title {
+    display: none;
+  }
+
+  .navbar__items:not(.navbar__items--right) .navbar__item {
+    display: none;
+  }
+
+  .navbar__items:not(.navbar__items--right) .navbar__link {
+    display: none;
+  }
+
+  .navbar__items--right .navbar__link {
+    display: none;
+  }
+
+  .navbar__items:not(.navbar__items--right) .dsla-search-wrapper {
+    display: none;
+  }
+
+  .navbar__items--right {
+    gap: 0.5rem;
+  }
+
+  .navbar__items:not(.navbar__items--right) {
+    justify-content: flex-start;
+  }
+  
   .dsla-search-wrapper {
-    width: 40%;
-    min-width: 150px;
-  }
-  
-  .hero__title {
-    font-size: 2.5rem;
-  }
-  
-  .hero__subtitle {
-    font-size: 1.25rem;
-  }
-  
-  .button--lg {
-    font-size: 1rem;
-    padding: 0.875rem 1.5rem;
+    max-width: 280px;
   }
 }
 
-@media (max-width: 480px) {
-  .dsla-search-wrapper {
-    width: 50%;
-    min-width: 120px;
+@media (max-width: 768px) {
+  :root {
+    --ifm-font-size-base: 12px;
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+  
+  h2 {
+    font-size: 1.5rem;
+  }
+  
+  h3 {
+    font-size: 1.25rem;
   }
   
   .hero__title {
@@ -629,7 +740,54 @@ hr {
   }
   
   .hero__subtitle {
+    font-size: 1rem;
+  }
+  
+  .button--lg {
+    font-size: 0.9375rem;
+    padding: 0.75rem 1.25rem;
+  }
+  
+  .navbar__items:not(.navbar__items--right) {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .dsla-search-wrapper {
+    max-width: none;
+    width: calc(100% - 80px);
+  }
+
+  .navbar-sidebar__search .dsla-search-wrapper {
+    display: block;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 1.75rem;
+  }
+  
+  h2 {
+    font-size: 1.375rem;
+  }
+  
+  h3 {
     font-size: 1.125rem;
+  }
+  
+  .hero__title {
+    font-size: 1.75rem;
+  }
+  
+  .hero__subtitle {
+    font-size: 0.9375rem;
+  }
+  
+  .dsla-search-wrapper {
+    width: 100%;
+    max-width: none;
   }
 }
 

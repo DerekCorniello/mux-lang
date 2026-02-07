@@ -92,7 +92,7 @@ function QuickStartSection() {
 }`}
             </CodeBlock>
             <p>
-              <Link to="/docs/language-guide">Explore the Language Guide</Link> for more.
+              <Link to="/docs/language-guide/overview">Explore the Language Guide</Link> for more.
             </p>
           </div>
         </div>
@@ -105,71 +105,57 @@ function FeaturesSection() {
   return (
     <section className={styles.features}>
       <div className="container">
-        <Heading as="h2" style={{textAlign: 'center', marginBottom: '3rem'}}>
+        <Heading as="h2" style={{textAlign: 'center', marginBottom: '2.5rem'}}>
           Why Choose Mux?
         </Heading>
-        <div className="row">
-          <div className="col col--4">
-            <div className="feature-card">
-              <Heading as="h3">Simple & Readable</Heading>
-              <p>
-                Clean syntax with no semicolons, clear type inference using `auto`,
-                and explicit error handling with `Result` and `Optional` types.
-                Code that is easy to read and maintain.
-              </p>
-            </div>
+        <div className="features-grid">
+          <div className="feature-card">
+            <Heading as="h3">Simple & Readable</Heading>
+            <p>
+              Clean syntax with no semicolons, clear type inference using `auto`,
+              and explicit error handling with `Result` and `Optional` types.
+              Code that is easy to read and maintain.
+            </p>
           </div>
-          <div className="col col--4">
-            <div className="feature-card">
-              <Heading as="h3">Type Safe</Heading>
-              <p>
-                Strong static typing catches errors at compile time. No implicit
-                conversions, powerful generics with monomorphization, and
-                compile-time exhaustiveness checking.
-              </p>
-            </div>
+          <div className="feature-card">
+            <Heading as="h3">Type Safe</Heading>
+            <p>
+              Strong static typing catches errors at compile time. No implicit
+              conversions, powerful generics with monomorphization, and
+              compile-time exhaustiveness checking.
+            </p>
           </div>
-          <div className="col col--4">
-            <div className="feature-card">
-              <Heading as="h3">Fast & Efficient</Heading>
-              <p>
-                Native performance through LLVM code generation. Reference-counted
-                memory management provides safety without garbage collection
-                pauses or complex ownership rules.
-              </p>
-            </div>
+          <div className="feature-card">
+            <Heading as="h3">Fast & Efficient</Heading>
+            <p>
+              Native performance through LLVM code generation. Reference-counted
+              memory management provides safety without garbage collection
+              pauses or complex ownership rules.
+            </p>
           </div>
-        </div>
-        <div className="row" style={{marginTop: '2rem'}}>
-          <div className="col col--4">
-            <div className="feature-card">
-              <Heading as="h3">Pattern Matching</Heading>
-              <p>
-                Expressive pattern matching with guards for elegant control flow.
-                Match on enums, Optionals, Results, and primitives with complete
-                type safety.
-              </p>
-            </div>
+          <div className="feature-card">
+            <Heading as="h3">Pattern Matching</Heading>
+            <p>
+              Expressive pattern matching with guards for elegant control flow.
+              Match on enums, Optionals, Results, and primitives with complete
+              type safety.
+            </p>
           </div>
-          <div className="col col--4">
-            <div className="feature-card">
-              <Heading as="h3">Memory Safe</Heading>
-              <p>
-                Automatic memory management using reference counting. No manual
-                allocation, no garbage collector, and deterministic cleanup
-                without a complex borrow checker.
-              </p>
-            </div>
+          <div className="feature-card">
+            <Heading as="h3">Memory Safe</Heading>
+            <p>
+              Automatic memory management using reference counting. No manual
+              allocation, no garbage collector, and deterministic cleanup
+              without a complex borrow checker.
+            </p>
           </div>
-          <div className="col col--4">
-            <div className="feature-card">
-              <Heading as="h3">Modern & Expressive</Heading>
-              <p>
-                Full-featured with generics, interfaces, tagged union enums,
-                collection literals, and lambda functions. A modern language
-                for modern development.
-              </p>
-            </div>
+          <div className="feature-card">
+            <Heading as="h3">Modern & Expressive</Heading>
+            <p>
+              Full-featured with generics, interfaces, tagged union enums,
+              collection literals, and lambda functions. A modern language
+              for modern development.
+            </p>
           </div>
         </div>
       </div>
@@ -250,7 +236,7 @@ function CTASection() {
           </Link>
           <Link
             className="button button--link button--lg"
-            to="/docs/language-guide">
+            to="/docs/language-guide/overview">
             Language Guide
           </Link>
         </div>

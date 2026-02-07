@@ -15,24 +15,7 @@ Mux provides **automatic memory management** through **atomic reference counting
 
 ### Heap Allocation
 
-All non-primitive values are heap-allocated:
-
-```
-┌──────────────────┬─────────────┐
-│   RefHeader      │    Value    │
-│ ref_count: u64   │  (payload) │
-└──────────────────┴─────────────┘
-          ↑
-      Allocation pointer
-```
-
-### RefHeader Structure
-
-```rust
-struct RefHeader {
-    ref_count: AtomicUsize,  // Thread-safe reference count
-}
-```
+All non-primitive values are heap-allocated
 
 ### Value Types
 
@@ -42,6 +25,7 @@ struct RefHeader {
 | `string` | Heap-allocated UTF-8 | Reference counted |
 | `list<T>` | Heap-allocated vector | Reference counted |
 | `map<K,V>` | Heap-allocated BTreeMap | Reference counted |
+| `tuple<K,V>` | Heap-allocated object | Reference counted |
 | `set<T>` | Heap-allocated BTreeSet | Reference counted |
 | `Optional<T>`, `Result<T,E>` | Boxed enum | Reference counted |
 | Class instances | Heap-allocated object | Reference counted |
@@ -161,40 +145,7 @@ Cleanup order:
 6. Drop inner lists
 7. All strings freed
 
-## Circular References
-
-Mux does NOT automatically handle circular references:
-
-```mux
-class Node {
-    Node next
-}
-
-auto a = Node.new()
-auto b = Node.new()
-a.next = b
-b.next = a  // Circular reference!
-```
-
-**Memory leak:** `a` and `b` will never be freed because each holds a reference to the other.
-
-**Solutions:**
-1. Use weak references (not currently supported)
-2. Break cycles manually by setting `next = None` when done
-
 ## Value Semantics
-
-Primitives are passed by value, objects by reference:
-
-```mux
-func modify_int(int x) returns void {
-    x = 100  // Only modifies local copy
-}
-
-func modify_obj(Circle c) returns void {
-    c.radius = 100  // Modifies the shared object
-}
-```
 
 ### Reference vs Value
 
@@ -257,12 +208,6 @@ auto b = a
 // Only freed when both a and b go out of scope
 ```
 
-### No Memory Leaks (Except Cycles)
-
-Memory is freed when refcount reaches zero, except for:
-- Circular references
-- Objects held indefinitely in global scope
-
 ## Performance Characteristics
 
 | Operation | Complexity |
@@ -296,15 +241,6 @@ fn rc_dec(ptr: *mut Value) -> bool {
     }
 }
 ```
-
-## Comparison to Other Models
-
-| Model | Pros | Cons |
-|-------|------|------|
-| **Mux (RC)** | Deterministic, simple | Cycles leak, overhead |
-| **Garbage Collection** | Handles cycles | GC pauses, non-deterministic |
-| **Manual (C)** | Maximum control | Use-after-free bugs |
-| **Rust (ownership)** | Zero-cost, safe | Complex borrow checker |
 
 ## See Also
 

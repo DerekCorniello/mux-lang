@@ -2,51 +2,7 @@
 
 This document describes the semantics of each statement type in Mux.
 
-## Block Statements
-
-A block statement groups statements and creates a new scope.
-
-```mux
-{
-    auto x = 1
-    {
-        auto y = 2  // Inner scope
-        // x and y are accessible
-    }
-    // y is not accessible here
-    // x is still accessible
-}
-```
-
-### Scope Rules
-
-- Each block creates a new lexical scope
-- Variables declared in a block are only accessible within that block
-- Nested blocks can access variables from enclosing scopes
-- Variables are destroyed when their scope exits
-
-## Variable Declaration Statements
-
-### Syntax
-
-```
-variable_declaration ::= IDENT ':' type '=' expression
-                       | IDENT '=' expression
-```
-
-### Rules
-
-1. The type annotation is required unless using `auto`
-2. The initializer expression is required
-3. The variable is mutable by default
-
-```mux
-int x = 42           // Explicit type
-auto y = 42          // Type inferred as int
-auto name = "Mux"    // Type inferred as string
-```
-
-### Mutability
+## Mutability
 
 Variables are mutable by default:
 
@@ -65,13 +21,6 @@ const int MAX = 100
 ```
 
 ## Constant Declaration Statements
-
-### Syntax
-
-```
-const_declaration ::= 'const' type IDENT '=' expression
-                    | 'const' IDENT '=' expression
-```
 
 ### Rules
 
@@ -99,37 +48,7 @@ func process() returns void {
 }
 ```
 
-## Expression Statements
-
-Any expression can be used as a statement by placing it on its own line:
-
-```mux
-42                    // Integer literal (does nothing)
-"hello"               // String literal (does nothing)
-some_function()       // Function call with side effects
-x++                   // Increment statement
-y += 5                // Compound assignment statement
-```
-
-### Side Effects
-
-Expression statements are useful when the expression has side effects:
-
-```mux
-print("Hello")        // Output function call
-mutate_value()        // Function that modifies state
-data.clear()          // Method that modifies the object
-```
-
 ## If Statements
-
-### Syntax
-
-```
-if_statement ::= 'if' expression block_statement
-                | 'if' expression block_statement 'else' block_statement
-                | 'if' expression block_statement { 'else' 'if' expression block_statement } [ 'else' block_statement ]
-```
 
 ### Semantics
 
@@ -160,14 +79,6 @@ if condition {
 ```
 
 ## Match Statements
-
-### Syntax
-
-```
-match_statement ::= 'match' '(' expression ')' '{' { match_arm } '}'
-
-match_arm ::= pattern [ 'if' expression ] '{' { statement } '}'
-```
 
 ### Semantics
 
@@ -239,12 +150,6 @@ match number {
 
 ## For Statements
 
-### Syntax
-
-```
-for_statement ::= 'for' pattern 'in' expression block_statement
-```
-
 ### Semantics
 
 1. The iterable expression is evaluated
@@ -283,23 +188,7 @@ for int i in range(0, 5) {
 // Use while loop for complex iteration
 ```
 
-### Nested Iteration
-
-```mux
-for int outer in outerList {
-    for int inner in innerList {
-        // Both outer and inner accessible
-    }
-}
-```
-
 ## While Statements
-
-### Syntax
-
-```
-while_statement ::= 'while' expression block_statement
-```
 
 ### Semantics
 
@@ -329,12 +218,6 @@ while x {  // ERROR: cannot convert int to bool
 
 ## Break Statements
 
-### Syntax
-
-```
-break_statement ::= 'break'
-```
-
 ### Semantics
 
 1. Exits the immediately enclosing loop
@@ -352,12 +235,6 @@ for int i in range(0, 100) {
 
 ## Continue Statements
 
-### Syntax
-
-```
-continue_statement ::= 'continue'
-```
-
 ### Semantics
 
 1. Skips to the next iteration of the immediately enclosing loop
@@ -373,12 +250,6 @@ for int i in range(0, 10) {
 ```
 
 ## Return Statements
-
-### Syntax
-
-```
-return_statement ::= 'return' [ expression ]
-```
 
 ### Semantics
 
@@ -406,7 +277,7 @@ func max(int a, int b) returns int {
 ```mux
 func greet(string name) returns void {
     print("Hello, " + name)
-    return  // Optional in void functions
+    return  // Required in void functions
 }
 ```
 
@@ -432,24 +303,7 @@ When a return executes:
 2. Nested scopes are cleaned up in reverse order
 3. Control transfers to the caller
 
-## Statement Evaluation Order
-
-Statements are executed sequentially:
-
-```mux
-auto a = 1  // First
-auto b = 2  // Second
-auto c = a + b  // Third (a and b are already defined)
-```
-
-Within a single statement:
-
-- Left operand evaluated before right operand
-- Function arguments evaluated before function call
-- Operands of `&&` and `||` may short-circuit (not evaluated)
-
 ## See Also
 
-- [Grammar](./grammar.md) - Statement syntax
 - [Expressions](./expressions.md) - Expression evaluation
 - [Control Flow](../language-guide/control-flow.md) - Control flow guide

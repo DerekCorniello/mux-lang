@@ -126,6 +126,25 @@ Result<T, E>       // Represents success (T) or error (E)
 list<T>            // Ordered collection
 map<K, V>          // Key-value pairs
 set<T>             // Unique elements
+tuple<T, U>        // Fixed size pair
+```
+
+## Tuples
+
+Tuples are fixed size pairs. A tuple always has exactly two elements.
+
+```mux title="tuple_basics.mux"
+auto pair = (1, "one")
+tuple<int, string> typed = (2, "two")
+
+print(pair.left.to_string())   // "1"
+print(pair.right.to_string())  // "one"
+```
+
+Tuples also support `to_string()` and a default constructor:
+
+```mux title="tuple_default.mux"
+auto empty = tuple<int, string>.new()  // (0, "")
 ```
 
 ## References

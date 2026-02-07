@@ -292,5 +292,5 @@ func main() returns void {
 ## See Also
 
 - [Quick Start Guide](../getting-started/quick-start.md)
-- [Language Guide Index](./index.md) - All language guide topics
-- [Reference](../reference/index.md) - Formal language specification
+- [Language Guide Index](./overview.md) - All language guide topics
+- [Reference](../reference/overview.md) - Formal language specification

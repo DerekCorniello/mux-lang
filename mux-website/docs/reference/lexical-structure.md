@@ -13,12 +13,14 @@ Mux is case-sensitive. Keywords, identifiers, and type names must match the exac
 ```mux
 auto x = 1
 auto X = 2  // Different variable
-auto x = 3  // Reassign to existing variable
+x = 3  // Reassign to existing variable
 ```
 
 ## Whitespace
 
-Whitespace characters (space `0x20`, tab `0x09`, newline `0x0A`, carriage return `0x0D`) separate tokens. Whitespace within string literals is significant.
+The only significant whitespace in Mux is the Newline character (`\n`), which separates statements. Other whitespace characters (space, tab, carriage return) are ignored except for separating tokens.
+
+```mux
 
 ## Comments
 
@@ -50,21 +52,21 @@ Identifiers name variables, functions, types, and other entities.
 
 ### Rules
 
-- Must start with a letter (Unicode category `L`) or underscore `_`
+- Must start with a letter
 - Can contain letters, digits, and underscores
-- Cannot start with a digit
 - Cannot be a reserved keyword
 
 ### Valid Identifiers
 
 ```mux
 auto x = 1
-auto _private = 2
 auto camelCase = 3
 auto snake_case = 4
-auto _123 = 5  // Underscore followed by digit is valid
+// auto _123 = 5 // ERROR: variable names cannot start with _
 auto Greek_alpha = 'α'
 ```
+
+**Note**: Most Mux code uses `snake_case`, with some exceptions of course, but this is a convention, not a requirement.
 
 ### Invalid Identifiers
 
@@ -108,7 +110,7 @@ The following words are reserved keywords and cannot be used as identifiers:
 | Keyword | Purpose |
 |---------|---------|
 | `func` | Function declaration |
-| `returns` | Return type specification |
+| `returns` | Return type specification for functions |
 | `const` | Constant declaration |
 | `auto` | Type inference declaration |
 | `class` | Class declaration |
@@ -145,12 +147,15 @@ The following words are reserved keywords and cannot be used as identifiers:
 | `true` | Boolean true literal |
 | `false` | Boolean false literal |
 | `None` | Optional none literal |
+| `Some` | Optional some literal |
+| `Ok` | Result ok literal |
+| `Err` | Result error literal |
 
 ### Special Keywords
 
 | Keyword | Purpose |
 |---------|---------|
-| `self` | Instance reference (inside class methods) |
+| `self` | Instance reference (inside class methods only) |
 
 ## Literals
 
@@ -160,10 +165,7 @@ Decimal integers:
 
 ```mux
 auto x = 42
-auto big = 9999999999999999999
-auto hex = 0xFF        // 255
-auto octal = 0o77      // 63
-auto binary = 0b1010   // 10
+int y = 42
 ```
 
 ### Float Literals
@@ -171,7 +173,6 @@ auto binary = 0b1010   // 10
 ```mux
 auto pi = 3.14159
 auto scientific = 1.23e-4
-auto no_decimal = 2.0
 ```
 
 ### Character Literals
@@ -193,7 +194,6 @@ UTF-8 sequences in double quotes:
 ```mux
 auto greeting = "Hello, World!"
 auto with_quote = "She said \"hello\""
-auto unicode = "こんにちは"
 auto multiline = "line1\nline2"
 ```
 
@@ -204,15 +204,12 @@ Escape sequences:
 - `\n` - Newline
 - `\t` - Tab
 - `\r` - Carriage return
-- `\xNN` - Hex byte
-- `\uNNNN` - Unicode code point (4 hex digits)
-- `\UNNNNNNNN` - Unicode code point (8 hex digits)
 
 ### Boolean Literals
 
 ```mux
 auto yes = true
-auto no = false
+bool no = false
 ```
 
 ### None Literal
@@ -253,16 +250,6 @@ auto absent = None
 | `||` | Logical OR (short-circuit) |
 | `!` | Logical NOT |
 
-### Bitwise Operators
-
-| Symbol | Meaning |
-|--------|---------|
-| `&` | Bitwise AND |
-| `\|` | Bitwise OR |
-| `^` | Bitwise XOR |
-| `<<` | Left shift |
-| `>>` | Right shift |
-
 ### Other Operators
 
 | Symbol | Meaning |
@@ -276,22 +263,18 @@ auto absent = None
 | `++` | Postfix increment |
 | `--` | Postfix decrement |
 | `.` | Member access |
-| `->` | Not used (use `.` for member access) |
 | `&` | Reference creation |
 | `*` | Dereference |
-| `?` | Not used (no try operator) |
 
 ### Punctuation
 
 | Symbol | Usage |
 |--------|-------|
-| `(` `)` | Grouping, function calls, parameters |
+| `(` `)` | tuple literals, Grouping, function calls, parameters |
 | `[` `]` | List literals, indexing |
-| `{` `}` | Block statements, map literals |
+| `{` `}` | Block statements, map literals, set literals |
 | `<` `>` | Type parameters (generics) |
 | `,` | Separator |
-| `:` | Type annotation, match patterns |
-| `;` | Not used (no statement terminator) |
 
 ## Line Continuation
 
@@ -309,6 +292,4 @@ auto sum = (1 + 2 +
 
 ## See Also
 
-- [Grammar](./grammar.md) - Formal syntax rules
-- [Types](./type-system.md) - Type system overview
-- [Language Guide](../language-guide/index.md) - Practical examples
+- [Language Guide](../language-guide/overview.md) - Practical examples

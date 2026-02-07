@@ -100,7 +100,7 @@ mux run numbers.mux
 
 ### Explore the Language
 
-- Read the [Language Guide](../language-guide/index.md) to learn about Mux's features
+- Read the [Language Guide](../language-guide/overview.md) to learn about Mux's features
 - Learn about [Types and Variables](../language-guide/types.md)
 - Understand [Variable Declarations](../language-guide/variables.md)
 - Discover [Why Mux exists](./why-mux.md)
@@ -128,7 +128,7 @@ Options:
 
 ## Getting Help
 
-- [Language Guide](../language-guide/index.md)
+- [Language Guide](../language-guide/overview.md)
 - [Why Mux?](./why-mux.md)
 - [GitHub Issues](https://github.com/derekcorniello/mux-lang/issues)
 
@@ -147,7 +147,7 @@ I am working on these features, but they are not yet available. Contributions ar
 
 Now that you have Mux installed, explore the documentation:
 
-- [Language Guide](../language-guide/index.md) - Complete language overview
+- [Language Guide](../language-guide/overview.md) - Complete language overview
 - [Types and Variables](../language-guide/types.md) - Type system and conversions
 - [Variable Declarations](../language-guide/variables.md) - Using auto and const
 - [Design Philosophy](../design-notes/philosophy.md) - Why Mux is designed the way it is

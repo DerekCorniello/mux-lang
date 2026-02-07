@@ -41,13 +41,29 @@ auto x = (1 + 2) * 3    // x = 9
 auto y = (result)       // y has same type as result
 ```
 
+## Tuple Literals
+
+Tuples are fixed size pairs with exactly two elements:
+
+```mux
+auto pair = (1, "one")
+auto nested = ((1, 2), ("a", "b"))
+```
+
+Access tuple fields with `.left` and `.right`:
+
+```mux
+print(pair.left.to_string())
+print(pair.right.to_string())
+```
+
 ## List Literals
 
 ```mux
 auto nums = [1, 2, 3]           // list<int>
 auto empty = []                 // ERROR: needs explicit type
-auto typed = list<int>()        // Empty list with type
-auto mixed = [1, "two", 3.0]   // Mixed types allowed
+auto typed = list<int>.new()    // Empty list with type
+auto mixed = [1, "two", 3.0]    // Mixed types allowed
 ```
 
 ### Type Inference for Lists
@@ -58,14 +74,14 @@ The element type is inferred from the contents:
 auto nums = [1, 2, 3]           // list<int>
 auto strs = ["a", "b"]          // list<string>
 auto floats = [1.0, 2.0]        // list<float>
-auto objects = [Circle.new(1)]   // list<Circle>
+auto objects = [Circle.new(1)]  // list<Circle>
 ```
 
 Empty lists require explicit type annotation:
 
 ```mux
 list<int> empty = []            // Valid: explicit type
-auto empty = list<int>()        // Valid: explicit constructor
+auto empty = list<int>.new()    // Valid: explicit constructor
 auto bad = []                   // ERROR: cannot infer type
 ```
 
@@ -80,7 +96,7 @@ auto complex = {"key": [1, 2, 3]}
 ### Type Inference
 
 ```mux
-auto scores = {"Alice": 90}     // map<string, int>
+auto scores = {"Alice": 90}      // map<string, int>
 auto mixed = {"a": 1, "b": "x"}  // map<string, Value>
 ```
 
@@ -164,7 +180,7 @@ auto str_stack = Stack<string>.new()
 
 ```mux
 auto r = circle.radius           // Field access
-auto len = str.length()          // Method call
+auto len = str.size()            // Method call
 auto elem = list[0]              // Array access
 ```
 
@@ -208,68 +224,6 @@ match myList.get(0) {
 }
 ```
 
-## Arithmetic Expressions
-
-```mux
-auto sum = a + b
-auto diff = a - b
-auto product = a * b
-auto quotient = a / b
-auto remainder = a % b
-auto power = a ** b
-```
-
-### Evaluation Order
-
-Left operand is always evaluated before right operand:
-
-```mux
-auto i = 0
-auto x = i++ + i++   // x = 0, i = 2
-```
-
-## Logical Expressions
-
-### Short-Circuit Evaluation
-
-```mux
-// AND: b only evaluated if a is true
-auto result = a && b
-
-// OR: b only evaluated if a is false
-auto result = a || b
-```
-
-### Truthiness
-
-Only `bool` values are allowed in logical expressions:
-
-```mux
-auto x = 1
-// auto y = x && x  // ERROR: int cannot be used with &&
-```
-
-## Comparison Expressions
-
-```mux
-auto equal = a == b
-auto not_equal = a != b
-auto less = a < b
-auto less_equal = a <= b
-auto greater = a > b
-auto greater_equal = a >= b
-```
-
-### String Comparison
-
-String comparison is lexicographic (Unicode codepoint order):
-
-```mux
-auto a = "abc"
-auto b = "abd"
-auto result = a < b  // true
-```
-
 ## Range Expressions
 
 ```mux
@@ -285,10 +239,10 @@ Mux does not have a ternary `? :` operator. Use `if`/`else` as a statement:
 // auto x = condition ? 1 : 2
 
 // Instead:
-if condition {
-    auto x = 1
+auto x = if condition {
+    1
 } else {
-    auto x = 2
+    2
 }
 ```
 
@@ -297,7 +251,7 @@ if condition {
 Expressions can be used as statements when side effects are desired:
 
 ```mux
-some_function()          // Function call
+some_function()           // Function call
 x++                       // Increment
 x += 5                    // Compound assignment
 print("message")          // Print for side effect
@@ -313,6 +267,7 @@ The compiler determines the type of each expression:
 | Float literal | `float` |
 | String literal | `string` |
 | Boolean literal | `bool` |
+| Tuple literal | `tuple<T, U>` |
 | List literal | `list<T>` (inferred) |
 | Identifier | Declared or inferred type |
 | `a + b` | Type of `a` and `b` (must match) |
@@ -322,57 +277,6 @@ The compiler determines the type of each expression:
 | `range(a, b)` | `list<int>` |
 | Lambda | `func(...) -> ...` |
 
-## Constant Folding
-
-The compiler performs constant folding on simple expressions:
-
-```mux
-auto x = 1 + 2 + 3    // Optimized to 6 at compile time
-auto y = 2 ** 10      // Optimized to 1024
-auto z = "hello" + "world"  // Optimized to "helloworld"
-```
-
-## Value Category
-
-### L-values (Place Expressions)
-
-Can appear on the left side of assignment:
-
-```mux
-x = 42           // x is an l-value
-a[i] = 10        // array element is an l-value
-obj.field = 5    // field is an l-value
-*r = 10          // dereferenced pointer is an l-value
-```
-
-### R-values (Value Expressions)
-
-Produce values but cannot be assigned to:
-
-```mux
-42              // Literal r-value
-a + b           // Arithmetic r-value
-f()             // Function call r-value (unless returns reference)
-```
-
-## Evaluation Order Guarantees
-
-1. **Left-to-right evaluation** for most binary operators
-2. **Short-circuit evaluation** for `&&` and `||`
-3. **Function arguments** evaluated before the function body executes
-4. **No unspecified evaluation order** within expressions
-
-## Side Effects
-
-An expression has a side effect if it modifies state:
-
-- Assignment expressions
-- Increment/decrement expressions
-- Function calls that modify state
-- Method calls that modify state
-
 ## See Also
 
-- [Grammar](./grammar.md) - Expression syntax
 - [Operators](./operators.md) - Operator precedence
-- [Type System](./type-system.md) - Type rules

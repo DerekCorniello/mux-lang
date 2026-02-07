@@ -93,6 +93,10 @@ const config: Config = {
           label: 'Quick Start',
           position: 'left',
         },
+        {
+          type: 'search',
+          position: 'right',
+        },
       ],
     },
     footer: {

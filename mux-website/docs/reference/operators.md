@@ -9,22 +9,14 @@ Higher precedence operators are evaluated first.
 | Precedence | Operators | Associativity |
 |------------|-----------|---------------|
 | 1 (highest) | `.` (member access), `()`, `[]` | Left-to-right |
-| 2 | `++`, `--` (postfix) | Left-to-right |
-| 3 | `**` | Right-to-left |
-| 4 | `+`, `-` (unary), `!`, `&`, `*` | Right-to-left |
-| 5 | `*`, `/`, `%` | Left-to-right |
-| 6 | `+`, `-` (binary) | Left-to-right |
-| 7 | `<<`, `>>` | Left-to-right |
-| 8 | `&` | Left-to-right |
-| 9 | `^` | Left-to-right |
-| 10 | `\|` | Left-to-right |
-| 11 | `<`, `<=`, `>`, `>=` | Left-to-right |
-| 12 | `==`, `!=` | Left-to-right |
-| 13 | `&&` | Left-to-right |
-| 14 | `\|\|` | Left-to-right |
-| 15 | `in` | Left-to-right |
-| 16 | `=` | Right-to-left |
-| 17 | `++`, `--` (standalone statement) | N/A |
+| 2 | `**` | Right-to-left |
+| 3 | `!` | Right-to-left |
+| 4 | `*`, `/`, `%` | Left-to-right |
+| 5 | `+`, `-` (binary) | Left-to-right |
+| 6 | `<`, `<=`, `>`, `>=` | Left-to-right |
+| 7 | `==`, `!=` | Left-to-right |
+| 8 | `&&`, `\|\|` | Left-to-right |
+| 9 | `in` | Left-to-right |
 
 ## Arithmetic Operators
 
@@ -38,13 +30,6 @@ Higher precedence operators are evaluated first.
 | `/` | Division | `int`, `float` | `15 / 3` |
 | `%` | Modulo | `int`, `float` | `10 % 3` (result: 1) |
 | `**` | Exponentiation | `int`, `float` | `2 ** 3` (result: 8) |
-
-### Unary Arithmetic
-
-| Operator | Description | Types | Example |
-|----------|-------------|-------|---------|
-| `+` | Unary plus | `int`, `float` | `+5` (identity) |
-| `-` | Negation | `int`, `float` | `-5` (negation) |
 
 ### Arithmetic Rules
 
@@ -152,24 +137,6 @@ For `a && b`:
 
 Phi nodes merge results from different branches.
 
-## Bitwise Operators
-
-| Operator | Description | Types |
-|----------|-------------|-------|
-| `&` | Bitwise AND | `int` |
-| `\|` | Bitwise OR | `int` |
-| `^` | Bitwise XOR | `int` |
-| `<<` | Left shift | `int` |
-| `>>` | Right shift | `int` |
-
-```mux
-auto a = 5 & 3            // 1 (0101 & 0011 = 0001)
-auto b = 5 | 3            // 7 (0101 | 0011 = 0111)
-auto c = 5 ^ 3            // 6 (0101 ^ 0011 = 0110)
-auto d = 5 << 1           // 10 (0101 << 1 = 1010)
-auto e = 5 >> 1           // 2 (0101 >> 1 = 0010)
-```
-
 ## Membership Operator
 
 | Operator | Description | Types |
@@ -245,61 +212,6 @@ auto r = &x        // r: &int
 *r = 20            // x is now 20
 ```
 
-## Operator Overloading
-
-Operators map to interface methods:
-
-| Operator | Interface | Method |
-|----------|-----------|--------|
-| `+` | `Add` | `add(Self) -> Self` |
-| `-` | `Sub` | `sub(Self) -> Self` |
-| `*` | `Mul` | `mul(Self) -> Self` |
-| `/` | `Div` | `div(Self) -> Self` |
-| `==` | `Equatable` | `eq(Self) -> bool` |
-| `<` | `Comparable` | `cmp(Self) -> int` |
-
-### Custom Operator Implementation
-
-```mux
-interface Add {
-    func add(Self) returns Self
-}
-
-class Point {
-    int x
-    int y
-
-    func add(Point other) returns Point {
-        return Point.new(self.x + other.x, self.y + other.y)
-    }
-}
-
-auto p1 = Point.new(1, 2)
-auto p2 = Point.new(3, 4)
-auto p3 = p1 + p2  // Point(4, 6)
-```
-
-## Operator Semantics
-
-### Operand Evaluation Order
-
-1. **Left operand** is always evaluated first
-2. **Right operand** is evaluated before the operation
-3. For short-circuit operators, the right operand may not be evaluated
-
-### Overflow and Underflow
-
-- `int` overflow wraps around (modular arithmetic)
-- `float` overflow produces `inf` or `-inf`
-- `float` underflow produces denormalized numbers or `0.0`
-
-### Division by Zero
-
-- `int / 0`: Runtime error
-- `float / 0`: Returns `inf` or `-inf`
-
 ## See Also
 
-- [Type System](./type-system.md) - Type requirements for operators
-- [Grammar](./grammar.md) - Operator syntax
 - [Expressions](./expressions.md) - Expression evaluation rules

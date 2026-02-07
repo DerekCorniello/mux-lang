@@ -225,6 +225,7 @@ pub enum Value {
     List(Vec<Value>),
     Map(BTreeMap<Value, Value>),
     Set(BTreeSet<Value>),
+    Tuple(Box<Tuple>),
     Optional(Option<Box<Value>>),
     Result(Result<Box<Value>, String>),
     Object(ObjectRef),
@@ -297,6 +298,26 @@ Optional<T>
 Result<T, E>
 list<T>
 map<K,V>
+set<T>
+tuple<T, U>
+
+### 3.4.1 Tuples
+
+Tuples are fixed size pairs. A tuple always has exactly two elements.
+
+```mux
+auto pair = (1, "one")
+tuple<int, string> typed = (2, "two")
+
+print(pair.left.to_string())   // "1"
+print(pair.right.to_string())  // "one"
+```
+
+Tuples also support `to_string()` and a default constructor:
+
+```mux
+auto empty = tuple<int, string>.new()  // (0, "")
+```
 ```
 
 ### 3.5 Generics

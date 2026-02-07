@@ -1,8 +1,8 @@
-# Language Reference
+# Overview
 
 Mux is a statically-typed, reference-counted programming language combining simplicity with safety.
 
-## Overview
+## Introduction
 
 Mux (fully "MuxLang") is designed with the following principles:
 

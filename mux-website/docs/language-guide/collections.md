@@ -128,7 +128,7 @@ map<string, map<string, int>> data = {
 | `.to_string()` | `string` | String representation of the map |
 | `.get_keys()` | `list<K>` | List of keys from the map |
 | `.get_values()` | `list<V>` | List of values from the map |
-| `.get_pairs()` | `list<Tuple<K, V>>` | List of key-value pairs |
+| `.get_pairs()` | `list<tuple<K, V>>` | List of key-value pairs |
 
 ### Map Operations
 

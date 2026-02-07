@@ -28,10 +28,23 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Language Reference',
+      collapsed: false,
+      items: [
+        'reference/overview',
+        'reference/lexical-structure',
+        'reference/expressions',
+        'reference/statements',
+        'reference/operators',
+        'reference/memory-model',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Language Guide',
       collapsed: false,
       items: [
-        'language-guide/index',
+        'language-guide/overview',
         'language-guide/types',
         'language-guide/variables',
         'language-guide/operators',
@@ -53,14 +66,6 @@ const sidebars: SidebarsConfig = {
       items: [
         'design-notes/philosophy',
         'design-notes/comparisons',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Reference',
-      collapsed: true,
-      items: [
-        'reference/index',
       ],
     },
   ],
