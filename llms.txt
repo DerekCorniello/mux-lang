@@ -1,0 +1,370 @@
+# Mux Programming Language
+
+## Overview
+
+Mux is a statically-typed, reference-counted programming language combining Python's ease of use with Rust-inspired safety and Go's simplicity. The language is designed to be easy to learn and read while providing strong safety guarantees and good performance.
+
+Mux was created to explore what a modern programming language could look like when combining the best features from existing languages. The name "Mux" comes from the multiplexer concept in electrical engineering - selecting the best features from various languages and combining them into a cohesive whole.
+
+## Key Features
+
+### Strong Static Typing
+- No implicit type conversions - all conversions must be explicit
+- Powerful generics with monomorphization
+- Interface-based design with static dispatch (no vtables)
+- Local type inference using `auto` keyword
+
+### Memory Safety Through Reference Counting
+- Automatic memory management without garbage collection pauses
+- No borrow checker required - simpler mental model
+- Thread-safe atomic reference counting
+- Predictable cleanup when references go out of scope
+
+### Expressive Pattern Matching
+- Rust-style pattern matching with guards
+- Match on enums, Optional, Result, and primitives
+- Compile-time exhaustiveness checking
+
+### Modern Language Features
+- Generics for functions and classes
+- Tagged union enums
+- Collection literals
+- Lambda functions
+- Clean syntax with no semicolons
+
+### LLVM-Powered Performance
+- Native compilation through LLVM
+- Fast compilation during development
+- Efficient runtime performance
+
+## Why Choose Mux?
+
+Mux is an excellent choice if you want:
+- Python's ease of use with compile-time type safety
+- Memory safety without a borrow checker
+- A modern language that is easy to teach and learn
+- Readability and maintainability
+- Strong compile-time guarantees
+
+Mux prioritizes:
+- Being easy to learn and read over maximum control
+- Clarity over completeness
+- Intentional design over feature accumulation
+
+## Quick Start
+
+### Installation
+
+```bash
+cargo install mux-lang
+```
+
+Verify your setup:
+```bash
+mux doctor
+```
+
+### Hello World
+
+```mux
+func main() returns void {
+    print("Hello, World!")
+}
+```
+
+Run with:
+```bash
+mux run hello.mux
+```
+
+## Full Syntax Reference
+
+### Variables and Types
+
+```mux
+// Explicit typing
+int age = 25
+float pi = 3.14159
+bool active = true
+string name = "Mux"
+
+// Type inference with auto
+auto count = 42
+auto greeting = "Hello"
+```
+
+### Functions
+
+```mux
+func greet(string name, int times = 1) returns void {
+    for int i in range(0, times) {
+        print("Hello, " + name + "!")
+    }
+}
+
+func add(int a, int b) returns int {
+    return a + b
+}
+```
+
+### Control Flow
+
+```mux
+// If-else
+if x > 0 {
+    print("positive")
+} else if x < 0 {
+    print("negative")
+} else {
+    print("zero")
+}
+
+// For loops (range-based only)
+for int i in range(0, 10) {
+    print(i.to_string())
+}
+
+// While loops
+while count > 0 {
+    count--
+}
+
+// Pattern matching
+match value {
+    Some(v) if v > 10 {
+        print("large: " + v.to_string())
+    }
+    Some(v) {
+        print("small: " + v.to_string())
+    }
+    None {
+        print("no value")
+    }
+}
+```
+
+### Classes
+
+```mux
+class Circle is Drawable {
+    float radius
+
+    func area() returns float {
+        return 3.14159 * radius * radius
+    }
+
+    common func from_diameter(float d) returns Circle {
+        auto c = Circle.new()
+        c.radius = d / 2.0
+        return c
+    }
+}
+```
+
+### Interfaces
+
+```mux
+interface Drawable {
+    func draw() returns void
+}
+
+interface Add {
+    func add(Self) returns Self
+}
+```
+
+### Enums
+
+```mux
+enum Shape {
+    Circle(float radius)
+    Rectangle(float width, float height)
+    Square(float size)
+}
+
+enum Option<T> {
+    Some(T)
+    None
+}
+
+enum Result<T, E> {
+    Ok(T)
+    Err(E)
+}
+```
+
+### Generics
+
+```mux
+func identity<T>(T value) returns T {
+    return value
+}
+
+class Stack<T> {
+    list<T> items
+
+    func push(T item) returns void {
+        items.push_back(item)
+    }
+
+    func pop() returns Optional<T> {
+        if items.is_empty() { return None }
+        return items.pop_back()
+    }
+}
+```
+
+### Collections
+
+```mux
+// Lists
+auto numbers = [1, 2, 3, 4, 5]
+auto first = numbers[0]
+numbers.push_back(6)
+
+// Maps
+auto scores = {"Alice": 90, "Bob": 85}
+auto aliceScore = scores.get("Alice")
+
+// Sets
+auto unique = {1, 2, 3, 2, 1}  // {1, 2, 3}
+```
+
+### Error Handling
+
+```mux
+func divide(int a, int b) returns Result<int, string> {
+    if b == 0 {
+        return Err("division by zero")
+    }
+    return Ok(a / b)
+}
+
+match divide(10, 2) {
+    Ok(result) { print("Result: " + result.to_string()) }
+    Err(msg) { print("Error: " + msg) }
+}
+```
+
+### Optional Values
+
+```mux
+func find_item(list<int> items, int target) returns Optional<int> {
+    for int item in items {
+        if item == target {
+            return Some(item)
+        }
+    }
+    return None
+}
+
+match find_item([1, 2, 3, 4], 3) {
+    Some(val) { print("Found: " + val.to_string()) }
+    None { print("Not found") }
+}
+```
+
+### Operators
+
+```mux
+// Arithmetic: +, -, *, /, %, **
+// Comparison: ==, !=, <, <=, >, >=
+// Logical: &&, ||, !
+// Bitwise: &, |, ^, <<, >>
+// Membership: in
+// Compound: +=, -=, *=, /=, %=
+```
+
+### Modules
+
+```mux
+// math.mux
+const float PI = 3.14159
+
+func circle_area(float r) returns float {
+    return PI * r * r
+}
+
+// main.mux
+import math
+
+func main() returns void {
+    auto area = math.circle_area(5.0)
+    print("Circle area: " + area.to_string())
+}
+```
+
+### References
+
+```mux
+func increment(&int ref) returns void {
+    *ref = *ref + 1
+}
+
+func main() returns void {
+    auto num = 10
+    increment(&num)
+    print("Incremented: " + num.to_string())
+}
+```
+
+## Design Principles
+
+1. **Explicit over implicit** - No hidden behavior, no implicit conversions
+2. **Safety without complexity** - Reference counting instead of ownership model
+3. **Readability first** - Clean syntax, no semicolons, clear types
+4. **Clarity over completeness** - Few well-understood features over many half-baked ones
+
+## Current Status
+
+Mux is in active development. The language specification, compiler, and tooling are evolving. Breaking changes and incomplete features should be expected as the project works toward a stable release.
+
+## Documentation Structure
+
+### Getting Started
+- Quick Start Guide: /docs/getting-started/quick-start
+- Why Mux?: /docs/getting-started/why-mux
+
+### Language Guide
+- Types: /docs/language-guide/types
+- Variables: /docs/language-guide/variables
+- Functions: /docs/language-guide/functions
+- Control Flow: /docs/language-guide/control-flow
+- Classes: /docs/language-guide/classes
+- Enums: /docs/language-guide/enums
+- Generics: /docs/language-guide/generics
+- Collections: /docs/language-guide/collections
+- Error Handling: /docs/language-guide/error-handling
+- Memory: /docs/language-guide/memory
+- Modules: /docs/language-guide/modules
+- Operators: /docs/language-guide/operators
+
+### Reference
+- Lexical Structure: /docs/reference/lexical-structure
+- Grammar: /docs/reference/grammar
+- Type System: /docs/reference/type-system
+- Operators: /docs/reference/operators
+- Statements: /docs/reference/statements
+- Expressions: /docs/reference/expressions
+- Memory Model: /docs/reference/memory-model
+- ABI: /docs/reference/abi
+
+### Design Notes
+- Philosophy: /docs/design-notes/philosophy
+
+## Resources
+
+- GitHub: https://github.com/derekcorniello/mux-lang
+- Issues: https://github.com/derekcorniello/mux-lang/issues
+- Discussions: https://github.com/derekcorniello/mux-lang/discussions
+- Contributing: https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md
+
+## Requirements
+
+- LLVM 17
+- clang
+- Run `mux doctor` to verify your setup
+
+## License
+
+MIT License
