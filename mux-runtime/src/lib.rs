@@ -79,6 +79,15 @@ impl ObjectRef {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Tuple(pub Value, pub Value);
+
+impl fmt::Display for Tuple {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {})", self.0, self.1)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Value {
     Bool(bool),
@@ -88,6 +97,7 @@ pub enum Value {
     List(Vec<Value>),
     Map(BTreeMap<Value, Value>),
     Set(BTreeSet<Value>),
+    Tuple(Box<Tuple>),
     Optional(Option<Box<Value>>),
     Result(Result<Box<Value>, String>),
     Object(ObjectRef),
@@ -104,6 +114,7 @@ impl PartialEq for Value {
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Map(a), Value::Map(b)) => a == b,
             (Value::Set(a), Value::Set(b)) => a == b,
+            (Value::Tuple(a), Value::Tuple(b)) => a == b,
             (Value::Optional(a), Value::Optional(b)) => a == b,
             (Value::Result(a), Value::Result(b)) => a == b,
             (Value::Object(a), Value::Object(b)) => {
@@ -136,6 +147,7 @@ impl hash::Hash for Value {
                     v.hash(state);
                 }
             }
+            Value::Tuple(t) => t.hash(state),
             Value::Optional(o) => o.hash(state),
             Value::Result(r) => r.hash(state),
             Value::Object(obj) => {
@@ -163,6 +175,7 @@ impl Ord for Value {
             (Value::List(a), Value::List(b)) => a.cmp(b),
             (Value::Map(a), Value::Map(b)) => a.cmp(b),
             (Value::Set(a), Value::Set(b)) => a.cmp(b),
+            (Value::Tuple(a), Value::Tuple(b)) => a.cmp(b),
             (Value::Optional(a), Value::Optional(b)) => a.cmp(b),
             (Value::Result(a), Value::Result(b)) => a.cmp(b),
             (Value::Object(a), Value::Object(b)) => {
@@ -178,9 +191,10 @@ impl Ord for Value {
                     Value::List(_) => 4,
                     Value::Map(_) => 5,
                     Value::Set(_) => 6,
-                    Value::Optional(_) => 7,
-                    Value::Result(_) => 8,
-                    Value::Object(_) => 9,
+                    Value::Tuple(_) => 7,
+                    Value::Optional(_) => 8,
+                    Value::Result(_) => 9,
+                    Value::Object(_) => 10,
                 };
                 let ord_b = match b {
                     Value::Bool(_) => 0,
@@ -190,9 +204,10 @@ impl Ord for Value {
                     Value::List(_) => 4,
                     Value::Map(_) => 5,
                     Value::Set(_) => 6,
-                    Value::Optional(_) => 7,
-                    Value::Result(_) => 8,
-                    Value::Object(_) => 9,
+                    Value::Tuple(_) => 7,
+                    Value::Optional(_) => 8,
+                    Value::Result(_) => 9,
+                    Value::Object(_) => 10,
                 };
                 ord_a.cmp(&ord_b)
             }
@@ -237,6 +252,7 @@ impl fmt::Display for Value {
                 }
                 write!(f, "}}")
             }
+            Value::Tuple(tuple) => write!(f, "{}", tuple),
             Value::Optional(opt) => match opt {
                 Some(val) => write!(f, "Some({})", val),
                 None => write!(f, "None"),
@@ -267,6 +283,7 @@ pub mod result;
 pub mod set;
 pub mod std;
 pub mod string;
+pub mod tuple;
 
 // Re-export extern "C" functions for C linkage
 pub use std::{mux_value_list_get_value, mux_value_list_length};

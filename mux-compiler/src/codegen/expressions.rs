@@ -10,9 +10,9 @@
 //! - Index access
 //! - Match expressions
 
-use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
+use inkwell::AddressSpace;
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,
@@ -1014,6 +1014,50 @@ impl<'a> CodeGenerator<'a> {
                                 } else {
                                     self.generate_expression(expr)?.into_pointer_value()
                                 };
+
+                                // Check if this is a tuple type - handle .left and .right specially
+                                let expr_type = self
+                                    .analyzer
+                                    .get_expression_type(expr)
+                                    .map_err(|e| e.to_string())?;
+                                if let Type::Tuple(_, _) = expr_type {
+                                    let tuple_value = self.generate_expression(expr)?;
+                                    let tuple_ptr = tuple_value.into_pointer_value();
+
+                                    let field_index = match field.as_str() {
+                                        "left" => 0,
+                                        "right" => 1,
+                                        _ => {
+                                            return Err(format!(
+                                                "Unknown field '{}' for tuple type",
+                                                field
+                                            ))
+                                        }
+                                    };
+
+                                    let get_field_func = self
+                                        .module
+                                        .get_function(if field_index == 0 {
+                                            "mux_tuple_left"
+                                        } else {
+                                            "mux_tuple_right"
+                                        })
+                                        .ok_or(if field_index == 0 {
+                                            "mux_tuple_left not found"
+                                        } else {
+                                            "mux_tuple_right not found"
+                                        })?;
+
+                                    let field_value = self
+                                        .builder
+                                        .build_call(get_field_func, &[tuple_ptr.into()], &field)
+                                        .map_err(|e| e.to_string())?
+                                        .try_as_basic_value()
+                                        .left()
+                                        .ok_or("mux_tuple_left/right should return a value")?;
+
+                                    return Ok(field_value);
+                                }
 
                                 // for non-self class objects, get the data pointer
                                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
@@ -2865,6 +2909,20 @@ impl<'a> CodeGenerator<'a> {
                     .generate_runtime_call("mux_set_value", &[set_ptr.into()])
                     .expect("mux_set_value should always return a value");
                 Ok(set_value)
+            }
+            ExpressionKind::TupleLiteral(elements) => {
+                assert_eq!(elements.len(), 2, "Tuple must have exactly 2 elements");
+                let left_val = self.generate_expression(&elements[0])?;
+                let right_val = self.generate_expression(&elements[1])?;
+                let left_ptr = self.box_value(left_val);
+                let right_ptr = self.box_value(right_val);
+                let tuple_value = self
+                    .generate_runtime_call("mux_new_tuple", &[left_ptr.into(), right_ptr.into()])
+                    .expect("mux_new_tuple should always return a value");
+                let wrapped_value = self
+                    .generate_runtime_call("mux_tuple_value", &[tuple_value.into()])
+                    .expect("mux_tuple_value should always return a value");
+                Ok(wrapped_value)
             }
             ExpressionKind::If {
                 cond,

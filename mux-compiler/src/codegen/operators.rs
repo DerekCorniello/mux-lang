@@ -508,10 +508,11 @@ impl<'a> CodeGenerator<'a> {
                             .map_err(|e| e.to_string())
                             .map(|v| v.into())
                     }
-                    // List/Map/Set comparison using Value equality
+                    // List/Map/Set/Tuple comparison using Value equality
                     Type::List(_)
                     | Type::Map(_, _)
                     | Type::Set(_)
+                    | Type::Tuple(_, _)
                     | Type::EmptyList
                     | Type::EmptyMap
                     | Type::EmptySet => {

@@ -1,0 +1,97 @@
+// Simple Tuple Tests
+
+// Test 1: Basic primitives
+func test_basic_primitives() returns void {
+    print("Test 1: Basic primitives")
+    auto t1 = (42, "hello")
+    print("  Created tuple: (42, hello)")
+    print("  t1.left = " + t1.left.to_string())
+    print("  t1.right = " + t1.right.to_string())
+}
+
+// Test 2: Float, bool, char
+func test_float_bool_char() returns void {
+    print("Test 2: Float, bool, char")
+    auto t_float = (3.14, 2.71)
+    print("  Created float tuple")
+    print("  t_float.left = " + t_float.left.to_string())
+
+    auto t_bool = (true, false)
+    print("  Created bool tuple")
+    print("  t_bool.left = " + t_bool.left.to_string())
+
+    auto t_char = ('a', 'z')
+    print("  Created char tuple")
+    print("  t_char.left = " + t_char.left.to_string())
+}
+
+// Test 3: Nested tuples
+func test_nested_tuples() returns void {
+    print("Test 3: Nested tuples")
+    auto nested = ((1, 2), ("a", "b"))
+    print("  Created nested tuple")
+    print("  nested.left.left = " + nested.left.left.to_string())
+    print("  nested.right.right = " + nested.right.right.to_string())
+}
+
+// Test 4: to_string
+func test_to_string() returns void {
+    print("Test 4: to_string")
+    auto t = (1, "two")
+    auto s = t.to_string()
+    print("  t.to_string() = " + s)
+}
+
+// Test 5: Custom class
+class Point {
+    float x
+    float y
+}
+
+func test_custom_class() returns void {
+    print("Test 5: Custom class with tuple")
+    auto p = Point.new()
+    p.x = 1.0
+    p.y = 2.0
+    print("  Created Point with x=1.0, y=2.0")
+
+    auto pt = (p.x, p.y)
+    print("  Created tuple from fields")
+    print("  pt.left = " + pt.left.to_string())
+    print("  pt.right = " + pt.right.to_string())
+}
+
+// Test 6: Collections with tuples
+func test_collections() returns void {
+    print("Test 6: Collections with tuples")
+    auto tuple_list = [(1, "a"), (2, "b")]
+    print("  Created list of tuples")
+    print("  tuple_list[0].left = " + tuple_list[0].left.to_string())
+    print("  tuple_list[0].right = " + tuple_list[0].right.to_string())
+}
+
+// Main entry point
+func main() returns void {
+    print("Running tuple tests...")
+    print("")
+
+    test_basic_primitives()
+    print("")
+
+    test_float_bool_char()
+    print("")
+
+    test_nested_tuples()
+    print("")
+
+    test_to_string()
+    print("")
+
+    test_custom_class()
+    print("")
+
+    test_collections()
+    print("")
+
+    print("All tuple tests completed!")
+}

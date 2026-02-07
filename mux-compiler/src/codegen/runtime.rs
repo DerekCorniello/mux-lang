@@ -312,6 +312,10 @@ impl<'a> CodeGenerator<'a> {
                 "Unresolved generic type {} for extraction from {}",
                 v, variant_name
             )),
+            Type::Tuple(_, _) => Err(format!(
+                "Tuple types should be handled as named types in codegen - unexpected in {}",
+                variant_name
+            )),
             Type::Module(_) => {
                 panic!("Module types should not appear in codegen - they are compile-time only")
             }

@@ -1758,6 +1758,19 @@ impl<'a> Parser<'a> {
                     });
                 }
 
+                if name == "tuple" && next_is_gt {
+                    self.consume_token(TokenType::Lt, "Expected '<' for tuple type")?;
+                    let left_type = self.parse_type()?;
+                    self.consume_token(TokenType::Comma, "Expected ',' in tuple type")?;
+                    let right_type = self.parse_type()?;
+                    self.consume_token(TokenType::Gt, "Expected '>' after tuple type")?;
+
+                    return Ok(TypeNode {
+                        kind: TypeKind::Tuple(Box::new(left_type), Box::new(right_type)),
+                        span: start_span,
+                    });
+                }
+
                 let name_clone = name.clone();
                 let type_args = if self.matches(&[TokenType::Lt]) {
                     let args = self.parse_type_arguments()?;
@@ -2096,9 +2109,48 @@ impl<'a> Parser<'a> {
 
         match token_type {
             TokenType::OpenParen => {
-                let expr = self.parse_expression()?;
-                self.consume_token(TokenType::CloseParen, "Expected ')' after expression")?;
-                self.parse_postfix_operators(expr)
+                let start_span = token_span;
+                self.skip_newlines();
+
+                if self.check(TokenType::CloseParen) {
+                    self.consume_token(TokenType::CloseParen, "Expected ')' after expression")?;
+                    return Err(ParserError::new(
+                        "Tuple must have exactly 2 elements",
+                        start_span.combine(&self.previous().span),
+                    ));
+                }
+
+                let first_expr = self.parse_expression()?;
+                self.skip_newlines();
+
+                if self.matches(&[TokenType::Comma]) {
+                    self.skip_newlines();
+
+                    if self.check(TokenType::CloseParen) {
+                        self.consume_token(
+                            TokenType::CloseParen,
+                            "Expected ')' after tuple elements",
+                        )?;
+                        return Err(ParserError::new(
+                            "Tuple must have exactly 2 elements",
+                            start_span.combine(&self.previous().span),
+                        ));
+                    }
+
+                    let second_expr = self.parse_expression()?;
+                    self.skip_newlines();
+                    self.consume_token(TokenType::CloseParen, "Expected ')' after tuple elements")?;
+
+                    let tuple_expr = ExpressionNode {
+                        kind: ExpressionKind::TupleLiteral(vec![first_expr, second_expr]),
+                        span: start_span.combine(&self.previous().span),
+                    };
+
+                    self.parse_postfix_operators(tuple_expr)
+                } else {
+                    self.consume_token(TokenType::CloseParen, "Expected ')' after expression")?;
+                    self.parse_postfix_operators(first_expr)
+                }
             }
 
             TokenType::Int(n) => {

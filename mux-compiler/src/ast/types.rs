@@ -15,6 +15,7 @@ pub enum TypeKind {
     List(Box<TypeNode>),
     Map(Box<TypeNode>, Box<TypeNode>),
     Set(Box<TypeNode>),
+    Tuple(Box<TypeNode>, Box<TypeNode>),
 
     Auto,
 }

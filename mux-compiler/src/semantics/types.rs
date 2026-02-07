@@ -35,6 +35,7 @@ pub enum Type {
     List(Box<Type>),
     Map(Box<Type>, Box<Type>),
     Set(Box<Type>),
+    Tuple(Box<Type>, Box<Type>),
 
     Optional(Box<Type>),
     Reference(Box<Type>),

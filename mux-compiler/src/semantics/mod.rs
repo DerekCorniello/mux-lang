@@ -10,7 +10,7 @@ pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
 #[allow(unused_imports)]
 pub use format::{format_span_location, format_unary_op};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -319,6 +319,14 @@ impl SemanticAnalyzer {
             TypeKind::Set(inner) => {
                 let resolved_inner = self.resolve_type(inner)?;
                 Ok(Type::Set(Box::new(resolved_inner)))
+            }
+            TypeKind::Tuple(left, right) => {
+                let resolved_left = self.resolve_type(left)?;
+                let resolved_right = self.resolve_type(right)?;
+                Ok(Type::Tuple(
+                    Box::new(resolved_left),
+                    Box::new(resolved_right),
+                ))
             }
 
             TypeKind::TraitObject(_) => Err(SemanticError {
@@ -859,6 +867,15 @@ impl SemanticAnalyzer {
                             span: expr.span,
                         })
                     }
+                } else if let Type::Tuple(left_type, right_type) = &expr_type {
+                    match field.as_str() {
+                        "left" => Ok(*left_type.clone()),
+                        "right" => Ok(*right_type.clone()),
+                        _ => Err(SemanticError {
+                            message: format!("Unknown field '{}' on tuple type", field),
+                            span: expr.span,
+                        }),
+                    }
                 } else {
                     Err(SemanticError {
                         message: format!(
@@ -1036,6 +1053,17 @@ impl SemanticAnalyzer {
                     let elem_type = self.get_expression_type(&elements[0])?;
                     Ok(Type::Set(Box::new(elem_type)))
                 }
+            }
+            ExpressionKind::TupleLiteral(elements) => {
+                if elements.len() != 2 {
+                    return Err(SemanticError {
+                        message: "Tuple must have exactly 2 elements".to_string(),
+                        span: expr.span,
+                    });
+                }
+                let left_type = self.get_expression_type(&elements[0])?;
+                let right_type = self.get_expression_type(&elements[1])?;
+                Ok(Type::Tuple(Box::new(left_type), Box::new(right_type)))
             }
             ExpressionKind::GenericType(name, type_args) => {
                 if !self.symbol_table.exists(name) {
@@ -1763,6 +1791,14 @@ impl SemanticAnalyzer {
                 _ => None,
             },
             Type::Optional(_) => match method_name {
+                "to_string" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            Type::Tuple(_, _) => match method_name {
                 "to_string" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Str),
@@ -3515,6 +3551,18 @@ impl SemanticAnalyzer {
                 }
                 Ok(())
             }
+            ExpressionKind::TupleLiteral(elements) => {
+                if elements.len() != 2 {
+                    return Err(SemanticError {
+                        message: "Tuple must have exactly 2 elements".to_string(),
+                        span: expr.span,
+                    });
+                }
+                for elem in elements {
+                    self.analyze_expression(elem)?;
+                }
+                Ok(())
+            }
             ExpressionKind::If {
                 cond,
                 then_expr,
@@ -3987,6 +4035,11 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::SetLiteral(elements) => {
+                for elem in elements {
+                    self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
+                }
+            }
+            ExpressionKind::TupleLiteral(elements) => {
                 for elem in elements {
                     self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
                 }

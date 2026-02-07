@@ -4,8 +4,8 @@
 
 use super::CodeGenerator;
 use crate::semantics::Type;
-use inkwell::AddressSpace;
 use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::AddressSpace;
 
 impl<'a> CodeGenerator<'a> {
     /// Push a new RC scope onto the stack. Call this when entering a new scope
@@ -73,6 +73,8 @@ impl<'a> CodeGenerator<'a> {
             Type::Generic(_) | Type::Variable(_) => true,
             // Collections contain Values which are RC-allocated
             Type::List(_) | Type::Map(_, _) | Type::Set(_) => true,
+            // Tuples contain Values which are RC-allocated
+            Type::Tuple(_, _) => true,
             // Optional contains boxed values
             Type::Optional(_) => true,
             // References are pointers to RC values

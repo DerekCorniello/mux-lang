@@ -2,9 +2,9 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::Value;
 use crate::refcount::mux_rc_alloc;
 use crate::result::MuxResult;
+use crate::Value;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Float(pub ordered_float::OrderedFloat<f64>);

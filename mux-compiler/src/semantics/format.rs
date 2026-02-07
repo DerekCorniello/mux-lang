@@ -8,6 +8,7 @@ pub fn format_type(t: &Type) -> String {
         Type::List(inner) => format!("[{}]", format_type(inner)),
         Type::Map(k, v) => format!("{{{}: {}}}", format_type(k), format_type(v)),
         Type::Set(inner) => format!("{{{}}}", format_type(inner)),
+        Type::Tuple(l, r) => format!("({}, {})", format_type(l), format_type(r)),
         Type::Optional(inner) => format!("Optional<{}>", format_type(inner)),
         Type::Reference(inner) => format!("&{}", format_type(inner)),
         Type::Void => "void".to_string(),

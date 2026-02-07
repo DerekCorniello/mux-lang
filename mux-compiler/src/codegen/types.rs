@@ -6,8 +6,8 @@ use super::CodeGenerator;
 use crate::ast::{PrimitiveType, TypeKind, TypeNode};
 use crate::lexer::Span;
 use crate::semantics::Type;
-use inkwell::AddressSpace;
 use inkwell::types::BasicTypeEnum;
+use inkwell::AddressSpace;
 
 impl<'a> CodeGenerator<'a> {
     pub(super) fn llvm_type_from_resolved_type(
@@ -48,6 +48,7 @@ impl<'a> CodeGenerator<'a> {
             Type::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             Type::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             Type::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::Tuple(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             Type::Optional(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             Type::Reference(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
 
@@ -152,6 +153,7 @@ impl<'a> CodeGenerator<'a> {
             TypeKind::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             TypeKind::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             TypeKind::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            TypeKind::Tuple(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             TypeKind::Reference(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
 
             // Function and trait types (pointers)
@@ -188,6 +190,13 @@ impl<'a> CodeGenerator<'a> {
             },
             Type::Set(inner) => TypeNode {
                 kind: TypeKind::Set(Box::new(self.type_to_type_node(inner))),
+                span: Span::new(0, 0),
+            },
+            Type::Tuple(l, r) => TypeNode {
+                kind: TypeKind::Tuple(
+                    Box::new(self.type_to_type_node(l)),
+                    Box::new(self.type_to_type_node(r)),
+                ),
                 span: Span::new(0, 0),
             },
 
@@ -280,6 +289,10 @@ impl<'a> CodeGenerator<'a> {
                 Box::new(self.type_node_to_type(v)),
             ),
             TypeKind::Set(inner) => Type::Set(Box::new(self.type_node_to_type(inner))),
+            TypeKind::Tuple(l, r) => Type::Tuple(
+                Box::new(self.type_node_to_type(l)),
+                Box::new(self.type_node_to_type(r)),
+            ),
 
             TypeKind::TraitObject(_) => Type::Variable("trait_object".to_string()),
 
@@ -366,6 +379,10 @@ impl<'a> CodeGenerator<'a> {
             Type::Map(k, v) => Ok(Type::Map(
                 Box::new(self.resolve_type(k)?),
                 Box::new(self.resolve_type(v)?),
+            )),
+            Type::Tuple(l, r) => Ok(Type::Tuple(
+                Box::new(self.resolve_type(l)?),
+                Box::new(self.resolve_type(r)?),
             )),
 
             Type::Optional(inner) => Ok(Type::Optional(Box::new(self.resolve_type(inner)?))),
