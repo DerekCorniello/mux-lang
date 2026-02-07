@@ -1,3 +1,15 @@
+
+  ![MuxLang Version](https://img.shields.io/badge/MuxLang-0.1.0-4c1?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang/releases)&nbsp;
+  ![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white&link=https://www.rust-lang.org/)&nbsp;
+  ![LLVM](https://img.shields.io/badge/LLVM-262D3A?style=for-the-badge&logo=llvm&logoColor=white&link=https://llvm.org/)&nbsp;
+  ![crates.io](https://img.shields.io/badge/crates.io-MuxLang-orange?style=for-the-badge&logo=rust&link=https://crates.io/crates/mux-lang)&nbsp;
+  ![Docs](https://img.shields.io/badge/docs-online-blue?style=for-the-badge&logo=readthedocs&logoColor=white&link=https://mux-lang.dev)&nbsp;
+  ![Status](https://img.shields.io/badge/status-alpha-lightgrey?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang)
+
+<p align="center">
+  <img src="./mux-website/static/img/mux-logo.png" alt="Mux Logo" style="width: 10%; height: auto;">
+</p>
+
 # Mux - A Programming Language For The People
 
 By Derek Corniello
@@ -12,7 +24,7 @@ By Derek Corniello
 
 ## Quick Start Guide
 
-TBD! See #77
+Check out the [docs](https://mux-lang.dev)!
 
 ## Wanna Contribute?
 
