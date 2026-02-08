@@ -120,12 +120,17 @@ pub unsafe fn copy_object(src: *const Value) -> *mut Value {
     }
 
     let type_id = unsafe { get_object_type_id(src) };
+    let size = {
+        let registry = TYPE_REGISTRY.lock().expect("mutex lock should not fail");
+        let obj_type = registry.get(&type_id).expect("Invalid type ID");
+        obj_type.size
+    };
     let dest = alloc_object(type_id);
 
     unsafe {
         let src_ptr = get_object_ptr(src);
         let dest_ptr = get_object_ptr(dest);
-        std::ptr::copy(src_ptr, dest_ptr, 1);
+        std::ptr::copy_nonoverlapping(src_ptr as *const u8, dest_ptr as *mut u8, size);
     }
 
     dest

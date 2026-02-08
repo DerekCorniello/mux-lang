@@ -36,6 +36,8 @@ pub struct SemanticAnalyzer {
     pub lambda_captures: std::collections::HashMap<Span, Vec<(String, Type)>>, // Track captured variables for each lambda
     pub current_return_type: Option<Type>, // Track current function/lambda return type
     pub current_class_type_params: Option<Vec<(String, Vec<String>)>>, // Track class-level type params with bounds for method analysis
+    #[allow(dead_code)]
+    scope_depth: usize, // Track nesting level (0 = global scope, >0 = nested scope)
 }
 
 impl Default for SemanticAnalyzer {
@@ -66,6 +68,7 @@ impl SemanticAnalyzer {
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
             current_class_type_params: None,
+            scope_depth: 0,
         }
     }
 
@@ -87,6 +90,7 @@ impl SemanticAnalyzer {
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
             current_class_type_params: None,
+            scope_depth: 0,
         }
     }
 
@@ -110,6 +114,7 @@ impl SemanticAnalyzer {
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
             current_class_type_params: None,
+            scope_depth: 0,
         }
     }
 
