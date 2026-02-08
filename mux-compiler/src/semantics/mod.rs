@@ -835,6 +835,49 @@ impl SemanticAnalyzer {
                             span: expr.span,
                         })
                     }
+                } else if let Type::Reference(inner) = &expr_type {
+                    let inner_type = *inner.clone();
+                    if let Type::Named(name, args) = &inner_type {
+                        if let Some(symbol) = self.symbol_table.lookup(name) {
+                            if let Some((field_type, _is_const)) = symbol.fields.get(field) {
+                                let substituted = self.substitute_type_params(
+                                    field_type,
+                                    &symbol.type_params,
+                                    args,
+                                );
+                                Ok(substituted)
+                            } else {
+                                Err(SemanticError {
+                                    message: format!(
+                                        "Unknown field '{}' on type {}",
+                                        field,
+                                        format_type(&inner_type)
+                                    ),
+                                    span: expr.span,
+                                })
+                            }
+                        } else {
+                            Err(SemanticError {
+                                message: format!("Undefined type '{}'", name),
+                                span: expr.span,
+                            })
+                        }
+                    } else if let Some(method_sig) = self.get_method_sig(&inner_type, field) {
+                        Ok(Type::Function {
+                            params: method_sig.params,
+                            returns: Box::new(method_sig.return_type),
+                            default_count: 0,
+                        })
+                    } else {
+                        Err(SemanticError {
+                            message: format!(
+                                "Cannot access field '{}' on type {}",
+                                field,
+                                format_type(&inner_type)
+                            ),
+                            span: expr.span,
+                        })
+                    }
                 } else if let Some(method_sig) = self.get_method_sig(&expr_type, field) {
                     Ok(Type::Function {
                         params: method_sig.params,
@@ -1847,6 +1890,7 @@ impl SemanticAnalyzer {
                 }),
                 _ => None,
             },
+            Type::Reference(inner) => self.get_method_sig(inner, method_name),
 
             _ => None,
         }

@@ -1,0 +1,12 @@
+class my_int {
+    int val
+}
+
+func update_my_int(my_int i) returns void {
+    i.val = 100
+}
+
+auto a = my_int.new()
+print(a.val.to_string())
+update_my_int(a)
+print(a.val.to_string())

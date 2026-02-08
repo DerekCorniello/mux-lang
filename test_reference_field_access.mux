@@ -1,0 +1,14 @@
+class my_int {
+    int val
+}
+
+func update_ref(&my_int i) returns void {
+    i.val = 100
+    return
+}
+
+auto a = my_int.new()
+a.val = 5
+print(a.val.to_string())
+update_ref(&a)
+print(a.val.to_string())

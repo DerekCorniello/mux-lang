@@ -10,9 +10,9 @@
 //! - Index access
 //! - Match expressions
 
-use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
+use inkwell::AddressSpace;
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,
@@ -1018,21 +1018,42 @@ impl<'a> CodeGenerator<'a> {
                                 // for non-self class objects, get the data pointer
                                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                                     if obj_name != "self" {
-                                        if let Some(Type::Named(_, _)) = self
+                                        let var_type_opt = self
                                             .variables
                                             .get(obj_name)
                                             .or_else(|| self.global_variables.get(obj_name))
                                             .map(|(_, _, t)| t)
-                                        {
+                                            .cloned();
+                                        let is_named_or_ref = var_type_opt.as_ref().map_or(false, |t| {
+                                            matches!(t, Type::Named(_, _)) ||
+                                            matches!(t, Type::Reference(inner) if matches!(**inner, Type::Named(_, _)))
+                                        });
+                                        if is_named_or_ref {
                                             let get_ptr_func = self
                                                 .module
                                                 .get_function("mux_get_object_ptr")
                                                 .ok_or("mux_get_object_ptr not found")?;
+                                            // For reference types, load the actual pointer first
+                                            let ptr_to_use =
+                                                if matches!(var_type_opt, Some(Type::Reference(_)))
+                                                {
+                                                    self.builder
+                                                        .build_load(
+                                                            self.context
+                                                                .ptr_type(AddressSpace::default()),
+                                                            struct_ptr,
+                                                            "load_ref_ptr_assign",
+                                                        )
+                                                        .map_err(|e| e.to_string())?
+                                                        .into_pointer_value()
+                                                } else {
+                                                    struct_ptr
+                                                };
                                             struct_ptr = self
                                                 .builder
                                                 .build_call(
                                                     get_ptr_func,
-                                                    &[struct_ptr.into()],
+                                                    &[ptr_to_use.into()],
                                                     "data_ptr_assign",
                                                 )
                                                 .map_err(|e| e.to_string())?
@@ -1051,7 +1072,18 @@ impl<'a> CodeGenerator<'a> {
                                         .or_else(|| self.global_variables.get(obj_name))
                                         .map(|(_, _, t)| t)
                                     {
-                                        if let Type::Named(class_name, _) = type_node {
+                                        let class_name_opt = match type_node {
+                                            Type::Named(name, _) => Some(name),
+                                            Type::Reference(inner) => {
+                                                if let Type::Named(name, _) = inner.as_ref() {
+                                                    Some(name)
+                                                } else {
+                                                    None
+                                                }
+                                            }
+                                            _ => None,
+                                        };
+                                        if let Some(class_name) = class_name_opt {
                                             if let Some(field_indices) =
                                                 self.field_map.get(class_name.as_str())
                                             {
@@ -3023,19 +3055,37 @@ impl<'a> CodeGenerator<'a> {
                 // for non-self class objects, get the data pointer
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name != "self" {
-                        if let Some(Type::Named(_, _)) = self
+                        let var_type_opt = self
                             .variables
                             .get(obj_name)
                             .or_else(|| self.global_variables.get(obj_name))
                             .map(|(_, _, t)| t)
-                        {
+                            .cloned();
+                        let is_named_or_ref = var_type_opt.as_ref().map_or(false, |t| {
+                            matches!(t, Type::Named(_, _)) ||
+                            matches!(t, Type::Reference(inner) if matches!(**inner, Type::Named(_, _)))
+                        });
+                        if is_named_or_ref {
                             let get_ptr_func = self
                                 .module
                                 .get_function("mux_get_object_ptr")
                                 .ok_or("mux_get_object_ptr not found")?;
+                            // For reference types, load the actual pointer first
+                            let ptr_to_use = if matches!(var_type_opt, Some(Type::Reference(_))) {
+                                self.builder
+                                    .build_load(
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        struct_ptr,
+                                        "load_ref_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?
+                                    .into_pointer_value()
+                            } else {
+                                struct_ptr
+                            };
                             struct_ptr = self
                                 .builder
-                                .build_call(get_ptr_func, &[struct_ptr.into()], "data_ptr")
+                                .build_call(get_ptr_func, &[ptr_to_use.into()], "data_ptr")
                                 .map_err(|e| e.to_string())?
                                 .try_as_basic_value()
                                 .left()
@@ -3051,7 +3101,18 @@ impl<'a> CodeGenerator<'a> {
                         .or_else(|| self.global_variables.get(obj_name))
                         .map(|(_, _, t)| t)
                     {
-                        if let Type::Named(class_name, _) = type_node {
+                        let class_name_opt = match type_node {
+                            Type::Named(name, _) => Some(name),
+                            Type::Reference(inner) => {
+                                if let Type::Named(name, _) = inner.as_ref() {
+                                    Some(name)
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        };
+                        if let Some(class_name) = class_name_opt {
                             if let Some(field_indices) = self.field_map.get(class_name.as_str()) {
                                 if let Some(&index) = field_indices.get(field) {
                                     let struct_type = self
