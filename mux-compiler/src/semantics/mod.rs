@@ -10,7 +10,7 @@ pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
 #[allow(unused_imports)]
 pub use format::{format_span_location, format_unary_op};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -2546,7 +2546,57 @@ impl SemanticAnalyzer {
         self.is_in_static_method = was_static;
         self.current_self_type = old_self_type;
         self.current_return_type = old_return_type;
+
+        if !matches!(return_type, Type::Void)
+            && (func.body.is_empty() || !self.all_paths_return(&func.body))
+        {
+            return Err(SemanticError {
+                message: format!(
+                    "Function must return a value of type '{}' on all code paths",
+                    format_type(&return_type)
+                ),
+                span: func.span,
+            });
+        }
+
         Ok(())
+    }
+
+    #[allow(clippy::only_used_in_recursion)]
+    fn all_paths_return(&self, stmts: &[StatementNode]) -> bool {
+        for stmt in stmts {
+            match &stmt.kind {
+                StatementKind::Return(_) => return true,
+                StatementKind::If {
+                    then_block,
+                    else_block,
+                    ..
+                } => {
+                    let else_returns = else_block
+                        .as_ref()
+                        .is_some_and(|b| self.all_paths_return(b));
+                    if self.all_paths_return(then_block) && else_returns {
+                        return true;
+                    }
+                }
+                StatementKind::Block(block_stmts) => {
+                    if self.all_paths_return(block_stmts) {
+                        return true;
+                    }
+                }
+                StatementKind::While { .. }
+                | StatementKind::For { .. }
+                | StatementKind::Break
+                | StatementKind::Continue => {}
+                StatementKind::Match { arms, .. } => {
+                    if arms.iter().all(|arm| self.all_paths_return(&arm.body)) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
     }
 
     fn analyze_class(
@@ -3663,10 +3713,16 @@ impl SemanticAnalyzer {
 
                 self.analyze_block(body, None)?;
 
-                // Validate that the body returns the correct type
                 if !matches!(self.current_return_type, Some(Type::Void)) {
-                    // Find the last statement to check if it's a return
-                    let mut found_return = false;
+                    if body.is_empty() || !self.all_paths_return(body) {
+                        return Err(SemanticError {
+                            message: format!(
+                                "Lambda must return a value of type '{}' on all code paths",
+                                format_type(&lambda_return_type)
+                            ),
+                            span: expr.span,
+                        });
+                    }
                     if let Some(last_stmt) = body.last() {
                         if let StatementKind::Return(Some(ret_expr)) = &last_stmt.kind {
                             let actual_type = self.get_expression_type(ret_expr)?;
@@ -3675,20 +3731,7 @@ impl SemanticAnalyzer {
                                 &actual_type,
                                 ret_expr.span,
                             )?;
-                            found_return = true;
-                        } else if let StatementKind::Return(None) = &last_stmt.kind {
-                            found_return = true;
                         }
-                    }
-
-                    if !found_return && !body.is_empty() {
-                        return Err(SemanticError {
-                            message: format!(
-                                "Lambda must return a value of type '{}'",
-                                format_type(&lambda_return_type)
-                            ),
-                            span: expr.span,
-                        });
                     }
                 }
 
