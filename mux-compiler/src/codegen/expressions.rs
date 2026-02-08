@@ -1024,7 +1024,7 @@ impl<'a> CodeGenerator<'a> {
                                             .or_else(|| self.global_variables.get(obj_name))
                                             .map(|(_, _, t)| t)
                                             .cloned();
-                                        let is_named_or_ref = var_type_opt.as_ref().map_or(false, |t| {
+                                        let is_named_or_ref = var_type_opt.as_ref().is_some_and(|t| {
                                             matches!(t, Type::Named(_, _)) ||
                                             matches!(t, Type::Reference(inner) if matches!(**inner, Type::Named(_, _)))
                                         });
@@ -2233,7 +2233,52 @@ impl<'a> CodeGenerator<'a> {
 
                                         // Generate provided arguments
                                         for arg in args {
-                                            call_args.push(self.generate_expression(arg)?.into());
+                                            let arg_type = self
+                                                .analyzer
+                                                .get_expression_type(arg)
+                                                .map_err(|e| e.message)?;
+
+                                            // Check if we need to copy a class instance
+                                            let needs_copy = if let Type::Named(class_name, _) =
+                                                &arg_type
+                                            {
+                                                if let Some(symbol) =
+                                                    self.analyzer.symbol_table().lookup(class_name)
+                                                {
+                                                    symbol.kind
+                                                        == crate::semantics::SymbolKind::Class
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false
+                                            };
+
+                                            if needs_copy {
+                                                // Generate the argument and copy the object
+                                                let arg_value = self.generate_expression(arg)?;
+                                                let ptr = arg_value.into_pointer_value();
+                                                let copy_func = self
+                                                    .module
+                                                    .get_function("mux_copy_object")
+                                                    .ok_or("mux_copy_object not found")?;
+                                                let copied_ptr = self
+                                                    .builder
+                                                    .build_call(
+                                                        copy_func,
+                                                        &[ptr.into()],
+                                                        "copy_arg",
+                                                    )
+                                                    .map_err(|e| e.to_string())?
+                                                    .try_as_basic_value()
+                                                    .left()
+                                                    .expect("mux_copy_object should return a value")
+                                                    .into_pointer_value();
+                                                call_args.push(copied_ptr.into());
+                                            } else {
+                                                call_args
+                                                    .push(self.generate_expression(arg)?.into());
+                                            }
                                         }
 
                                         // Handle default parameters
@@ -2364,7 +2409,46 @@ impl<'a> CodeGenerator<'a> {
 
                                     // Generate provided arguments
                                     for arg in args {
-                                        call_args.push(self.generate_expression(arg)?.into());
+                                        let arg_type = self
+                                            .analyzer
+                                            .get_expression_type(arg)
+                                            .map_err(|e| e.message)?;
+
+                                        // Check if we need to copy a class instance
+                                        let needs_copy = if let Type::Named(class_name, _) =
+                                            &arg_type
+                                        {
+                                            if let Some(symbol) =
+                                                self.analyzer.symbol_table().lookup(class_name)
+                                            {
+                                                symbol.kind == crate::semantics::SymbolKind::Class
+                                            } else {
+                                                false
+                                            }
+                                        } else {
+                                            false
+                                        };
+
+                                        if needs_copy {
+                                            // Generate the argument and copy the object
+                                            let arg_value = self.generate_expression(arg)?;
+                                            let ptr = arg_value.into_pointer_value();
+                                            let copy_func = self
+                                                .module
+                                                .get_function("mux_copy_object")
+                                                .ok_or("mux_copy_object not found")?;
+                                            let copied_ptr = self
+                                                .builder
+                                                .build_call(copy_func, &[ptr.into()], "copy_arg")
+                                                .map_err(|e| e.to_string())?
+                                                .try_as_basic_value()
+                                                .left()
+                                                .expect("mux_copy_object should return a value")
+                                                .into_pointer_value();
+                                            call_args.push(copied_ptr.into());
+                                        } else {
+                                            call_args.push(self.generate_expression(arg)?.into());
+                                        }
                                     }
 
                                     // Handle default parameters - look up FunctionNode to get param info
@@ -3061,7 +3145,7 @@ impl<'a> CodeGenerator<'a> {
                             .or_else(|| self.global_variables.get(obj_name))
                             .map(|(_, _, t)| t)
                             .cloned();
-                        let is_named_or_ref = var_type_opt.as_ref().map_or(false, |t| {
+                        let is_named_or_ref = var_type_opt.as_ref().is_some_and(|t| {
                             matches!(t, Type::Named(_, _)) ||
                             matches!(t, Type::Reference(inner) if matches!(**inner, Type::Named(_, _)))
                         });

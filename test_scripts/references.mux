@@ -22,3 +22,40 @@ func update(&int ref) returns void {
 
 update(&val)
 print("val after update: " + val.to_string())
+
+// Bug 2 Test: Field access on class references
+print("")
+print("=== Bug 2 Test: Field Access on Class References ===")
+
+class my_int_ref_test {
+    int val
+}
+
+func update_ref_field(&my_int_ref_test i) returns void {
+    i.val = 100
+    return
+}
+
+auto test_ref_obj = my_int_ref_test.new()
+test_ref_obj.val = 5
+print("Initial val: " + test_ref_obj.val.to_string())
+update_ref_field(&test_ref_obj)
+print("After update_ref(&obj), val: " + test_ref_obj.val.to_string() + " (expected 100)")
+
+// Bug 1 Test: Class instance copy semantics (pass by value)
+print("")
+print("=== Bug 1 Test: Class Instance Copy Semantics ===")
+
+class copy_test_class {
+    int val
+}
+
+func update_copy(copy_test_class i) returns void {
+    i.val = 999
+}
+
+auto original = copy_test_class.new()
+original.val = 42
+print("Original val before call: " + original.val.to_string())
+update_copy(original)
+print("Original val after call: " + original.val.to_string() + " (expected 42, not 999)")

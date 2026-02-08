@@ -140,6 +140,48 @@ func main() returns void {
     print("After add_to_both(5): sum=" + sum.to_string() + " (expected 40)")
     print("Values: a=" + multi.a.to_string() + " b=" + multi.b.to_string() + " (expected a=15 b=25)")
     print("")
-    
+
+    print("=== Bug 1 Regression Test: Class Instance Copy Semantics ===")
+    // This tests that passing a class to a function creates a copy,
+    // not a reference. The original object should NOT be modified.
+    class SimpleCounter {
+        int count
+    }
+
+    func increment_by_value(SimpleCounter c) returns void {
+        // c.count = c.count + 100
+        print(c.count.to_string())
+    }
+
+    auto counter = SimpleCounter.new()
+    counter.count = 10
+    print("Counter before function call: " + counter.count.to_string() + " (expected 10)")
+    increment_by_value(counter)
+    print("Counter after function call: " + counter.count.to_string() + " (expected 10, NOT 110)")
+    if counter.count == 10 {
+        print("PASS: Class passed by value correctly (copy made)")
+    } else {
+        print("FAIL: Class was passed by reference (copy NOT made)")
+    }
+
+    print("")
+    print("=== Bug 2 Regression Test: Reference Field Access ===")
+    // This tests that accessing fields on &Class types works correctly
+    func set_via_reference(&SimpleCounter c, int new_val) returns void {
+        c.count = new_val
+    }
+
+    auto ref_counter = SimpleCounter.new()
+    ref_counter.count = 50
+    print("Ref counter initial: " + ref_counter.count.to_string() + " (expected 50)")
+    set_via_reference(&ref_counter, 999)
+    print("Ref counter after reference update: " + ref_counter.count.to_string() + " (expected 999)")
+    if ref_counter.count == 999 {
+        print("PASS: Reference field access works correctly")
+    } else {
+        print("FAIL: Reference field access broken")
+    }
+
+    print("")
     print("=== All tests completed ===")
 }

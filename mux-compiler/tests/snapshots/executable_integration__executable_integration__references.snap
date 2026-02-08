@@ -1,6 +1,6 @@
 ---
 source: mux-compiler/tests/executable_integration.rs
-expression: full_output
+expression: output_to_snapshot
 ---
 ref value: 10
 val after ref update: 20
@@ -8,3 +8,11 @@ abt to make list
 list made
 first element: 1
 val after update: 21
+
+=== Bug 2 Test: Field Access on Class References ===
+Initial val: 5
+After update_ref(&obj), val: 100 (expected 100)
+
+=== Bug 1 Test: Class Instance Copy Semantics ===
+Original val before call: 42
+Original val after call: 42 (expected 42, not 999)

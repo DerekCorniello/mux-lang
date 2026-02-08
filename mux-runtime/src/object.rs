@@ -1,7 +1,7 @@
 use crate::refcount::{mux_rc_alloc, mux_rc_dec};
 use crate::{ObjectRef, TypeId, Value};
 use std::collections::HashMap;
-use std::ffi::{CStr, c_char, c_void};
+use std::ffi::{c_char, c_void, CStr};
 use std::sync::Mutex;
 
 lazy_static::lazy_static! {
@@ -111,6 +111,26 @@ pub unsafe fn get_object_type_id(obj: *const Value) -> TypeId {
     }
 }
 
+/// # Safety
+/// The `src` pointer must be valid and point to a `Value::Object`.
+/// Returns a new object that is a copy of the source.
+pub unsafe fn copy_object(src: *const Value) -> *mut Value {
+    if src.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let type_id = unsafe { get_object_type_id(src) };
+    let dest = alloc_object(type_id);
+
+    unsafe {
+        let src_ptr = get_object_ptr(src);
+        let dest_ptr = get_object_ptr(dest);
+        std::ptr::copy(src_ptr, dest_ptr, 1);
+    }
+
+    dest
+}
+
 // C API functions
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
@@ -141,4 +161,10 @@ pub extern "C" fn mux_get_object_ptr(obj: *const Value) -> *mut c_void {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_get_object_type_id(obj: *const Value) -> TypeId {
     unsafe { get_object_type_id(obj) }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_copy_object(src: *const Value) -> *mut Value {
+    unsafe { copy_object(src) }
 }
