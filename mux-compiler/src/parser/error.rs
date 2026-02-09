@@ -1,7 +1,7 @@
 //! Parser error types.
 
 use crate::ast::ParseError;
-use crate::diagnostic::{Diagnostic, FileId, Label};
+use crate::diagnostic::{self, Diagnostic, FileId, ToDiagnostic};
 use crate::lexer::{Span, Token};
 
 /// The result type for parser operations.
@@ -28,27 +28,11 @@ impl ParserError {
             span: token.span,
         }
     }
+}
 
-    #[allow(unused)]
-    pub fn with_help(message: impl Into<String>, span: Span, help: impl Into<String>) -> Self {
-        Self {
-            message: format!("{}\n  = help: {}", message.into(), help.into()),
-            span,
-        }
-    }
-
-    /// Convert to a Diagnostic for formatted output.
-    pub fn to_diagnostic(&self, file_id: FileId) -> Diagnostic {
-        // Split message and help if present
-        let parts: Vec<&str> = self.message.splitn(2, "\n  = help: ").collect();
-        let main_message = parts[0];
-        let help_message = parts.get(1).copied();
-
-        Diagnostic::error()
-            .with_message(main_message)
-            .with_label(Label::primary(self.span, ""))
-            .with_help(help_message)
-            .with_file_id(file_id)
+impl ToDiagnostic for ParserError {
+    fn to_diagnostic(&self, file_id: FileId) -> Diagnostic {
+        diagnostic::error_diagnostic(&self.message, self.span, file_id)
     }
 }
 

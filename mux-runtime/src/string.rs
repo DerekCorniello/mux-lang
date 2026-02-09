@@ -56,17 +56,7 @@ pub unsafe extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
 /// v must be a valid pointer to a Value.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_value_get_string(v: *mut Value) -> *mut c_char {
-    if let Value::String(s) = unsafe { &*v } {
-        // Safe: s is a valid UTF-8 String from the Mux runtime
-        CString::new(s.clone())
-            .expect("valid UTF-8 String should convert to CString")
-            .into_raw()
-    } else {
-        // Safe: empty string is valid UTF-8
-        CString::new("".to_string())
-            .expect("empty string should convert to CString")
-            .into_raw()
-    }
+    unsafe { mux_string_from_value(v) }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -128,17 +118,16 @@ pub extern "C" fn mux_string_contains(haystack: *const Value, needle: *const Val
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_contains_char(haystack: *const Value, needle: i64) -> bool {
-    unsafe {
-        if let Value::String(haystack_str) = &*haystack {
-            if let Some(ch) = char::from_u32(needle as u32) {
-                haystack_str.contains(ch)
-            } else {
-                false
-            }
-        } else {
-            false
+    let haystack_str = unsafe {
+        match &*haystack {
+            Value::String(s) => s,
+            _ => return false,
         }
-    }
+    };
+    let Some(ch) = char::from_u32(needle as u32) else {
+        return false;
+    };
+    haystack_str.contains(ch)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

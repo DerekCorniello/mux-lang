@@ -1,35 +1,28 @@
-use std::io::{Error, ErrorKind};
-use std::path::Path;
-
 pub struct Source {
     pub input: String,
-    pub pos: usize, // position in bytes
+    pub pos: usize,
     pub line: usize,
     pub col: usize,
 }
 
 impl Source {
     pub fn new(file_path: &str) -> std::io::Result<Self> {
-        if Path::new(file_path).exists() {
-            let input = std::fs::read_to_string(file_path)?;
-            return Ok(Self {
-                input,
-                pos: 0,
-                line: 1,
-                col: 1,
-            });
-        }
-        Err(Error::new(ErrorKind::NotFound, "File does not exist"))
+        let input = std::fs::read_to_string(file_path)?;
+        Ok(Self::from_string(input))
     }
 
-    #[allow(dead_code)]
-    pub fn from_test_str(string: &str) -> Source {
-        Source {
-            input: string.to_string(),
+    pub fn from_string(input: String) -> Self {
+        Self {
+            input,
             pos: 0,
             line: 1,
             col: 1,
         }
+    }
+
+    #[cfg(test)]
+    pub fn from_test_str(string: &str) -> Source {
+        Source::from_string(string.to_string())
     }
 
     pub fn next_char(&mut self) -> Option<char> {

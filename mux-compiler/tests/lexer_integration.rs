@@ -43,7 +43,7 @@ fn test_file_lexer() {
     for path in test_files {
         let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("unknown");
         println!("\n=== Testing file: {} ===", file_name);
-        
+
         let mut src = Source::new(&path.to_string_lossy())
             .unwrap_or_else(|_| panic!("Failed to open source file: {}", path.display()));
 
@@ -51,7 +51,7 @@ fn test_file_lexer() {
         let tokens = lexer
             .lex_all()
             .unwrap_or_else(|e| panic!("Lexing failed for file {}: {}", file_name, e));
-        
+
         actual_tokens.extend(tokens);
         println!("✓ Successfully processed: {}", file_name);
     }

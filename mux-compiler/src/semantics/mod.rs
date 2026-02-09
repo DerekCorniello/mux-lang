@@ -8,9 +8,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-#[allow(unused_imports)]
-pub use format::{format_span_location, format_unary_op};
-pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
+pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -36,8 +34,6 @@ pub struct SemanticAnalyzer {
     pub lambda_captures: std::collections::HashMap<Span, Vec<(String, Type)>>, // Track captured variables for each lambda
     pub current_return_type: Option<Type>, // Track current function/lambda return type
     pub current_class_type_params: Option<Vec<(String, Vec<String>)>>, // Track class-level type params with bounds for method analysis
-    #[allow(dead_code)]
-    scope_depth: usize, // Track nesting level (0 = global scope, >0 = nested scope)
 }
 
 impl Default for SemanticAnalyzer {
@@ -68,29 +64,15 @@ impl SemanticAnalyzer {
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
             current_class_type_params: None,
-            scope_depth: 0,
         }
     }
 
     pub fn new_with_resolver(
         resolver: Rc<RefCell<crate::module_resolver::ModuleResolver>>,
     ) -> Self {
-        let symbol_table = SymbolTable::new();
         Self {
-            symbol_table,
-            current_bounds: std::collections::HashMap::new(),
-            errors: Vec::new(),
-            is_in_static_method: false,
-            current_self_type: None,
             module_resolver: Some(resolver),
-            imported_symbols: std::collections::HashMap::new(),
-            all_module_asts: std::collections::HashMap::new(),
-            module_dependencies: Vec::new(),
-            current_file: None,
-            lambda_captures: std::collections::HashMap::new(),
-            current_return_type: None,
-            current_class_type_params: None,
-            scope_depth: 0,
+            ..Self::new()
         }
     }
 
@@ -3187,14 +3169,14 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         match expr_type {
             Type::Named(type_name, _) if type_name == "Result" => {
-                let has_ok = arms.iter().any(|arm| 
-                    arm.guard.is_none() && 
-                    matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Ok")
-                );
-                let has_err = arms.iter().any(|arm| 
-                    arm.guard.is_none() && 
-                    matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Err")
-                );
+                let has_ok = arms.iter().any(|arm| {
+                    arm.guard.is_none()
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Ok")
+                });
+                let has_err = arms.iter().any(|arm| {
+                    arm.guard.is_none()
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Err")
+                });
                 let has_wildcard = arms
                     .iter()
                     .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
@@ -3278,14 +3260,14 @@ impl SemanticAnalyzer {
                 self.require_wildcard_pattern(arms, expr_type, expr_span)
             }
             Type::Optional(_) => {
-                let has_some = arms.iter().any(|arm| 
-                    arm.guard.is_none() && 
-                    matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Some")
-                );
-                let has_none = arms.iter().any(|arm| 
-                    arm.guard.is_none() && 
-                    matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "None")
-                );
+                let has_some = arms.iter().any(|arm| {
+                    arm.guard.is_none()
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Some")
+                });
+                let has_none = arms.iter().any(|arm| {
+                    arm.guard.is_none()
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "None")
+                });
                 let has_wildcard = arms
                     .iter()
                     .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));

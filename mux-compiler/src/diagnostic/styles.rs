@@ -28,84 +28,52 @@ impl Styles {
         }
     }
 
-    pub fn error(&self, text: &str) -> String {
+    fn styled(&self, code: &str, text: &str) -> String {
         if self.enabled {
-            format!("\x1b[1;31m{}\x1b[0m", text) // Bold red
+            format!("\x1b[{}m{}\x1b[0m", code, text)
         } else {
             text.to_string()
         }
+    }
+
+    pub fn error(&self, text: &str) -> String {
+        self.styled("1;31", text)
     }
 
     pub fn warning(&self, text: &str) -> String {
-        if self.enabled {
-            format!("\x1b[1;33m{}\x1b[0m", text) // Bold yellow
-        } else {
-            text.to_string()
-        }
+        self.styled("1;33", text)
     }
 
     pub fn success(&self, text: &str) -> String {
-        if self.enabled {
-            format!("\x1b[1;32m{}\x1b[0m", text) // Bold green
-        } else {
-            text.to_string()
-        }
+        self.styled("1;32", text)
     }
 
     pub fn note(&self, text: &str) -> String {
-        if self.enabled {
-            format!("\x1b[1;36m{}\x1b[0m", text) // Bold cyan
-        } else {
-            text.to_string()
-        }
+        self.styled("1;36", text)
     }
 
     pub fn help(&self, text: &str) -> String {
-        if self.enabled {
-            format!("\x1b[1;36m{}\x1b[0m", text) // Bold cyan
-        } else {
-            text.to_string()
-        }
+        self.styled("1;36", text)
     }
 
     pub fn bold(&self, text: &str) -> String {
-        if self.enabled {
-            format!("\x1b[1m{}\x1b[0m", text)
-        } else {
-            text.to_string()
-        }
+        self.styled("1", text)
     }
 
     pub fn dim(&self, text: &str) -> String {
-        if self.enabled {
-            format!("\x1b[2m{}\x1b[0m", text)
-        } else {
-            text.to_string()
-        }
+        self.styled("2", text)
     }
 
     pub fn primary_label(&self, text: &str) -> String {
-        if self.enabled {
-            format!("\x1b[31m{}\x1b[0m", text) // Red (not bold)
-        } else {
-            text.to_string()
-        }
+        self.styled("31", text)
     }
 
     pub fn secondary_label(&self, text: &str) -> String {
-        if self.enabled {
-            format!("\x1b[34m{}\x1b[0m", text) // Blue
-        } else {
-            text.to_string()
-        }
+        self.styled("34", text)
     }
 
     pub fn line_number(&self, text: &str) -> String {
-        if self.enabled {
-            format!("\x1b[34;1m{}\x1b[0m", text) // Bold blue
-        } else {
-            text.to_string()
-        }
+        self.styled("34;1", text)
     }
 }
 

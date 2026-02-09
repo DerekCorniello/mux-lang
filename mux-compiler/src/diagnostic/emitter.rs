@@ -69,26 +69,14 @@ impl StandardEmitter {
             start_col
         };
 
-        let underline_len = if end_col > start_col {
-            end_col - start_col
-        } else {
-            1
-        };
-
-        // Build the underline with repeated carets
-        let mut underline = String::new();
-        underline.push_str(&" ".repeat(start_col));
-
+        let underline_len = (end_col.saturating_sub(start_col)).max(1);
         let indicator = "^".repeat(underline_len);
-
         let colored_indicator = match style {
             LabelStyle::Primary => self.styles.primary_label(&indicator),
             LabelStyle::Secondary => self.styles.secondary_label(&indicator),
         };
 
-        underline.push_str(&colored_indicator);
-
-        format!("{} {}", gutter, underline)
+        format!("{} {}{}", gutter, " ".repeat(start_col), colored_indicator)
     }
 
     /// Emit a single diagnostic with source context.
@@ -153,11 +141,12 @@ impl StandardEmitter {
 
             // Print underlines for labels on this line
             for label in &diagnostic.labels {
-                if label.span.row_start == line_num
-                    || (label.span.row_end.is_some()
-                        && label.span.row_end.unwrap() >= line_num
-                        && label.span.row_start <= line_num)
-                {
+                let label_covers_line = label.span.row_start == line_num
+                    || label
+                        .span
+                        .row_end
+                        .is_some_and(|end| end >= line_num && label.span.row_start <= line_num);
+                if label_covers_line {
                     eprintln!(
                         "{}",
                         self.render_label_underline(

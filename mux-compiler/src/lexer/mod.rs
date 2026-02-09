@@ -27,14 +27,33 @@ impl<'a> Lexer<'a> {
         let mut tokens = Vec::new();
         loop {
             let tok = self.next_token()?;
-            let is_eof = matches!(&tok.token_type, TokenType::Eof);
-            if is_eof {
+            if matches!(tok.token_type, TokenType::Eof) {
                 break;
-            } else {
-                tokens.push(tok);
             }
+            tokens.push(tok);
         }
         Ok(tokens)
+    }
+
+    /// Consume the next character after a successful peek.
+    /// Only call this when peek() has already confirmed a character exists.
+    fn consume_char(&mut self) -> char {
+        self.source
+            .next_char()
+            .expect("peek confirmed a character exists")
+    }
+
+    /// Consume remaining alphanumeric/underscore/dot/digit characters into `buf`
+    /// for error reporting on invalid number literals.
+    fn consume_remaining_invalid(&mut self, buf: &mut String, span: &mut Span) {
+        while let Some(c) = self.source.peek() {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
+                buf.push(self.consume_char());
+            } else {
+                break;
+            }
+        }
+        span.complete(self.source.line, self.source.col);
     }
 
     fn skip_space(&mut self) -> Result<(), LexerError> {
@@ -137,11 +156,10 @@ impl<'a> Lexer<'a> {
 
     fn read_multiline_comment(&mut self, start_span: Span) -> Result<String, LexerError> {
         let (comment, found) = self.source.consume_multiline_comment();
-
-        if !found {
-            Err(LexerError::new("Unterminated block comment", start_span))
-        } else {
+        if found {
             Ok(comment)
+        } else {
+            Err(LexerError::new("Unterminated block comment", start_span))
         }
     }
 
@@ -523,11 +541,7 @@ impl<'a> Lexer<'a> {
             let mut has_digit = false;
             while let Some(c) = self.source.peek() {
                 if c.is_ascii_digit() {
-                    num.push(
-                        self.source
-                            .next_char()
-                            .expect("peek returned Some, so next_char should return Some"),
-                    );
+                    num.push(self.consume_char());
                     has_digit = true;
                 } else if c == '_' {
                     self.source.next_char(); // skip underscores
@@ -551,11 +565,7 @@ impl<'a> Lexer<'a> {
 
             while let Some(c) = self.source.peek() {
                 if c.is_ascii_digit() {
-                    num.push(
-                        self.source
-                            .next_char()
-                            .expect("peek returned Some, so next_char should return Some"),
-                    );
+                    num.push(self.consume_char());
                 } else if c == '_' {
                     self.source.next_char(); // skip underscores
                 } else {
@@ -583,12 +593,7 @@ impl<'a> Lexer<'a> {
             }
 
             if is_float {
-                is_float = true;
-                num.push(
-                    self.source
-                        .next_char()
-                        .expect("peek returned Some, so next_char should return Some"),
-                );
+                num.push(self.consume_char());
 
                 // read digits after decimal point (required)
                 let mut has_digit = false;
@@ -619,29 +624,17 @@ impl<'a> Lexer<'a> {
         // handle scientific notation (e.g., 1.23e4, 1e-10, 1.23e+10)
         if let Some('e') | Some('E') = self.source.peek() {
             is_float = true;
-            num.push(
-                self.source
-                    .next_char()
-                    .expect("peek returned Some, so next_char should return Some"),
-            );
+            num.push(self.consume_char());
 
             if let Some('+') | Some('-') = self.source.peek() {
-                num.push(
-                    self.source
-                        .next_char()
-                        .expect("peek returned Some, so next_char should return Some"),
-                );
+                num.push(self.consume_char());
             }
 
             // Require at least one digit after 'e' and optional sign
             let mut has_exponent_digit = false;
             while let Some(c) = self.source.peek() {
                 if c.is_ascii_digit() {
-                    num.push(
-                        self.source
-                            .next_char()
-                            .expect("peek returned Some, so next_char should return Some"),
-                    );
+                    num.push(self.consume_char());
                     has_exponent_digit = true;
                 } else if c == '_' {
                     self.source.next_char(); // skip underscores
@@ -665,23 +658,7 @@ impl<'a> Lexer<'a> {
             if self.source.peek() == Some('.')
                 && self.source.peek_nth(1).is_some_and(|c| c.is_ascii_digit())
             {
-                num.push(
-                    self.source
-                        .next_char()
-                        .expect("peek returned Some, so next_char should return Some"),
-                );
-                while let Some(c) = self.source.peek() {
-                    if c.is_ascii_digit() || c == '_' {
-                        num.push(
-                            self.source
-                                .next_char()
-                                .expect("peek returned Some, so next_char should return Some"),
-                        );
-                    } else {
-                        break;
-                    }
-                }
-                start_span.complete(self.source.line, self.source.col);
+                self.consume_remaining_invalid(&mut num, &mut start_span);
                 return Err(LexerError::new(
                     format!("Invalid float literal: {}", num),
                     start_span,
@@ -694,18 +671,7 @@ impl<'a> Lexer<'a> {
                 .peek()
                 .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             {
-                while let Some(c) = self.source.peek() {
-                    if c.is_ascii_alphanumeric() || c == '_' {
-                        num.push(
-                            self.source
-                                .next_char()
-                                .expect("peek returned Some, so next_char should return Some"),
-                        );
-                    } else {
-                        break;
-                    }
-                }
-                start_span.complete(self.source.line, self.source.col);
+                self.consume_remaining_invalid(&mut num, &mut start_span);
                 return Err(LexerError::new(
                     format!("Invalid float literal: {}", num),
                     start_span,
@@ -725,18 +691,7 @@ impl<'a> Lexer<'a> {
                 .peek()
                 .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             {
-                while let Some(c) = self.source.peek() {
-                    if c.is_ascii_alphanumeric() || c == '_' {
-                        num.push(
-                            self.source
-                                .next_char()
-                                .expect("peek returned Some, so next_char should return Some"),
-                        );
-                    } else {
-                        break;
-                    }
-                }
-                start_span.complete(self.source.line, self.source.col);
+                self.consume_remaining_invalid(&mut num, &mut start_span);
                 return Err(LexerError::new(
                     format!("Invalid integer literal: {}", num),
                     start_span,

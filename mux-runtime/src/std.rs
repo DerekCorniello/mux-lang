@@ -54,7 +54,6 @@ pub extern "C" fn mux_ok(val: *mut Value) -> *mut MuxResult {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_err(msg: *const c_char) -> *mut MuxResult {
     let c_str = unsafe { CStr::from_ptr(msg) };
@@ -301,14 +300,8 @@ pub extern "C" fn mux_value_get_float(val: *const Value) -> f64 {
 pub extern "C" fn mux_value_get_bool(val: *const Value) -> i32 {
     unsafe {
         match &*val {
-            Value::Bool(b) => {
-                if *b {
-                    1
-                } else {
-                    0
-                }
-            }
-            _ => 0, // Return default value instead of panicking
+            Value::Bool(b) => i32::from(*b),
+            _ => 0,
         }
     }
 }

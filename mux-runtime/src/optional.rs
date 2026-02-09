@@ -47,12 +47,7 @@ pub extern "C" fn mux_optional_is_some(opt: *mut Optional) -> bool {
     if opt.is_null() {
         return false;
     }
-    unsafe {
-        match &*opt {
-            Optional::Some(_) => true,
-            Optional::None => false,
-        }
-    }
+    unsafe { matches!(&*opt, Optional::Some(_)) }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -72,15 +67,7 @@ pub extern "C" fn mux_optional_get_value(opt: *mut Optional) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_data(opt: *mut Optional) -> *mut Value {
-    if opt.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        match &*opt {
-            Optional::Some(v) => mux_rc_alloc(*v.clone()),
-            Optional::None => std::ptr::null_mut(),
-        }
-    }
+    mux_optional_get_value(opt)
 }
 
 #[unsafe(no_mangle)]
@@ -108,13 +95,7 @@ pub extern "C" fn mux_optional_some_char(val: i64) -> *mut Optional {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_some_string(val: *mut Value) -> *mut Optional {
-    if val.is_null() {
-        return Box::into_raw(Box::new(Optional::none()));
-    }
-    unsafe {
-        let value = (*val).clone();
-        Box::into_raw(Box::new(Optional::some(value)))
-    }
+    mux_optional_some_value(val)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

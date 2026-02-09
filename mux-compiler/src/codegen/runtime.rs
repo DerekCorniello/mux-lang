@@ -319,99 +319,67 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    /// Call a runtime getter function to extract a pointer from a Value.
+    fn call_value_getter(
+        &mut self,
+        func_name: &str,
+        value_ptr: PointerValue<'a>,
+        result_name: &str,
+    ) -> Result<PointerValue<'a>, String> {
+        let func = self
+            .module
+            .get_function(func_name)
+            .ok_or_else(|| format!("{} not found", func_name))?;
+        self.builder
+            .build_call(func, &[value_ptr.into()], result_name)
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| format!("{} returned no value", func_name))
+            .map(|v| v.into_pointer_value())
+    }
+
     pub(super) fn extract_c_string_from_value(
         &mut self,
         value_ptr: PointerValue<'a>,
     ) -> Result<PointerValue<'a>, String> {
-        // call mux_value_get_string to extract C string from Value
-        let get_string_fn = self
-            .module
-            .get_function("mux_value_get_string")
-            .ok_or("mux_value_get_string not found")?;
-        let cstr_ptr = self
-            .builder
-            .build_call(get_string_fn, &[value_ptr.into()], "get_string")
-            .map_err(|e| e.to_string())?
-            .try_as_basic_value()
-            .left()
-            .ok_or("Call returned no value")?
-            .into_pointer_value();
-        Ok(cstr_ptr)
+        self.call_value_getter("mux_value_get_string", value_ptr, "get_string")
     }
 
     pub(super) fn box_string_value(
         &mut self,
         cstr_ptr: PointerValue<'a>,
     ) -> Result<BasicValueEnum<'a>, String> {
-        // call mux_value_from_string to create a Value from C string
-        let from_string_fn = self
+        let func = self
             .module
             .get_function("mux_value_from_string")
             .ok_or("mux_value_from_string not found")?;
-        let value_ptr = self
-            .builder
-            .build_call(from_string_fn, &[cstr_ptr.into()], "from_string")
+        self.builder
+            .build_call(func, &[cstr_ptr.into()], "from_string")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
             .left()
-            .ok_or("Call returned no value")?;
-        Ok(value_ptr)
+            .ok_or_else(|| "mux_value_from_string returned no value".to_string())
     }
 
     pub(super) fn extract_list_from_value(
         &mut self,
         value_ptr: PointerValue<'a>,
     ) -> Result<PointerValue<'a>, String> {
-        let get_list_fn = self
-            .module
-            .get_function("mux_value_get_list")
-            .ok_or("mux_value_get_list not found")?;
-        let list_ptr = self
-            .builder
-            .build_call(get_list_fn, &[value_ptr.into()], "get_list")
-            .map_err(|e| e.to_string())?
-            .try_as_basic_value()
-            .left()
-            .ok_or("Call returned no value")?
-            .into_pointer_value();
-        Ok(list_ptr)
+        self.call_value_getter("mux_value_get_list", value_ptr, "get_list")
     }
 
     pub(super) fn extract_map_from_value(
         &mut self,
         value_ptr: PointerValue<'a>,
     ) -> Result<PointerValue<'a>, String> {
-        let get_map_fn = self
-            .module
-            .get_function("mux_value_get_map")
-            .ok_or("mux_value_get_map not found")?;
-        let map_ptr = self
-            .builder
-            .build_call(get_map_fn, &[value_ptr.into()], "get_map")
-            .map_err(|e| e.to_string())?
-            .try_as_basic_value()
-            .left()
-            .ok_or("Call returned no value")?
-            .into_pointer_value();
-        Ok(map_ptr)
+        self.call_value_getter("mux_value_get_map", value_ptr, "get_map")
     }
 
     pub(super) fn extract_set_from_value(
         &mut self,
         value_ptr: PointerValue<'a>,
     ) -> Result<PointerValue<'a>, String> {
-        let get_set_fn = self
-            .module
-            .get_function("mux_value_get_set")
-            .ok_or("mux_value_get_set not found")?;
-        let set_ptr = self
-            .builder
-            .build_call(get_set_fn, &[value_ptr.into()], "get_set")
-            .map_err(|e| e.to_string())?
-            .try_as_basic_value()
-            .left()
-            .ok_or("Call returned no value")?
-            .into_pointer_value();
-        Ok(set_ptr)
+        self.call_value_getter("mux_value_get_set", value_ptr, "get_set")
     }
 }

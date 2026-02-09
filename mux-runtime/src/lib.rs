@@ -10,7 +10,7 @@ use ::std::sync::atomic::{AtomicUsize, Ordering};
 pub type TypeId = u32;
 
 /// Internal data that needs cleanup when all ObjectRefs are dropped.
-/// This is stored in an Arc so it's shared across clones.
+/// Shared across clones via Rc.
 struct ObjectData {
     ptr: *mut c_void,
     type_id: TypeId,
@@ -38,7 +38,7 @@ pub struct ObjectRef {
     data: Rc<ObjectData>,
 }
 
-// Manual Debug since ObjectData doesn't derive it
+// Manual Debug to show ref_count from atomic
 impl ::std::fmt::Debug for ObjectData {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         f.debug_struct("ObjectData")
@@ -103,7 +103,6 @@ pub enum Value {
     Object(ObjectRef),
 }
 
-// Custom implementations for collections that need them
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -164,9 +163,27 @@ impl PartialOrd for Value {
     }
 }
 
+impl Value {
+    /// Stable ordering index for cross-variant comparisons.
+    fn variant_order(&self) -> u8 {
+        match self {
+            Value::Bool(_) => 0,
+            Value::Int(_) => 1,
+            Value::Float(_) => 2,
+            Value::String(_) => 3,
+            Value::List(_) => 4,
+            Value::Map(_) => 5,
+            Value::Set(_) => 6,
+            Value::Tuple(_) => 7,
+            Value::Optional(_) => 8,
+            Value::Result(_) => 9,
+            Value::Object(_) => 10,
+        }
+    }
+}
+
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
-        // Simple ordering for now - objects are considered equal if pointers and types match
         match (self, other) {
             (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
@@ -181,36 +198,7 @@ impl Ord for Value {
             (Value::Object(a), Value::Object(b)) => {
                 (a.type_id(), a.ptr() as usize).cmp(&(b.type_id(), b.ptr() as usize))
             }
-            // Different types - arbitrary ordering by variant index
-            (a, b) => {
-                let ord_a = match a {
-                    Value::Bool(_) => 0,
-                    Value::Int(_) => 1,
-                    Value::Float(_) => 2,
-                    Value::String(_) => 3,
-                    Value::List(_) => 4,
-                    Value::Map(_) => 5,
-                    Value::Set(_) => 6,
-                    Value::Tuple(_) => 7,
-                    Value::Optional(_) => 8,
-                    Value::Result(_) => 9,
-                    Value::Object(_) => 10,
-                };
-                let ord_b = match b {
-                    Value::Bool(_) => 0,
-                    Value::Int(_) => 1,
-                    Value::Float(_) => 2,
-                    Value::String(_) => 3,
-                    Value::List(_) => 4,
-                    Value::Map(_) => 5,
-                    Value::Set(_) => 6,
-                    Value::Tuple(_) => 7,
-                    Value::Optional(_) => 8,
-                    Value::Result(_) => 9,
-                    Value::Object(_) => 10,
-                };
-                ord_a.cmp(&ord_b)
-            }
+            _ => self.variant_order().cmp(&other.variant_order()),
         }
     }
 }

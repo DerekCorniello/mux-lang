@@ -9,9 +9,9 @@
 //! - Match statements for pattern matching
 //! - RC scope management for statements
 
+use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
-use inkwell::AddressSpace;
 
 use crate::ast::{
     ExpressionKind, ExpressionNode, LiteralNode, PatternNode, PrimitiveType, StatementKind,

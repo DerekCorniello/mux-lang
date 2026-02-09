@@ -9,7 +9,35 @@ use crate::semantics::Type;
 use inkwell::AddressSpace;
 use inkwell::types::BasicTypeEnum;
 
+/// Placeholder span for synthetically-constructed TypeNodes in codegen.
+const SYNTHETIC_SPAN: Span = Span {
+    row_start: 0,
+    col_start: 0,
+    row_end: None,
+    col_end: None,
+};
+
 impl<'a> CodeGenerator<'a> {
+    /// Returns a pointer type, used for heap-allocated values.
+    fn ptr_type(&self) -> BasicTypeEnum<'a> {
+        self.context.ptr_type(AddressSpace::default()).into()
+    }
+
+    /// Resolve a generic type parameter name via the current generic context.
+    fn resolve_generic_param(&self, name: &str) -> Option<&Type> {
+        self.generic_context
+            .as_ref()
+            .and_then(|ctx| ctx.type_params.get(name))
+    }
+
+    /// Create a synthetic TypeNode (no source location) from a TypeKind.
+    fn synthetic_type_node(kind: TypeKind) -> TypeNode {
+        TypeNode {
+            kind,
+            span: SYNTHETIC_SPAN,
+        }
+    }
+
     pub(super) fn llvm_type_from_resolved_type(
         &self,
         resolved_type: &Type,
@@ -18,50 +46,39 @@ impl<'a> CodeGenerator<'a> {
             Type::Primitive(PrimitiveType::Int) => Ok(self.context.i64_type().into()),
             Type::Primitive(PrimitiveType::Float) => Ok(self.context.f64_type().into()),
             Type::Primitive(PrimitiveType::Bool) => Ok(self.context.bool_type().into()),
-            Type::Primitive(PrimitiveType::Str) => {
-                Ok(self.context.ptr_type(AddressSpace::default()).into())
-            }
+            Type::Primitive(PrimitiveType::Str) => Ok(self.ptr_type()),
             Type::Primitive(PrimitiveType::Char) => Ok(self.context.i8_type().into()),
-            Type::Primitive(PrimitiveType::Void) => Err("Void type not allowed here".to_string()),
-            Type::Void => Err("Void type not allowed here".to_string()),
+            Type::Primitive(PrimitiveType::Void) | Type::Void => {
+                Err("Void type not allowed here".to_string())
+            }
             Type::Primitive(PrimitiveType::Auto) => Err("Auto type should be resolved".to_string()),
             Type::Named(name, args) => {
                 if args.is_empty() {
-                    if let Some(context) = &self.generic_context {
-                        if let Some(concrete) = context.type_params.get(name) {
-                            return self.llvm_type_from_resolved_type(concrete);
-                        }
+                    if let Some(concrete) = self.resolve_generic_param(name) {
+                        return self.llvm_type_from_resolved_type(&concrete.clone());
                     }
                 }
-
                 if self.classes.contains_key(name) {
-                    Ok(self.context.ptr_type(AddressSpace::default()).into())
+                    Ok(self.ptr_type())
                 } else {
                     Err(format!("Unknown type: {}", name))
                 }
             }
-            Type::Function {
-                params: _,
-                returns: _,
-                ..
-            } => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Tuple(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Optional(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Reference(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-
-            Type::EmptyList => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::EmptyMap => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::EmptySet => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::Function { .. }
+            | Type::List(_)
+            | Type::Map(_, _)
+            | Type::Set(_)
+            | Type::Tuple(_, _)
+            | Type::Optional(_)
+            | Type::Reference(_)
+            | Type::EmptyList
+            | Type::EmptyMap
+            | Type::EmptySet => Ok(self.ptr_type()),
             Type::Generic(_) => Err("Generic types should be resolved".to_string()),
             Type::Instantiated(_, _) => Err("Instantiated types should be resolved".to_string()),
             Type::Variable(name) => {
-                if let Some(context) = &self.generic_context {
-                    if let Some(concrete) = context.type_params.get(name) {
-                        return self.llvm_type_from_resolved_type(concrete);
-                    }
+                if let Some(concrete) = self.resolve_generic_param(name) {
+                    return self.llvm_type_from_resolved_type(&concrete.clone());
                 }
                 Err(format!("Variable type '{}' should be resolved", name))
             }
@@ -88,18 +105,18 @@ impl<'a> CodeGenerator<'a> {
                 PrimitiveType::Int => Ok(self.context.i64_type().into()),
                 PrimitiveType::Float => Ok(self.context.f64_type().into()),
                 PrimitiveType::Bool => Ok(self.context.bool_type().into()),
-                PrimitiveType::Str => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+                PrimitiveType::Str => Ok(self.ptr_type()),
                 PrimitiveType::Char => Ok(self.context.i8_type().into()),
                 PrimitiveType::Void => Err("Void type not allowed in fields".to_string()),
                 PrimitiveType::Auto => Err("Auto type should be resolved".to_string()),
             },
-            Type::Named(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Optional(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Reference(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Function { .. } => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::Named(_, _)
+            | Type::List(_)
+            | Type::Map(_, _)
+            | Type::Set(_)
+            | Type::Optional(_)
+            | Type::Reference(_)
+            | Type::Function { .. } => Ok(self.ptr_type()),
             _ => Err(format!(
                 "Unsupported type in interface fields: {:?}",
                 sem_type
@@ -112,31 +129,19 @@ impl<'a> CodeGenerator<'a> {
         type_kind: &TypeKind,
     ) -> Result<BasicTypeEnum<'a>, String> {
         match type_kind {
-            // Primitive types
             TypeKind::Primitive(PrimitiveType::Int) => Ok(self.context.i64_type().into()),
             TypeKind::Primitive(PrimitiveType::Float) => Ok(self.context.f64_type().into()),
             TypeKind::Primitive(PrimitiveType::Bool) => Ok(self.context.bool_type().into()),
-            TypeKind::Primitive(PrimitiveType::Str) => {
-                Ok(self.context.ptr_type(AddressSpace::default()).into())
-            }
+            TypeKind::Primitive(PrimitiveType::Str) => Ok(self.ptr_type()),
             TypeKind::Primitive(PrimitiveType::Char) => Ok(self.context.i8_type().into()),
-
-            // Named types (enums, classes)
             TypeKind::Named(name, _) => {
-                // Check if it's a generic type parameter
-                if let Some(context) = &self.generic_context {
-                    if let Some(concrete) = context.type_params.get(name) {
-                        return self.llvm_type_from_resolved_type(concrete);
-                    }
+                if let Some(concrete) = self.resolve_generic_param(name) {
+                    return self.llvm_type_from_resolved_type(&concrete.clone());
                 }
-
-                // Check if it's an enum
                 if self.enum_variants.contains_key(name) {
                     if name == "Optional" || name == "Result" {
-                        // Optional/Result are Value* pointers
-                        Ok(self.context.ptr_type(AddressSpace::default()).into())
+                        Ok(self.ptr_type())
                     } else {
-                        // Custom enums are struct values
                         let struct_type = self
                             .type_map
                             .get(name)
@@ -144,23 +149,16 @@ impl<'a> CodeGenerator<'a> {
                         Ok(*struct_type)
                     }
                 } else {
-                    // Classes are pointers
-                    Ok(self.context.ptr_type(AddressSpace::default()).into())
+                    Ok(self.ptr_type())
                 }
             }
-
-            // Collection types (all pointers)
-            TypeKind::List(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            TypeKind::Map(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            TypeKind::Set(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            TypeKind::Tuple(_, _) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            TypeKind::Reference(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-
-            // Function and trait types (pointers)
-            TypeKind::Function { .. } => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            TypeKind::TraitObject(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-
-            // Invalid types
+            TypeKind::List(_)
+            | TypeKind::Map(_, _)
+            | TypeKind::Set(_)
+            | TypeKind::Tuple(_, _)
+            | TypeKind::Reference(_)
+            | TypeKind::Function { .. }
+            | TypeKind::TraitObject(_) => Ok(self.ptr_type()),
             TypeKind::Primitive(PrimitiveType::Void) => {
                 Err("Void type cannot be used in enum variant fields".to_string())
             }
@@ -172,112 +170,44 @@ impl<'a> CodeGenerator<'a> {
 
     #[allow(clippy::only_used_in_recursion)]
     pub(super) fn type_to_type_node(&self, type_: &Type) -> TypeNode {
-        match type_ {
-            Type::Primitive(p) => TypeNode {
-                kind: TypeKind::Primitive(p.clone()),
-                span: Span::new(0, 0),
-            },
-            Type::List(inner) => TypeNode {
-                kind: TypeKind::List(Box::new(self.type_to_type_node(inner))),
-                span: Span::new(0, 0),
-            },
-            Type::Map(k, v) => TypeNode {
-                kind: TypeKind::Map(
-                    Box::new(self.type_to_type_node(k)),
-                    Box::new(self.type_to_type_node(v)),
-                ),
-                span: Span::new(0, 0),
-            },
-            Type::Set(inner) => TypeNode {
-                kind: TypeKind::Set(Box::new(self.type_to_type_node(inner))),
-                span: Span::new(0, 0),
-            },
-            Type::Tuple(l, r) => TypeNode {
-                kind: TypeKind::Tuple(
-                    Box::new(self.type_to_type_node(l)),
-                    Box::new(self.type_to_type_node(r)),
-                ),
-                span: Span::new(0, 0),
-            },
-
-            Type::Optional(inner) => TypeNode {
-                kind: TypeKind::Named("Optional".to_string(), vec![self.type_to_type_node(inner)]),
-                span: Span::new(0, 0),
-            },
-            Type::Reference(inner) => TypeNode {
-                kind: TypeKind::Reference(Box::new(self.type_to_type_node(inner))),
-                span: Span::new(0, 0),
-            },
-            Type::Void => TypeNode {
-                kind: TypeKind::Primitive(PrimitiveType::Void),
-                span: Span::new(0, 0),
-            },
-            Type::EmptyList => TypeNode {
-                kind: TypeKind::List(Box::new(TypeNode {
-                    kind: TypeKind::Auto,
-                    span: Span::new(0, 0),
-                })),
-                span: Span::new(0, 0),
-            },
-            Type::EmptyMap => TypeNode {
-                kind: TypeKind::Map(
-                    Box::new(TypeNode {
-                        kind: TypeKind::Auto,
-                        span: Span::new(0, 0),
-                    }),
-                    Box::new(TypeNode {
-                        kind: TypeKind::Auto,
-                        span: Span::new(0, 0),
-                    }),
-                ),
-                span: Span::new(0, 0),
-            },
-            Type::EmptySet => TypeNode {
-                kind: TypeKind::Set(Box::new(TypeNode {
-                    kind: TypeKind::Auto,
-                    span: Span::new(0, 0),
-                })),
-                span: Span::new(0, 0),
-            },
+        let auto_node = || Self::synthetic_type_node(TypeKind::Auto);
+        let kind = match type_ {
+            Type::Primitive(p) => TypeKind::Primitive(p.clone()),
+            Type::List(inner) => TypeKind::List(Box::new(self.type_to_type_node(inner))),
+            Type::Map(k, v) => TypeKind::Map(
+                Box::new(self.type_to_type_node(k)),
+                Box::new(self.type_to_type_node(v)),
+            ),
+            Type::Set(inner) => TypeKind::Set(Box::new(self.type_to_type_node(inner))),
+            Type::Tuple(l, r) => TypeKind::Tuple(
+                Box::new(self.type_to_type_node(l)),
+                Box::new(self.type_to_type_node(r)),
+            ),
+            Type::Optional(inner) => {
+                TypeKind::Named("Optional".to_string(), vec![self.type_to_type_node(inner)])
+            }
+            Type::Reference(inner) => TypeKind::Reference(Box::new(self.type_to_type_node(inner))),
+            Type::Void => TypeKind::Primitive(PrimitiveType::Void),
+            Type::EmptyList => TypeKind::List(Box::new(auto_node())),
+            Type::EmptyMap => TypeKind::Map(Box::new(auto_node()), Box::new(auto_node())),
+            Type::EmptySet => TypeKind::Set(Box::new(auto_node())),
             Type::Function {
                 params, returns, ..
-            } => TypeNode {
-                kind: TypeKind::Function {
-                    params: params.iter().map(|p| self.type_to_type_node(p)).collect(),
-                    returns: Box::new(self.type_to_type_node(returns)),
-                },
-                span: Span::new(0, 0),
+            } => TypeKind::Function {
+                params: params.iter().map(|p| self.type_to_type_node(p)).collect(),
+                returns: Box::new(self.type_to_type_node(returns)),
             },
-            Type::Named(name, generics) => TypeNode {
-                kind: TypeKind::Named(
-                    name.clone(),
-                    generics.iter().map(|g| self.type_to_type_node(g)).collect(),
-                ),
-                span: Span::new(0, 0),
-            },
-            Type::Variable(_) => TypeNode {
-                kind: TypeKind::Auto,
-                span: Span::new(0, 0),
-            }, // should not happen
-            Type::Never => TypeNode {
-                kind: TypeKind::Auto, // use Auto as placeholder
-                span: Span::new(0, 0),
-            }, // should not happen
-            Type::Generic(name) => TypeNode {
-                kind: TypeKind::Named(name.clone(), vec![]),
-                span: Span::new(0, 0),
-            },
-            Type::Instantiated(name, generics) => TypeNode {
-                kind: TypeKind::Named(
-                    name.clone(),
-                    generics.iter().map(|g| self.type_to_type_node(g)).collect(),
-                ),
-                span: Span::new(0, 0),
-            },
+            Type::Named(name, generics) | Type::Instantiated(name, generics) => TypeKind::Named(
+                name.clone(),
+                generics.iter().map(|g| self.type_to_type_node(g)).collect(),
+            ),
+            Type::Generic(name) => TypeKind::Named(name.clone(), vec![]),
+            Type::Variable(_) | Type::Never => TypeKind::Auto,
             Type::Module(_) => {
                 panic!("Module types should not appear in codegen - they are compile-time only")
             }
-        }
+        };
+        Self::synthetic_type_node(kind)
     }
 
     pub(super) fn type_node_to_type(&self, type_node: &TypeNode) -> Type {
@@ -307,15 +237,8 @@ impl<'a> CodeGenerator<'a> {
                             return Type::Primitive(PrimitiveType::Bool);
                         }
                     }
-
-                    // check if this is a generic parameter by looking at the current context
-                    if let Some(context) = &self.generic_context {
-                        if let Some(concrete_type) = context.type_params.get(name) {
-                            // return the concrete type directly
-                            concrete_type.clone()
-                        } else {
-                            Type::Named(name.clone(), vec![])
-                        }
+                    if let Some(concrete_type) = self.resolve_generic_param(name) {
+                        concrete_type.clone()
                     } else {
                         Type::Named(name.clone(), vec![])
                     }
@@ -344,19 +267,15 @@ impl<'a> CodeGenerator<'a> {
             | Type::EmptyMap
             | Type::EmptySet => Ok(type_.clone()),
             Type::Generic(name) | Type::Variable(name) => {
-                if let Some(context) = &self.generic_context {
-                    if let Some(concrete) = context.type_params.get(name) {
-                        return self.resolve_type(concrete);
-                    }
+                if let Some(concrete) = self.resolve_generic_param(name) {
+                    return self.resolve_type(&concrete.clone());
                 }
                 Err(format!("Unresolved generic: {}", name))
             }
             Type::Named(name, type_args) => {
                 if type_args.is_empty() {
-                    if let Some(context) = &self.generic_context {
-                        if let Some(concrete) = context.type_params.get(name) {
-                            return self.resolve_type(concrete);
-                        }
+                    if let Some(concrete) = self.resolve_generic_param(name) {
+                        return self.resolve_type(&concrete.clone());
                     }
                     Ok(Type::Named(name.clone(), vec![]))
                 } else {
@@ -406,7 +325,6 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
-    // recursion is necessary here for proper type resolution
     #[allow(clippy::only_used_in_recursion)]
     pub(super) fn type_to_string(&self, type_: &Type) -> String {
         match type_ {

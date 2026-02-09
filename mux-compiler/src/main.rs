@@ -9,12 +9,8 @@ mod semantics;
 mod source;
 
 use clap::{Parser as ClapParser, Subcommand};
-use diagnostic::{ColorConfig, DiagnosticEmitter, FileId, Files, StandardEmitter};
-use lexer::{Lexer, LexerError};
+use diagnostic::{ColorConfig, DiagnosticEmitter, FileId, Files, StandardEmitter, ToDiagnostic};
 use module_resolver::ModuleResolver;
-use parser::{Parser, ParserError};
-use semantics::SemanticAnalyzer;
-use semantics::SemanticError;
 use source::Source;
 use std::cell::RefCell;
 use std::env;
@@ -23,19 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::rc::Rc;
 
-fn handle_lexer_error(files: &Files, file_id: FileId, error: &LexerError) {
-    let emitter = StandardEmitter::new(ColorConfig::Auto);
-    let diagnostic = error.to_diagnostic(file_id);
-    emitter.emit(&diagnostic, files);
-}
-
-fn handle_parser_errors(files: &Files, file_id: FileId, errors: &[ParserError]) {
-    let emitter = StandardEmitter::new(ColorConfig::Auto);
-    let diagnostics: Vec<_> = errors.iter().map(|e| e.to_diagnostic(file_id)).collect();
-    emitter.emit_batch(&diagnostics, files);
-}
-
-fn handle_semantic_errors(files: &Files, file_id: FileId, errors: &[SemanticError]) {
+fn emit_diagnostics<E: ToDiagnostic>(files: &Files, file_id: FileId, errors: &[E]) {
     let emitter = StandardEmitter::new(ColorConfig::Auto);
     let diagnostics: Vec<_> = errors.iter().map(|e| e.to_diagnostic(file_id)).collect();
     emitter.emit_batch(&diagnostics, files);
@@ -88,18 +72,11 @@ enum Commands {
     Version {},
 }
 
-fn validate_llvm_installed() -> bool {
-    match Command::new("clang").arg("--version").output() {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
-    }
-}
-
-fn validate_clang_installed() -> bool {
-    match Command::new("clang").arg("--version").output() {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
-    }
+fn is_clang_available() -> bool {
+    Command::new("clang")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success())
 }
 
 fn runtime_profile() -> &'static str {
@@ -297,15 +274,39 @@ fn build_runtime_in_cache(profile: &str) -> Option<PathBuf> {
 }
 
 fn resolve_runtime_lib_dir(profile: &str) -> Option<PathBuf> {
-    if let Some(dir) = runtime_lib_from_env() {
-        return Some(dir);
+    runtime_lib_from_env()
+        .or_else(runtime_lib_from_build_config)
+        .or_else(|| build_runtime_in_cache(profile))
+}
+
+fn run_doctor() {
+    let clang_ok = is_clang_available();
+    if clang_ok {
+        println!("LLVM is installed.");
+        println!("Clang is installed.");
+    } else {
+        println!("LLVM is not installed. Please install LLVM to use the Mux compiler.");
+        println!("Clang is not installed. Please install Clang to use the Mux compiler.");
     }
 
-    if let Some(dir) = runtime_lib_from_build_config() {
-        return Some(dir);
+    let profile = runtime_profile();
+    let runtime_ok = resolve_runtime_lib_dir(profile).is_some() || {
+        println!("Mux runtime not found. Building it now...");
+        build_runtime_in_cache(profile).is_some()
+    };
+
+    if runtime_ok {
+        println!("Mux runtime is available.");
+    } else {
+        println!("Mux runtime is not available.");
     }
 
-    build_runtime_in_cache(profile)
+    if clang_ok && runtime_ok {
+        println!("Your system is ready to use the Mux compiler!");
+    } else {
+        println!("Please install the missing dependencies and try again.");
+        process::exit(1);
+    }
 }
 
 fn main() {
@@ -317,40 +318,7 @@ fn main() {
             return;
         }
         Commands::Doctor {} => {
-            let llvm_installed = validate_llvm_installed();
-            let clang_installed = validate_clang_installed();
-
-            if llvm_installed {
-                println!("LLVM is installed.");
-            } else {
-                println!("LLVM is not installed. Please install LLVM to use the Mux compiler.");
-            }
-
-            if clang_installed {
-                println!("Clang is installed.");
-            } else {
-                println!("Clang is not installed. Please install Clang to use the Mux compiler.");
-            }
-
-            let profile = runtime_profile();
-            let mut runtime_ready = resolve_runtime_lib_dir(profile).is_some();
-            if !runtime_ready {
-                println!("Mux runtime not found. Building it now...");
-                runtime_ready = build_runtime_in_cache(profile).is_some();
-            }
-
-            if runtime_ready {
-                println!("Mux runtime is available.");
-            } else {
-                println!("Mux runtime is not available.");
-            }
-
-            if llvm_installed && clang_installed && runtime_ready {
-                println!("Your system is ready to use the Mux compiler!");
-            } else {
-                println!("Please install the missing dependencies and try again.");
-                process::exit(1);
-            }
+            run_doctor();
             return;
         }
         Commands::Build {
@@ -378,11 +346,9 @@ fn main() {
         process::exit(1);
     }
 
-    // Create Files registry for diagnostic tracking
     let mut files = Files::new();
 
-    // Read source and register it
-    let source_str = match std::fs::read_to_string(file_path) {
+    let source_str = match fs::read_to_string(file_path) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error opening file: {}", e);
@@ -390,33 +356,22 @@ fn main() {
         }
     };
     let file_id = files.add(file_path, source_str.clone());
+    let mut src = Source::from_string(source_str);
 
-    let mut src = match Source::new(
-        file_path
-            .to_str()
-            .expect("file path should be valid Unicode"),
-    ) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error opening file: {}", e);
-            process::exit(1);
-        }
-    };
-
-    let mut lex = Lexer::new(&mut src);
+    let mut lex = lexer::Lexer::new(&mut src);
     let tokens = match lex.lex_all() {
         Ok(t) => t,
         Err(e) => {
-            handle_lexer_error(&files, file_id, &e);
+            emit_diagnostics(&files, file_id, &[e]);
             process::exit(1);
         }
     };
 
-    let mut parser = Parser::new(&tokens);
+    let mut parser = parser::Parser::new(&tokens);
     let nodes = match parser.parse() {
         Ok(n) => n,
         Err((_, errors)) => {
-            handle_parser_errors(&files, file_id, &errors);
+            emit_diagnostics(&files, file_id, &errors);
             process::exit(1);
         }
     };
@@ -427,10 +382,10 @@ fn main() {
         .to_path_buf();
     let resolver = Rc::new(RefCell::new(ModuleResolver::new(base_path)));
 
-    let mut analyzer = SemanticAnalyzer::new_with_resolver(resolver);
+    let mut analyzer = semantics::SemanticAnalyzer::new_with_resolver(resolver);
     let errors = analyzer.analyze(&nodes, Some(&mut files));
     if !errors.is_empty() {
-        handle_semantic_errors(&files, file_id, &errors);
+        emit_diagnostics(&files, file_id, &errors);
         process::exit(1);
     }
 
@@ -531,10 +486,7 @@ fn main() {
     }
 
     if !intermediate {
-        Command::new("rm")
-            .arg(&ir_file)
-            .status()
-            .expect("Failed to remove intermediate IR file");
+        let _ = fs::remove_file(&ir_file);
     }
 
     if do_run {
@@ -547,9 +499,7 @@ fn main() {
 
         match output {
             Ok(output) if output.status.success() => {
-                // Optional: print stdout on success
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                print!("{}", stdout);
+                print!("{}", String::from_utf8_lossy(&output.stdout));
             }
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
