@@ -13,16 +13,18 @@ use std::collections::HashMap;
 impl<'a> CodeGenerator<'a> {
     /// Create a new empty collection and wrap it as a Value pointer.
     /// `new_fn` creates the raw collection, `value_fn` wraps it as `*mut Value`.
+    /// Create a new empty collection and wrap it as a Value pointer.
+    /// `new_fn` creates the raw collection, `value_fn` wraps it as `*mut Value`.
     fn create_empty_collection_value(
         &mut self,
         new_fn: &str,
         value_fn: &str,
-    ) -> Result<BasicValueEnum<'a>, String> {
+    ) -> BasicValueEnum<'a> {
         let raw_ptr = self
             .generate_runtime_call(new_fn, &[])
-            .ok_or_else(|| format!("{} returned no value", new_fn))?;
+            .expect("should always return a value");
         self.generate_runtime_call(value_fn, &[raw_ptr.into()])
-            .ok_or_else(|| format!("{} returned no value", value_fn))
+            .expect("should always return a value")
     }
 
     pub(super) fn generate_enum_constructors(
