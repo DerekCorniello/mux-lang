@@ -1,5 +1,5 @@
 
-  ![MuxLang Version](https://img.shields.io/badge/MuxLang-0.1.1-4c1?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang/releases)&nbsp;
+  ![MuxLang Version](https://img.shields.io/badge/MuxLang-0.1.2-4c1?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang/releases)&nbsp;
   ![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white&link=https://www.rust-lang.org/)&nbsp;
   ![LLVM](https://img.shields.io/badge/LLVM-262D3A?style=for-the-badge&logo=llvm&logoColor=white&link=https://llvm.org/)&nbsp;
   ![crates.io](https://img.shields.io/badge/crates.io-MuxLang-orange?style=for-the-badge&logo=rust&link=https://crates.io/crates/mux-lang)&nbsp;
@@ -900,6 +900,56 @@ match (value) {
     _ {
         print("unexpected case")  // wildcard pattern
     }
+}
+```
+
+### 8.2.1 Match as Switch Statement
+
+Match statements can be used as switch statements for any type:
+
+```
+// Match on int literals (like a switch)
+auto status = 200
+match status {
+    200 { print("OK") }
+    404 { print("Not Found") }
+    500 { print("Server Error") }
+    _ { print("Unknown status") }
+}
+
+// Match on string literals
+auto command = "start"
+match command {
+    "start" { print("Starting...") }
+    "stop" { print("Stopping...") }
+    "restart" { print("Restarting...") }
+    _ { print("Unknown command") }
+}
+
+// Variable binding in patterns
+auto value = 42
+match value {
+    1 { print("one") }
+    captured { print("got: " + captured.to_string()) }
+    _ { print("other") }
+}
+
+// List literal matching
+auto nums = [1, 2, 3]
+match nums {
+    [] { print("empty") }
+    [1, 2, 3] { print("three elements") }
+    [first, ..rest] { print("has elements") }
+}
+
+// Switch with guards
+auto score = 85
+match score {
+    n if n >= 90 { print("A") }
+    n if n >= 80 { print("B") }
+    n if n >= 70 { print("C") }
+    n if n >= 60 { print("D") }
+    _ { print("F") }
 }
 ```
 

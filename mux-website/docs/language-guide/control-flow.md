@@ -326,6 +326,111 @@ match value {
 }
 ```
 
+### Match as Switch Statement
+
+Match statements can be used as switch statements for any type, not just enums:
+
+```mux title="switch_on_primitives.mux"
+// Match on int literals (like a switch)
+auto status = 200
+match status {
+    200 { print("OK") }
+    404 { print("Not Found") }
+    500 { print("Server Error") }
+    _ { print("Unknown status") }
+}
+
+// Match on string literals
+auto command = "start"
+match command {
+    "start" { print("Starting...") }
+    "stop" { print("Stopping...") }
+    "restart" { print("Restarting...") }
+    _ { print("Unknown command") }
+}
+
+// Match on bool values
+auto flag = true
+match flag {
+    true { print("Enabled") }
+    false { print("Disabled") }
+}
+
+// Match on char literals
+auto letter = 'a'
+match letter {
+    'a' { print("Alpha") }
+    'b' { print("Bravo") }
+    _ { print("Other") }
+}
+```
+
+#### Variable Binding in Switch Patterns
+
+Capture matched values in variables:
+
+```mux title="switch_variable_binding.mux"
+auto value = 42
+match value {
+    1 { print("one") }
+    captured { print("got: " + captured.to_string()) }
+    _ { print("shouldn't reach here") }
+}
+
+// With strings
+auto name = "world"
+match name {
+    "admin" { print("Hello, admin!") }
+    n { print("Hello, " + n) }
+}
+```
+
+#### Constants in Switch Patterns
+
+Use constants as match patterns:
+
+```mux title="switch_constants.mux"
+const int ADMIN = 1
+const int MODERATOR = 2
+auto level = 1
+match level {
+    ADMIN { print("admin") }
+    MODERATOR { print("moderator") }
+    _ { print("user") }
+}
+```
+
+#### List Literal Matching
+
+Match on list structure:
+
+```mux title="switch_list_matching.mux"
+auto nums = [1, 2, 3]
+match nums {
+    [] { print("empty") }
+    [1] { print("single: 1") }
+    [1, 2] { print("two: 1, 2") }
+    [1, 2, 3] { print("three: 1, 2, 3") }
+    [first, ..rest] { print("has elements") }
+    _ { print("weird list") }
+}
+```
+
+#### Switch with Guards
+
+Add conditions to switch cases:
+
+```mux title="switch_with_guards.mux"
+auto score = 85
+match score {
+    n if n >= 90 { print("A") }
+    n if n >= 80 { print("B") }
+    n if n >= 70 { print("C") }
+    n if n >= 60 { print("D") }
+    _ { print("F") }
+}
+```
+
 ## Return Statement
 
 Exit a function early:
