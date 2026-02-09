@@ -10,7 +10,7 @@ pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
 #[allow(unused_imports)]
 pub use format::{format_span_location, format_unary_op};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -3186,6 +3186,37 @@ impl SemanticAnalyzer {
         expr_span: Span,
     ) -> Result<(), SemanticError> {
         match expr_type {
+            Type::Named(type_name, _) if type_name == "Result" => {
+                let has_ok = arms.iter().any(|arm| 
+                    arm.guard.is_none() && 
+                    matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Ok")
+                );
+                let has_err = arms.iter().any(|arm| 
+                    arm.guard.is_none() && 
+                    matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Err")
+                );
+                let has_wildcard = arms
+                    .iter()
+                    .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
+                if has_wildcard || (has_ok && has_err) {
+                    Ok(())
+                } else {
+                    let mut missing = Vec::new();
+                    if !has_ok {
+                        missing.push("Ok");
+                    }
+                    if !has_err {
+                        missing.push("Err");
+                    }
+                    Err(SemanticError {
+                        message: format!(
+                            "Non-exhaustive match: patterns not covering all variants of 'Result'. Missing: {}",
+                            missing.join(", ")
+                        ),
+                        span: expr_span,
+                    })
+                }
+            }
             Type::Named(type_name, _) => {
                 // Check if this is an enum type
                 if let Some(symbol) = self.symbol_table.lookup(type_name) {
@@ -3202,10 +3233,14 @@ impl SemanticAnalyzer {
                                     break;
                                 }
                                 PatternNode::EnumVariant { name, .. } => {
-                                    covered.insert(name.clone());
+                                    // Only count variant as covered if NO guard
+                                    if arm.guard.is_none() {
+                                        covered.insert(name.clone());
+                                    }
                                 }
                                 PatternNode::Identifier(name) => {
-                                    if variant_names.contains(name) {
+                                    // Only count variant as covered if NO guard
+                                    if arm.guard.is_none() && variant_names.contains(name) {
                                         covered.insert(name.clone());
                                     }
                                 }
@@ -3239,13 +3274,18 @@ impl SemanticAnalyzer {
                         return Ok(());
                     }
                 }
-                // Named type but not an enum: require wildcard
+                // Named type but not an enum and not Result: require wildcard
                 self.require_wildcard_pattern(arms, expr_type, expr_span)
             }
             Type::Optional(_) => {
-                // Optional has built-in Some/None exhaustiveness
-                let has_some = arms.iter().any(|arm| matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Some"));
-                let has_none = arms.iter().any(|arm| matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "None"));
+                let has_some = arms.iter().any(|arm| 
+                    arm.guard.is_none() && 
+                    matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Some")
+                );
+                let has_none = arms.iter().any(|arm| 
+                    arm.guard.is_none() && 
+                    matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "None")
+                );
                 let has_wildcard = arms
                     .iter()
                     .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));

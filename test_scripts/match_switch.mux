@@ -1,8 +1,8 @@
 // Test match as switch statement for non-enum types
 
 // Test 1: Match on int literals
-fn test_int_match() {
-    auto x: int = 42
+func test_int_match() returns void {
+    auto x = 42
     match x {
         1 { print("one") }
         42 { print("forty-two") }
@@ -11,8 +11,8 @@ fn test_int_match() {
 }
 
 // Test 2: Match on string literals
-fn test_string_match() {
-    auto s: string = "hello"
+func test_string_match() returns void {
+    auto s = "hello"
     match s {
         "hello" { print("greeting") }
         "bye" { print("farewell") }
@@ -21,8 +21,8 @@ fn test_string_match() {
 }
 
 // Test 3: Match on bool literals
-fn test_bool_match() {
-    auto b: bool = true
+func test_bool_match() returns void {
+    auto b = true
     match b {
         true { print("yes") }
         false { print("no") }
@@ -31,21 +31,67 @@ fn test_bool_match() {
 }
 
 // Test 4: Match with variable binding
-fn test_binding_match() {
-    auto x: int = 99
+func test_binding_match() returns void {
+    auto x = 99
     match x {
         1 { print("one") }
         other { print("got: " + other.to_string()) }
+        _ { print("should never be here") }
     }
 }
 
 // Test 5: Match on char
-fn test_char_match() {
-    auto c: char = 'a'
+func test_char_match() returns void {
+    auto c = 'a'
     match c {
         'a' { print("alpha") }
         'b' { print("bravo") }
         _ { print("other char") }
+    }
+}
+
+// Test 6: Match with constants
+const int ADMIN = 1
+const int MODERATOR = 2
+func test_const_match() returns void {
+    auto level = 1
+    match level {
+        ADMIN { print("admin") }
+        MODERATOR { print("moderator") }
+        _ { print("user") }
+    }
+}
+
+// Test 7: Match on list literals (structural matching)
+func test_list_match() returns void {
+    auto nums = [1, 2, 3]
+    match nums {
+        [] { print("empty") }
+        [1] { print("single: 1") }
+        [1, 2] { print("two: 1, 2") }
+        [1, 2, 3] { print("three: 1, 2, 3") }
+        [first, ..rest] { print("has elements") }
+        _ { print("this is a weird list") }
+    }
+}
+
+// Test 8: Match with guards
+func test_guard_match() returns void {
+    auto x = 15
+    match x {
+        n if n < 10 { print("less than 10") }
+        n if n < 20 { print("between 10 and 20") }
+        _ { print("20 or more") }
+    }
+}
+
+// Test 9: Match with string variable binding
+func test_string_binding() returns void {
+    auto name = "world"
+    match name {
+        "admin" { print("Hello, admin!") }
+        n { print("Hello, " + n) }
+        _ { print("shouldnt be here") }
     }
 }
 
@@ -55,3 +101,7 @@ test_string_match()
 test_bool_match()
 test_binding_match()
 test_char_match()
+test_const_match()
+test_list_match()
+test_guard_match()
+test_string_binding()

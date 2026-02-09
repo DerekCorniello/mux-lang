@@ -9,9 +9,9 @@
 //! - Match statements for pattern matching
 //! - RC scope management for statements
 
-use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
+use inkwell::AddressSpace;
 
 use crate::ast::{
     ExpressionKind, ExpressionNode, LiteralNode, PatternNode, PrimitiveType, StatementKind,
@@ -1400,19 +1400,40 @@ impl<'a> CodeGenerator<'a> {
 
                     if is_constant {
                         // Load the constant value and compare
-                        let const_val = if let Some((ptr, _, var_type)) = self
+                        let const_ptr = self
                             .variables
                             .get(name)
                             .or_else(|| self.global_variables.get(name))
-                            .cloned()
-                        {
-                            let llvm_type = self.semantic_type_to_llvm(&var_type)?;
-                            self.builder
-                                .build_load(llvm_type, ptr, &format!("load_{}", name))
-                                .map_err(|e| e.to_string())?
-                        } else {
-                            return Err(format!("Constant {} not found", name));
+                            .ok_or_else(|| format!("Constant {} not found", name))?
+                            .0;
+
+                        // Load the boxed value pointer (constants are stored as boxed pointers)
+                        let boxed_ptr = self
+                            .builder
+                            .build_load(
+                                self.context.ptr_type(AddressSpace::default()),
+                                const_ptr,
+                                &format!("load_{}", name),
+                            )
+                            .map_err(|e| e.to_string())?
+                            .into_pointer_value();
+
+                        // Extract the raw value based on type for comparison
+                        let const_val = match match_expr_type {
+                            Type::Primitive(PrimitiveType::Int)
+                            | Type::Primitive(PrimitiveType::Char) => {
+                                self.get_raw_int_value(boxed_ptr.into())?.into()
+                            }
+                            Type::Primitive(PrimitiveType::Bool) => {
+                                self.get_raw_bool_value(boxed_ptr.into())?.into()
+                            }
+                            Type::Primitive(PrimitiveType::Float) => {
+                                self.get_raw_float_value(boxed_ptr.into())?.into()
+                            }
+                            Type::Primitive(PrimitiveType::Str) => boxed_ptr.into(),
+                            _ => boxed_ptr.into(),
                         };
+
                         self.generate_value_equality(match_val, const_val, match_expr_type)?
                     } else {
                         // Variable binding: always matches, bind the value
