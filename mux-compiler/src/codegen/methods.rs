@@ -14,6 +14,59 @@ use crate::semantics::Type;
 use super::CodeGenerator;
 
 impl<'a> CodeGenerator<'a> {
+    fn call_runtime_to_string(
+        &self,
+        value: BasicValueEnum<'a>,
+        func_name: &str,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let to_cstr = self
+            .module
+            .get_function(func_name)
+            .ok_or(format!("{} not found", func_name))?;
+        let call = self
+            .builder
+            .build_call(to_cstr, &[value.into()], "to_cstr")
+            .map_err(|e| e.to_string())?;
+        let cstr = call
+            .try_as_basic_value()
+            .left()
+            .ok_or(format!("{} should return a basic value", func_name))?;
+        let new_string = self
+            .module
+            .get_function("mux_new_string_from_cstr")
+            .ok_or("mux_new_string_from_cstr not found")?;
+        let call2 = self
+            .builder
+            .build_call(new_string, &[cstr.into()], "new_string")
+            .map_err(|e| e.to_string())?;
+        Ok(call2
+            .try_as_basic_value()
+            .left()
+            .expect("mux_new_string_from_cstr should return a basic value"))
+    }
+
+    fn call_runtime_to_string_from_call(
+        &self,
+        call: inkwell::values::CallSiteValue<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let cstr = call
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| "Function should return a basic value".to_string())?;
+        let new_string = self
+            .module
+            .get_function("mux_new_string_from_cstr")
+            .ok_or("mux_new_string_from_cstr not found".to_string())?;
+        let call2 = self
+            .builder
+            .build_call(new_string, &[cstr.into()], "new_string")
+            .map_err(|e| e.to_string())?;
+        Ok(call2
+            .try_as_basic_value()
+            .left()
+            .expect("mux_new_string_from_cstr should return a basic value"))
+    }
+
     pub(super) fn generate_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
@@ -119,38 +172,8 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         match prim {
             PrimitiveType::Int => match method_name {
-                "to_string" => {
-                    let func = self
-                        .module
-                        .get_function("mux_int_to_string")
-                        .ok_or("mux_int_to_string not found")?;
-                    let call = self
-                        .builder
-                        .build_call(func, &[obj_value.into()], "int_to_str")
-                        .map_err(|e| e.to_string())?;
-                    let func_new = self
-                        .module
-                        .get_function("mux_new_string_from_cstr")
-                        .ok_or("mux_new_string_from_cstr not found")?;
-                    let call2 = self
-                        .builder
-                        .build_call(
-                            func_new,
-                            &[call
-                                .try_as_basic_value()
-                                .left()
-                                .expect("mux_float_to_string should return a basic value")
-                                .into()],
-                            "new_str",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    Ok(call2
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_new_string_from_cstr should return a basic value"))
-                }
+                "to_string" => self.call_runtime_to_string(obj_value, "mux_int_to_string"),
                 "to_float" => {
-                    // Convert raw i64 to f64 using LLVM sitofp instruction
                     let float_val = self
                         .builder
                         .build_signed_int_to_float(
@@ -161,45 +184,12 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?;
                     Ok(float_val.into())
                 }
-                "to_int" => {
-                    // int.to_int() just returns itself (identity operation)
-                    Ok(obj_value)
-                }
+                "to_int" => Ok(obj_value),
                 _ => Err(format!("Method {} not implemented for int", method_name)),
             },
             PrimitiveType::Float => match method_name {
-                "to_string" => {
-                    let func = self
-                        .module
-                        .get_function("mux_float_to_string")
-                        .ok_or("mux_float_to_string not found")?;
-                    let call = self
-                        .builder
-                        .build_call(func, &[obj_value.into()], "float_to_str")
-                        .map_err(|e| e.to_string())?;
-                    let func_new = self
-                        .module
-                        .get_function("mux_new_string_from_cstr")
-                        .ok_or("mux_new_string_from_cstr not found")?;
-                    let call2 = self
-                        .builder
-                        .build_call(
-                            func_new,
-                            &[call
-                                .try_as_basic_value()
-                                .left()
-                                .expect("mux_float_to_string should return a basic value")
-                                .into()],
-                            "new_str",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    Ok(call2
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_new_string_from_cstr should return a basic value"))
-                }
+                "to_string" => self.call_runtime_to_string(obj_value, "mux_float_to_string"),
                 "to_int" => {
-                    // float.to_int() - direct LLVM conversion using fptosi
                     let float_val = obj_value.into_float_value();
                     let int_val = self
                         .builder
@@ -211,43 +201,11 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?;
                     Ok(int_val.into())
                 }
-                "to_float" => {
-                    // float.to_float() just returns itself (identity operation)
-                    Ok(obj_value)
-                }
+                "to_float" => Ok(obj_value),
                 _ => Err(format!("Method {} not implemented for float", method_name)),
             },
             PrimitiveType::Str => match method_name {
-                "to_string" => {
-                    let func = self
-                        .module
-                        .get_function("mux_value_to_string")
-                        .ok_or("mux_value_to_string not found")?;
-                    let call = self
-                        .builder
-                        .build_call(func, &[obj_value.into()], "value_to_str")
-                        .map_err(|e| e.to_string())?;
-                    let func_new = self
-                        .module
-                        .get_function("mux_new_string_from_cstr")
-                        .ok_or("mux_new_string_from_cstr not found")?;
-                    let call2 = self
-                        .builder
-                        .build_call(
-                            func_new,
-                            &[call
-                                .try_as_basic_value()
-                                .left()
-                                .expect("mux_value_to_string should return a basic value")
-                                .into()],
-                            "new_str",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    Ok(call2
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_new_string_from_cstr should return a basic value"))
-                }
+                "to_string" => self.call_runtime_to_string(obj_value, "mux_value_to_string"),
                 "to_int" => {
                     // str.to_int() - call mux_string_to_int which returns Result<int, str>
                     // First convert the boxed string to a C string
@@ -322,65 +280,38 @@ impl<'a> CodeGenerator<'a> {
             },
             PrimitiveType::Bool => match method_name {
                 "to_string" => {
-                    let bool_value: BasicValueEnum<'a>;
-                    if obj_value.is_int_value() {
-                        // already a primitive boolean (i1), convert to i32 for mux_bool_to_string
+                    let bool_i32 = if obj_value.is_int_value() {
                         let i1_val = obj_value.into_int_value();
-                        bool_value = self
-                            .builder
+                        self.builder
                             .build_int_z_extend(i1_val, self.context.i32_type(), "i1_to_i32")
                             .map_err(|e| e.to_string())?
-                            .into();
                     } else if obj_value.is_pointer_value() {
-                        // boxed boolean, extract the value
                         let extract_func = self
                             .module
                             .get_function("mux_value_get_bool")
-                            .ok_or("mux_value_get_bool not found")?;
-                        bool_value = self
+                            .ok_or("mux_value_get_bool not found".to_string())?;
+                        let extracted = self
                             .builder
                             .build_call(extract_func, &[obj_value.into()], "extract_bool")
                             .map_err(|e| e.to_string())?
                             .try_as_basic_value()
                             .left()
-                            .ok_or("Call returned no value")?;
+                            .ok_or_else(|| "Call returned no value".to_string())?;
+                        extracted.into_int_value()
                     } else {
                         return Err("Invalid boolean value type".to_string());
-                    }
-
-                    // call mux_bool_to_string with the i32 value
-                    let func = self
+                    };
+                    let bool_func = self
                         .module
                         .get_function("mux_bool_to_string")
-                        .ok_or("mux_bool_to_string not found")?;
+                        .ok_or("mux_bool_to_string not found".to_string())?;
                     let call = self
                         .builder
-                        .build_call(func, &[bool_value.into()], "bool_to_str")
+                        .build_call(bool_func, &[bool_i32.into()], "bool_to_str")
                         .map_err(|e| e.to_string())?;
-                    let func_new = self
-                        .module
-                        .get_function("mux_new_string_from_cstr")
-                        .ok_or("mux_new_string_from_cstr not found")?;
-                    let call2 = self
-                        .builder
-                        .build_call(
-                            func_new,
-                            &[call
-                                .try_as_basic_value()
-                                .left()
-                                .expect("mux_bool_to_string should return a basic value")
-                                .into()],
-                            "new_str",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    Ok(call2
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_new_string_from_cstr should return a basic value"))
+                    self.call_runtime_to_string_from_call(call)
                 }
                 "to_int" => {
-                    // bool.to_int() - direct LLVM conversion
-                    // obj_value is i32 (0 or 1), extend to i64
                     let bool_i32 = obj_value.into_int_value();
                     let int_val = self
                         .builder
@@ -389,8 +320,6 @@ impl<'a> CodeGenerator<'a> {
                     Ok(int_val.into())
                 }
                 "to_float" => {
-                    // bool.to_float() - direct LLVM conversion
-                    // obj_value is i32 (0 or 1), convert to f64
                     let bool_i32 = obj_value.into_int_value();
                     let float_val = self
                         .builder
@@ -405,37 +334,7 @@ impl<'a> CodeGenerator<'a> {
                 _ => Err(format!("Method {} not implemented for bool", method_name)),
             },
             PrimitiveType::Char => match method_name {
-                "to_string" => {
-                    // char.to_string() - call mux_char_to_string
-                    let func = self
-                        .module
-                        .get_function("mux_char_to_string")
-                        .ok_or("mux_char_to_string not found")?;
-                    let call = self
-                        .builder
-                        .build_call(func, &[obj_value.into()], "char_to_str")
-                        .map_err(|e| e.to_string())?;
-                    let func_new = self
-                        .module
-                        .get_function("mux_new_string_from_cstr")
-                        .ok_or("mux_new_string_from_cstr not found")?;
-                    let call2 = self
-                        .builder
-                        .build_call(
-                            func_new,
-                            &[call
-                                .try_as_basic_value()
-                                .left()
-                                .expect("mux_char_to_string should return a basic value")
-                                .into()],
-                            "new_str",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    Ok(call2
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_new_string_from_cstr should return a basic value"))
-                }
+                "to_string" => self.call_runtime_to_string(obj_value, "mux_char_to_string"),
                 "to_int" => {
                     // char.to_int() - call mux_char_to_int which returns Result<int, str>
                     // Only works for '0'-'9', returns error for other chars
