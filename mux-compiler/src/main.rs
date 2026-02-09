@@ -488,7 +488,10 @@ fn main() {
     }
 
     if !intermediate {
-        let _ = fs::remove_file(&ir_file);
+        Command::new("rm")
+            .arg(&ir_file)
+            .status()
+            .expect("Failed to remove intermediate IR file");
     }
 
     if do_run {

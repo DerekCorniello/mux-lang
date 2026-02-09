@@ -1,3 +1,6 @@
+use std::path::Path;
+use std::io::{Error, ErrorKind};
+
 pub struct Source {
     pub input: String,
     pub pos: usize,
@@ -7,8 +10,16 @@ pub struct Source {
 
 impl Source {
     pub fn new(file_path: &str) -> std::io::Result<Self> {
-        let input = std::fs::read_to_string(file_path)?;
-        Ok(Self::from_string(input))
+        if Path::new(file_path).exists() {
+            let input = std::fs::read_to_string(file_path)?;
+            return Ok(Self {
+                input,
+                pos: 0,
+                line: 1,
+                col: 1,
+            });
+        }
+        Err(Error::new(ErrorKind::NotFound, "File does not exist"))
     }
 
     pub fn from_string(input: String) -> Self {

@@ -72,6 +72,29 @@ impl Diagnostic {
         }
     }
 
+    // the next two functions are not currently used, but they are provided for completeness and
+    // future use, do not remove them
+    #[allow(dead_code)]
+    pub fn warning() -> Self {
+        Self {
+            level: Level::Warning,
+            message: String::new(),
+            labels: Vec::new(),
+            help: None,
+            file_id: None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn note() -> Self {
+        Self {
+            level: Level::Note,
+            message: String::new(),
+            labels: Vec::new(),
+            help: None,
+            file_id: None,
+        }
+    }
     pub fn with_message(mut self, message: impl Into<String>) -> Self {
         self.message = message.into();
         self
