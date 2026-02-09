@@ -22,6 +22,67 @@ use crate::semantics::{Type, Type as ResolvedType};
 use super::CodeGenerator;
 
 impl<'a> CodeGenerator<'a> {
+    fn declare_variable(
+        &mut self,
+        name: &str,
+        var_type: BasicTypeEnum<'a>,
+        value: BasicValueEnum<'a>,
+        resolved_type: &ResolvedType,
+        function: Option<&FunctionValue<'a>>,
+    ) -> Result<(), String> {
+        let existing_var = self.variables.get(name).cloned();
+
+        if let Some((existing_ptr, _, _)) = existing_var {
+            if value.is_struct_value() {
+                self.builder
+                    .build_store(existing_ptr, value)
+                    .map_err(|e| e.to_string())?;
+            } else {
+                let boxed = self.box_value(value);
+                self.builder
+                    .build_store(existing_ptr, boxed)
+                    .map_err(|e| e.to_string())?;
+            }
+        } else if value.is_struct_value() {
+            let alloca = if let Some(func) = function {
+                self.create_entry_block_alloca(*func, var_type, name)?
+            } else {
+                self.builder
+                    .build_alloca(var_type, name)
+                    .map_err(|e| e.to_string())?
+            };
+            self.builder
+                .build_store(alloca, value)
+                .map_err(|e| e.to_string())?;
+            self.variables
+                .insert(name.to_string(), (alloca, var_type, resolved_type.clone()));
+        } else {
+            let boxed = self.box_value(value);
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let alloca = if let Some(func) = function {
+                self.create_entry_block_alloca(*func, ptr_type.into(), name)?
+            } else {
+                self.builder
+                    .build_alloca(ptr_type, name)
+                    .map_err(|e| e.to_string())?
+            };
+            self.builder
+                .build_store(alloca, boxed)
+                .map_err(|e| e.to_string())?;
+            self.variables.insert(
+                name.to_string(),
+                (
+                    alloca,
+                    BasicTypeEnum::PointerType(ptr_type),
+                    resolved_type.clone(),
+                ),
+            );
+            if function.is_some() && self.type_needs_rc_tracking(resolved_type) {
+                self.track_rc_variable(name, alloca);
+            }
+        }
+        Ok(())
+    }
     pub(super) fn generate_statement(
         &mut self,
         stmt: &StatementNode,
@@ -29,176 +90,43 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<(), String> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
-                // Check if variable already exists BEFORE generating expression
-                // (generate_expression may modify self.variables)
-                let existing_var = self.variables.get(name).cloned();
                 let value = self.generate_expression(expr)?;
-                // Get the type from the expression directly using semantic analyzer
-                // (not from symbol table, since local variables are not stored there to avoid collisions)
                 let resolved_type = self
                     .analyzer
                     .get_expression_type(expr)
                     .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
-                // Resolve type variables using the current generic context
-                // For example, in a specialized method Chain$string.box_value, when we see
-                // auto b = Box<T>.new(), the type from expression is Box<Variable("T")>
-                // but we need to resolve it to Box<Primitive(Str)] using generic_context
                 let concrete_type = self
                     .resolve_type(&resolved_type)
                     .unwrap_or_else(|_| resolved_type.clone());
-                // Use the existing variable if we found one before expression generation
-                if let Some((existing_ptr, _, _)) = existing_var {
-                    // variable already exists - just store to it (this handles globals in main)
-                    if value.is_struct_value() {
-                        self.builder
-                            .build_store(existing_ptr, value)
-                            .map_err(|e| e.to_string())?;
-                    } else {
-                        let boxed = self.box_value(value);
-                        self.builder
-                            .build_store(existing_ptr, boxed)
-                            .map_err(|e| e.to_string())?;
-                    }
-                } else {
-                    // create new local variable
-                    if value.is_struct_value() {
-                        let var_type = value.get_type();
-                        let alloca = if let Some(func) = function {
-                            // in a function - create alloca in entry block
-                            self.create_entry_block_alloca(*func, var_type, name)?
-                        } else {
-                            // top-level (shouldn't happen as globals are pre-created)
-                            self.builder
-                                .build_alloca(var_type, name)
-                                .map_err(|e| e.to_string())?
-                        };
-                        self.builder
-                            .build_store(alloca, value)
-                            .map_err(|e| e.to_string())?;
-                        self.variables
-                            .insert(name.clone(), (alloca, var_type, concrete_type.clone()));
-                    } else {
-                        let boxed = self.box_value(value);
-                        let ptr_type = self.context.ptr_type(AddressSpace::default());
-                        let alloca = if let Some(func) = function {
-                            // in a function - create alloca in entry block
-                            self.create_entry_block_alloca(*func, ptr_type.into(), name)?
-                        } else {
-                            // top-level (shouldn't happen as globals are pre-created)
-                            self.builder
-                                .build_alloca(ptr_type, name)
-                                .map_err(|e| e.to_string())?
-                        };
-                        self.builder
-                            .build_store(alloca, boxed)
-                            .map_err(|e| e.to_string())?;
-                        self.variables.insert(
-                            name.clone(),
-                            (
-                                alloca,
-                                BasicTypeEnum::PointerType(ptr_type),
-                                concrete_type.clone(),
-                            ),
-                        );
-                        // Track for RC cleanup
-                        if function.is_some() && self.type_needs_rc_tracking(&concrete_type) {
-                            self.track_rc_variable(name, alloca);
-                        }
-                    }
-                }
+                let var_type = value.get_type();
+                self.declare_variable(name, var_type, value, &concrete_type, function)?;
             }
             StatementKind::TypedDecl(name, type_node, expr) => {
                 let var_type = self.llvm_type_from_mux_type(type_node)?;
                 let value = self.generate_expression(expr)?;
-                // Get the declared type from the type_node directly using semantic analyzer
-                // (not from symbol table, since local variables are not stored there to avoid collisions)
                 let resolved_type = self
                     .analyzer
                     .resolve_type(type_node)
                     .map_err(|e| format!("Failed to resolve type for {}: {}", name, e.message))?;
-                // check if this variable already exists in current scope (e.g., pre-created global)
-                if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
-                    // variable already exists - just store to it (this handles globals in main)
-                    if value.is_struct_value() {
-                        self.builder
-                            .build_store(existing_ptr, value)
-                            .map_err(|e| e.to_string())?;
-                    } else {
-                        let boxed = self.box_value(value);
-                        self.builder
-                            .build_store(existing_ptr, boxed)
-                            .map_err(|e| e.to_string())?;
-                    }
-                } else {
-                    // create new local variable (this handles new locals in functions)
-                    if value.is_struct_value() {
-                        let alloca = if let Some(func) = function {
-                            // in a function - create alloca in entry block
-                            self.create_entry_block_alloca(*func, var_type, name)?
-                        } else {
-                            // top-level (shouldn't happen as globals are pre-created)
-                            self.builder
-                                .build_alloca(var_type, name)
-                                .map_err(|e| e.to_string())?
-                        };
-                        self.builder
-                            .build_store(alloca, value)
-                            .map_err(|e| e.to_string())?;
-                        self.variables
-                            .insert(name.clone(), (alloca, var_type, resolved_type.clone()));
-                    } else {
-                        let boxed = self.box_value(value);
-                        let ptr_type = self.context.ptr_type(AddressSpace::default());
-                        let alloca = if let Some(func) = function {
-                            // in a function - create alloca in entry block
-                            self.create_entry_block_alloca(*func, ptr_type.into(), name)?
-                        } else {
-                            // top-level (shouldn't happen as globals are pre-created)
-                            self.builder
-                                .build_alloca(ptr_type, name)
-                                .map_err(|e| e.to_string())?
-                        };
-                        self.builder
-                            .build_store(alloca, boxed)
-                            .map_err(|e| e.to_string())?;
-                        self.variables.insert(
-                            name.clone(),
-                            (
-                                alloca,
-                                BasicTypeEnum::PointerType(ptr_type),
-                                resolved_type.clone(),
-                            ),
-                        );
-                        // Track for RC cleanup
-                        if function.is_some() && self.type_needs_rc_tracking(&resolved_type) {
-                            self.track_rc_variable(name, alloca);
-                        }
-                    }
-                }
+                self.declare_variable(name, var_type, value, &resolved_type, function)?;
             }
             StatementKind::ConstDecl(name, _, expr) => {
                 let value = self.generate_expression(expr)?;
                 let boxed = self.box_value(value);
                 let ptr_type = self.context.ptr_type(AddressSpace::default());
-                // Get the type from the expression directly using semantic analyzer
-                // (not from symbol table, since local variables are not stored there to avoid collisions)
                 let resolved_type = self
                     .analyzer
                     .get_expression_type(expr)
                     .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
-                // check if this constant already exists in current scope (e.g., pre-created global)
-                if let Some((existing_ptr, _, _)) = self.variables.get(name).cloned() {
-                    // constant already exists - just store to it
+                let existing_ptr = self.variables.get(name).map(|(p, _, _)| *p);
+                if let Some(existing_ptr) = existing_ptr {
                     self.builder
                         .build_store(existing_ptr, boxed)
                         .map_err(|e| e.to_string())?;
                 } else {
-                    // create new local constant
                     let alloca = if let Some(func) = function {
-                        // in a function - create alloca in entry block
                         self.create_entry_block_alloca(*func, ptr_type.into(), name)?
                     } else {
-                        // top-level (shouldn't happen as globals are pre-created)
                         self.builder
                             .build_alloca(ptr_type, name)
                             .map_err(|e| e.to_string())?
@@ -207,14 +135,13 @@ impl<'a> CodeGenerator<'a> {
                         .build_store(alloca, boxed)
                         .map_err(|e| e.to_string())?;
                     self.variables.insert(
-                        name.clone(),
+                        name.to_string(),
                         (
                             alloca,
                             BasicTypeEnum::PointerType(ptr_type),
                             resolved_type.clone(),
                         ),
                     );
-                    // Track for RC cleanup
                     if function.is_some() && self.type_needs_rc_tracking(&resolved_type) {
                         self.track_rc_variable(name, alloca);
                     }

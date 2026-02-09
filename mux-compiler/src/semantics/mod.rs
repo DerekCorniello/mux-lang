@@ -8,7 +8,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -73,6 +73,22 @@ impl SemanticAnalyzer {
         Self {
             module_resolver: Some(resolver),
             ..Self::new()
+        }
+    }
+
+    fn make_symbol(kind: SymbolKind, span: Span, type_: Option<Type>) -> Symbol {
+        Symbol {
+            kind,
+            span,
+            type_,
+            interfaces: std::collections::HashMap::new(),
+            methods: std::collections::HashMap::new(),
+            fields: std::collections::HashMap::new(),
+            type_params: Vec::new(),
+            original_name: None,
+            llvm_name: None,
+            default_param_count: 0,
+            variants: None,
         }
     }
 
@@ -204,19 +220,7 @@ impl SemanticAnalyzer {
             self.symbol_table
                 .add_symbol(
                     name,
-                    Symbol {
-                        kind: SymbolKind::Function,
-                        span: Span::new(0, 0), // built-in function, no source span
-                        type_: Some(func_type),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    },
+                    Self::make_symbol(SymbolKind::Function, Span::new(0, 0), Some(func_type)),
                 )
                 .expect("builtin function registration should not fail");
         }
@@ -654,50 +658,7 @@ impl SemanticAnalyzer {
                     }
                 }
                 UnaryOp::Incr | UnaryOp::Decr => {
-                    // Check if trying to modify a constant
-                    if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
-                        if let Some(symbol) = self.symbol_table.lookup(name) {
-                            if symbol.kind == SymbolKind::Constant {
-                                return Err(SemanticError::with_help(
-                                    format!("Cannot modify constant '{}'", name),
-                                    *op_span,
-                                    "Constants cannot be modified after initialization",
-                                ));
-                            }
-                        }
-                    } else if let crate::ast::ExpressionKind::FieldAccess {
-                        expr: obj_expr,
-                        field,
-                    } = &expr.kind
-                    {
-                        // Check if field is const
-                        let obj_type = self.get_expression_type(obj_expr)?;
-                        if let Type::Named(class_name, _) = &obj_type {
-                            if let Some(symbol) = self.symbol_table.lookup(class_name) {
-                                if let Some((_field_type, is_const)) = symbol.fields.get(field) {
-                                    if *is_const {
-                                        return Err(SemanticError {
-                                            message: format!(
-                                                "Cannot modify const field '{}'",
-                                                field
-                                            ),
-                                            span: *op_span,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    } else if let crate::ast::ExpressionKind::Unary {
-                        op: crate::ast::UnaryOp::Deref,
-                        op_span: _,
-                        expr: _,
-                        postfix: _,
-                    } = &expr.kind
-                    {
-                        // Dereference increment/decrement is allowed (e.g., (*p)++)
-                        // No const check needed
-                    }
-
+                    self.check_not_modifying_constant(expr, op_span)?;
                     let operand_type = self.get_expression_type(expr)?;
                     match operand_type {
                         Type::Primitive(crate::ast::PrimitiveType::Int) => Ok(operand_type),
@@ -793,77 +754,11 @@ impl SemanticAnalyzer {
             ExpressionKind::FieldAccess { expr, field } => {
                 let expr_type = self.get_expression_type(expr)?;
 
-                // Handle module.symbol access (e.g., shapes.create_shape)
                 if let Type::Module(module_name) = &expr_type {
-                    // Look up the imported symbols for this module
-                    if let Some(module_symbols) = self.imported_symbols.get(module_name) {
-                        if let Some(symbol) = module_symbols.get(field) {
-                            // Return the type of the symbol from the imported module
-                            symbol.type_.clone().ok_or_else(|| SemanticError {
-                                message: format!(
-                                    "Symbol '{}' in module '{}' has no type information",
-                                    field, module_name
-                                ),
-                                span: expr.span,
-                            })
-                        } else {
-                            Err(SemanticError {
-                                message: format!(
-                                    "Module '{}' has no exported symbol '{}'",
-                                    module_name, field
-                                ),
-                                span: expr.span,
-                            })
-                        }
-                    } else {
-                        Err(SemanticError {
-                            message: format!("Module '{}' not found in imports", module_name),
-                            span: expr.span,
-                        })
-                    }
+                    self.resolve_module_field(module_name, field, expr.span)
                 } else if let Type::Reference(inner) = &expr_type {
                     let inner_type = *inner.clone();
-                    if let Type::Named(name, args) = &inner_type {
-                        if let Some(symbol) = self.symbol_table.lookup(name) {
-                            if let Some((field_type, _is_const)) = symbol.fields.get(field) {
-                                let substituted = self.substitute_type_params(
-                                    field_type,
-                                    &symbol.type_params,
-                                    args,
-                                );
-                                Ok(substituted)
-                            } else {
-                                Err(SemanticError {
-                                    message: format!(
-                                        "Unknown field '{}' on type {}",
-                                        field,
-                                        format_type(&inner_type)
-                                    ),
-                                    span: expr.span,
-                                })
-                            }
-                        } else {
-                            Err(SemanticError {
-                                message: format!("Undefined type '{}'", name),
-                                span: expr.span,
-                            })
-                        }
-                    } else if let Some(method_sig) = self.get_method_sig(&inner_type, field) {
-                        Ok(Type::Function {
-                            params: method_sig.params,
-                            returns: Box::new(method_sig.return_type),
-                            default_count: 0,
-                        })
-                    } else {
-                        Err(SemanticError {
-                            message: format!(
-                                "Cannot access field '{}' on type {}",
-                                field,
-                                format_type(&inner_type)
-                            ),
-                            span: expr.span,
-                        })
-                    }
+                    self.resolve_reference_field(&inner_type, field, expr.span)
                 } else if let Some(method_sig) = self.get_method_sig(&expr_type, field) {
                     Ok(Type::Function {
                         params: method_sig.params,
@@ -871,31 +766,7 @@ impl SemanticAnalyzer {
                         default_count: 0,
                     })
                 } else if let Type::Named(name, args) = &expr_type {
-                    if let Some(symbol) = self.symbol_table.lookup(name) {
-                        if let Some((field_type, _is_const)) = symbol.fields.get(field) {
-                            let substituted =
-                                self.substitute_type_params(field_type, &symbol.type_params, args);
-                            Ok(substituted)
-                        } else {
-                            Err(SemanticError {
-                                message: format!(
-                                    "Unknown field '{}' on type {}",
-                                    field,
-                                    format_type(&expr_type)
-                                ),
-                                span: expr.span,
-                            })
-                        }
-                    } else {
-                        Err(SemanticError {
-                            message: format!(
-                                "Undefined method '{}' on type {}",
-                                field,
-                                format_type(&expr_type)
-                            ),
-                            span: expr.span,
-                        })
-                    }
+                    self.resolve_named_field(&expr_type, name, args, field, expr.span)
                 } else if let Type::Tuple(left_type, right_type) = &expr_type {
                     match field.as_str() {
                         "left" => Ok(*left_type.clone()),
@@ -1027,19 +898,7 @@ impl SemanticAnalyzer {
                     let param_type = self.resolve_type(&param.type_)?;
                     self.symbol_table.add_symbol(
                         &param.name,
-                        Symbol {
-                            kind: SymbolKind::Variable,
-                            span: param.type_.span,
-                            type_: Some(param_type),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
+                        Self::make_symbol(SymbolKind::Variable, param.type_.span, Some(param_type)),
                     )?;
                 }
                 self.analyze_block(body, None)?;
@@ -1139,6 +998,122 @@ impl SemanticAnalyzer {
                 Ok(Type::Named(name.clone(), resolved_args))
             }
         }
+    }
+
+    fn resolve_module_field(
+        &self,
+        module_name: &str,
+        field: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let module_symbols =
+            self.imported_symbols
+                .get(module_name)
+                .ok_or_else(|| SemanticError {
+                    message: format!("Module '{}' not found in imports", module_name),
+                    span,
+                })?;
+        let symbol = module_symbols.get(field).ok_or_else(|| SemanticError {
+            message: format!(
+                "Module '{}' has no exported symbol '{}'",
+                module_name, field
+            ),
+            span,
+        })?;
+        symbol.type_.clone().ok_or_else(|| SemanticError {
+            message: format!(
+                "Symbol '{}' in module '{}' has no type information",
+                field, module_name
+            ),
+            span,
+        })
+    }
+
+    fn resolve_reference_field(
+        &mut self,
+        inner_type: &Type,
+        field: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if let Type::Named(name, args) = inner_type {
+            if let Some(symbol) = self.symbol_table.lookup(name) {
+                if let Some((field_type, _)) = symbol.fields.get(field) {
+                    return Ok(self.substitute_type_params(field_type, &symbol.type_params, args));
+                }
+                if let Some(method_sig) = self.get_method_sig(inner_type, field) {
+                    return Ok(Type::Function {
+                        params: method_sig.params,
+                        returns: Box::new(method_sig.return_type),
+                        default_count: 0,
+                    });
+                }
+                return Err(SemanticError {
+                    message: format!(
+                        "Unknown field '{}' on type {}",
+                        field,
+                        format_type(inner_type)
+                    ),
+                    span,
+                });
+            }
+            return Err(SemanticError {
+                message: format!("Undefined type '{}'", name),
+                span,
+            });
+        }
+        if let Some(method_sig) = self.get_method_sig(inner_type, field) {
+            return Ok(Type::Function {
+                params: method_sig.params,
+                returns: Box::new(method_sig.return_type),
+                default_count: 0,
+            });
+        }
+        Err(SemanticError {
+            message: format!(
+                "Cannot access field '{}' on type {}",
+                field,
+                format_type(inner_type)
+            ),
+            span,
+        })
+    }
+
+    fn resolve_named_field(
+        &mut self,
+        expr_type: &Type,
+        name: &str,
+        args: &[Type],
+        field: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if let Some(symbol) = self.symbol_table.lookup(name) {
+            if let Some((field_type, _)) = symbol.fields.get(field) {
+                return Ok(self.substitute_type_params(field_type, &symbol.type_params, args));
+            }
+            if let Some(method_sig) = self.get_method_sig(expr_type, field) {
+                return Ok(Type::Function {
+                    params: method_sig.params,
+                    returns: Box::new(method_sig.return_type),
+                    default_count: 0,
+                });
+            }
+            return Err(SemanticError {
+                message: format!(
+                    "Unknown field '{}' on type {}",
+                    field,
+                    format_type(expr_type)
+                ),
+                span,
+            });
+        }
+        Err(SemanticError {
+            message: format!(
+                "Undefined method '{}' on type {}",
+                field,
+                format_type(expr_type)
+            ),
+            span,
+        })
     }
 
     fn check_type_compatibility(
@@ -1459,52 +1434,27 @@ impl SemanticAnalyzer {
     fn get_method_sig(&self, type_: &Type, method_name: &str) -> Option<MethodSig> {
         match type_ {
             Type::Named(name, args) => {
-                if let Some(symbol) = self.symbol_table.lookup(name) {
-                    if let Some(sig) = symbol.methods.get(method_name) {
-                        if args.is_empty() {
-                            return Some(sig.clone());
-                        } else {
-                            // Substitute type parameters for instantiated generics
-                            let substituted_params = sig
-                                .params
-                                .iter()
-                                .map(|p| self.substitute_type_params(p, &symbol.type_params, args))
-                                .collect();
-                            let substituted_return = self.substitute_type_params(
-                                &sig.return_type,
-                                &symbol.type_params,
-                                args,
-                            );
-                            return Some(MethodSig {
-                                params: substituted_params,
-                                return_type: substituted_return,
-                                is_static: false,
-                            });
-                        }
-                    }
-                    for interface_methods in symbol.interfaces.values() {
-                        if let Some(sig) = interface_methods.get(method_name) {
-                            return Some(sig.clone());
-                        }
-                    }
+                let symbol = self.symbol_table.lookup(name)?;
+                if let Some(sig) = symbol.methods.get(method_name) {
+                    return Some(if args.is_empty() {
+                        sig.clone()
+                    } else {
+                        self.substitute_method_sig(sig, &symbol.type_params, args)
+                    });
                 }
-                None
+                self.find_interface_method(&symbol, method_name)
             }
             Type::Variable(var) | Type::Generic(var) => {
-                if let Some(bounds) = self.current_bounds.get(var) {
-                    for bound in bounds {
-                        // First check if it's a built-in interface
-                        if let Some(sig) = self.get_builtin_interface_method(bound, method_name) {
+                let bounds = self.current_bounds.get(var)?;
+                for bound in bounds {
+                    if let Some(sig) = self.get_builtin_interface_method(bound, method_name) {
+                        return Some(sig);
+                    }
+                    if let Some(interface_symbol) = self.symbol_table.lookup(bound) {
+                        if let Some(sig) =
+                            self.find_interface_method(&interface_symbol, method_name)
+                        {
                             return Some(sig);
-                        }
-                        // Then check the symbol table
-                        if let Some(interface_symbol) = self.symbol_table.lookup(bound) {
-                            if let Some(interface_methods) = interface_symbol.interfaces.get(bound)
-                            {
-                                if let Some(sig) = interface_methods.get(method_name) {
-                                    return Some(sig.clone());
-                                }
-                            }
                         }
                     }
                 }
@@ -1882,6 +1832,38 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn find_interface_method(
+        &self,
+        symbol: &crate::semantics::Symbol,
+        method_name: &str,
+    ) -> Option<MethodSig> {
+        for interface_methods in symbol.interfaces.values() {
+            if let Some(sig) = interface_methods.get(method_name) {
+                return Some(sig.clone());
+            }
+        }
+        None
+    }
+
+    fn substitute_method_sig(
+        &self,
+        sig: &MethodSig,
+        type_params: &[(String, Vec<String>)],
+        args: &[Type],
+    ) -> MethodSig {
+        let substituted_params = sig
+            .params
+            .iter()
+            .map(|p| self.substitute_type_params(p, type_params, args))
+            .collect();
+        let substituted_return = self.substitute_type_params(&sig.return_type, type_params, args);
+        MethodSig {
+            params: substituted_params,
+            return_type: substituted_return,
+            is_static: false,
+        }
+    }
+
     fn resolve_binary_operator(
         &self,
         left_type: &Type,
@@ -2118,19 +2100,11 @@ impl SemanticAnalyzer {
                     for (param_name, _) in type_params {
                         let _ = self.symbol_table.add_symbol(
                             param_name,
-                            Symbol {
-                                kind: SymbolKind::Type,
-                                span: *node.span(),
-                                type_: Some(Type::Generic(param_name.clone())),
-                                interfaces: std::collections::HashMap::new(),
-                                methods: std::collections::HashMap::new(),
-                                fields: std::collections::HashMap::new(),
-                                type_params: Vec::new(),
-                                original_name: None,
-                                llvm_name: None,
-                                default_param_count: 0,
-                                variants: None,
-                            },
+                            Self::make_symbol(
+                                SymbolKind::Type,
+                                *node.span(),
+                                Some(Type::Generic(param_name.clone())),
+                            ),
                         );
                     }
 
@@ -2531,19 +2505,7 @@ impl SemanticAnalyzer {
         if let Some(self_type) = self_type {
             self.symbol_table.add_symbol(
                 "self",
-                Symbol {
-                    kind: SymbolKind::Variable,
-                    span: func.span,
-                    type_: Some(self_type),
-                    interfaces: std::collections::HashMap::new(),
-                    methods: std::collections::HashMap::new(),
-                    fields: std::collections::HashMap::new(),
-                    type_params: Vec::new(),
-                    original_name: None,
-                    llvm_name: None,
-                    default_param_count: 0,
-                    variants: None,
-                },
+                Self::make_symbol(SymbolKind::Variable, func.span, Some(self_type)),
             )?;
         }
 
@@ -2551,19 +2513,7 @@ impl SemanticAnalyzer {
             let param_type = self.resolve_type(&param.type_)?;
             self.symbol_table.add_symbol(
                 &param.name,
-                Symbol {
-                    kind: SymbolKind::Variable,
-                    span: param.type_.span,
-                    type_: Some(param_type),
-                    interfaces: std::collections::HashMap::new(),
-                    methods: std::collections::HashMap::new(),
-                    fields: std::collections::HashMap::new(),
-                    type_params: Vec::new(),
-                    original_name: None,
-                    llvm_name: None,
-                    default_param_count: 0,
-                    variants: None,
-                },
+                Self::make_symbol(SymbolKind::Variable, param.type_.span, Some(param_type)),
             )?;
         }
 
@@ -2765,19 +2715,7 @@ impl SemanticAnalyzer {
                 }
                 self.symbol_table.add_symbol(
                     name,
-                    Symbol {
-                        kind: SymbolKind::Variable,
-                        span: stmt.span,
-                        type_: Some(expr_type),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    },
+                    Self::make_symbol(SymbolKind::Variable, stmt.span, Some(expr_type)),
                 )?;
             }
             StatementKind::TypedDecl(name, type_node, expr) => {
@@ -2787,19 +2725,7 @@ impl SemanticAnalyzer {
                 self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
                 self.symbol_table.add_symbol(
                     name,
-                    Symbol {
-                        kind: SymbolKind::Variable,
-                        span: stmt.span,
-                        type_: Some(declared_type),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    },
+                    Self::make_symbol(SymbolKind::Variable, stmt.span, Some(declared_type)),
                 )?;
             }
             StatementKind::Expression(expr) => {
@@ -2817,19 +2743,7 @@ impl SemanticAnalyzer {
                 self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
                 self.symbol_table.add_symbol(
                     name,
-                    Symbol {
-                        kind: SymbolKind::Constant,
-                        span: stmt.span,
-                        type_: Some(declared_type),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    },
+                    Self::make_symbol(SymbolKind::Constant, stmt.span, Some(declared_type)),
                 )?;
             }
             StatementKind::If {
@@ -2868,19 +2782,7 @@ impl SemanticAnalyzer {
                 };
                 self.symbol_table.add_symbol(
                     var,
-                    Symbol {
-                        kind: SymbolKind::Variable,
-                        span: stmt.span,
-                        type_: Some(var_type),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    },
+                    Self::make_symbol(SymbolKind::Variable, stmt.span, Some(var_type)),
                 )?;
                 self.analyze_block(body, files.as_deref_mut())?;
                 self.symbol_table.pop_scope()?;
@@ -3402,38 +3304,14 @@ impl SemanticAnalyzer {
                         }
                     }
                     Type::Named(enum_name, _) => {
-                        // For user enums, check if the variant exists and set arg types
-                        if let Some(symbol) = self.symbol_table.lookup(enum_name) {
-                            if let Some(sig) = symbol.methods.get(name) {
-                                if args.len() != sig.params.len() {
-                                    return Err(SemanticError {
-                                        message: format!(
-                                            "Pattern {} has {} args, expected {}",
-                                            name,
-                                            args.len(),
-                                            sig.params.len()
-                                        ),
-                                        span,
-                                    });
-                                }
-                                for (arg, param_type) in args.iter().zip(&sig.params) {
-                                    self.set_pattern_types(arg, param_type, span)?;
-                                }
-                            } else {
-                                return Err(SemanticError {
-                                    message: format!(
-                                        "Unknown variant {} for enum {}",
-                                        name, enum_name
-                                    ),
+                        let symbol =
+                            self.symbol_table
+                                .lookup(enum_name)
+                                .ok_or_else(|| SemanticError {
+                                    message: format!("Unknown enum {}", enum_name),
                                     span,
-                                });
-                            }
-                        } else {
-                            return Err(SemanticError {
-                                message: format!("Unknown enum {}", enum_name),
-                                span,
-                            });
-                        }
+                                })?;
+                        self.match_enum_variant(name, args, enum_name, &symbol, span)?;
                     }
                     _ => {
                         return Err(SemanticError {
@@ -3483,6 +3361,35 @@ impl SemanticAnalyzer {
                 }
             }
             PatternNode::Wildcard => {} // no binding
+        }
+        Ok(())
+    }
+
+    fn match_enum_variant(
+        &mut self,
+        name: &str,
+        args: &[PatternNode],
+        enum_name: &str,
+        symbol: &crate::semantics::Symbol,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let sig = symbol.methods.get(name).ok_or_else(|| SemanticError {
+            message: format!("Unknown variant {} for enum {}", name, enum_name),
+            span,
+        })?;
+        if args.len() != sig.params.len() {
+            return Err(SemanticError {
+                message: format!(
+                    "Pattern {} has {} args, expected {}",
+                    name,
+                    args.len(),
+                    sig.params.len()
+                ),
+                span,
+            });
+        }
+        for (arg, param_type) in args.iter().zip(&sig.params) {
+            self.set_pattern_types(arg, param_type, span)?;
         }
         Ok(())
     }
@@ -4146,28 +4053,19 @@ impl SemanticAnalyzer {
                 }
             }
             ImportSpec::Item { item, alias } => {
-                // Support selective std imports: import std.io.print
                 let symbol_name = alias.as_ref().unwrap_or(item);
                 if let Some(sig) = self.get_builtin_sig(item) {
                     self.symbol_table.add_symbol(
                         symbol_name,
-                        Symbol {
-                            kind: SymbolKind::Function,
+                        Self::make_symbol(
+                            SymbolKind::Function,
                             span,
-                            type_: Some(Type::Function {
+                            Some(Type::Function {
                                 params: sig.params.clone(),
                                 returns: Box::new(sig.return_type.clone()),
                                 default_count: 0,
                             }),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
+                        ),
                     )?;
                 }
             }
@@ -4335,20 +4233,52 @@ impl SemanticAnalyzer {
                 self.find_free_variables_in_expression(else_expr, local_vars, free_vars)?;
             }
             ExpressionKind::Lambda { params, body, .. } => {
-                // For nested lambdas, we need to find free variables that escape to the outer scope
-                // The lambda's own parameters are local to it, so create a new local_vars set
                 let mut inner_local_vars = local_vars.clone();
                 for param in params {
                     inner_local_vars.insert(param.name.clone());
                 }
-                // Recursively find free variables in the nested lambda's body
-                // Any variables found that aren't in our local_vars will be captured by us too
                 for stmt in body {
                     self.find_free_variables_in_statement(stmt, &mut inner_local_vars, free_vars)?;
                 }
             }
-            // Literals and other expressions don't have free variables
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn check_not_modifying_constant(
+        &mut self,
+        expr: &ExpressionNode,
+        op_span: &Span,
+    ) -> Result<(), SemanticError> {
+        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
+            if let Some(symbol) = self.symbol_table.lookup(name) {
+                if symbol.kind == SymbolKind::Constant {
+                    return Err(SemanticError::with_help(
+                        format!("Cannot modify constant '{}'", name),
+                        *op_span,
+                        "Constants cannot be modified after initialization",
+                    ));
+                }
+            }
+        } else if let crate::ast::ExpressionKind::FieldAccess {
+            expr: obj_expr,
+            field,
+        } = &expr.kind
+        {
+            let obj_type = self.get_expression_type(obj_expr)?;
+            if let Type::Named(class_name, _) = &obj_type {
+                if let Some(symbol) = self.symbol_table.lookup(class_name) {
+                    if let Some((_, is_const)) = symbol.fields.get(field) {
+                        if *is_const {
+                            return Err(SemanticError {
+                                message: format!("Cannot modify const field '{}'", field),
+                                span: *op_span,
+                            });
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
