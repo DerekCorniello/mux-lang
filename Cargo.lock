@@ -233,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "mux-lang"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "inkwell",
@@ -246,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "mux-runtime"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "gc",
  "lazy_static",
