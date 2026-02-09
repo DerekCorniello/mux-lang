@@ -1398,6 +1398,35 @@ impl<'a> Parser<'a> {
                 self.current += 1; // consume the underscore
                 Ok(PatternNode::Wildcard)
             }
+            TokenType::OpenBracket => {
+                self.current += 1; // consume '['
+                self.skip_newlines();
+                let mut elements = Vec::new();
+                let mut rest = None;
+
+                if !self.check(TokenType::CloseBracket) {
+                    loop {
+                        self.skip_newlines();
+                        // Check for rest pattern: ..name
+                        if self.check(TokenType::DotDot) {
+                            self.current += 1; // consume '..'
+                            let rest_pattern = self.parse_pattern()?;
+                            rest = Some(Box::new(rest_pattern));
+                            self.skip_newlines();
+                            break;
+                        }
+                        elements.push(self.parse_pattern()?);
+                        self.skip_newlines();
+                        if !self.matches(&[TokenType::Comma]) {
+                            break;
+                        }
+                        self.skip_newlines();
+                    }
+                }
+
+                self.consume_token(TokenType::CloseBracket, "Expected ']' after list pattern")?;
+                Ok(PatternNode::List { elements, rest })
+            }
 
             _ => {
                 let token = self.consume();

@@ -54,6 +54,7 @@ pub enum TokenType {
     OpenBracket,  // [
     CloseBracket, // ]
     Dot,          // .
+    DotDot,       // ..
     Comma,
     Colon,
 

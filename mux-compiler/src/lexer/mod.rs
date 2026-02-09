@@ -125,6 +125,10 @@ impl<'a> Lexer<'a> {
             '_' => Ok(Token::new(TokenType::Underscore, start_span)),
             '.' => match self.source.peek() {
                 Some(c) if c.is_ascii_digit() => self.read_number('.', start_span),
+                Some('.') => {
+                    self.source.next_char();
+                    Ok(Token::new(TokenType::DotDot, start_span))
+                }
                 _ => Ok(Token::new(TokenType::Dot, start_span)),
             },
             _ => self.get_multichar_token(c, start_span),

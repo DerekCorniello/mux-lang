@@ -1,0 +1,13 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+forty-two
+greeting
+yes
+got: 99
+alpha
+admin
+three: 1, 2, 3
+between 10 and 20
+Hello, world

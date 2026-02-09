@@ -514,6 +514,12 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_value_list_slice",
+            i8_ptr.fn_type(&[i8_ptr.into(), i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_list_pop_back",
             i8_ptr.fn_type(&[list_ptr.into()], false),
             None,

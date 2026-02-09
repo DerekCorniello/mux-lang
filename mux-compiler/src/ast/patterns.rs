@@ -10,6 +10,12 @@ pub enum PatternNode {
         name: String,
         args: Vec<PatternNode>,
     },
+
+    // Structural patterns for collections
+    List {
+        elements: Vec<PatternNode>,
+        rest: Option<Box<PatternNode>>, // None = exact match, Some(..) = [a, b, ..rest]
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
