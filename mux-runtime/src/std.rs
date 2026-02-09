@@ -184,6 +184,25 @@ pub extern "C" fn mux_value_list_get_value(val: *const Value, index: i64) -> *mu
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_list_slice(val: *const Value, start: i64, end: i64) -> *mut Value {
+    let val = unsafe { &*val };
+    if let Value::List(vec) = val {
+        let len = vec.len() as i64;
+        let s = start.max(0) as usize;
+        let e = end.min(len) as usize;
+        let sliced = if s < e {
+            vec[s..e].to_vec()
+        } else {
+            Vec::new()
+        };
+        mux_rc_alloc(Value::List(sliced))
+    } else {
+        mux_rc_alloc(Value::List(Vec::new()))
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn mux_value_to_list(val: *mut Value) -> *mut crate::list::List {
     // Clone the value instead of taking ownership
     let val = unsafe { (*val).clone() };

@@ -3185,63 +3185,111 @@ impl SemanticAnalyzer {
         arms: &[crate::ast::MatchArm],
         expr_span: Span,
     ) -> Result<(), SemanticError> {
-        // Only check for Named types (user-defined enums)
-        if let Type::Named(type_name, _) = expr_type {
-            // Look up the enum symbol
-            if let Some(symbol) = self.symbol_table.lookup(type_name) {
-                if let Some(variant_names) = &symbol.variants {
-                    let mut covered: std::collections::HashSet<String> =
-                        std::collections::HashSet::new();
-                    let mut has_wildcard = false;
+        match expr_type {
+            Type::Named(type_name, _) => {
+                // Check if this is an enum type
+                if let Some(symbol) = self.symbol_table.lookup(type_name) {
+                    if let Some(variant_names) = &symbol.variants {
+                        // Enum exhaustiveness: check all variants covered
+                        let mut covered: std::collections::HashSet<String> =
+                            std::collections::HashSet::new();
+                        let mut has_wildcard = false;
 
-                    for arm in arms {
-                        match &arm.pattern {
-                            PatternNode::Wildcard => {
-                                has_wildcard = true;
-                                break;
-                            }
-                            PatternNode::EnumVariant { name, .. } => {
-                                covered.insert(name.clone());
-                            }
-                            PatternNode::Identifier(name) => {
-                                // Check if this identifier is actually a variant name
-                                if variant_names.contains(name) {
+                        for arm in arms {
+                            match &arm.pattern {
+                                PatternNode::Wildcard => {
+                                    has_wildcard = true;
+                                    break;
+                                }
+                                PatternNode::EnumVariant { name, .. } => {
                                     covered.insert(name.clone());
                                 }
-                                // Otherwise it's a variable binding, doesn't cover a specific variant
+                                PatternNode::Identifier(name) => {
+                                    if variant_names.contains(name) {
+                                        covered.insert(name.clone());
+                                    }
+                                }
+                                _ => {}
                             }
-                            // Literals don't cover specific variants
-                            _ => {}
                         }
-                    }
 
-                    // If there's a wildcard, pattern is exhaustive by design
-                    if has_wildcard {
+                        if has_wildcard {
+                            return Ok(());
+                        }
+
+                        let uncovered: Vec<&String> = variant_names
+                            .iter()
+                            .filter(|v| !covered.contains(*v))
+                            .collect();
+
+                        if !uncovered.is_empty() {
+                            let uncovered_list = uncovered
+                                .iter()
+                                .map(|s| s.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            return Err(SemanticError {
+                                message: format!(
+                                    "Non-exhaustive match: patterns not covering all variants of '{}'. Missing: {}",
+                                    type_name, uncovered_list
+                                ),
+                                span: expr_span,
+                            });
+                        }
                         return Ok(());
                     }
-
-                    // Check if all variants are covered
-                    let uncovered: Vec<&String> = variant_names
-                        .iter()
-                        .filter(|v| !covered.contains(*v))
-                        .collect();
-
-                    if !uncovered.is_empty() {
-                        let uncovered_list = uncovered
-                            .iter()
-                            .map(|s| s.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        return Err(SemanticError {
-                            message: format!(
-                                "Non-exhaustive match: patterns not covering all variants of '{}'. Missing: {}",
-                                type_name, uncovered_list
-                            ),
-                            span: expr_span,
-                        });
+                }
+                // Named type but not an enum: require wildcard
+                self.require_wildcard_pattern(arms, expr_type, expr_span)
+            }
+            Type::Optional(_) => {
+                // Optional has built-in Some/None exhaustiveness
+                let has_some = arms.iter().any(|arm| matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Some"));
+                let has_none = arms.iter().any(|arm| matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "None"));
+                let has_wildcard = arms
+                    .iter()
+                    .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
+                if has_wildcard || (has_some && has_none) {
+                    Ok(())
+                } else {
+                    let mut missing = Vec::new();
+                    if !has_some {
+                        missing.push("Some");
                     }
+                    if !has_none {
+                        missing.push("None");
+                    }
+                    Err(SemanticError {
+                        message: format!(
+                            "Non-exhaustive match: patterns not covering all variants of 'Optional'. Missing: {}",
+                            missing.join(", ")
+                        ),
+                        span: expr_span,
+                    })
                 }
             }
+            // Non-enum types: require wildcard pattern for exhaustiveness
+            _ => self.require_wildcard_pattern(arms, expr_type, expr_span),
+        }
+    }
+
+    fn require_wildcard_pattern(
+        &self,
+        arms: &[crate::ast::MatchArm],
+        expr_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let has_wildcard = arms
+            .iter()
+            .any(|arm| matches!(arm.pattern, PatternNode::Wildcard));
+        if !has_wildcard {
+            return Err(SemanticError {
+                message: format!(
+                    "Non-exhaustive match: type '{}' requires a wildcard '_' pattern",
+                    format_type(expr_type)
+                ),
+                span: expr_span,
+            });
         }
         Ok(())
     }
@@ -3256,22 +3304,43 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         match pattern {
             PatternNode::Identifier(name) => {
-                self.symbol_table.add_symbol(
-                    name,
-                    Symbol {
-                        kind: SymbolKind::Variable,
-                        span,
-                        type_: Some(expected_type.clone()),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    },
-                )?;
+                // Check if this identifier is a constant (used as a value pattern)
+                let is_constant = self
+                    .symbol_table
+                    .lookup(name)
+                    .map(|s| s.kind == SymbolKind::Constant)
+                    .unwrap_or(false);
+
+                if is_constant {
+                    // Constant pattern: validate type compatibility, no variable binding
+                    let const_type = self
+                        .symbol_table
+                        .lookup(name)
+                        .and_then(|s| s.type_.clone())
+                        .ok_or_else(|| SemanticError {
+                            message: format!("Constant '{}' has no type", name),
+                            span,
+                        })?;
+                    self.check_type_compatibility(&const_type, expected_type, span)?;
+                } else {
+                    // Variable binding pattern
+                    self.symbol_table.add_symbol(
+                        name,
+                        Symbol {
+                            kind: SymbolKind::Variable,
+                            span,
+                            type_: Some(expected_type.clone()),
+                            interfaces: std::collections::HashMap::new(),
+                            methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
+                            type_params: Vec::new(),
+                            original_name: None,
+                            llvm_name: None,
+                            default_param_count: 0,
+                            variants: None,
+                        },
+                    )?;
+                }
             }
             PatternNode::EnumVariant { name, args } => {
                 match expected_type {
@@ -3356,8 +3425,43 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            PatternNode::Literal(_) => {} // literals don't bind variables
-            PatternNode::Wildcard => {}   // no binding
+            PatternNode::Literal(lit) => {
+                // Validate type compatibility between literal and match expression
+                let literal_type = match lit {
+                    crate::ast::LiteralNode::Integer(_) => Type::Primitive(PrimitiveType::Int),
+                    crate::ast::LiteralNode::Float(_) => Type::Primitive(PrimitiveType::Float),
+                    crate::ast::LiteralNode::String(_) => Type::Primitive(PrimitiveType::Str),
+                    crate::ast::LiteralNode::Boolean(_) => Type::Primitive(PrimitiveType::Bool),
+                    crate::ast::LiteralNode::Char(_) => Type::Primitive(PrimitiveType::Char),
+                };
+                self.check_type_compatibility(&literal_type, expected_type, span)?;
+            }
+            PatternNode::List { elements, rest } => {
+                // Validate that expected type is a list type
+                let inner_type = match expected_type {
+                    Type::List(inner) => (**inner).clone(),
+                    Type::EmptyList => Type::Void,
+                    _ => {
+                        return Err(SemanticError {
+                            message: format!(
+                                "List pattern cannot match type {}",
+                                format_type(expected_type)
+                            ),
+                            span,
+                        });
+                    }
+                };
+                // Set types for each element pattern
+                for elem in elements {
+                    self.set_pattern_types(elem, &inner_type, span)?;
+                }
+                // Handle rest pattern (..rest binds to a list of the same inner type)
+                if let Some(rest_pat) = rest {
+                    let rest_type = Type::List(Box::new(inner_type));
+                    self.set_pattern_types(rest_pat, &rest_type, span)?;
+                }
+            }
+            PatternNode::Wildcard => {} // no binding
         }
         Ok(())
     }
@@ -3370,6 +3474,14 @@ impl SemanticAnalyzer {
             PatternNode::EnumVariant { args, .. } => {
                 for arg in args {
                     self.analyze_pattern(arg)?;
+                }
+            }
+            PatternNode::List { elements, rest } => {
+                for elem in elements {
+                    self.analyze_pattern(elem)?;
+                }
+                if let Some(rest_pat) = rest {
+                    self.analyze_pattern(rest_pat)?;
                 }
             }
             PatternNode::Literal(_) => {} // literals don't bind variables

@@ -286,7 +286,7 @@ pub mod string;
 pub mod tuple;
 
 // Re-export extern "C" functions for C linkage
-pub use std::{mux_value_list_get_value, mux_value_list_length};
+pub use std::{mux_value_list_get_value, mux_value_list_length, mux_value_list_slice};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_float_value(f: f64) -> *mut Value {

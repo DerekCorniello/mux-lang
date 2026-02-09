@@ -815,458 +815,22 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| format!("Type inference failed: {}", e))?,
                 };
 
-                let enum_name = match &match_expr.kind {
-                    ExpressionKind::Identifier(name) => {
-                        // first check if this is a temporary variable created for complex expressions
-                        if name.starts_with("match_temp_") {
-                            if let Some((_, _, var_type)) = self.variables.get(name) {
-                                match var_type {
-                                    Type::Named(n, _) => n.clone(),
-                                    Type::Optional(_) => "Optional".to_string(),
-                                    _ => {
-                                        return Err(format!(
-                                            "Match expression must be an enum type, got {:?}",
-                                            var_type
-                                        ));
-                                    }
-                                }
-                            } else {
-                                return Err(format!("Temporary variable {} not found", name));
-                            }
-                        } else if let Some((_, _, var_type)) = self.variables.get(name) {
-                            // Check local variables first (they're not in all_symbols anymore)
-                            match var_type {
-                                Type::Named(n, _) => n.clone(),
-                                Type::Optional(_) => "Optional".to_string(),
-                                _ => {
-                                    return Err("Match expression must be an enum type".to_string());
-                                }
-                            }
-                        } else if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
-                            // Fall back to symbol table for globals (enums, classes, etc.)
-                            if let Some(symbol_type) = &symbol.type_ {
-                                match symbol_type {
-                                    Type::Named(n, _) => n.clone(),
-                                    Type::Optional(_) => "Optional".to_string(),
-                                    _ => {
-                                        return Err(
-                                            "Match expression must be an enum type".to_string()
-                                        );
-                                    }
-                                }
-                            } else {
-                                return Err("Match expression must be an enum type".to_string());
-                            }
-                        } else {
-                            return Err(format!("Symbol {} not found", name));
-                        }
-                    }
-                    ExpressionKind::FieldAccess { expr, field } => {
-                        if let ExpressionKind::Identifier(obj) = &expr.kind {
-                            if obj == "self" {
-                                // handle self.field
-                                if let Some((_, _, Type::Named(class_name, _))) = self
-                                    .variables
-                                    .get("self")
-                                    .or_else(|| self.global_variables.get("self"))
-                                {
-                                    if let Some(fields) = self.classes.get(class_name) {
-                                        if let Some(f) = fields.iter().find(|f| f.name == *field) {
-                                            if let TypeKind::Named(n, _) = &f.type_.kind {
-                                                n.clone()
-                                            } else {
-                                                return Err(
-                                                    "Match field must be enum type".to_string()
-                                                );
-                                            }
-                                        } else {
-                                            return Err(format!(
-                                                "Field {} not found in class {}",
-                                                field, class_name
-                                            ));
-                                        }
-                                    } else {
-                                        return Err(format!("Class {} not found", class_name));
-                                    }
-                                } else {
-                                    return Err("Self not found".to_string());
-                                }
-                            } else {
-                                // handle obj.field where obj is not self
-                                if let Some((_, _, var_type)) = self
-                                    .variables
-                                    .get(obj)
-                                    .or_else(|| self.global_variables.get(obj))
-                                {
-                                    if let Type::Named(class_name, _) = var_type {
-                                        if let Some(fields) = self.classes.get(class_name) {
-                                            if let Some(f) =
-                                                fields.iter().find(|f| f.name == *field)
-                                            {
-                                                if let TypeKind::Named(n, _) = &f.type_.kind {
-                                                    n.clone()
-                                                } else {
-                                                    return Err(
-                                                        "Match field must be enum type".to_string()
-                                                    );
-                                                }
-                                            } else {
-                                                return Err(format!(
-                                                    "Field {} not found in class {}",
-                                                    field, class_name
-                                                ));
-                                            }
-                                        } else {
-                                            return Err(format!("Class {} not found", class_name));
-                                        }
-                                    } else {
-                                        return Err(format!(
-                                            "Variable {} is not a class instance",
-                                            obj
-                                        ));
-                                    }
-                                } else {
-                                    return Err(format!("Variable {} not found", obj));
-                                }
-                            }
-                        } else {
-                            return Err(
-                                "Match expression must be identifier, self.field, or obj.field"
-                                    .to_string(),
-                            );
-                        }
-                    }
-                    ExpressionKind::Call { func, .. } => {
-                        // handle constructor calls like Some(15), None, etc.
-                        if let ExpressionKind::Identifier(constructor_name) = &func.kind {
-                            // map common constructor names to their enum types
-                            match constructor_name.as_str() {
-                                "Some" | "None" => "Optional".to_string(),
-                                "Ok" | "Err" => "Result".to_string(),
-                                _ => {
-                                    // for other constructors, try to look up as enum type
-                                    if let Some(symbol) =
-                                        self.analyzer.symbol_table().lookup(constructor_name)
-                                    {
-                                        if let Some(Type::Named(type_name, _)) = &symbol.type_ {
-                                            type_name.clone()
-                                        } else {
-                                            return Err("Constructor must be enum type".to_string());
-                                        }
-                                    } else {
-                                        return Err(format!(
-                                            "Constructor {} not found",
-                                            constructor_name
-                                        ));
-                                    }
-                                }
-                            }
-                        } else {
-                            return Err(
-                                "Match expression constructor calls must be simple identifiers"
-                                    .to_string(),
-                            );
-                        }
-                    }
-                    _ => return Err(
-                        "Match expression must be identifier, field access, or constructor call"
-                            .to_string(),
-                    ),
-                };
-                let expr_ptr_opt = if enum_name == "Optional" || enum_name == "Result" {
-                    // for Optional/Result constructor calls, we need to allocate the struct and get a pointer
-                    if expr_val.is_pointer_value() {
-                        Some(expr_val.into_pointer_value())
-                    } else {
-                        // this is a struct value (from constructor call), allocate it and get pointer
-                        let struct_val = expr_val.into_struct_value();
-                        let alloca = self
-                            .builder
-                            .build_alloca(struct_val.get_type(), "temp_enum")
-                            .map_err(|e| e.to_string())?;
-                        self.builder
-                            .build_store(alloca, struct_val)
-                            .map_err(|e| e.to_string())?;
-                        Some(alloca)
-                    }
+                // Determine if this is an enum match or a switch-style match
+                let is_enum = self.is_enum_match_type(&match_expr_type);
+
+                if is_enum {
+                    // Enum-based matching (discriminant comparison)
+                    self.generate_enum_match(
+                        function,
+                        &match_expr,
+                        &match_expr_type,
+                        expr_val,
+                        arms,
+                    )?;
                 } else {
-                    None
-                };
-
-                // get discriminant using centralized function
-                let discriminant = self.load_enum_discriminant(&enum_name, expr_val)?;
-
-                // create temporary pointer for field extraction in match arms
-                let temp_ptr_opt = if expr_val.is_pointer_value() {
-                    Some(expr_val.into_pointer_value())
-                } else {
-                    // for struct values, allocate temporary storage
-                    let struct_type = self
-                        .type_map
-                        .get(&enum_name)
-                        .ok_or_else(|| format!("Enum {} not found in type map", enum_name))?
-                        .into_struct_type();
-                    let temp_ptr = self
-                        .builder
-                        .build_alloca(struct_type, "temp_enum_struct")
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_store(temp_ptr, expr_val)
-                        .map_err(|e| e.to_string())?;
-                    Some(temp_ptr)
-                };
-
-                let mut current_bb = self
-                    .builder
-                    .get_insert_block()
-                    .expect("Builder should have an insertion block");
-                let match_id = self.label_counter;
-                self.label_counter += 1;
-                let end_bb = self
-                    .context
-                    .append_basic_block(*function, &format!("match_end_{}", match_id));
-
-                for (i, arm) in arms.iter().enumerate() {
-                    let arm_bb = self
-                        .context
-                        .append_basic_block(*function, &format!("match_arm_{}_{}", match_id, i));
-                    let next_bb = if i < arms.len() - 1 {
-                        self.context.append_basic_block(
-                            *function,
-                            &format!("match_next_{}_{}", match_id, i),
-                        )
-                    } else {
-                        end_bb
-                    };
-
-                    self.builder.position_at_end(current_bb);
-
-                    let pattern_matches = match &arm.pattern {
-                        PatternNode::EnumVariant { name, args: _ } => {
-                            let variant_index = self.get_variant_index(&enum_name, name)?;
-                            self.build_discriminant_comparison(discriminant, variant_index)?
-                        }
-                        PatternNode::Identifier(_) => self.context.bool_type().const_int(1, false),
-                        PatternNode::Literal(_) => self.context.bool_type().const_int(1, false),
-
-                        PatternNode::Wildcard => self.context.bool_type().const_int(1, false),
-                    };
-
-                    let cond = pattern_matches;
-
-                    self.builder
-                        .build_conditional_branch(cond, arm_bb, next_bb)
-                        .map_err(|e| e.to_string())?;
-
-                    // arm body
-                    self.builder.position_at_end(arm_bb);
-
-                    // bind variables
-                    if let PatternNode::EnumVariant { name, args } = &arm.pattern {
-                        if let Some(expr_ptr) = expr_ptr_opt {
-                            if (*name == "Some" || *name == "Ok" || *name == "Err")
-                                && !args.is_empty()
-                            {
-                                if let PatternNode::Identifier(var) = &args[0] {
-                                    let data_func = if enum_name == "Optional" {
-                                        "mux_optional_data"
-                                    } else if enum_name == "Result" {
-                                        "mux_result_data"
-                                    } else {
-                                        return Err(format!("Unknown enum {}", enum_name));
-                                    };
-                                    let func = self
-                                        .module
-                                        .get_function(data_func)
-                                        .ok_or(format!("{} not found", data_func))?;
-                                    let data_call = self
-                                        .builder
-                                        .build_call(func, &[expr_ptr.into()], "data_call")
-                                        .map_err(|e| e.to_string())?;
-                                    let data_ptr = data_call
-                                        .try_as_basic_value()
-                                        .left()
-                                        .expect("data function should return a basic value")
-                                        .into_pointer_value();
-
-                                    // extract the actual value based on the variant type
-                                    let (data_val, resolved_type) = if enum_name == "Optional" {
-                                        if let Type::Optional(inner_type) = &match_expr_type {
-                                            self.extract_value_from_ptr(
-                                                data_ptr, inner_type, "Some",
-                                            )?
-                                        } else {
-                                            return Err(format!(
-                                                "Type mismatch: expected Optional, got {:?}",
-                                                match_expr_type
-                                            ));
-                                        }
-                                    } else if enum_name == "Result" {
-                                        if let Type::Named(_, generics) = &match_expr_type {
-                                            if generics.len() != 2 {
-                                                return Err(format!(
-                                                    "Result must have 2 type parameters, got {}",
-                                                    generics.len()
-                                                ));
-                                            }
-                                            let target_type = if *name == "Ok" {
-                                                &generics[0]
-                                            } else {
-                                                &generics[1]
-                                            };
-                                            let variant_name =
-                                                if *name == "Ok" { "Ok" } else { "Err" };
-                                            self.extract_value_from_ptr(
-                                                data_ptr,
-                                                target_type,
-                                                variant_name,
-                                            )?
-                                        } else {
-                                            return Err(format!(
-                                                "Type mismatch: expected Result, got {:?}",
-                                                match_expr_type
-                                            ));
-                                        }
-                                    } else {
-                                        return Err(format!(
-                                            "Unknown enum {} for value extraction",
-                                            enum_name
-                                        ));
-                                    };
-
-                                    let boxed = self.box_value(data_val);
-                                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                    let alloca = self.create_entry_alloca(ptr_type.into(), var)?;
-                                    self.builder
-                                        .build_store(alloca, boxed)
-                                        .map_err(|e| e.to_string())?;
-
-                                    self.variables.insert(
-                                        var.clone(),
-                                        (alloca, ptr_type.into(), resolved_type),
-                                    );
-                                }
-                            }
-                        } else {
-                            // custom enum - use variant-specific field information
-                            let struct_type = self
-                                .type_map
-                                .get(&enum_name)
-                                .ok_or_else(|| format!("Enum {} not found in type map", enum_name))?
-                                .into_struct_type();
-                            let field_types_clone = if let Some(variant_fields) =
-                                self.enum_variant_fields.get(&enum_name)
-                            {
-                                if let Some(field_types) = variant_fields.get(name) {
-                                    field_types.clone()
-                                } else {
-                                    return Err(format!(
-                                        "Variant {} not found in enum {}",
-                                        name, enum_name
-                                    ));
-                                }
-                            } else {
-                                return Err(format!(
-                                    "No field information found for enum {}",
-                                    enum_name
-                                ));
-                            };
-
-                            for (i, arg) in args.iter().enumerate() {
-                                if let PatternNode::Identifier(var) = arg {
-                                    let data_index = i + 1; // start after discriminant at index 0
-                                    let data_ptr = self
-                                        .builder
-                                        .build_struct_gep(
-                                            struct_type,
-                                            temp_ptr_opt.ok_or_else(|| {
-                                                "Temp pointer should be Some".to_string()
-                                            })?,
-                                            data_index as u32,
-                                            "data_ptr",
-                                        )
-                                        .map_err(|e| e.to_string())?;
-
-                                    // get the actual field type to load correctly
-                                    let field_type: BasicTypeEnum<'_> = if i < field_types_clone
-                                        .len()
-                                    {
-                                        self.type_kind_to_llvm_type(&field_types_clone[i].kind)?
-                                    } else {
-                                        return Err(format!(
-                                            "Field index {} out of bounds for enum variant {}.{} (has {} fields)",
-                                            i,
-                                            enum_name,
-                                            name,
-                                            field_types_clone.len()
-                                        ));
-                                    };
-
-                                    let data_val = self
-                                        .builder
-                                        .build_load(field_type, data_ptr, "data")
-                                        .map_err(|e| e.to_string())?;
-                                    let boxed = self.box_value(data_val);
-                                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                    let alloca = self
-                                        .builder
-                                        .build_alloca(ptr_type, var)
-                                        .map_err(|e| e.to_string())?;
-                                    self.builder
-                                        .build_store(alloca, boxed)
-                                        .map_err(|e| e.to_string())?;
-
-                                    // use the actual field type for resolved type
-                                    let resolved_type = if i < field_types_clone.len() {
-                                        self.analyzer
-                                            .resolve_type(&field_types_clone[i])
-                                            .map_err(|e| e.to_string())?
-                                    } else {
-                                        return Err(format!(
-                                            "Field index {} out of bounds for enum variant {}.{} during type resolution (has {} fields)",
-                                            i,
-                                            enum_name,
-                                            name,
-                                            field_types_clone.len()
-                                        ));
-                                    };
-
-                                    self.variables.insert(
-                                        var.clone(),
-                                        (alloca, ptr_type.into(), resolved_type),
-                                    );
-                                }
-                            }
-                        }
-                    }
-
-                    // check guard
-                    if let Some(guard) = &arm.guard {
-                        let guard_val = self.generate_expression(guard)?;
-                        let guard_pass_bb = self
-                            .context
-                            .append_basic_block(*function, &format!("match_guard_pass_{}", i));
-                        self.builder
-                            .build_conditional_branch(
-                                guard_val.into_int_value(),
-                                guard_pass_bb,
-                                next_bb,
-                            )
-                            .map_err(|e| e.to_string())?;
-                        self.builder.position_at_end(guard_pass_bb);
-                    }
-
-                    for stmt in &arm.body {
-                        self.generate_statement(stmt, Some(function))?;
-                    }
-                    self.builder
-                        .build_unconditional_branch(end_bb)
-                        .map_err(|e| e.to_string())?;
-
-                    current_bb = next_bb;
+                    // Switch-style matching for non-enum types (equality comparison)
+                    self.generate_switch_match(function, &match_expr_type, expr_val, arms)?;
                 }
-
-                self.builder.position_at_end(end_bb);
 
                 // clean up temporary variables created for complex match expressions
                 if let ExpressionKind::Identifier(temp_name) = &match_expr.kind {
@@ -1357,6 +921,869 @@ impl<'a> CodeGenerator<'a> {
             }
             _ => {} // skip other statement types for now
         }
+        Ok(())
+    }
+
+    /// Determines if a type should use enum-based (discriminant) matching.
+    fn is_enum_match_type(&self, match_type: &Type) -> bool {
+        match match_type {
+            Type::Optional(_) => true,
+            Type::Named(name, _) => {
+                // Check if it's an enum in the enum_variants map or symbol table
+                if self.enum_variants.contains_key(name) {
+                    return true;
+                }
+                if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+                    return symbol.kind == crate::semantics::SymbolKind::Enum;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Generate match code for enum types using discriminant-based comparison.
+    fn generate_enum_match(
+        &mut self,
+        function: &FunctionValue<'a>,
+        match_expr: &ExpressionNode,
+        match_expr_type: &Type,
+        expr_val: BasicValueEnum<'a>,
+        arms: &[crate::ast::MatchArm],
+    ) -> Result<(), String> {
+        let enum_name = match &match_expr.kind {
+            ExpressionKind::Identifier(name) => {
+                if name.starts_with("match_temp_") {
+                    if let Some((_, _, var_type)) = self.variables.get(name) {
+                        match var_type {
+                            Type::Named(n, _) => n.clone(),
+                            Type::Optional(_) => "Optional".to_string(),
+                            _ => {
+                                return Err(format!(
+                                    "Match expression must be an enum type, got {:?}",
+                                    var_type
+                                ));
+                            }
+                        }
+                    } else {
+                        return Err(format!("Temporary variable {} not found", name));
+                    }
+                } else if let Some((_, _, var_type)) = self.variables.get(name) {
+                    match var_type {
+                        Type::Named(n, _) => n.clone(),
+                        Type::Optional(_) => "Optional".to_string(),
+                        _ => {
+                            return Err("Match expression must be an enum type".to_string());
+                        }
+                    }
+                } else if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+                    if let Some(symbol_type) = &symbol.type_ {
+                        match symbol_type {
+                            Type::Named(n, _) => n.clone(),
+                            Type::Optional(_) => "Optional".to_string(),
+                            _ => {
+                                return Err("Match expression must be an enum type".to_string());
+                            }
+                        }
+                    } else {
+                        return Err("Match expression must be an enum type".to_string());
+                    }
+                } else {
+                    return Err(format!("Symbol {} not found", name));
+                }
+            }
+            ExpressionKind::FieldAccess { expr, field } => {
+                if let ExpressionKind::Identifier(obj) = &expr.kind {
+                    if obj == "self" {
+                        if let Some((_, _, Type::Named(class_name, _))) = self
+                            .variables
+                            .get("self")
+                            .or_else(|| self.global_variables.get("self"))
+                        {
+                            if let Some(fields) = self.classes.get(class_name) {
+                                if let Some(f) = fields.iter().find(|f| f.name == *field) {
+                                    if let TypeKind::Named(n, _) = &f.type_.kind {
+                                        n.clone()
+                                    } else {
+                                        return Err("Match field must be enum type".to_string());
+                                    }
+                                } else {
+                                    return Err(format!(
+                                        "Field {} not found in class {}",
+                                        field, class_name
+                                    ));
+                                }
+                            } else {
+                                return Err(format!("Class {} not found", class_name));
+                            }
+                        } else {
+                            return Err("Self not found".to_string());
+                        }
+                    } else {
+                        if let Some((_, _, var_type)) = self
+                            .variables
+                            .get(obj)
+                            .or_else(|| self.global_variables.get(obj))
+                        {
+                            if let Type::Named(class_name, _) = var_type {
+                                if let Some(fields) = self.classes.get(class_name) {
+                                    if let Some(f) = fields.iter().find(|f| f.name == *field) {
+                                        if let TypeKind::Named(n, _) = &f.type_.kind {
+                                            n.clone()
+                                        } else {
+                                            return Err("Match field must be enum type".to_string());
+                                        }
+                                    } else {
+                                        return Err(format!(
+                                            "Field {} not found in class {}",
+                                            field, class_name
+                                        ));
+                                    }
+                                } else {
+                                    return Err(format!("Class {} not found", class_name));
+                                }
+                            } else {
+                                return Err(format!("Variable {} is not a class instance", obj));
+                            }
+                        } else {
+                            return Err(format!("Variable {} not found", obj));
+                        }
+                    }
+                } else {
+                    return Err(
+                        "Match expression must be identifier, self.field, or obj.field".to_string(),
+                    );
+                }
+            }
+            ExpressionKind::Call { func, .. } => {
+                if let ExpressionKind::Identifier(constructor_name) = &func.kind {
+                    match constructor_name.as_str() {
+                        "Some" | "None" => "Optional".to_string(),
+                        "Ok" | "Err" => "Result".to_string(),
+                        _ => {
+                            if let Some(symbol) =
+                                self.analyzer.symbol_table().lookup(constructor_name)
+                            {
+                                if let Some(Type::Named(type_name, _)) = &symbol.type_ {
+                                    type_name.clone()
+                                } else {
+                                    return Err("Constructor must be enum type".to_string());
+                                }
+                            } else {
+                                return Err(format!("Constructor {} not found", constructor_name));
+                            }
+                        }
+                    }
+                } else {
+                    return Err(
+                        "Match expression constructor calls must be simple identifiers".to_string(),
+                    );
+                }
+            }
+            _ => {
+                return Err(
+                    "Match expression must be identifier, field access, or constructor call"
+                        .to_string(),
+                );
+            }
+        };
+
+        let expr_ptr_opt = if enum_name == "Optional" || enum_name == "Result" {
+            if expr_val.is_pointer_value() {
+                Some(expr_val.into_pointer_value())
+            } else {
+                let struct_val = expr_val.into_struct_value();
+                let alloca = self
+                    .builder
+                    .build_alloca(struct_val.get_type(), "temp_enum")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(alloca, struct_val)
+                    .map_err(|e| e.to_string())?;
+                Some(alloca)
+            }
+        } else {
+            None
+        };
+
+        let discriminant = self.load_enum_discriminant(&enum_name, expr_val)?;
+
+        let temp_ptr_opt = if expr_val.is_pointer_value() {
+            Some(expr_val.into_pointer_value())
+        } else {
+            let struct_type = self
+                .type_map
+                .get(&enum_name)
+                .ok_or_else(|| format!("Enum {} not found in type map", enum_name))?
+                .into_struct_type();
+            let temp_ptr = self
+                .builder
+                .build_alloca(struct_type, "temp_enum_struct")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(temp_ptr, expr_val)
+                .map_err(|e| e.to_string())?;
+            Some(temp_ptr)
+        };
+
+        let mut current_bb = self
+            .builder
+            .get_insert_block()
+            .expect("Builder should have an insertion block");
+        let match_id = self.label_counter;
+        self.label_counter += 1;
+        let end_bb = self
+            .context
+            .append_basic_block(*function, &format!("match_end_{}", match_id));
+
+        for (i, arm) in arms.iter().enumerate() {
+            let arm_bb = self
+                .context
+                .append_basic_block(*function, &format!("match_arm_{}_{}", match_id, i));
+            let next_bb = if i < arms.len() - 1 {
+                self.context
+                    .append_basic_block(*function, &format!("match_next_{}_{}", match_id, i))
+            } else {
+                end_bb
+            };
+
+            self.builder.position_at_end(current_bb);
+
+            let pattern_matches = match &arm.pattern {
+                PatternNode::EnumVariant { name, args: _ } => {
+                    let variant_index = self.get_variant_index(&enum_name, name)?;
+                    self.build_discriminant_comparison(discriminant, variant_index)?
+                }
+                PatternNode::Identifier(_) => self.context.bool_type().const_int(1, false),
+                PatternNode::Literal(_) => self.context.bool_type().const_int(1, false),
+                PatternNode::Wildcard => self.context.bool_type().const_int(1, false),
+                PatternNode::List { .. } => self.context.bool_type().const_int(1, false),
+            };
+
+            self.builder
+                .build_conditional_branch(pattern_matches, arm_bb, next_bb)
+                .map_err(|e| e.to_string())?;
+
+            self.builder.position_at_end(arm_bb);
+
+            // bind variables for enum variants
+            if let PatternNode::EnumVariant { name, args } = &arm.pattern {
+                if let Some(expr_ptr) = expr_ptr_opt {
+                    if (*name == "Some" || *name == "Ok" || *name == "Err") && !args.is_empty() {
+                        if let PatternNode::Identifier(var) = &args[0] {
+                            let data_func = if enum_name == "Optional" {
+                                "mux_optional_data"
+                            } else if enum_name == "Result" {
+                                "mux_result_data"
+                            } else {
+                                return Err(format!("Unknown enum {}", enum_name));
+                            };
+                            let func = self
+                                .module
+                                .get_function(data_func)
+                                .ok_or(format!("{} not found", data_func))?;
+                            let data_call = self
+                                .builder
+                                .build_call(func, &[expr_ptr.into()], "data_call")
+                                .map_err(|e| e.to_string())?;
+                            let data_ptr = data_call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("data function should return a basic value")
+                                .into_pointer_value();
+
+                            let (data_val, resolved_type) = if enum_name == "Optional" {
+                                if let Type::Optional(inner_type) = match_expr_type {
+                                    self.extract_value_from_ptr(data_ptr, inner_type, "Some")?
+                                } else {
+                                    return Err(format!(
+                                        "Type mismatch: expected Optional, got {:?}",
+                                        match_expr_type
+                                    ));
+                                }
+                            } else if enum_name == "Result" {
+                                if let Type::Named(_, generics) = match_expr_type {
+                                    if generics.len() != 2 {
+                                        return Err(format!(
+                                            "Result must have 2 type parameters, got {}",
+                                            generics.len()
+                                        ));
+                                    }
+                                    let target_type = if *name == "Ok" {
+                                        &generics[0]
+                                    } else {
+                                        &generics[1]
+                                    };
+                                    let variant_name = if *name == "Ok" { "Ok" } else { "Err" };
+                                    self.extract_value_from_ptr(
+                                        data_ptr,
+                                        target_type,
+                                        variant_name,
+                                    )?
+                                } else {
+                                    return Err(format!(
+                                        "Type mismatch: expected Result, got {:?}",
+                                        match_expr_type
+                                    ));
+                                }
+                            } else {
+                                return Err(format!(
+                                    "Unknown enum {} for value extraction",
+                                    enum_name
+                                ));
+                            };
+
+                            let boxed = self.box_value(data_val);
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let alloca = self.create_entry_alloca(ptr_type.into(), var)?;
+                            self.builder
+                                .build_store(alloca, boxed)
+                                .map_err(|e| e.to_string())?;
+
+                            self.variables
+                                .insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
+                        }
+                    }
+                } else {
+                    // custom enum - use variant-specific field information
+                    let struct_type = self
+                        .type_map
+                        .get(&enum_name)
+                        .ok_or_else(|| format!("Enum {} not found in type map", enum_name))?
+                        .into_struct_type();
+                    let field_types_clone = if let Some(variant_fields) =
+                        self.enum_variant_fields.get(&enum_name)
+                    {
+                        if let Some(field_types) = variant_fields.get(name) {
+                            field_types.clone()
+                        } else {
+                            return Err(format!(
+                                "Variant {} not found in enum {}",
+                                name, enum_name
+                            ));
+                        }
+                    } else {
+                        return Err(format!("No field information found for enum {}", enum_name));
+                    };
+
+                    for (i, arg) in args.iter().enumerate() {
+                        if let PatternNode::Identifier(var) = arg {
+                            let data_index = i + 1;
+                            let data_ptr = self
+                                .builder
+                                .build_struct_gep(
+                                    struct_type,
+                                    temp_ptr_opt
+                                        .ok_or_else(|| "Temp pointer should be Some".to_string())?,
+                                    data_index as u32,
+                                    "data_ptr",
+                                )
+                                .map_err(|e| e.to_string())?;
+
+                            let field_type: BasicTypeEnum<'_> = if i < field_types_clone.len() {
+                                self.type_kind_to_llvm_type(&field_types_clone[i].kind)?
+                            } else {
+                                return Err(format!(
+                                    "Field index {} out of bounds for enum variant {}.{} (has {} fields)",
+                                    i,
+                                    enum_name,
+                                    name,
+                                    field_types_clone.len()
+                                ));
+                            };
+
+                            let data_val = self
+                                .builder
+                                .build_load(field_type, data_ptr, "data")
+                                .map_err(|e| e.to_string())?;
+                            let boxed = self.box_value(data_val);
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let alloca = self
+                                .builder
+                                .build_alloca(ptr_type, var)
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(alloca, boxed)
+                                .map_err(|e| e.to_string())?;
+
+                            let resolved_type = if i < field_types_clone.len() {
+                                self.analyzer
+                                    .resolve_type(&field_types_clone[i])
+                                    .map_err(|e| e.to_string())?
+                            } else {
+                                return Err(format!(
+                                    "Field index {} out of bounds for enum variant {}.{} during type resolution (has {} fields)",
+                                    i,
+                                    enum_name,
+                                    name,
+                                    field_types_clone.len()
+                                ));
+                            };
+
+                            self.variables
+                                .insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
+                        }
+                    }
+                }
+            }
+
+            // check guard
+            if let Some(guard) = &arm.guard {
+                let guard_val = self.generate_expression(guard)?;
+                let guard_pass_bb = self
+                    .context
+                    .append_basic_block(*function, &format!("match_guard_pass_{}", i));
+                self.builder
+                    .build_conditional_branch(guard_val.into_int_value(), guard_pass_bb, next_bb)
+                    .map_err(|e| e.to_string())?;
+                self.builder.position_at_end(guard_pass_bb);
+            }
+
+            for stmt in &arm.body {
+                self.generate_statement(stmt, Some(function))?;
+            }
+            self.builder
+                .build_unconditional_branch(end_bb)
+                .map_err(|e| e.to_string())?;
+
+            current_bb = next_bb;
+        }
+
+        self.builder.position_at_end(end_bb);
+        Ok(())
+    }
+
+    /// Generate match code for non-enum types using equality-based comparison.
+    fn generate_switch_match(
+        &mut self,
+        function: &FunctionValue<'a>,
+        match_expr_type: &Type,
+        match_val: BasicValueEnum<'a>,
+        arms: &[crate::ast::MatchArm],
+    ) -> Result<(), String> {
+        let mut current_bb = self
+            .builder
+            .get_insert_block()
+            .expect("Builder should have an insertion block");
+        let match_id = self.label_counter;
+        self.label_counter += 1;
+        let end_bb = self
+            .context
+            .append_basic_block(*function, &format!("match_end_{}", match_id));
+
+        for (i, arm) in arms.iter().enumerate() {
+            let arm_bb = self
+                .context
+                .append_basic_block(*function, &format!("match_arm_{}_{}", match_id, i));
+            let next_bb = if i < arms.len() - 1 {
+                self.context
+                    .append_basic_block(*function, &format!("match_next_{}_{}", match_id, i))
+            } else {
+                end_bb
+            };
+
+            self.builder.position_at_end(current_bb);
+
+            let condition = match &arm.pattern {
+                PatternNode::Literal(lit) => {
+                    let pattern_val = self.generate_literal(lit)?;
+                    self.generate_value_equality(match_val, pattern_val, match_expr_type)?
+                }
+                PatternNode::Identifier(name) => {
+                    // Check if this is a constant
+                    let is_constant = self
+                        .analyzer
+                        .symbol_table()
+                        .lookup(name)
+                        .map(|s| s.kind == crate::semantics::SymbolKind::Constant)
+                        .unwrap_or(false);
+
+                    if is_constant {
+                        // Load the constant value and compare
+                        let const_val = if let Some((ptr, _, var_type)) = self
+                            .variables
+                            .get(name)
+                            .or_else(|| self.global_variables.get(name))
+                            .cloned()
+                        {
+                            let llvm_type = self.semantic_type_to_llvm(&var_type)?;
+                            self.builder
+                                .build_load(llvm_type, ptr, &format!("load_{}", name))
+                                .map_err(|e| e.to_string())?
+                        } else {
+                            return Err(format!("Constant {} not found", name));
+                        };
+                        self.generate_value_equality(match_val, const_val, match_expr_type)?
+                    } else {
+                        // Variable binding: always matches, bind the value
+                        let boxed = self.box_value(match_val);
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                        let alloca = self
+                            .builder
+                            .build_alloca(ptr_type, name)
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_store(alloca, boxed)
+                            .map_err(|e| e.to_string())?;
+                        self.variables.insert(
+                            name.clone(),
+                            (alloca, ptr_type.into(), match_expr_type.clone()),
+                        );
+                        self.context.bool_type().const_int(1, false)
+                    }
+                }
+                PatternNode::Wildcard => self.context.bool_type().const_int(1, false),
+                PatternNode::List { elements, rest } => self.generate_list_pattern_check(
+                    match_val,
+                    match_expr_type,
+                    elements,
+                    rest.as_deref(),
+                )?,
+                PatternNode::EnumVariant { .. } => {
+                    return Err("Enum variant patterns are not valid in non-enum match".to_string());
+                }
+            };
+
+            self.builder
+                .build_conditional_branch(condition, arm_bb, next_bb)
+                .map_err(|e| e.to_string())?;
+
+            self.builder.position_at_end(arm_bb);
+
+            // For list patterns, bind variables after the condition check succeeds
+            if let PatternNode::List { elements, rest } = &arm.pattern {
+                self.bind_list_pattern_variables(
+                    match_val,
+                    match_expr_type,
+                    elements,
+                    rest.as_deref(),
+                )?;
+            }
+
+            // check guard
+            if let Some(guard) = &arm.guard {
+                let guard_val = self.generate_expression(guard)?;
+                let guard_pass_bb = self
+                    .context
+                    .append_basic_block(*function, &format!("match_guard_pass_{}", i));
+                self.builder
+                    .build_conditional_branch(guard_val.into_int_value(), guard_pass_bb, next_bb)
+                    .map_err(|e| e.to_string())?;
+                self.builder.position_at_end(guard_pass_bb);
+            }
+
+            for stmt in &arm.body {
+                self.generate_statement(stmt, Some(function))?;
+            }
+            self.builder
+                .build_unconditional_branch(end_bb)
+                .map_err(|e| e.to_string())?;
+
+            current_bb = next_bb;
+        }
+
+        self.builder.position_at_end(end_bb);
+        Ok(())
+    }
+
+    /// Generate an equality comparison between two values based on their type.
+    fn generate_value_equality(
+        &mut self,
+        left: BasicValueEnum<'a>,
+        right: BasicValueEnum<'a>,
+        expr_type: &Type,
+    ) -> Result<inkwell::values::IntValue<'a>, String> {
+        match expr_type {
+            Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                let left_int = self.get_raw_int_value(left)?;
+                let right_int = self.get_raw_int_value(right)?;
+                self.builder
+                    .build_int_compare(inkwell::IntPredicate::EQ, left_int, right_int, "eq")
+                    .map_err(|e| e.to_string())
+            }
+            Type::Primitive(PrimitiveType::Bool) => {
+                let left_bool = self.get_raw_bool_value(left)?;
+                let right_bool = self.get_raw_bool_value(right)?;
+                self.builder
+                    .build_int_compare(inkwell::IntPredicate::EQ, left_bool, right_bool, "eq")
+                    .map_err(|e| e.to_string())
+            }
+            Type::Primitive(PrimitiveType::Float) => {
+                let left_float = self.get_raw_float_value(left)?;
+                let right_float = self.get_raw_float_value(right)?;
+                self.builder
+                    .build_float_compare(
+                        inkwell::FloatPredicate::OEQ,
+                        left_float,
+                        right_float,
+                        "feq",
+                    )
+                    .map_err(|e| e.to_string())
+            }
+            Type::Primitive(PrimitiveType::Str) => {
+                let left_ptr = if left.is_pointer_value() {
+                    left.into_pointer_value()
+                } else {
+                    self.box_value(left)
+                };
+                let right_ptr = if right.is_pointer_value() {
+                    right.into_pointer_value()
+                } else {
+                    self.box_value(right)
+                };
+
+                let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                let right_cstr = self.extract_c_string_from_value(right_ptr)?;
+
+                let equal_fn = self
+                    .module
+                    .get_function("mux_string_equal")
+                    .ok_or("mux_string_equal not found")?;
+                let result = self
+                    .builder
+                    .build_call(
+                        equal_fn,
+                        &[left_cstr.into(), right_cstr.into()],
+                        "string_equal",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("Call returned no value")?;
+
+                let result_i32 = result.into_int_value();
+                let zero = self.context.i32_type().const_zero();
+                self.builder
+                    .build_int_compare(inkwell::IntPredicate::NE, result_i32, zero, "to_bool")
+                    .map_err(|e| e.to_string())
+            }
+            Type::List(_)
+            | Type::Map(_, _)
+            | Type::Set(_)
+            | Type::Tuple(_, _)
+            | Type::EmptyList
+            | Type::EmptyMap
+            | Type::EmptySet => {
+                let left_ptr = if left.is_pointer_value() {
+                    left.into_pointer_value()
+                } else {
+                    self.box_value(left)
+                };
+                let right_ptr = if right.is_pointer_value() {
+                    right.into_pointer_value()
+                } else {
+                    self.box_value(right)
+                };
+
+                let equal_fn = self
+                    .module
+                    .get_function("mux_value_equal")
+                    .ok_or("mux_value_equal not found")?;
+                let result = self
+                    .builder
+                    .build_call(
+                        equal_fn,
+                        &[left_ptr.into(), right_ptr.into()],
+                        "value_equal",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("Call returned no value")?;
+
+                let result_i32 = result.into_int_value();
+                let zero = self.context.i32_type().const_zero();
+                self.builder
+                    .build_int_compare(inkwell::IntPredicate::NE, result_i32, zero, "to_bool")
+                    .map_err(|e| e.to_string())
+            }
+            _ => Err(format!(
+                "Equality comparison not supported for match type: {:?}",
+                expr_type
+            )),
+        }
+    }
+
+    /// Generate check for a list structural pattern.
+    /// Returns an i1 condition that is true if the pattern matches.
+    fn generate_list_pattern_check(
+        &mut self,
+        match_val: BasicValueEnum<'a>,
+        match_expr_type: &Type,
+        elements: &[PatternNode],
+        rest: Option<&PatternNode>,
+    ) -> Result<inkwell::values::IntValue<'a>, String> {
+        let val_ptr = if match_val.is_pointer_value() {
+            match_val.into_pointer_value()
+        } else {
+            self.box_value(match_val)
+        };
+
+        let len_fn = self
+            .module
+            .get_function("mux_value_list_length")
+            .ok_or("mux_value_list_length not found")?;
+        let len_result = self
+            .builder
+            .build_call(len_fn, &[val_ptr.into()], "list_len")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("mux_value_list_length returned no value")?;
+        let list_len = len_result.into_int_value();
+        let required_len = self
+            .context
+            .i64_type()
+            .const_int(elements.len() as u64, false);
+
+        let len_check = if rest.is_some() {
+            self.builder
+                .build_int_compare(inkwell::IntPredicate::SGE, list_len, required_len, "len_ge")
+                .map_err(|e| e.to_string())?
+        } else {
+            self.builder
+                .build_int_compare(inkwell::IntPredicate::EQ, list_len, required_len, "len_eq")
+                .map_err(|e| e.to_string())?
+        };
+
+        if elements.is_empty() && rest.is_none() {
+            return Ok(len_check);
+        }
+
+        let inner_type = match match_expr_type {
+            Type::List(inner) => (**inner).clone(),
+            _ => return Ok(len_check),
+        };
+
+        let get_fn = self
+            .module
+            .get_function("mux_value_list_get_value")
+            .ok_or("mux_value_list_get_value not found")?;
+
+        let mut combined = len_check;
+        for (i, elem) in elements.iter().enumerate() {
+            if let PatternNode::Literal(lit) = elem {
+                let idx = self.context.i64_type().const_int(i as u64, false);
+                let elem_result = self
+                    .builder
+                    .build_call(get_fn, &[val_ptr.into(), idx.into()], "list_elem")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("mux_value_list_get_value returned no value")?;
+
+                let pattern_val = self.generate_literal(lit)?;
+                let elem_eq =
+                    self.generate_value_equality(elem_result, pattern_val, &inner_type)?;
+                combined = self
+                    .builder
+                    .build_and(combined, elem_eq, "and_check")
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        Ok(combined)
+    }
+
+    /// Bind variables for list pattern elements after condition check succeeds.
+    fn bind_list_pattern_variables(
+        &mut self,
+        match_val: BasicValueEnum<'a>,
+        match_expr_type: &Type,
+        elements: &[PatternNode],
+        rest: Option<&PatternNode>,
+    ) -> Result<(), String> {
+        let inner_type = match match_expr_type {
+            Type::List(inner) => (**inner).clone(),
+            Type::EmptyList => return Ok(()),
+            _ => return Ok(()),
+        };
+
+        let val_ptr = if match_val.is_pointer_value() {
+            match_val.into_pointer_value()
+        } else {
+            self.box_value(match_val)
+        };
+
+        let get_fn = self
+            .module
+            .get_function("mux_value_list_get_value")
+            .ok_or("mux_value_list_get_value not found")?;
+
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+        for (i, elem) in elements.iter().enumerate() {
+            if let PatternNode::Identifier(var) = elem {
+                let idx = self.context.i64_type().const_int(i as u64, false);
+                let elem_result = self
+                    .builder
+                    .build_call(get_fn, &[val_ptr.into(), idx.into()], "list_elem")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("mux_value_list_get_value returned no value")?;
+
+                let alloca = self
+                    .builder
+                    .build_alloca(ptr_type, var)
+                    .map_err(|e| e.to_string())?;
+                let elem_ptr = elem_result.into_pointer_value();
+                self.builder
+                    .build_store(alloca, elem_ptr)
+                    .map_err(|e| e.to_string())?;
+                self.variables
+                    .insert(var.clone(), (alloca, ptr_type.into(), inner_type.clone()));
+            }
+        }
+
+        if let Some(PatternNode::Identifier(rest_var)) = rest {
+            let start_idx = self
+                .context
+                .i64_type()
+                .const_int(elements.len() as u64, false);
+
+            let len_fn = self
+                .module
+                .get_function("mux_value_list_length")
+                .ok_or("mux_value_list_length not found")?;
+            let len_result = self
+                .builder
+                .build_call(len_fn, &[val_ptr.into()], "list_len")
+                .map_err(|e| e.to_string())?
+                .try_as_basic_value()
+                .left()
+                .ok_or("mux_value_list_length returned no value")?;
+            let end_idx = len_result.into_int_value();
+
+            let slice_fn = self
+                .module
+                .get_function("mux_value_list_slice")
+                .ok_or("mux_value_list_slice not found")?;
+            let rest_result = self
+                .builder
+                .build_call(
+                    slice_fn,
+                    &[val_ptr.into(), start_idx.into(), end_idx.into()],
+                    "rest_list",
+                )
+                .map_err(|e| e.to_string())?
+                .try_as_basic_value()
+                .left()
+                .ok_or("mux_value_list_slice returned no value")?;
+
+            let alloca = self
+                .builder
+                .build_alloca(ptr_type, rest_var)
+                .map_err(|e| e.to_string())?;
+            let rest_ptr = rest_result.into_pointer_value();
+            self.builder
+                .build_store(alloca, rest_ptr)
+                .map_err(|e| e.to_string())?;
+            let rest_type = Type::List(Box::new(inner_type));
+            self.variables
+                .insert(rest_var.clone(), (alloca, ptr_type.into(), rest_type));
+        }
+
         Ok(())
     }
 }

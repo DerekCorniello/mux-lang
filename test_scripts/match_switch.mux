@@ -1,0 +1,57 @@
+// Test match as switch statement for non-enum types
+
+// Test 1: Match on int literals
+fn test_int_match() {
+    auto x: int = 42
+    match x {
+        1 { print("one") }
+        42 { print("forty-two") }
+        _ { print("other") }
+    }
+}
+
+// Test 2: Match on string literals
+fn test_string_match() {
+    auto s: string = "hello"
+    match s {
+        "hello" { print("greeting") }
+        "bye" { print("farewell") }
+        _ { print("unknown") }
+    }
+}
+
+// Test 3: Match on bool literals
+fn test_bool_match() {
+    auto b: bool = true
+    match b {
+        true { print("yes") }
+        false { print("no") }
+        _ { print("unreachable") }
+    }
+}
+
+// Test 4: Match with variable binding
+fn test_binding_match() {
+    auto x: int = 99
+    match x {
+        1 { print("one") }
+        other { print("got: " + other.to_string()) }
+    }
+}
+
+// Test 5: Match on char
+fn test_char_match() {
+    auto c: char = 'a'
+    match c {
+        'a' { print("alpha") }
+        'b' { print("bravo") }
+        _ { print("other char") }
+    }
+}
+
+// Run all tests
+test_int_match()
+test_string_match()
+test_bool_match()
+test_binding_match()
+test_char_match()
