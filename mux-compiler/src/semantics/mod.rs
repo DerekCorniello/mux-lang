@@ -96,7 +96,6 @@ impl SemanticAnalyzer {
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
             current_class_type_params: None,
-            scope_depth: 0,
         }
     }
 

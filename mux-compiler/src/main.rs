@@ -290,7 +290,7 @@ fn run_doctor() {
     }
 
     let profile = runtime_profile();
-    let runtime_ok = if let Some(_) = resolve_runtime_lib_dir(profile) {
+    let runtime_ok = if resolve_runtime_lib_dir(profile).is_some() {
         true
     } else {
         println!("Mux runtime not found. Building it now...");

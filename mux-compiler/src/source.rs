@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::io::{Error, ErrorKind};
+use std::path::Path;
 
 pub struct Source {
     pub input: String,
@@ -9,6 +9,7 @@ pub struct Source {
 }
 
 impl Source {
+    #[allow(dead_code)]
     pub fn new(file_path: &str) -> std::io::Result<Self> {
         if Path::new(file_path).exists() {
             let input = std::fs::read_to_string(file_path)?;
@@ -31,7 +32,7 @@ impl Source {
         }
     }
 
-    #[cfg(test)]
+    #[allow(dead_code)]
     pub fn from_test_str(string: &str) -> Source {
         Source::from_string(string.to_string())
     }

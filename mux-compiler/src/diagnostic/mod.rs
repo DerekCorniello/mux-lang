@@ -18,6 +18,7 @@ const HELP_SEPARATOR: &str = "\n  = help: ";
 
 /// The severity level of a diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Level {
     Error,
     Warning,
@@ -27,6 +28,7 @@ pub enum Level {
 
 /// The style of a label (primary or secondary).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum LabelStyle {
     Primary,
     Secondary,

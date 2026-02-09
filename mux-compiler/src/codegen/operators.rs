@@ -218,10 +218,10 @@ impl<'a> CodeGenerator<'a> {
                 match &left_type {
                     // String concatenation
                     Type::Primitive(PrimitiveType::Str) => {
-                        let left_cstr =
-                            self.extract_c_string_from_value(self.ensure_pointer(left))?;
-                        let right_cstr =
-                            self.extract_c_string_from_value(self.ensure_pointer(right))?;
+                        let left_ptr = self.ensure_pointer(left);
+                        let right_ptr = self.ensure_pointer(right);
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
 
                         let concat_fn = self
                             .module
@@ -486,10 +486,10 @@ impl<'a> CodeGenerator<'a> {
 
                 match &left_type {
                     Type::Primitive(PrimitiveType::Str) => {
-                        let left_cstr =
-                            self.extract_c_string_from_value(self.ensure_pointer(left))?;
-                        let right_cstr =
-                            self.extract_c_string_from_value(self.ensure_pointer(right))?;
+                        let left_ptr = self.ensure_pointer(left);
+                        let right_ptr = self.ensure_pointer(right);
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
                         self.call_comparison_runtime(
                             left_cstr,
                             right_cstr,
@@ -537,12 +537,16 @@ impl<'a> CodeGenerator<'a> {
                     | Type::Tuple(_, _)
                     | Type::EmptyList
                     | Type::EmptyMap
-                    | Type::EmptySet => self.call_comparison_runtime(
-                        self.ensure_pointer(left),
-                        self.ensure_pointer(right),
-                        "mux_value_equal",
-                        "value_equal",
-                    ),
+                    | Type::EmptySet => {
+                        let left_ptr = self.ensure_pointer(left);
+                        let right_ptr = self.ensure_pointer(right);
+                        self.call_comparison_runtime(
+                            left_ptr,
+                            right_ptr,
+                            "mux_value_equal",
+                            "value_equal",
+                        )
+                    }
                     _ => Err(format!(
                         "Equality comparison not supported for type: {:?}",
                         left_type
@@ -586,10 +590,10 @@ impl<'a> CodeGenerator<'a> {
 
                 match &left_type {
                     Type::Primitive(PrimitiveType::Str) => {
-                        let left_cstr =
-                            self.extract_c_string_from_value(self.ensure_pointer(left))?;
-                        let right_cstr =
-                            self.extract_c_string_from_value(self.ensure_pointer(right))?;
+                        let left_ptr = self.ensure_pointer(left);
+                        let right_ptr = self.ensure_pointer(right);
+                        let left_cstr = self.extract_c_string_from_value(left_ptr)?;
+                        let right_cstr = self.extract_c_string_from_value(right_ptr)?;
                         self.call_comparison_runtime(
                             left_cstr,
                             right_cstr,
@@ -636,12 +640,16 @@ impl<'a> CodeGenerator<'a> {
                     | Type::Set(_)
                     | Type::EmptyList
                     | Type::EmptyMap
-                    | Type::EmptySet => self.call_comparison_runtime(
-                        self.ensure_pointer(left),
-                        self.ensure_pointer(right),
-                        "mux_value_not_equal",
-                        "value_not_equal",
-                    ),
+                    | Type::EmptySet => {
+                        let left_ptr = self.ensure_pointer(left);
+                        let right_ptr = self.ensure_pointer(right);
+                        self.call_comparison_runtime(
+                            left_ptr,
+                            right_ptr,
+                            "mux_value_not_equal",
+                            "value_not_equal",
+                        )
+                    }
                     _ => Err(format!(
                         "Inequality comparison not supported for type: {:?}",
                         left_type

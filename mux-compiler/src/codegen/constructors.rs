@@ -346,19 +346,19 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?;
             }
             Type::List(_) => {
-                let val = self.create_empty_collection_value("mux_new_list", "mux_list_value")?;
+                let val = self.create_empty_collection_value("mux_new_list", "mux_list_value");
                 self.builder
                     .build_store(field_ptr, val)
                     .map_err(|e| e.to_string())?;
             }
             Type::Map(_, _) => {
-                let val = self.create_empty_collection_value("mux_new_map", "mux_map_value")?;
+                let val = self.create_empty_collection_value("mux_new_map", "mux_map_value");
                 self.builder
                     .build_store(field_ptr, val)
                     .map_err(|e| e.to_string())?;
             }
             Type::Set(_) => {
-                let val = self.create_empty_collection_value("mux_new_set", "mux_set_value")?;
+                let val = self.create_empty_collection_value("mux_new_set", "mux_set_value");
                 self.builder
                     .build_store(field_ptr, val)
                     .map_err(|e| e.to_string())?;
@@ -442,15 +442,15 @@ impl<'a> CodeGenerator<'a> {
                 Ok(value_ptr.into_pointer_value())
             }
             Type::List(_) => {
-                let val = self.create_empty_collection_value("mux_new_list", "mux_list_value")?;
+                let val = self.create_empty_collection_value("mux_new_list", "mux_list_value");
                 Ok(val.into_pointer_value())
             }
             Type::Map(_, _) => {
-                let val = self.create_empty_collection_value("mux_new_map", "mux_map_value")?;
+                let val = self.create_empty_collection_value("mux_new_map", "mux_map_value");
                 Ok(val.into_pointer_value())
             }
             Type::Set(_) => {
-                let val = self.create_empty_collection_value("mux_new_set", "mux_set_value")?;
+                let val = self.create_empty_collection_value("mux_new_set", "mux_set_value");
                 Ok(val.into_pointer_value())
             }
             Type::Tuple(left_type, right_type) => {

@@ -1019,35 +1019,33 @@ impl<'a> CodeGenerator<'a> {
                         } else {
                             return Err("Self not found".to_string());
                         }
-                    } else {
-                        if let Some((_, _, var_type)) = self
-                            .variables
-                            .get(obj)
-                            .or_else(|| self.global_variables.get(obj))
-                        {
-                            if let Type::Named(class_name, _) = var_type {
-                                if let Some(fields) = self.classes.get(class_name) {
-                                    if let Some(f) = fields.iter().find(|f| f.name == *field) {
-                                        if let TypeKind::Named(n, _) = &f.type_.kind {
-                                            n.clone()
-                                        } else {
-                                            return Err("Match field must be enum type".to_string());
-                                        }
+                    } else if let Some((_, _, var_type)) = self
+                        .variables
+                        .get(obj)
+                        .or_else(|| self.global_variables.get(obj))
+                    {
+                        if let Type::Named(class_name, _) = var_type {
+                            if let Some(fields) = self.classes.get(class_name) {
+                                if let Some(f) = fields.iter().find(|f| f.name == *field) {
+                                    if let TypeKind::Named(n, _) = &f.type_.kind {
+                                        n.clone()
                                     } else {
-                                        return Err(format!(
-                                            "Field {} not found in class {}",
-                                            field, class_name
-                                        ));
+                                        return Err("Match field must be enum type".to_string());
                                     }
                                 } else {
-                                    return Err(format!("Class {} not found", class_name));
+                                    return Err(format!(
+                                        "Field {} not found in class {}",
+                                        field, class_name
+                                    ));
                                 }
                             } else {
-                                return Err(format!("Variable {} is not a class instance", obj));
+                                return Err(format!("Class {} not found", class_name));
                             }
                         } else {
-                            return Err(format!("Variable {} not found", obj));
+                            return Err(format!("Variable {} is not a class instance", obj));
                         }
+                    } else {
+                        return Err(format!("Variable {} not found", obj));
                     }
                 } else {
                     return Err(
