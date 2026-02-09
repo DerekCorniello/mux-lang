@@ -1,7 +1,7 @@
 use crate::refcount::{mux_rc_alloc, mux_rc_dec};
 use crate::{ObjectRef, TypeId, Value};
 use std::collections::HashMap;
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::{CStr, c_char, c_void};
 use std::sync::Mutex;
 
 lazy_static::lazy_static! {

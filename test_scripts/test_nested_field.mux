@@ -1,0 +1,22 @@
+class Inner {
+    int x
+}
+class Outer {
+    Inner inner
+}
+func main() returns void {
+    auto i = Inner.new()
+    i.x = 42
+    auto o = Outer.new()
+    o.inner = i
+    // Test reading nested field
+    print(o.inner.x.to_string())
+    // Test assignment to nested field
+    o.inner.x = 100
+    print(o.inner.x.to_string())
+    // Test multiple levels
+    auto o2 = o
+    o2.inner.x = 200
+    print(o2.inner.x.to_string())
+    return
+}

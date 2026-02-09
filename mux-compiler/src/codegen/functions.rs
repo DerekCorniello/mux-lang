@@ -6,9 +6,9 @@
 //! - Module initialization functions
 //! - Main function generation
 
+use inkwell::AddressSpace;
 use inkwell::types::BasicMetadataTypeEnum;
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::AddressSpace;
 
 use crate::ast::{AstNode, FunctionNode, PrimitiveType, StatementNode, TypeKind};
 use crate::semantics::Type;
@@ -234,6 +234,7 @@ impl CodeGenerator<'_> {
         // (e.g., when generating specialized methods for generic classes used in this function)
         let saved_function_name = self.current_function_name.take();
         let saved_return_type = self.current_function_return_type.take();
+        let saved_self_type = self.analyzer.current_self_type.take();
 
         // Save the RC scope stack from any parent function context.
         // Each function has its own isolated RC scope - nested function generation
@@ -322,7 +323,7 @@ impl CodeGenerator<'_> {
             self.variables
                 .insert("self".to_string(), (alloca, *class_type, self_type.clone()));
             // also set current_self_type in the analyzer for type checking
-            self.analyzer.current_self_type = Some(self_type);
+            self.analyzer.current_self_type = Some(self_type.clone());
         }
 
         for (i, param) in func.params.iter().enumerate() {
@@ -427,12 +428,10 @@ impl CodeGenerator<'_> {
         // cleaned up before returns, and non-void functions must have explicit returns)
         self.rc_scope_stack.pop();
 
-        // clear current_self_type
-        self.analyzer.current_self_type = None;
-
         // Restore previous function context
         self.current_function_name = saved_function_name;
         self.current_function_return_type = saved_return_type;
+        self.analyzer.current_self_type = saved_self_type;
 
         // Restore the parent function's RC scope stack
         self.rc_scope_stack = saved_rc_scope_stack;

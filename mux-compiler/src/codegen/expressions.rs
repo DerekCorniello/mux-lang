@@ -10,9 +10,9 @@
 //! - Index access
 //! - Match expressions
 
+use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
-use inkwell::AddressSpace;
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,
@@ -23,6 +23,23 @@ use crate::semantics::{GenericContext, SymbolKind, Type};
 use super::CodeGenerator;
 
 impl<'a> CodeGenerator<'a> {
+    /// Helper function to resolve the class/struct name from any expression
+    /// Uses the semantic analyzer to get the expression type
+    fn resolve_expression_class_name(&mut self, expr: &ExpressionNode) -> Option<String> {
+        let expr_type = self.analyzer.get_expression_type(expr).ok()?;
+        match expr_type {
+            Type::Named(name, _) => Some(name.clone()),
+            Type::Reference(inner) => {
+                if let Type::Named(name, _) = inner.as_ref() {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn generate_if_expression(
         &mut self,
         cond: &ExpressionNode,
@@ -1016,238 +1033,212 @@ impl<'a> CodeGenerator<'a> {
                                 };
 
                                 // for non-self class objects, get the data pointer
-                                if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                                    if obj_name != "self" {
-                                        let var_type_opt = self
-                                            .variables
-                                            .get(obj_name)
-                                            .or_else(|| self.global_variables.get(obj_name))
-                                            .map(|(_, _, t)| t)
-                                            .cloned();
-                                        let is_named_or_ref = var_type_opt.as_ref().is_some_and(|t| {
-                                            matches!(t, Type::Named(_, _)) ||
-                                            matches!(t, Type::Reference(inner) if matches!(**inner, Type::Named(_, _)))
-                                        });
-                                        if is_named_or_ref {
-                                            let get_ptr_func = self
-                                                .module
-                                                .get_function("mux_get_object_ptr")
-                                                .ok_or("mux_get_object_ptr not found")?;
-                                            // For reference types, load the actual pointer first
-                                            let ptr_to_use =
-                                                if matches!(var_type_opt, Some(Type::Reference(_)))
-                                                {
-                                                    self.builder
-                                                        .build_load(
-                                                            self.context
-                                                                .ptr_type(AddressSpace::default()),
-                                                            struct_ptr,
-                                                            "load_ref_ptr_assign",
-                                                        )
-                                                        .map_err(|e| e.to_string())?
-                                                        .into_pointer_value()
-                                                } else {
-                                                    struct_ptr
-                                                };
-                                            struct_ptr = self
-                                                .builder
-                                                .build_call(
-                                                    get_ptr_func,
-                                                    &[ptr_to_use.into()],
-                                                    "data_ptr_assign",
+                                // Skip this for "self" - it's already handled above
+                                let is_self = matches!(expr.kind, ExpressionKind::Identifier(ref name) if name == "self");
+                                if !is_self {
+                                    // Use semantic analyzer to resolve type for any expression (not just identifiers)
+                                    if let Some(_class_name) =
+                                        self.resolve_expression_class_name(expr)
+                                    {
+                                        let get_ptr_func = self
+                                            .module
+                                            .get_function("mux_get_object_ptr")
+                                            .ok_or("mux_get_object_ptr not found")?;
+                                        // Check if the base expression is a reference type
+                                        let is_ref = if let ExpressionKind::Identifier(obj_name) =
+                                            &expr.kind
+                                        {
+                                            self.variables
+                                                .get(obj_name)
+                                                .or_else(|| self.global_variables.get(obj_name))
+                                                .map(|(_, _, t)| matches!(t, Type::Reference(_)))
+                                                .unwrap_or(false)
+                                        } else {
+                                            // For complex expressions, check the type
+                                            self.analyzer
+                                                .get_expression_type(expr)
+                                                .map(|t| matches!(t, Type::Reference(_)))
+                                                .unwrap_or(false)
+                                        };
+                                        let ptr_to_use = if is_ref {
+                                            self.builder
+                                                .build_load(
+                                                    self.context.ptr_type(AddressSpace::default()),
+                                                    struct_ptr,
+                                                    "load_ref_ptr_assign",
                                                 )
                                                 .map_err(|e| e.to_string())?
-                                                .try_as_basic_value()
-                                                .left()
-                                                .expect("mux_get_object_ptr should return a basic value")
-                                                .into_pointer_value();
-                                        }
+                                                .into_pointer_value()
+                                        } else {
+                                            struct_ptr
+                                        };
+                                        struct_ptr = self
+                                            .builder
+                                            .build_call(
+                                                get_ptr_func,
+                                                &[ptr_to_use.into()],
+                                                "data_ptr_assign",
+                                            )
+                                            .map_err(|e| e.to_string())?
+                                            .try_as_basic_value()
+                                            .left()
+                                            .expect(
+                                                "mux_get_object_ptr should return a basic value",
+                                            )
+                                            .into_pointer_value();
                                     }
                                 }
 
-                                if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                                    if let Some(type_node) = self
-                                        .variables
-                                        .get(obj_name)
-                                        .or_else(|| self.global_variables.get(obj_name))
-                                        .map(|(_, _, t)| t)
+                                // Handle field assignment using semantic analyzer for any expression type
+                                if let Some(class_name) = self.resolve_expression_class_name(expr) {
+                                    if let Some(field_indices) =
+                                        self.field_map.get(class_name.as_str())
                                     {
-                                        let class_name_opt = match type_node {
-                                            Type::Named(name, _) => Some(name),
-                                            Type::Reference(inner) => {
-                                                if let Type::Named(name, _) = inner.as_ref() {
-                                                    Some(name)
-                                                } else {
-                                                    None
-                                                }
-                                            }
-                                            _ => None,
-                                        };
-                                        if let Some(class_name) = class_name_opt {
-                                            if let Some(field_indices) =
-                                                self.field_map.get(class_name.as_str())
-                                            {
-                                                if let Some(&index) = field_indices.get(field) {
-                                                    let struct_type = self
-                                                        .type_map
-                                                        .get(class_name.as_str())
-                                                        .ok_or("Class type not found")?;
-                                                    if let BasicTypeEnum::StructType(st) =
-                                                        *struct_type
-                                                    {
-                                                        let field_ptr = self
-                                                            .builder
-                                                            .build_struct_gep(
-                                                                st,
-                                                                struct_ptr,
-                                                                index as u32,
-                                                                field,
-                                                            )
-                                                            .map_err(|e| e.to_string())?;
-                                                        // check if this is an enum field - don't box enum values
-                                                        // also check if it's a generic field that resolves to a class
-                                                        let field_info = self
-                                                            .classes
-                                                            .get(class_name.as_str())
-                                                            .and_then(|fields| {
-                                                                fields
-                                                                    .iter()
-                                                                    .find(|f| f.name == *field)
-                                                            });
+                                        if let Some(&index) = field_indices.get(field) {
+                                            let struct_type = self
+                                                .type_map
+                                                .get(class_name.as_str())
+                                                .ok_or("Class type not found")?;
+                                            if let BasicTypeEnum::StructType(st) = *struct_type {
+                                                let field_ptr = self
+                                                    .builder
+                                                    .build_struct_gep(
+                                                        st,
+                                                        struct_ptr,
+                                                        index as u32,
+                                                        field,
+                                                    )
+                                                    .map_err(|e| e.to_string())?;
+                                                // check if this is an enum field - don't box enum values
+                                                // also check if it's a generic field that resolves to a class
+                                                let field_info = self
+                                                    .classes
+                                                    .get(class_name.as_str())
+                                                    .and_then(|fields| {
+                                                        fields.iter().find(|f| f.name == *field)
+                                                    });
 
-                                                        let value_to_store = if let Some(field) =
-                                                            field_info
+                                                let value_to_store = if let Some(field) = field_info
+                                                {
+                                                    let field_type = &field.type_;
+                                                    let is_generic_param = field.is_generic_param;
+
+                                                    // For generic parameters, resolve to concrete type
+                                                    if is_generic_param {
+                                                        if let TypeNode {
+                                                            kind: TypeKind::Named(param_name, _),
+                                                            ..
+                                                        } = field_type
                                                         {
-                                                            let field_type = &field.type_;
-                                                            let is_generic_param =
-                                                                field.is_generic_param;
-
-                                                            // For generic parameters, resolve to concrete type
-                                                            if is_generic_param {
-                                                                if let TypeNode {
-                                                                    kind:
-                                                                        TypeKind::Named(param_name, _),
-                                                                    ..
-                                                                } = field_type
+                                                            // Try to resolve the generic parameter
+                                                            if let Some(context) =
+                                                                &self.generic_context
+                                                            {
+                                                                if let Some(concrete_type) = context
+                                                                    .type_params
+                                                                    .get(param_name)
                                                                 {
-                                                                    // Try to resolve the generic parameter
-                                                                    if let Some(context) =
-                                                                        &self.generic_context
-                                                                    {
-                                                                        if let Some(concrete_type) =
-                                                                            context
-                                                                                .type_params
-                                                                                .get(param_name)
-                                                                        {
-                                                                            // Check what the concrete type is
-                                                                            match concrete_type {
-                                                                                Type::Primitive(
-                                                                                    _,
-                                                                                ) => {
-                                                                                    // Primitives need boxing
-                                                                                    self.box_value(
-                                                                                        right_val,
-                                                                                    )
-                                                                                    .into()
-                                                                                }
-                                                                                Type::Named(
-                                                                                    type_name,
-                                                                                    _,
-                                                                                ) => {
-                                                                                    // Check if it's an enum
-                                                                                    let is_enum = self.analyzer.symbol_table()
-                                                                                        .lookup(type_name)
-                                                                                        .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
-                                                                                        .unwrap_or(false);
-                                                                                    if is_enum {
-                                                                                        // Enums store directly
-                                                                                        right_val
-                                                                                    } else {
-                                                                                        // Classes are already pointers - don't box
-                                                                                        right_val
-                                                                                    }
-                                                                                }
-                                                                                _ => {
-                                                                                    // Other types: box
-                                                                                    self.box_value(
-                                                                                        right_val,
-                                                                                    )
-                                                                                    .into()
-                                                                                }
-                                                                            }
-                                                                        } else {
-                                                                            // Generic param not in context, box it
+                                                                    // Check what the concrete type is
+                                                                    match concrete_type {
+                                                                        Type::Primitive(_) => {
+                                                                            // Primitives need boxing
                                                                             self.box_value(
                                                                                 right_val,
                                                                             )
                                                                             .into()
                                                                         }
-                                                                    } else {
-                                                                        // No generic context, box it
-                                                                        self.box_value(right_val)
+                                                                        Type::Named(
+                                                                            type_name,
+                                                                            _,
+                                                                        ) => {
+                                                                            // Check if it's an enum
+                                                                            let is_enum = self
+                                                                                .analyzer
+                                                                                .symbol_table()
+                                                                                .lookup(type_name)
+                                                                                .map(|s| {
+                                                                                    s.kind == crate::semantics::SymbolKind::Enum
+                                                                                })
+                                                                                .unwrap_or(false);
+                                                                            if is_enum {
+                                                                                // Enums store directly
+                                                                                right_val
+                                                                            } else {
+                                                                                // Classes are already pointers - don't box
+                                                                                right_val
+                                                                            }
+                                                                        }
+                                                                        _ => {
+                                                                            // Other types: box
+                                                                            self.box_value(
+                                                                                right_val,
+                                                                            )
                                                                             .into()
+                                                                        }
                                                                     }
                                                                 } else {
-                                                                    // Non-named generic param, box it
+                                                                    // Generic param not in context, box it
                                                                     self.box_value(right_val).into()
                                                                 }
                                                             } else {
-                                                                // Not a generic parameter - use existing logic
-                                                                if let TypeNode {
-                                                                    kind:
-                                                                        TypeKind::Named(
-                                                                            field_type_name,
-                                                                            _,
-                                                                        ),
-                                                                    ..
-                                                                } = field_type
-                                                                {
-                                                                    let is_enum = self.analyzer.symbol_table()
-                                                                           .lookup(field_type_name)
-                                                                           .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
-                                                                           .unwrap_or(false);
-                                                                    if is_enum {
-                                                                        // for enum fields, store struct value directly
-                                                                        right_val
-                                                                    } else {
-                                                                        // for other fields, box the value
-                                                                        self.box_value(right_val)
-                                                                            .into()
-                                                                    }
-                                                                } else {
-                                                                    // for non-named types, box the value
-                                                                    self.box_value(right_val).into()
-                                                                }
+                                                                // No generic context, box it
+                                                                self.box_value(right_val).into()
                                                             }
                                                         } else {
-                                                            // fallback: box the value
+                                                            // Non-named generic param, box it
                                                             self.box_value(right_val).into()
-                                                        };
-
-                                                        // Increment RC on the value being stored (field takes ownership)
-                                                        self.rc_inc_if_pointer(value_to_store)?;
-
-                                                        self.builder
-                                                            .build_store(field_ptr, value_to_store)
-                                                            .map_err(|e| e.to_string())?;
-                                                        Ok(right_val)
+                                                        }
                                                     } else {
-                                                        Err("Struct type expected".to_string())
+                                                        // Not a generic parameter - use existing logic
+                                                        if let TypeNode {
+                                                            kind:
+                                                                TypeKind::Named(field_type_name, _),
+                                                            ..
+                                                        } = field_type
+                                                        {
+                                                            let is_enum = self
+                                                                .analyzer
+                                                                .symbol_table()
+                                                                .lookup(field_type_name)
+                                                                .map(|s| {
+                                                                    s.kind == crate::semantics::SymbolKind::Enum
+                                                                })
+                                                                .unwrap_or(false);
+                                                            if is_enum {
+                                                                // for enum fields, store struct value directly
+                                                                right_val
+                                                            } else {
+                                                                // for other fields, box the value
+                                                                self.box_value(right_val).into()
+                                                            }
+                                                        } else {
+                                                            // for non-named types, box the value
+                                                            self.box_value(right_val).into()
+                                                        }
                                                     }
                                                 } else {
-                                                    Err(format!("Field {} not found", field))
-                                                }
+                                                    // fallback: box the value
+                                                    self.box_value(right_val).into()
+                                                };
+
+                                                // Increment RC on the value being stored (field takes ownership)
+                                                self.rc_inc_if_pointer(value_to_store)?;
+
+                                                self.builder
+                                                    .build_store(field_ptr, value_to_store)
+                                                    .map_err(|e| e.to_string())?;
+                                                Ok(right_val)
                                             } else {
-                                                Err("Field map not found".to_string())
+                                                Err("Struct type expected".to_string())
                                             }
                                         } else {
-                                            Err("Named type expected".to_string())
+                                            Err(format!("Field {} not found", field))
                                         }
                                     } else {
-                                        Err("Variable type not found".to_string())
+                                        Err("Field map not found".to_string())
                                     }
                                 } else {
-                                    Err("Field access on complex expression not supported for assignment".to_string())
+                                    Err("Named type expected".to_string())
                                 }
                             } else if let ExpressionKind::ListAccess {
                                 expr: target_expr,
@@ -3137,251 +3128,214 @@ impl<'a> CodeGenerator<'a> {
                     self.generate_expression(expr)?.into_pointer_value()
                 };
                 // for non-self class objects, get the data pointer
-                if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                    if obj_name != "self" {
-                        let var_type_opt = self
-                            .variables
-                            .get(obj_name)
-                            .or_else(|| self.global_variables.get(obj_name))
-                            .map(|(_, _, t)| t)
-                            .cloned();
-                        let is_named_or_ref = var_type_opt.as_ref().is_some_and(|t| {
-                            matches!(t, Type::Named(_, _)) ||
-                            matches!(t, Type::Reference(inner) if matches!(**inner, Type::Named(_, _)))
-                        });
-                        if is_named_or_ref {
-                            let get_ptr_func = self
-                                .module
-                                .get_function("mux_get_object_ptr")
-                                .ok_or("mux_get_object_ptr not found")?;
-                            // For reference types, load the actual pointer first
-                            let ptr_to_use = if matches!(var_type_opt, Some(Type::Reference(_))) {
-                                self.builder
-                                    .build_load(
-                                        self.context.ptr_type(AddressSpace::default()),
-                                        struct_ptr,
-                                        "load_ref_ptr",
-                                    )
-                                    .map_err(|e| e.to_string())?
-                                    .into_pointer_value()
-                            } else {
-                                struct_ptr
-                            };
-                            struct_ptr = self
-                                .builder
-                                .build_call(get_ptr_func, &[ptr_to_use.into()], "data_ptr")
+                // Skip this for "self" - it's already handled above
+                let is_self =
+                    matches!(expr.kind, ExpressionKind::Identifier(ref name) if name == "self");
+                if !is_self {
+                    // Use semantic analyzer to resolve type for any expression (not just identifiers)
+                    if let Some(_class_name) = self.resolve_expression_class_name(expr) {
+                        let get_ptr_func = self
+                            .module
+                            .get_function("mux_get_object_ptr")
+                            .ok_or("mux_get_object_ptr not found")?;
+                        // Check if the base expression is a reference type
+                        let is_ref = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
+                            self.variables
+                                .get(obj_name)
+                                .or_else(|| self.global_variables.get(obj_name))
+                                .map(|(_, _, t)| matches!(t, Type::Reference(_)))
+                                .unwrap_or(false)
+                        } else {
+                            // For complex expressions, check the type
+                            self.analyzer
+                                .get_expression_type(expr)
+                                .map(|t| matches!(t, Type::Reference(_)))
+                                .unwrap_or(false)
+                        };
+                        let ptr_to_use = if is_ref {
+                            self.builder
+                                .build_load(
+                                    self.context.ptr_type(AddressSpace::default()),
+                                    struct_ptr,
+                                    "load_ref_ptr",
+                                )
                                 .map_err(|e| e.to_string())?
-                                .try_as_basic_value()
-                                .left()
-                                .expect("mux_get_object_ptr should return a basic value")
-                                .into_pointer_value();
+                                .into_pointer_value()
+                        } else {
+                            struct_ptr
+                        };
+                        struct_ptr = self
+                            .builder
+                            .build_call(get_ptr_func, &[ptr_to_use.into()], "data_ptr")
+                            .map_err(|e| e.to_string())?
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_get_object_ptr should return a basic value")
+                            .into_pointer_value();
+                    }
+                }
+                // Handle class field access using semantic analyzer for any expression type
+                if let Some(class_name) = self.resolve_expression_class_name(expr) {
+                    if let Some(field_indices) = self.field_map.get(class_name.as_str()) {
+                        if let Some(&index) = field_indices.get(field) {
+                            let struct_type = self
+                                .type_map
+                                .get(class_name.as_str())
+                                .ok_or("Class type not found")?;
+                            if let BasicTypeEnum::StructType(st) = *struct_type {
+                                let field_ptr = self
+                                    .builder
+                                    .build_struct_gep(st, struct_ptr, index as u32, field)
+                                    .map_err(|e| e.to_string())?;
+                                // check if this field is an enum type
+                                let field_types = self
+                                    .field_types_map
+                                    .get(class_name.as_str())
+                                    .ok_or("Field types not found for class")?;
+                                if index < field_types.len() {
+                                    let field_type = field_types[index];
+                                    // check if field type is a struct (enum)
+                                    if let BasicTypeEnum::StructType(struct_type) = field_type {
+                                        // for enum fields: load as struct value
+                                        let loaded = self
+                                            .builder
+                                            .build_load(struct_type, field_ptr, field)
+                                            .map_err(|e| e.to_string())?;
+                                        return Ok(loaded);
+                                    }
+                                }
+                                // for non-enum fields: check if it's a generic field
+                                let field_type_node = &field_types[index];
+                                if *field_type_node == self.context.i64_type().into() {
+                                    // this might be a generic field (T), load as pointer (boxed value)
+                                    let loaded = self
+                                        .builder
+                                        .build_load(
+                                            self.context.ptr_type(AddressSpace::default()),
+                                            field_ptr,
+                                            field,
+                                        )
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(loaded);
+                                } else {
+                                    // regular non-enum field
+                                    // get the field's mux type to determine if it needs unboxing
+                                    let class_fields = self
+                                        .classes
+                                        .get(class_name.as_str())
+                                        .ok_or("Class fields not found")?;
+                                    let field_def = class_fields
+                                        .iter()
+                                        .find(|f| f.name == *field)
+                                        .ok_or("Field not found")?;
+                                    let resolved_field_type = self
+                                        .analyzer
+                                        .resolve_type(&field_def.type_)
+                                        .map_err(|e| e.to_string())?;
+                                    // load the field value (all fields stored as Value*)
+                                    let loaded = self
+                                        .builder
+                                        .build_load(*field_type_node, field_ptr, field)
+                                        .map_err(|e| e.to_string())?;
+                                    // For generic parameters, resolve to concrete type first
+                                    let is_generic_param = field_def.is_generic_param;
+                                    if is_generic_param {
+                                        if let TypeNode {
+                                            kind: TypeKind::Named(param_name, _),
+                                            ..
+                                        } = &field_def.type_
+                                        {
+                                            // Try to resolve the generic parameter
+                                            if let Some(context) = &self.generic_context {
+                                                if let Some(concrete_type) =
+                                                    context.type_params.get(param_name)
+                                                {
+                                                    // Match on the CONCRETE type to decide unboxing
+                                                    match concrete_type {
+                                                        Type::Primitive(PrimitiveType::Int) => {
+                                                            let raw_int =
+                                                                self.get_raw_int_value(loaded)?;
+                                                            return Ok(raw_int.into());
+                                                        }
+                                                        Type::Primitive(PrimitiveType::Float) => {
+                                                            let raw_float =
+                                                                self.get_raw_float_value(loaded)?;
+                                                            return Ok(raw_float.into());
+                                                        }
+                                                        Type::Primitive(PrimitiveType::Bool) => {
+                                                            let raw_bool =
+                                                                self.get_raw_bool_value(loaded)?;
+                                                            return Ok(raw_bool.into());
+                                                        }
+                                                        Type::Named(_type_name, _) => {
+                                                            // For both enums and classes, return pointer directly (no unboxing)
+                                                            return Ok(loaded);
+                                                        }
+                                                        _ => {
+                                                            // Other types: return loaded pointer as-is
+                                                            return Ok(loaded);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        // If we can't resolve, fall through to regular logic
+                                    }
+                                    // handle unboxing for primitive fields (non-generic case)
+                                    match &resolved_field_type {
+                                        Type::Primitive(PrimitiveType::Int) => {
+                                            let raw_int = self.get_raw_int_value(loaded)?;
+                                            return Ok(raw_int.into());
+                                        }
+                                        Type::Primitive(PrimitiveType::Float) => {
+                                            let raw_float = self.get_raw_float_value(loaded)?;
+                                            return Ok(raw_float.into());
+                                        }
+                                        Type::Primitive(PrimitiveType::Bool) => {
+                                            let raw_bool = self.get_raw_bool_value(loaded)?;
+                                            return Ok(raw_bool.into());
+                                        }
+                                        Type::Named(name, _type_args) => {
+                                            // check if this is a substituted generic type
+                                            if let Some(context) = &self.generic_context {
+                                                if let Some(concrete_type) =
+                                                    context.type_params.get(name)
+                                                {
+                                                    // recursively handle the concrete type
+                                                    match concrete_type {
+                                                        Type::Primitive(PrimitiveType::Int) => {
+                                                            let raw_int =
+                                                                self.get_raw_int_value(loaded)?;
+                                                            return Ok(raw_int.into());
+                                                        }
+                                                        Type::Primitive(PrimitiveType::Float) => {
+                                                            let raw_float =
+                                                                self.get_raw_float_value(loaded)?;
+                                                            return Ok(raw_float.into());
+                                                        }
+                                                        Type::Primitive(PrimitiveType::Bool) => {
+                                                            let raw_bool =
+                                                                self.get_raw_bool_value(loaded)?;
+                                                            return Ok(raw_bool.into());
+                                                        }
+                                                        _ => {} // for other concrete types, continue with default handling
+                                                    }
+                                                }
+                                            }
+                                            // if no generic context match, continue with default handling
+                                        }
+                                        _ => {} // for non-primitives, return the loaded pointer
+                                    }
+                                    return Ok(loaded);
+                                }
+                            }
                         }
                     }
                 }
+
+                // Handle primitive type methods (only for identifier expressions)
                 if let ExpressionKind::Identifier(obj_name) = &expr.kind {
-                    if let Some(type_node) = self
-                        .variables
-                        .get(obj_name)
-                        .or_else(|| self.global_variables.get(obj_name))
-                        .map(|(_, _, t)| t)
-                    {
-                        let class_name_opt = match type_node {
-                            Type::Named(name, _) => Some(name),
-                            Type::Reference(inner) => {
-                                if let Type::Named(name, _) = inner.as_ref() {
-                                    Some(name)
-                                } else {
-                                    None
-                                }
-                            }
-                            _ => None,
-                        };
-                        if let Some(class_name) = class_name_opt {
-                            if let Some(field_indices) = self.field_map.get(class_name.as_str()) {
-                                if let Some(&index) = field_indices.get(field) {
-                                    let struct_type = self
-                                        .type_map
-                                        .get(class_name.as_str())
-                                        .ok_or("Class type not found")?;
-                                    if let BasicTypeEnum::StructType(st) = *struct_type {
-                                        let field_ptr = self
-                                            .builder
-                                            .build_struct_gep(st, struct_ptr, index as u32, field)
-                                            .map_err(|e| e.to_string())?;
-                                        // check if this field is an enum type
-                                        let field_types = self
-                                            .field_types_map
-                                            .get(class_name.as_str())
-                                            .ok_or("Field types not found for class")?;
-                                        if index < field_types.len() {
-                                            let field_type = field_types[index];
-                                            // check if field type is a struct (enum)
-                                            if let BasicTypeEnum::StructType(struct_type) =
-                                                field_type
-                                            {
-                                                // for enum fields: load as struct value
-                                                let loaded = self
-                                                    .builder
-                                                    .build_load(struct_type, field_ptr, field)
-                                                    .map_err(|e| e.to_string())?;
-                                                return Ok(loaded);
-                                            }
-                                        }
-                                        // for non-enum fields: check if it's a generic field
-                                        let field_type_node = &field_types[index];
-                                        if *field_type_node == self.context.i64_type().into() {
-                                            // this might be a generic field (T), load as pointer (boxed value)
-                                            let loaded = self
-                                                .builder
-                                                .build_load(
-                                                    self.context.ptr_type(AddressSpace::default()),
-                                                    field_ptr,
-                                                    field,
-                                                )
-                                                .map_err(|e| e.to_string())?;
-                                            return Ok(loaded);
-                                        } else {
-                                            // regular non-enum field
-                                            // get the field's mux type to determine if it needs unboxing
-                                            let class_fields = self
-                                                .classes
-                                                .get(class_name.as_str())
-                                                .ok_or("Class fields not found")?;
-                                            let field_def = class_fields
-                                                .iter()
-                                                .find(|f| f.name == *field)
-                                                .ok_or("Field not found")?;
-                                            let resolved_field_type = self
-                                                .analyzer
-                                                .resolve_type(&field_def.type_)
-                                                .map_err(|e| e.to_string())?;
-                                            // load the field value (all fields stored as Value*)
-                                            let loaded = self
-                                                .builder
-                                                .build_load(*field_type_node, field_ptr, field)
-                                                .map_err(|e| e.to_string())?;
-                                            // For generic parameters, resolve to concrete type first
-                                            let is_generic_param = field_def.is_generic_param;
-                                            if is_generic_param {
-                                                if let TypeNode {
-                                                    kind: TypeKind::Named(param_name, _),
-                                                    ..
-                                                } = &field_def.type_
-                                                {
-                                                    // Try to resolve the generic parameter
-                                                    if let Some(context) = &self.generic_context {
-                                                        if let Some(concrete_type) =
-                                                            context.type_params.get(param_name)
-                                                        {
-                                                            // Match on the CONCRETE type to decide unboxing
-                                                            match concrete_type {
-                                                                Type::Primitive(
-                                                                    PrimitiveType::Int,
-                                                                ) => {
-                                                                    let raw_int = self
-                                                                        .get_raw_int_value(
-                                                                            loaded,
-                                                                        )?;
-                                                                    return Ok(raw_int.into());
-                                                                }
-                                                                Type::Primitive(
-                                                                    PrimitiveType::Float,
-                                                                ) => {
-                                                                    let raw_float = self
-                                                                        .get_raw_float_value(
-                                                                            loaded,
-                                                                        )?;
-                                                                    return Ok(raw_float.into());
-                                                                }
-                                                                Type::Primitive(
-                                                                    PrimitiveType::Bool,
-                                                                ) => {
-                                                                    let raw_bool = self
-                                                                        .get_raw_bool_value(
-                                                                            loaded,
-                                                                        )?;
-                                                                    return Ok(raw_bool.into());
-                                                                }
-                                                                Type::Named(_type_name, _) => {
-                                                                    // For both enums and classes, return pointer directly (no unboxing)
-                                                                    return Ok(loaded);
-                                                                }
-                                                                _ => {
-                                                                    // Other types: return loaded pointer as-is
-                                                                    return Ok(loaded);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                // If we can't resolve, fall through to regular logic
-                                            }
-                                            // handle unboxing for primitive fields (non-generic case)
-                                            match &resolved_field_type {
-                                                Type::Primitive(PrimitiveType::Int) => {
-                                                    let raw_int = self.get_raw_int_value(loaded)?;
-                                                    return Ok(raw_int.into());
-                                                }
-                                                Type::Primitive(PrimitiveType::Float) => {
-                                                    let raw_float =
-                                                        self.get_raw_float_value(loaded)?;
-                                                    return Ok(raw_float.into());
-                                                }
-                                                Type::Primitive(PrimitiveType::Bool) => {
-                                                    let raw_bool =
-                                                        self.get_raw_bool_value(loaded)?;
-                                                    return Ok(raw_bool.into());
-                                                }
-                                                Type::Named(name, _type_args) => {
-                                                    // check if this is a substituted generic type
-                                                    if let Some(context) = &self.generic_context {
-                                                        if let Some(concrete_type) =
-                                                            context.type_params.get(name)
-                                                        {
-                                                            // recursively handle the concrete type
-                                                            match concrete_type {
-                                                                Type::Primitive(
-                                                                    PrimitiveType::Int,
-                                                                ) => {
-                                                                    let raw_int = self
-                                                                        .get_raw_int_value(
-                                                                            loaded,
-                                                                        )?;
-                                                                    return Ok(raw_int.into());
-                                                                }
-                                                                Type::Primitive(
-                                                                    PrimitiveType::Float,
-                                                                ) => {
-                                                                    let raw_float = self
-                                                                        .get_raw_float_value(
-                                                                            loaded,
-                                                                        )?;
-                                                                    return Ok(raw_float.into());
-                                                                }
-                                                                Type::Primitive(
-                                                                    PrimitiveType::Bool,
-                                                                ) => {
-                                                                    let raw_bool = self
-                                                                        .get_raw_bool_value(
-                                                                            loaded,
-                                                                        )?;
-                                                                    return Ok(raw_bool.into());
-                                                                }
-                                                                _ => {} // for other concrete types, continue with default handling
-                                                            }
-                                                        }
-                                                    }
-                                                    // if no generic context match, continue with default handling
-                                                }
-                                                _ => {} // for non-primitives, return the loaded pointer
-                                            }
-                                            return Ok(loaded);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else if let Some((_, _, type_node)) = self
+                    if let Some((_, _, type_node)) = self
                         .variables
                         .get(obj_name)
                         .or_else(|| self.global_variables.get(obj_name))

@@ -141,7 +141,10 @@ fn runtime_lib_from_env() -> Option<PathBuf> {
         return path.parent().map(|p| p.to_path_buf());
     }
 
-    eprintln!("MUX_RUNTIME_LIB is set but does not exist: {}", path.display());
+    eprintln!(
+        "MUX_RUNTIME_LIB is set but does not exist: {}",
+        path.display()
+    );
     None
 }
 
@@ -189,7 +192,10 @@ fn default_cache_root() -> PathBuf {
         }
     } else if cfg!(target_os = "macos") {
         if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home).join("Library").join("Caches").join("mux-lang");
+            return PathBuf::from(home)
+                .join("Library")
+                .join("Caches")
+                .join("mux-lang");
         }
     } else {
         if let Ok(base) = env::var("XDG_CACHE_HOME") {
@@ -232,7 +238,9 @@ fn find_runtime_source_dir() -> Option<PathBuf> {
 }
 
 fn build_runtime_in_cache(profile: &str) -> Option<PathBuf> {
-    let cache_root = default_cache_root().join("runtime").join(env!("CARGO_PKG_VERSION"));
+    let cache_root = default_cache_root()
+        .join("runtime")
+        .join(env!("CARGO_PKG_VERSION"));
     let profile_dir = cache_root.join(profile);
 
     if let Some(lib) = find_runtime_lib_in_dir(&profile_dir) {
