@@ -1,5 +1,5 @@
-use crate::Value;
 use crate::refcount::mux_rc_alloc;
+use crate::Value;
 use std::fmt;
 
 #[derive(Clone, Debug)]
@@ -134,9 +134,12 @@ pub extern "C" fn mux_optional_to_string(opt: *const Optional) -> *mut std::ffi:
     }
 }
 
+/// # Safety
+/// Takes ownership of `opt` - caller must NOT call `mux_free_optional` after this.
+/// Returns ownership of a new `Value*` - caller is responsible for its lifecycle.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Value {
+pub extern "C" fn mux_optional_into_value(opt: *mut Optional) -> *mut crate::Value {
     if opt.is_null() {
         return Box::into_raw(Box::new(crate::Value::Optional(None)));
     }
@@ -149,6 +152,22 @@ pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Val
     }
 }
 
+/// Deprecated: Use `mux_optional_into_value` instead.
+/// This function takes ownership of `opt` - caller must NOT call `mux_free_optional` after this.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+#[deprecated(
+    since = "0.1.2",
+    note = "Use mux_optional_into_value instead - this function takes ownership"
+)]
+pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Value {
+    mux_optional_into_value(opt)
+}
+
+/// # Safety
+/// Takes ownership of `val` - caller must NOT free after this.
+/// Returns ownership of a new `Optional*` - caller is responsible for its lifecycle.
+/// If val contains an Optional, clones the inner value (does NOT take ownership of the wrapped Optional).
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_from_value(val: *mut crate::Value) -> *mut Optional {

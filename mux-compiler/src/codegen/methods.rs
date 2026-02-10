@@ -407,8 +407,8 @@ impl<'a> CodeGenerator<'a> {
                     .builder
                     .build_call(
                         self.module
-                            .get_function("mux_value_from_optional")
-                            .expect("mux_value_from_optional must be declared in runtime"),
+                            .get_function("mux_optional_into_value")
+                            .expect("mux_optional_into_value must be declared in runtime"),
                         &[call
                             .try_as_basic_value()
                             .left()
@@ -420,7 +420,7 @@ impl<'a> CodeGenerator<'a> {
                 Ok(boxed_call
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_value_from_optional should return a basic value"))
+                    .expect("mux_optional_into_value should return a basic value"))
             }
             "push_back" => {
                 if args.len() != 1 {
@@ -711,15 +711,15 @@ impl<'a> CodeGenerator<'a> {
                     .builder
                     .build_call(
                         self.module
-                            .get_function("mux_value_from_optional")
-                            .expect("mux_value_from_optional must be declared in runtime"),
+                            .get_function("mux_optional_into_value")
+                            .expect("mux_optional_into_value must be declared in runtime"),
                         &[map_get_result.into()],
                         "optional_value",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_value_from_optional should return a basic value");
+                    .expect("mux_optional_into_value should return a basic value");
                 Ok(optional_value)
             }
             "get_keys" => {
@@ -933,15 +933,15 @@ impl<'a> CodeGenerator<'a> {
                     .builder
                     .build_call(
                         self.module
-                            .get_function("mux_value_from_optional")
-                            .expect("mux_value_from_optional must be declared in runtime"),
+                            .get_function("mux_optional_into_value")
+                            .expect("mux_optional_into_value must be declared in runtime"),
                         &[optional_ptr.into()],
                         "optional_value",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_value_from_optional should return a basic value");
+                    .expect("mux_optional_into_value should return a basic value");
                 Ok(optional_value)
             }
             _ => Err(format!("Method {} not implemented for maps", method_name)),

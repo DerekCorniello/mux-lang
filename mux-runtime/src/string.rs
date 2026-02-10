@@ -4,9 +4,9 @@ use std::os::raw::c_char;
 
 use ordered_float;
 
-use crate::Value;
 use crate::refcount::mux_rc_alloc;
 use crate::result::MuxResult;
+use crate::Value;
 
 #[derive(Clone, Debug)]
 pub struct MuxString(pub String);
@@ -36,7 +36,8 @@ impl fmt::Display for MuxString {
 }
 
 /// # Safety
-/// v must be a valid pointer to a Value::String.
+/// Borrows `v` and clones the string data. Does NOT take ownership of `v`.
+/// Returns a new C string that caller must free with `mux_free_string`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
     if let Value::String(s) = unsafe { &*v } {
@@ -53,7 +54,9 @@ pub unsafe extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
 }
 
 /// # Safety
-/// v must be a valid pointer to a Value.
+/// Borrows `v` and clones the string data. Does NOT take ownership of `v`.
+/// Returns a new C string that caller must free with `mux_free_string`.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_value_get_string(v: *mut Value) -> *mut c_char {
     unsafe { mux_string_from_value(v) }
@@ -164,7 +167,11 @@ pub extern "C" fn mux_string_equal(a: *const c_char, b: *const c_char) -> i32 {
     unsafe {
         let a_str = CStr::from_ptr(a);
         let b_str = CStr::from_ptr(b);
-        if a_str == b_str { 1 } else { 0 }
+        if a_str == b_str {
+            1
+        } else {
+            0
+        }
     }
 }
 
@@ -173,7 +180,11 @@ pub extern "C" fn mux_string_equal(a: *const c_char, b: *const c_char) -> i32 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_not_equal(a: *const c_char, b: *const c_char) -> i32 {
-    if mux_string_equal(a, b) == 1 { 0 } else { 1 }
+    if mux_string_equal(a, b) == 1 {
+        0
+    } else {
+        1
+    }
 }
 
 /// Convert a character to its integer value
