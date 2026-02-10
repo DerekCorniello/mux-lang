@@ -5,12 +5,26 @@
 use super::CodeGenerator;
 use crate::ast::{EnumVariant, ExpressionNode, Field, PrimitiveType, TypeKind};
 use crate::semantics::{GenericContext, MethodSig, Type};
-use inkwell::AddressSpace;
 use inkwell::types::BasicType;
 use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 impl<'a> CodeGenerator<'a> {
+    /// Create a new empty collection and wrap it as a Value pointer.
+    /// `new_fn` creates the raw collection, `value_fn` wraps it as `*mut Value`.
+    fn create_empty_collection_value(
+        &mut self,
+        new_fn: &str,
+        value_fn: &str,
+    ) -> BasicValueEnum<'a> {
+        let raw_ptr = self
+            .generate_runtime_call(new_fn, &[])
+            .expect("should always return a value");
+        self.generate_runtime_call(value_fn, &[raw_ptr.into()])
+            .expect("should always return a value")
+    }
+
     pub(super) fn generate_enum_constructors(
         &mut self,
         name: &str,
@@ -330,87 +344,21 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?;
             }
             Type::List(_) => {
-                // initialize list fields with empty list
-                let new_list_fn = self
-                    .module
-                    .get_function("mux_new_list")
-                    .ok_or("mux_new_list function not found")?;
-                let list_ptr = self
-                    .builder
-                    .build_call(new_list_fn, &[], "new_list")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_new_list should return a basic value");
-                let list_value_fn = self
-                    .module
-                    .get_function("mux_list_value")
-                    .ok_or("mux_list_value function not found")?;
-                let list_val = self
-                    .builder
-                    .build_call(list_value_fn, &[list_ptr.into()], "list_value")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_list_value should return a basic value");
+                let val = self.create_empty_collection_value("mux_new_list", "mux_list_value");
                 self.builder
-                    .build_store(field_ptr, list_val)
+                    .build_store(field_ptr, val)
                     .map_err(|e| e.to_string())?;
             }
             Type::Map(_, _) => {
-                // initialize map fields with empty map
-                let new_map_fn = self
-                    .module
-                    .get_function("mux_new_map")
-                    .ok_or("mux_new_map function not found")?;
-                let map_ptr = self
-                    .builder
-                    .build_call(new_map_fn, &[], "new_map")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_new_map should return a basic value");
-                let map_value_fn = self
-                    .module
-                    .get_function("mux_map_value")
-                    .ok_or("mux_map_value function not found")?;
-                let map_val = self
-                    .builder
-                    .build_call(map_value_fn, &[map_ptr.into()], "map_value")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_map_value should return a basic value");
+                let val = self.create_empty_collection_value("mux_new_map", "mux_map_value");
                 self.builder
-                    .build_store(field_ptr, map_val)
+                    .build_store(field_ptr, val)
                     .map_err(|e| e.to_string())?;
             }
             Type::Set(_) => {
-                // initialize set fields with empty set
-                let new_set_fn = self
-                    .module
-                    .get_function("mux_new_set")
-                    .ok_or("mux_new_set function not found")?;
-                let set_ptr = self
-                    .builder
-                    .build_call(new_set_fn, &[], "new_set")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_new_set should return a basic value");
-                let set_value_fn = self
-                    .module
-                    .get_function("mux_set_value")
-                    .ok_or("mux_set_value function not found")?;
-                let set_val = self
-                    .builder
-                    .build_call(set_value_fn, &[set_ptr.into()], "set_value")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_set_value should return a basic value");
+                let val = self.create_empty_collection_value("mux_new_set", "mux_set_value");
                 self.builder
-                    .build_store(field_ptr, set_val)
+                    .build_store(field_ptr, val)
                     .map_err(|e| e.to_string())?;
             }
             Type::Named(class_name, type_args) => {
@@ -492,31 +440,16 @@ impl<'a> CodeGenerator<'a> {
                 Ok(value_ptr.into_pointer_value())
             }
             Type::List(_) => {
-                let list_ptr = self
-                    .generate_runtime_call("mux_new_list", &[])
-                    .expect("mux_new_list should always return a value");
-                let value_ptr = self
-                    .generate_runtime_call("mux_list_value", &[list_ptr.into()])
-                    .expect("mux_list_value should always return a value");
-                Ok(value_ptr.into_pointer_value())
+                let val = self.create_empty_collection_value("mux_new_list", "mux_list_value");
+                Ok(val.into_pointer_value())
             }
             Type::Map(_, _) => {
-                let map_ptr = self
-                    .generate_runtime_call("mux_new_map", &[])
-                    .expect("mux_new_map should always return a value");
-                let value_ptr = self
-                    .generate_runtime_call("mux_map_value", &[map_ptr.into()])
-                    .expect("mux_map_value should always return a value");
-                Ok(value_ptr.into_pointer_value())
+                let val = self.create_empty_collection_value("mux_new_map", "mux_map_value");
+                Ok(val.into_pointer_value())
             }
             Type::Set(_) => {
-                let set_ptr = self
-                    .generate_runtime_call("mux_new_set", &[])
-                    .expect("mux_new_set should always return a value");
-                let value_ptr = self
-                    .generate_runtime_call("mux_set_value", &[set_ptr.into()])
-                    .expect("mux_set_value should always return a value");
-                Ok(value_ptr.into_pointer_value())
+                let val = self.create_empty_collection_value("mux_new_set", "mux_set_value");
+                Ok(val.into_pointer_value())
             }
             Type::Tuple(left_type, right_type) => {
                 let tuple_value = self.generate_tuple_constructor(&left_type, &right_type)?;

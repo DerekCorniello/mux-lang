@@ -1,5 +1,5 @@
-use crate::Value;
 use crate::refcount::mux_rc_alloc;
+use crate::Value;
 use std::ffi::CStr;
 use std::fmt;
 
@@ -43,15 +43,13 @@ pub extern "C" fn mux_result_ok_char(val: i64) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_result_ok_string(val: *mut Value) -> *mut MuxResult {
-    if val.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        let value = (*val).clone();
-        Box::into_raw(Box::new(MuxResult::ok(value)))
-    }
+    mux_result_ok_value(val)
 }
 
+/// # Safety
+/// Takes ownership of `val` - caller must NOT free after this.
+/// Clones the inner value if present.
+/// Returns ownership of a new `MuxResult*` - caller is responsible for its lifecycle.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_result_ok_value(val: *mut Value) -> *mut MuxResult {

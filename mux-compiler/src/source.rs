@@ -3,12 +3,13 @@ use std::path::Path;
 
 pub struct Source {
     pub input: String,
-    pub pos: usize, // position in bytes
+    pub pos: usize,
     pub line: usize,
     pub col: usize,
 }
 
 impl Source {
+    #[allow(dead_code)]
     pub fn new(file_path: &str) -> std::io::Result<Self> {
         if Path::new(file_path).exists() {
             let input = std::fs::read_to_string(file_path)?;
@@ -22,14 +23,18 @@ impl Source {
         Err(Error::new(ErrorKind::NotFound, "File does not exist"))
     }
 
-    #[allow(dead_code)]
-    pub fn from_test_str(string: &str) -> Source {
-        Source {
-            input: string.to_string(),
+    pub fn from_string(input: String) -> Self {
+        Self {
+            input,
             pos: 0,
             line: 1,
             col: 1,
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn from_test_str(string: &str) -> Source {
+        Source::from_string(string.to_string())
     }
 
     pub fn next_char(&mut self) -> Option<char> {

@@ -74,7 +74,7 @@ pub fn alloc_object(type_id: TypeId) -> *mut Value {
 /// After calling this function if the ref count reaches 0, the pointer becomes invalid.
 ///
 /// This function decrements the reference count of the Value. When the count
-/// reaches 0, the Value is dropped, which drops the ObjectRef, which (via Arc)
+/// reaches 0, the Value is dropped, which drops the ObjectRef, which (via Rc)
 /// drops the ObjectData, which frees the underlying object memory.
 pub unsafe fn free_object(obj: *mut Value) {
     // Simply decrement the RC - cleanup is automatic via Drop

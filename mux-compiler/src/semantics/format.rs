@@ -1,6 +1,10 @@
-use crate::ast::{BinaryOp, PrimitiveType, UnaryOp};
+use crate::ast::{BinaryOp, PrimitiveType};
 use crate::lexer::Span;
 use crate::semantics::types::Type;
+
+pub fn format_span_location(span: &Span) -> String {
+    format!("{}:{}", span.row_start, span.col_start)
+}
 
 pub fn format_type(t: &Type) -> String {
     match t {
@@ -81,22 +85,4 @@ pub fn format_binary_op(op: &BinaryOp) -> String {
         BinaryOp::DivideAssign => "/=".to_string(),
         BinaryOp::ModuloAssign => "%=".to_string(),
     }
-}
-
-#[allow(unused)]
-pub fn format_unary_op(op: &UnaryOp) -> String {
-    match op {
-        UnaryOp::Not => "!".to_string(),
-        UnaryOp::Neg => "-".to_string(),
-        UnaryOp::Ref => "&".to_string(),
-        UnaryOp::Deref => "*".to_string(),
-        UnaryOp::Incr => "++".to_string(),
-        UnaryOp::Decr => "--".to_string(),
-    }
-}
-
-pub fn format_span_location(span: &Span) -> String {
-    let row = span.row_start;
-    let col = span.col_start;
-    format!("{row}:{col}")
 }

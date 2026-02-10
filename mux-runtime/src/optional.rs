@@ -1,5 +1,5 @@
-use crate::Value;
 use crate::refcount::mux_rc_alloc;
+use crate::Value;
 use std::fmt;
 
 #[derive(Clone, Debug)]
@@ -47,12 +47,7 @@ pub extern "C" fn mux_optional_is_some(opt: *mut Optional) -> bool {
     if opt.is_null() {
         return false;
     }
-    unsafe {
-        match &*opt {
-            Optional::Some(_) => true,
-            Optional::None => false,
-        }
-    }
+    unsafe { matches!(&*opt, Optional::Some(_)) }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -72,15 +67,7 @@ pub extern "C" fn mux_optional_get_value(opt: *mut Optional) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_data(opt: *mut Optional) -> *mut Value {
-    if opt.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        match &*opt {
-            Optional::Some(v) => mux_rc_alloc(*v.clone()),
-            Optional::None => std::ptr::null_mut(),
-        }
-    }
+    mux_optional_get_value(opt)
 }
 
 #[unsafe(no_mangle)]
@@ -108,13 +95,7 @@ pub extern "C" fn mux_optional_some_char(val: i64) -> *mut Optional {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_some_string(val: *mut Value) -> *mut Optional {
-    if val.is_null() {
-        return Box::into_raw(Box::new(Optional::none()));
-    }
-    unsafe {
-        let value = (*val).clone();
-        Box::into_raw(Box::new(Optional::some(value)))
-    }
+    mux_optional_some_value(val)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -153,9 +134,12 @@ pub extern "C" fn mux_optional_to_string(opt: *const Optional) -> *mut std::ffi:
     }
 }
 
+/// # Safety
+/// Takes ownership of `opt` - caller must NOT call `mux_free_optional` after this.
+/// Returns ownership of a new `Value*` - caller is responsible for its lifecycle.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Value {
+pub extern "C" fn mux_optional_into_value(opt: *mut Optional) -> *mut crate::Value {
     if opt.is_null() {
         return Box::into_raw(Box::new(crate::Value::Optional(None)));
     }
@@ -168,6 +152,22 @@ pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Val
     }
 }
 
+/// Deprecated: Use `mux_optional_into_value` instead.
+/// This function takes ownership of `opt` - caller must NOT call `mux_free_optional` after this.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+#[deprecated(
+    since = "0.1.2",
+    note = "Use mux_optional_into_value instead - this function takes ownership"
+)]
+pub extern "C" fn mux_value_from_optional(opt: *mut Optional) -> *mut crate::Value {
+    mux_optional_into_value(opt)
+}
+
+/// # Safety
+/// Takes ownership of `val` - caller must NOT free after this.
+/// Returns ownership of a new `Optional*` - caller is responsible for its lifecycle.
+/// If val contains an Optional, clones the inner value (does NOT take ownership of the wrapped Optional).
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_from_value(val: *mut crate::Value) -> *mut Optional {

@@ -6,9 +6,9 @@
 //! - Module initialization functions
 //! - Main function generation
 
-use inkwell::AddressSpace;
 use inkwell::types::BasicMetadataTypeEnum;
 use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::AddressSpace;
 
 use crate::ast::{AstNode, FunctionNode, PrimitiveType, StatementNode, TypeKind};
 use crate::semantics::Type;
@@ -23,15 +23,11 @@ impl CodeGenerator<'_> {
             .map(|p| self.llvm_type_from_mux_type(&p.type_).map(|t| t.into()))
             .collect::<Result<_, _>>()?;
 
-        // for class methods, add implicit 'self' parameter (unless static)
         let is_class_method = func.name.contains('.');
         if is_class_method && !func.is_common {
             param_types.insert(0, self.context.ptr_type(AddressSpace::default()).into());
         }
 
-        // for specialized methods (name contains $), wrap all parameters in pointers,
-        // only for instance methods, not static methods
-        // static methods should use concrete types after specialization
         let is_specialized = func.name.contains('$');
         let is_static = func.is_common;
         if is_specialized && !is_static {
@@ -40,11 +36,9 @@ impl CodeGenerator<'_> {
                 .into_iter()
                 .enumerate()
                 .map(|(i, param_type)| {
-                    // skip self parameter (index 0)
                     if i == 0 && is_class_method && !func.is_common {
                         param_type
                     } else {
-                        // wrap non-self parameters in pointers
                         ptr_type.into()
                     }
                 })
@@ -61,8 +55,6 @@ impl CodeGenerator<'_> {
             return_type.fn_type(&param_types, false)
         };
 
-        // Check if this function has a mangled LLVM name
-        // First check the main symbol table (for functions in current module)
         let llvm_name = if let Some(symbol) = self.analyzer.symbol_table().lookup(&func.name) {
             if let Some(mangled_name) = &symbol.llvm_name {
                 mangled_name.clone()
@@ -70,8 +62,6 @@ impl CodeGenerator<'_> {
                 func.name.clone()
             }
         } else {
-            // Not in main symbol table - check if it's from an imported module
-            // Search through all imported modules to find this function
             let mut found_name = None;
             for module_syms in self.analyzer.imported_symbols().values() {
                 if let Some(func_symbol) = module_syms.get(&func.name) {
@@ -91,7 +81,6 @@ impl CodeGenerator<'_> {
         Ok(())
     }
 
-    // Declare a function with an explicit LLVM name (for imported module functions)
     pub(super) fn declare_function_with_name(
         &mut self,
         func: &FunctionNode,
@@ -103,13 +92,11 @@ impl CodeGenerator<'_> {
             .map(|p| self.llvm_type_from_mux_type(&p.type_).map(|t| t.into()))
             .collect::<Result<_, _>>()?;
 
-        // for class methods, add implicit 'self' parameter (unless static)
         let is_class_method = func.name.contains('.');
         if is_class_method && !func.is_common {
             param_types.insert(0, self.context.ptr_type(AddressSpace::default()).into());
         }
 
-        // for specialized methods (name contains $), wrap all parameters in pointers
         let is_specialized = func.name.contains('$');
         let is_static = func.is_common;
         if is_specialized && !is_static {
@@ -138,7 +125,6 @@ impl CodeGenerator<'_> {
         };
 
         let function = self.module.add_function(llvm_name, fn_type, None);
-        // Store by mangled name so we can find it later during generation
         self.functions.insert(llvm_name.to_string(), function);
 
         Ok(())
