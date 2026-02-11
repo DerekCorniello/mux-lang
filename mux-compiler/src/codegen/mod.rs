@@ -14,12 +14,12 @@
 //! - statements: Statement code generation
 //! - types: Type conversion functions
 
+use inkwell::AddressSpace;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{FunctionValue, PointerValue};
-use inkwell::AddressSpace;
 use std::collections::HashMap;
 
 use crate::ast::{AstNode, Field, FunctionNode, StatementKind, StatementNode, TypeNode};
@@ -886,6 +886,29 @@ impl<'a> CodeGenerator<'a> {
         module.add_function(
             "mux_rc_dec",
             context.bool_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        // Random module functions
+        module.add_function(
+            "mux_rand_init",
+            void_type.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_rand_int", i64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_rand_range",
+            i64_type.fn_type(&[i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_rand_float", f64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_rand_bool",
+            context.bool_type().fn_type(&[], false),
             None,
         );
 

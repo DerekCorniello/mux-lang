@@ -6,8 +6,8 @@ use super::CodeGenerator;
 use crate::ast::{PrimitiveType, TypeKind, TypeNode};
 use crate::lexer::Span;
 use crate::semantics::Type;
-use inkwell::types::BasicTypeEnum;
 use inkwell::AddressSpace;
+use inkwell::types::BasicTypeEnum;
 
 /// Placeholder span for synthetically-constructed TypeNodes in codegen.
 const SYNTHETIC_SPAN: Span = Span {

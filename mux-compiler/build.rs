@@ -59,15 +59,11 @@ fn detect_runtime_library(
         ),
     ];
 
-    for (path, description) in &candidates {
+    for (path, _) in &candidates {
         let static_lib = path.join("libmux_runtime.a");
         let dynamic_lib = path.join("libmux_runtime.so");
         if static_lib.exists() || dynamic_lib.exists() {
-            println!(
-                "cargo:warning=Found libmux_runtime in {} (checking {})",
-                path.display(),
-                description
-            );
+            println!("cargo:warning=Found libmux_runtime in {}", path.display());
             return (static_lib, dynamic_lib);
         }
     }
