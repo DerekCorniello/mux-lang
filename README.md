@@ -1849,6 +1849,26 @@ func main() returns void {
 
 ---
 
+## 17. Standard Library
+
+The Mux standard library provides essential modules for common programming tasks. Import modules using the `import` keyword.
+
+### 17.1 Random Module
+
+The `random` module provides pseudorandom number generation.
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `random.seed(int seed)` | `void` | Initialize the random number generator with a specific seed for reproducible results |
+| `random.next_int()` | `int` | Generate a random integer (0 to RAND_MAX) |
+| `random.next_range(int min, int max)` | `int` | Generate a random integer in range [min, max) |
+| `random.next_float()` | `float` | Generate a random float in range [0.0, 1.0) |
+| `random.next_bool()` | `bool` | Generate a random boolean (true or false with equal probability) |
+
+The random module auto-initializes with the current time on first use if not explicitly seeded.
+
+---
+
 ## Project File Structure
 
 ```
