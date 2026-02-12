@@ -103,6 +103,82 @@ lazy_static! {
             params: vec![Type::Primitive(PrimitiveType::Float)],
             return_type: Type::Primitive(PrimitiveType::Float),
         });
+        m.insert("math_tan", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_asin", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_acos", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_atan", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_atan2", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_ln", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_log", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_log2", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_log10", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_exp", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_abs", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_floor", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_ceil", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_round", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_min", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_max", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_hypot", BuiltInSig {
+            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_pi", BuiltInSig {
+            params: vec![],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
+        m.insert("math_e", BuiltInSig {
+            params: vec![],
+            return_type: Type::Primitive(PrimitiveType::Float),
+        });
         // io functions
         m.insert("print", BuiltInSig {
             params: vec![Type::Primitive(PrimitiveType::Str)],

@@ -8,7 +8,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
+pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -4050,6 +4050,29 @@ impl SemanticAnalyzer {
                             variants: None,
                         },
                     )?;
+                } else {
+                    // For module-level imports (e.g. "import std.math"), register all
+                    // built-in functions that share the module prefix.
+                    let prefix = format!("{}_", symbol_name);
+                    let matching: Vec<_> = BUILT_IN_FUNCTIONS
+                        .iter()
+                        .filter(|(k, _)| k.starts_with(prefix.as_str()))
+                        .map(|(k, v)| (k.to_string(), v.clone()))
+                        .collect();
+                    for (func_name, sig) in matching {
+                        let _ = self.symbol_table.add_symbol(
+                            &func_name,
+                            Self::make_symbol(
+                                SymbolKind::Function,
+                                span,
+                                Some(Type::Function {
+                                    params: sig.params.clone(),
+                                    returns: Box::new(sig.return_type.clone()),
+                                    default_count: 0,
+                                }),
+                            ),
+                        );
+                    }
                 }
             }
             ImportSpec::Item { item, alias } => {
@@ -4069,8 +4092,58 @@ impl SemanticAnalyzer {
                     )?;
                 }
             }
-            _ => {
-                // Items and Wildcard can be supported similarly if needed
+            ImportSpec::Wildcard => {
+                // For wildcard imports (e.g. "import std.math.*"),
+                // register all functions with the module prefix
+                let module_name = module_path
+                    .split('.')
+                    .last()
+                    .expect("module path should have at least one component");
+                let prefix = format!("{}_", module_name);
+                let matching: Vec<_> = BUILT_IN_FUNCTIONS
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(prefix.as_str()))
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect();
+                for (func_name, sig) in matching {
+                    let _ = self.symbol_table.add_symbol(
+                        &func_name,
+                        Self::make_symbol(
+                            SymbolKind::Function,
+                            span,
+                            Some(Type::Function {
+                                params: sig.params.clone(),
+                                returns: Box::new(sig.return_type.clone()),
+                                default_count: 0,
+                            }),
+                        ),
+                    );
+                }
+            }
+            ImportSpec::Items { items } => {
+                // For selective imports (e.g. "import std.math.(sin, cos)")
+                for (item, alias) in items {
+                    let module_name = module_path
+                        .split('.')
+                        .last()
+                        .expect("module path should have at least one component");
+                    let qualified_name = format!("{}_{}", module_name, item);
+                    let symbol_name = alias.as_ref().unwrap_or(&qualified_name);
+                    if let Some(sig) = self.get_builtin_sig(&qualified_name) {
+                        let _ = self.symbol_table.add_symbol(
+                            symbol_name,
+                            Self::make_symbol(
+                                SymbolKind::Function,
+                                span,
+                                Some(Type::Function {
+                                    params: sig.params.clone(),
+                                    returns: Box::new(sig.return_type.clone()),
+                                    default_count: 0,
+                                }),
+                            ),
+                        );
+                    }
+                }
             }
         }
         Ok(())

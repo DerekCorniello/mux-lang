@@ -10,9 +10,9 @@
 //! - Index access
 //! - Match expressions
 
+use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
-use inkwell::AddressSpace;
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,
@@ -2013,7 +2013,28 @@ impl<'a> CodeGenerator<'a> {
                             Ok(result_ptr)
                         }
                         _ => {
-                            // first check if this is a function pointer variable
+                            // check if this is a math built-in function (math_* -> mux_math_*)
+                            if name.starts_with("math_") {
+                                let runtime_name = format!("mux_{}", name);
+                                if let Some(func) = self.module.get_function(&runtime_name) {
+                                    let mut call_args = vec![];
+                                    for arg in args {
+                                        call_args.push(self.generate_expression(arg)?.into());
+                                    }
+                                    let call = self
+                                        .builder
+                                        .build_call(func, &call_args, &format!("{}_call", name))
+                                        .map_err(|e| e.to_string())?;
+                                    return match call.try_as_basic_value().left() {
+                                        Some(val) => Ok(val),
+                                        None => {
+                                            Ok(self.context.i32_type().const_int(0, false).into())
+                                        }
+                                    };
+                                }
+                            }
+
+                            // check if this is a function pointer variable
                             if let Some((ptr, _, var_type)) = self
                                 .variables
                                 .get(name)
