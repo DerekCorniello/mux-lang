@@ -76,29 +76,17 @@ The user will separately run `cargo test` and insta testing for comprehensive va
 
 ## Current System Architecture
 
-The Mux compiler is organized as a workspace with two main crates:
+The Mux compiler is organized as a workspace with three main partitions:
 
 ### mux-compiler (Rust)
 Responsible for parsing, semantic analysis, and code generation:
 - **lexer** - Tokenizes source code into tokens
 - **parser** - Builds AST from tokens  
 - **semantics** - Type checking and symbol resolution
-- **codegen** - LLVM IR generation (split into 12 focused modules)
-  - `mod.rs` - Core module with CodeGenerator struct, `new()`, `generate()`, `emit_ir_to_file()`
-  - `expressions.rs` - All expression types (literals, binary ops, function calls, etc.)
-  - `statements.rs` - Statement generation (if, while, for, match, return, variable decls)
-  - `functions.rs` - Function declaration and generation
-  - `methods.rs` - Method call generation for all types
-  - `classes.rs` - Class, interface, and enum type generation
-  - `constructors.rs` - Constructor generation for classes and enums
-  - `operators.rs` - Binary and logical operators
-  - `generics.rs` - Generic type instantiation and specialization
-  - `types.rs` - Type conversions between Mux types, LLVM types, and type nodes
-  - `memory.rs` - RC (reference counting) memory management
-  - `runtime.rs` - Runtime function calls and value boxing/unboxing
-- **source** - File handling utilities
+- **codegen** - LLVM IR generation
 
 The compiler generates LLVM IR which is compiled to a .ll file, then linked with clang against the runtime.
+If you want to view this .ll file, you must pass the -i option while tunning the file. 
 
 ### mux-runtime (C/Rust)
 Provides runtime support for compiled Mux programs:
@@ -106,15 +94,9 @@ Provides runtime support for compiled Mux programs:
 - **String operations** (UTF-8 handling)
 - **Collection implementations** (list, map, set)
 - **Type conversions** and utilities
+- **stdlib**
 
 The compiler generates calls to runtime functions. Understanding this interface is important for any codegen changes.
-
-### Compilation Pipeline
-```
-.mux source → Lexer → Parser → Semantic Analyzer → CodeGen → .ll file
-                                                                ↓
-                                                              clang + mux_runtime → executable
-```
 
 ## Code Style Guidelines
 
@@ -139,18 +121,7 @@ When working on any feature:
 - **Constants**: SCREAMING_SNAKE_CASE (e.g., `MAX_BUFFER_SIZE`)
 - **Modules**: snake_case (e.g., `lexer`, `parser`, `semantics`)
 - **Type Parameters**: Single uppercase letter (e.g., `T`, `U`) or descriptive (e.g., `Elem`)
-
-### Imports & Module Structure
-- Use absolute imports with `crate::`, `super::`, or root
-- Group paths imports: std → external → local
-- Prefer `use` statements over path prefixes in code
-- Keep modules focused: lexer, parser, semantics, codegen, source
-
-### Formatting
-- Run `cargo fmt` before committing
-- Use 4-space indentation
-- Limit line length to 100 characters
-- Use trailing commas in multi-line expressions
+- **Unused Vars**: Prefix with a _, so it is easier to identify what it is if needed at a later date. 
 
 ### Error Handling
 - Return `Result<T, String>` or `Result<T, Box<dyn Error>>` for fallible operations
@@ -169,12 +140,6 @@ When working on any feature:
 - Use `//` for implementation notes
 - Document WHY not WHAT
 - DO NOT ADD STUPID COMMENTS THAT STATE THE OBVIOUS
-
-### Testing
-- Write tests alongside implementation using `#[cfg(test)]` modules
-- Use descriptive test names: `#[test] fn parses_valid_expression()`
-- Use insta for snapshot testing with `assert_debug_snapshot!`
-- Group related tests in mod tests blocks
 
 ### Git Workflow (DO NOT TOUCH)
 - Never run git commands
@@ -260,11 +225,6 @@ impl<'a> CodeGenerator<'a> {
 
 **Important:** Always import types from `crate::ast` (e.g., `PrimitiveType`, `TypeKind`, `TypeNode`), not from `crate::parser` (which has private re-exports).
 
-### Critical Types to Import
-When working with inkwell types:
-- Use `inkwell::types::BasicType` trait when calling `.fn_type()` or `.size_of()` on `BasicTypeEnum`
-- Most files need: `use inkwell::types::{BasicType, BasicTypeEnum};`
-
 ### Visibility Rules
 - All functions in submodules should be `pub(super)` to be accessible from `mod.rs`
 - The `CodeGenerator` struct and its impl block are defined in `mod.rs`
@@ -315,4 +275,8 @@ Conversion functions in `types.rs` bridge these representations.
 4. Run `cargo build` to verify compilation
 5. Run `cargo run -- test_scripts/test_file.mux` to test functionality
 6. Run `cargo clippy` to ensure no warnings/errors
-7. Let user run `cargo test` for comprehensive testing
+7. Let user run `cargo test` for comprehensive testing, remind the user that after you are done with tests, you can help update documentation. 
+8. Once the user confirms the tests work, be sure you update each README, one in the runtime, one in the compiler, and one in the base dir. 
+Additionally, find the best, most relevant spot in the mux-website, and update that as well. 
+
+**Feel free to add to this as you learn vital informstion**
