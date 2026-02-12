@@ -88,11 +88,53 @@ pub const E: f64 = std::f64::consts::E;
 
 // --- extern "C" wrappers ---
 
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_pow(base: f64, exp: f64) -> f64 {
-    pow(base, exp)
+macro_rules! mux_math_extern {
+    // single-arg: fn(f64) -> f64
+    ($name:ident) => {
+        ::paste::paste! {
+            #[unsafe(no_mangle)]
+            pub extern "C" fn [<mux_math_ $name>](x: f64) -> f64 {
+                $name(x)
+            }
+        }
+    };
+    // two-arg: fn(f64, f64) -> f64
+    ($name:ident, $a:ident, $b:ident) => {
+        ::paste::paste! {
+            #[unsafe(no_mangle)]
+            pub extern "C" fn [<mux_math_ $name>]($a: f64, $b: f64) -> f64 {
+                $name($a, $b)
+            }
+        }
+    };
 }
 
+mux_math_extern!(sqrt);
+mux_math_extern!(sin);
+mux_math_extern!(cos);
+mux_math_extern!(tan);
+mux_math_extern!(asin);
+mux_math_extern!(acos);
+mux_math_extern!(atan);
+mux_math_extern!(ln);
+mux_math_extern!(log2);
+mux_math_extern!(log10);
+mux_math_extern!(exp);
+mux_math_extern!(abs);
+mux_math_extern!(floor);
+mux_math_extern!(ceil);
+mux_math_extern!(round);
+
+mux_math_extern!(pow, base, exp);
+mux_math_extern!(atan2, y, x);
+mux_math_extern!(log, x, base);
+mux_math_extern!(min, a, b);
+mux_math_extern!(max, a, b);
+mux_math_extern!(hypot, x, y);
+
+/// Integer exponentiation using exponentiation by squaring.
+/// Returns 0 for negative exponents (integer division semantics).
+/// Uses wrapping multiplication on overflow.
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_int_pow(base: i64, exp: i64) -> i64 {
     if exp < 0 {
@@ -109,106 +151,6 @@ pub extern "C" fn mux_int_pow(base: i64, exp: i64) -> i64 {
         e >>= 1;
     }
     result
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_sqrt(x: f64) -> f64 {
-    sqrt(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_sin(x: f64) -> f64 {
-    sin(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_cos(x: f64) -> f64 {
-    cos(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_tan(x: f64) -> f64 {
-    tan(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_asin(x: f64) -> f64 {
-    asin(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_acos(x: f64) -> f64 {
-    acos(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_atan(x: f64) -> f64 {
-    atan(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_atan2(y: f64, x: f64) -> f64 {
-    atan2(y, x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_ln(x: f64) -> f64 {
-    ln(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_log(x: f64, base: f64) -> f64 {
-    log(x, base)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_log2(x: f64) -> f64 {
-    log2(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_log10(x: f64) -> f64 {
-    log10(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_exp(x: f64) -> f64 {
-    exp(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_abs(x: f64) -> f64 {
-    abs(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_floor(x: f64) -> f64 {
-    floor(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_ceil(x: f64) -> f64 {
-    ceil(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_round(x: f64) -> f64 {
-    round(x)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_min(a: f64, b: f64) -> f64 {
-    min(a, b)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_max(a: f64, b: f64) -> f64 {
-    max(a, b)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_math_hypot(x: f64, y: f64) -> f64 {
-    hypot(x, y)
 }
 
 #[unsafe(no_mangle)]

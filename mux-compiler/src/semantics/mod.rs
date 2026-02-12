@@ -3995,6 +3995,34 @@ impl SemanticAnalyzer {
     }
 
     // Handle std library imports
+    /// Register a single built-in function into the symbol table from its signature.
+    fn register_builtin_function(&mut self, name: &str, sig: &BuiltInSig, span: Span) {
+        let _ = self.symbol_table.add_symbol(
+            name,
+            Self::make_symbol(
+                SymbolKind::Function,
+                span,
+                Some(Type::Function {
+                    params: sig.params.clone(),
+                    returns: Box::new(sig.return_type.clone()),
+                    default_count: 0,
+                }),
+            ),
+        );
+    }
+
+    /// Register all built-in functions whose names start with the given prefix.
+    fn register_builtin_functions_with_prefix(&mut self, prefix: &str, span: Span) {
+        let matching: Vec<_> = BUILT_IN_FUNCTIONS
+            .iter()
+            .filter(|(k, _)| k.starts_with(prefix))
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        for (func_name, sig) in matching {
+            self.register_builtin_function(&func_name, &sig, span);
+        }
+    }
+
     fn handle_std_import(
         &mut self,
         module_path: &str,
@@ -4003,14 +4031,14 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
 
+        let module_name = module_path
+            .split('.')
+            .last()
+            .expect("module path should have at least one component");
+
         match spec {
             ImportSpec::Module { alias } => {
-                let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or_else(|| {
-                    module_path
-                        .split('.')
-                        .last()
-                        .expect("module path should have at least one component")
-                });
+                let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or(module_name);
 
                 if let Some(sig) = self.get_builtin_sig(symbol_name) {
                     self.symbol_table.add_symbol(
@@ -4051,97 +4079,24 @@ impl SemanticAnalyzer {
                         },
                     )?;
                 } else {
-                    // For module-level imports (e.g. "import std.math"), register all
-                    // built-in functions that share the module prefix.
-                    let prefix = format!("{}_", symbol_name);
-                    let matching: Vec<_> = BUILT_IN_FUNCTIONS
-                        .iter()
-                        .filter(|(k, _)| k.starts_with(prefix.as_str()))
-                        .map(|(k, v)| (k.to_string(), v.clone()))
-                        .collect();
-                    for (func_name, sig) in matching {
-                        let _ = self.symbol_table.add_symbol(
-                            &func_name,
-                            Self::make_symbol(
-                                SymbolKind::Function,
-                                span,
-                                Some(Type::Function {
-                                    params: sig.params.clone(),
-                                    returns: Box::new(sig.return_type.clone()),
-                                    default_count: 0,
-                                }),
-                            ),
-                        );
-                    }
+                    self.register_builtin_functions_with_prefix(&format!("{}_", symbol_name), span);
                 }
             }
             ImportSpec::Item { item, alias } => {
                 let symbol_name = alias.as_ref().unwrap_or(item);
-                if let Some(sig) = self.get_builtin_sig(item) {
-                    self.symbol_table.add_symbol(
-                        symbol_name,
-                        Self::make_symbol(
-                            SymbolKind::Function,
-                            span,
-                            Some(Type::Function {
-                                params: sig.params.clone(),
-                                returns: Box::new(sig.return_type.clone()),
-                                default_count: 0,
-                            }),
-                        ),
-                    )?;
+                if let Some(sig) = self.get_builtin_sig(item).cloned() {
+                    self.register_builtin_function(symbol_name, &sig, span);
                 }
             }
             ImportSpec::Wildcard => {
-                // For wildcard imports (e.g. "import std.math.*"),
-                // register all functions with the module prefix
-                let module_name = module_path
-                    .split('.')
-                    .last()
-                    .expect("module path should have at least one component");
-                let prefix = format!("{}_", module_name);
-                let matching: Vec<_> = BUILT_IN_FUNCTIONS
-                    .iter()
-                    .filter(|(k, _)| k.starts_with(prefix.as_str()))
-                    .map(|(k, v)| (k.to_string(), v.clone()))
-                    .collect();
-                for (func_name, sig) in matching {
-                    let _ = self.symbol_table.add_symbol(
-                        &func_name,
-                        Self::make_symbol(
-                            SymbolKind::Function,
-                            span,
-                            Some(Type::Function {
-                                params: sig.params.clone(),
-                                returns: Box::new(sig.return_type.clone()),
-                                default_count: 0,
-                            }),
-                        ),
-                    );
-                }
+                self.register_builtin_functions_with_prefix(&format!("{}_", module_name), span);
             }
             ImportSpec::Items { items } => {
-                // For selective imports (e.g. "import std.math.(sin, cos)")
                 for (item, alias) in items {
-                    let module_name = module_path
-                        .split('.')
-                        .last()
-                        .expect("module path should have at least one component");
                     let qualified_name = format!("{}_{}", module_name, item);
                     let symbol_name = alias.as_ref().unwrap_or(&qualified_name);
-                    if let Some(sig) = self.get_builtin_sig(&qualified_name) {
-                        let _ = self.symbol_table.add_symbol(
-                            symbol_name,
-                            Self::make_symbol(
-                                SymbolKind::Function,
-                                span,
-                                Some(Type::Function {
-                                    params: sig.params.clone(),
-                                    returns: Box::new(sig.return_type.clone()),
-                                    default_count: 0,
-                                }),
-                            ),
-                        );
+                    if let Some(sig) = self.get_builtin_sig(&qualified_name).cloned() {
+                        self.register_builtin_function(symbol_name, &sig, span);
                     }
                 }
             }

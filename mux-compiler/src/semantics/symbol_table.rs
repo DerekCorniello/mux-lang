@@ -7,201 +7,95 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+fn float() -> Type {
+    Type::Primitive(PrimitiveType::Float)
+}
+fn int() -> Type {
+    Type::Primitive(PrimitiveType::Int)
+}
+fn str_() -> Type {
+    Type::Primitive(PrimitiveType::Str)
+}
+fn bool_() -> Type {
+    Type::Primitive(PrimitiveType::Bool)
+}
+
+fn sig(params: Vec<Type>, return_type: Type) -> BuiltInSig {
+    BuiltInSig {
+        params,
+        return_type,
+    }
+}
+
+fn register_batch(
+    m: &mut HashMap<&'static str, BuiltInSig>,
+    names: &[&'static str],
+    sig: BuiltInSig,
+) {
+    for name in names {
+        m.insert(name, sig.clone());
+    }
+}
+
 lazy_static! {
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
-        // int functions
-        m.insert("int_to_string", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("int_to_float", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("int_add", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_sub", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_mul", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_div", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_rem", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_eq", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Bool),
-        });
-        m.insert("int_lt", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Bool),
-        });
-        // float functions
-        m.insert("float_to_string", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("float_to_int", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("float_add", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        // string functions
-        m.insert("string_to_int", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("string_to_float", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("string_concat", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str), Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("string_length", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        // bool functions
-        m.insert("bool_to_string", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Bool)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("bool_to_int", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Bool)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        // math functions
-        m.insert("math_pow", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_sqrt", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_sin", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_cos", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_tan", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_asin", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_acos", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_atan", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_atan2", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_ln", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_log", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_log2", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_log10", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_exp", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_abs", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_floor", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_ceil", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_round", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_min", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_max", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_hypot", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_pi", BuiltInSig {
-            params: vec![],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_e", BuiltInSig {
-            params: vec![],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        // io functions
-        m.insert("print", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Void,
-        });
-        m.insert("read_line", BuiltInSig {
-            params: vec![],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        // std functions
-        m.insert("range", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::List(Box::new(Type::Primitive(PrimitiveType::Int))),
-        });
-        m.insert("Some", BuiltInSig {
-            params: vec![Type::Variable("T".to_string())],
-            return_type: Type::Optional(Box::new(Type::Variable("T".to_string()))),
-        });
 
-        m.insert("None", BuiltInSig {
-            params: vec![],
-            return_type: Type::Optional(Box::new(Type::Void)),
-        });
+        // int functions
+        m.insert("int_to_string", sig(vec![int()], str_()));
+        m.insert("int_to_float", sig(vec![int()], float()));
+        register_batch(&mut m, &["int_add", "int_sub", "int_mul", "int_div", "int_rem"], sig(vec![int(), int()], int()));
+        register_batch(&mut m, &["int_eq", "int_lt"], sig(vec![int(), int()], bool_()));
+
+        // float functions
+        m.insert("float_to_string", sig(vec![float()], str_()));
+        m.insert("float_to_int", sig(vec![float()], int()));
+        m.insert("float_add", sig(vec![float(), float()], float()));
+
+        // string functions
+        m.insert("string_to_int", sig(vec![str_()], int()));
+        m.insert("string_to_float", sig(vec![str_()], float()));
+        m.insert("string_concat", sig(vec![str_(), str_()], str_()));
+        m.insert("string_length", sig(vec![str_()], int()));
+
+        // bool functions
+        m.insert("bool_to_string", sig(vec![bool_()], str_()));
+        m.insert("bool_to_int", sig(vec![bool_()], int()));
+
+        // math: single-arg float -> float
+        register_batch(&mut m, &[
+            "math_sqrt", "math_sin", "math_cos", "math_tan",
+            "math_asin", "math_acos", "math_atan",
+            "math_ln", "math_log2", "math_log10", "math_exp",
+            "math_abs", "math_floor", "math_ceil", "math_round",
+        ], sig(vec![float()], float()));
+
+        // math: two-arg (float, float) -> float
+        register_batch(&mut m, &[
+            "math_pow", "math_atan2", "math_log",
+            "math_min", "math_max", "math_hypot",
+        ], sig(vec![float(), float()], float()));
+
+        // math: zero-arg constants
+        register_batch(&mut m, &["math_pi", "math_e"], sig(vec![], float()));
+
+        // io functions
+        m.insert("print", sig(vec![str_()], Type::Void));
+        m.insert("read_line", sig(vec![], str_()));
+
+        // std functions
+        m.insert("range", sig(
+            vec![int(), int()],
+            Type::List(Box::new(int())),
+        ));
+        m.insert("Some", sig(
+            vec![Type::Variable("T".to_string())],
+            Type::Optional(Box::new(Type::Variable("T".to_string()))),
+        ));
+        m.insert("None", sig(
+            vec![],
+            Type::Optional(Box::new(Type::Void)),
+        ));
         m
     };
 }

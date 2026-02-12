@@ -22,7 +22,26 @@ use crate::semantics::{GenericContext, SymbolKind, Type};
 
 use super::CodeGenerator;
 
+/// Stdlib module prefixes that map to runtime functions via the "mux_" prefix.
+/// Adding a new stdlib module only requires adding its prefix here and
+/// declaring the corresponding LLVM functions in codegen/mod.rs.
+const STDLIB_PREFIXES: &[&str] = &["math_"];
+
 impl<'a> CodeGenerator<'a> {
+    /// Try to resolve a stdlib function by name. Returns the LLVM FunctionValue
+    /// if the name matches a known stdlib prefix and the runtime function exists.
+    fn resolve_stdlib_function(&self, name: &str) -> Option<inkwell::values::FunctionValue<'a>> {
+        for prefix in STDLIB_PREFIXES {
+            if name.starts_with(prefix) {
+                let runtime_name = format!("mux_{}", name);
+                if let Some(func) = self.module.get_function(&runtime_name) {
+                    return Some(func);
+                }
+            }
+        }
+        None
+    }
+
     /// Helper function to resolve the class/struct name from any expression
     /// Uses the semantic analyzer to get the expression type
     fn resolve_expression_class_name(&mut self, expr: &ExpressionNode) -> Option<String> {
@@ -2013,25 +2032,20 @@ impl<'a> CodeGenerator<'a> {
                             Ok(result_ptr)
                         }
                         _ => {
-                            // check if this is a math built-in function (math_* -> mux_math_*)
-                            if name.starts_with("math_") {
-                                let runtime_name = format!("mux_{}", name);
-                                if let Some(func) = self.module.get_function(&runtime_name) {
-                                    let mut call_args = vec![];
-                                    for arg in args {
-                                        call_args.push(self.generate_expression(arg)?.into());
-                                    }
-                                    let call = self
-                                        .builder
-                                        .build_call(func, &call_args, &format!("{}_call", name))
-                                        .map_err(|e| e.to_string())?;
-                                    return match call.try_as_basic_value().left() {
-                                        Some(val) => Ok(val),
-                                        None => {
-                                            Ok(self.context.i32_type().const_int(0, false).into())
-                                        }
-                                    };
+                            // check if this is a stdlib built-in function
+                            if let Some(func) = self.resolve_stdlib_function(name) {
+                                let mut call_args = vec![];
+                                for arg in args {
+                                    call_args.push(self.generate_expression(arg)?.into());
                                 }
+                                let call = self
+                                    .builder
+                                    .build_call(func, &call_args, &format!("{}_call", name))
+                                    .map_err(|e| e.to_string())?;
+                                return match call.try_as_basic_value().left() {
+                                    Some(val) => Ok(val),
+                                    None => Ok(self.context.i32_type().const_int(0, false).into()),
+                                };
                             }
 
                             // check if this is a function pointer variable
