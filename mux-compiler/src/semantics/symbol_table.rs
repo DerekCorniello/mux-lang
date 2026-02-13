@@ -243,4 +243,78 @@ impl SymbolTable {
         }
         None
     }
+
+    /// Find symbols with names similar to the given name (for "did you mean?" suggestions).
+    /// Uses a simple edit distance check to find candidates within a threshold.
+    pub fn find_similar(&self, name: &str) -> Option<String> {
+        let threshold = match name.len() {
+            0..=2 => 1,
+            3..=5 => 2,
+            _ => 3,
+        };
+
+        let mut best: Option<(String, usize)> = None;
+
+        // Check all scopes
+        for scope in self.scopes.iter().rev() {
+            let scope_borrow = scope.borrow();
+            for candidate in scope_borrow.symbols.keys() {
+                let dist = edit_distance(name, candidate);
+                if dist <= threshold {
+                    if best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                        best = Some((candidate.clone(), dist));
+                    }
+                }
+            }
+        }
+
+        // Also check all_symbols (hoisted functions, classes, etc.)
+        for candidate in self.all_symbols.keys() {
+            let dist = edit_distance(name, candidate);
+            if dist <= threshold {
+                if best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                    best = Some((candidate.clone(), dist));
+                }
+            }
+        }
+
+        // Check built-in functions
+        for candidate in BUILT_IN_FUNCTIONS.keys() {
+            let dist = edit_distance(name, candidate);
+            if dist <= threshold {
+                if best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                    best = Some((candidate.to_string(), dist));
+                }
+            }
+        }
+
+        best.map(|(name, _)| name)
+    }
+}
+
+/// Compute the Levenshtein edit distance between two strings.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a_len = a.len();
+    let b_len = b.len();
+
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0; b_len + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[b_len]
 }
