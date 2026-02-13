@@ -2013,7 +2013,7 @@ impl<'a> CodeGenerator<'a> {
                             Ok(result_ptr)
                         }
                         "None" => {
-                            if args.is_empty() {
+                            if !args.is_empty() {
                                 return Err("None takes 0 arguments".to_string());
                             }
                             let func = self
