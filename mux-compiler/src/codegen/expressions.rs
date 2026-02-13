@@ -2998,53 +2998,6 @@ impl<'a> CodeGenerator<'a> {
                 body,
             } => Ok(self.generate_lambda_expression(expr, params, return_type, body)?),
             ExpressionKind::FieldAccess { expr, field } => {
-                // Check if this is accessing a stdlib module constant (e.g., math.pi)
-                if let ExpressionKind::Identifier(module_name) = &expr.kind {
-                    if let Some(symbol) = self.analyzer.symbol_table().lookup(module_name) {
-                        if symbol.kind == crate::semantics::SymbolKind::Import {
-                            // Check if this is a constant in the module
-                            if let Some(module_syms) =
-                                self.analyzer.imported_symbols().get(module_name)
-                            {
-                                if let Some(field_sym) = module_syms.get(field) {
-                                    if field_sym.kind == crate::semantics::SymbolKind::Constant {
-                                        // Generate constant value directly
-                                        use crate::semantics::symbol_table::{
-                                            ConstantValue, STDLIB_ITEMS,
-                                        };
-                                        let full_name = format!("{}.{}", module_name, field);
-                                        if let Some(
-                                            crate::semantics::symbol_table::StdlibItem::Constant {
-                                                value,
-                                                ..
-                                            },
-                                        ) = STDLIB_ITEMS.get(&full_name)
-                                        {
-                                            return match value {
-                                                ConstantValue::Float(f) => Ok(self
-                                                    .context
-                                                    .f64_type()
-                                                    .const_float(*f)
-                                                    .into()),
-                                                ConstantValue::Int(i) => Ok(self
-                                                    .context
-                                                    .i64_type()
-                                                    .const_int(*i as u64, false)
-                                                    .into()),
-                                                ConstantValue::Bool(b) => Ok(self
-                                                    .context
-                                                    .bool_type()
-                                                    .const_int(*b as u64, false)
-                                                    .into()),
-                                            };
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
                 // Check if this is a tuple type - handle .left and .right specially
                 let expr_type = self
                     .analyzer
