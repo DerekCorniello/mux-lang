@@ -22,26 +22,7 @@ use crate::semantics::{GenericContext, SymbolKind, Type};
 
 use super::CodeGenerator;
 
-/// Stdlib module prefixes that map to runtime functions via the "mux_" prefix.
-/// Adding a new stdlib module only requires adding its prefix here and
-/// declaring the corresponding LLVM functions in codegen/mod.rs.
-const STDLIB_PREFIXES: &[&str] = &["math_"];
-
 impl<'a> CodeGenerator<'a> {
-    /// Try to resolve a stdlib function by name. Returns the LLVM FunctionValue
-    /// if the name matches a known stdlib prefix and the runtime function exists.
-    fn resolve_stdlib_function(&self, name: &str) -> Option<inkwell::values::FunctionValue<'a>> {
-        for prefix in STDLIB_PREFIXES {
-            if name.starts_with(prefix) {
-                let runtime_name = format!("mux_{}", name);
-                if let Some(func) = self.module.get_function(&runtime_name) {
-                    return Some(func);
-                }
-            }
-        }
-        None
-    }
-
     /// Helper function to resolve the class/struct name from any expression
     /// Uses the semantic analyzer to get the expression type
     fn resolve_expression_class_name(&mut self, expr: &ExpressionNode) -> Option<String> {
@@ -2013,7 +1994,7 @@ impl<'a> CodeGenerator<'a> {
                             Ok(result_ptr)
                         }
                         "None" => {
-                            if !args.is_empty() {
+                            if args.is_empty() {
                                 return Err("None takes 0 arguments".to_string());
                             }
                             let func = self
@@ -2032,23 +2013,7 @@ impl<'a> CodeGenerator<'a> {
                             Ok(result_ptr)
                         }
                         _ => {
-                            // check if this is a stdlib built-in function
-                            if let Some(func) = self.resolve_stdlib_function(name) {
-                                let mut call_args = vec![];
-                                for arg in args {
-                                    call_args.push(self.generate_expression(arg)?.into());
-                                }
-                                let call = self
-                                    .builder
-                                    .build_call(func, &call_args, &format!("{}_call", name))
-                                    .map_err(|e| e.to_string())?;
-                                return match call.try_as_basic_value().left() {
-                                    Some(val) => Ok(val),
-                                    None => Ok(self.context.i32_type().const_int(0, false).into()),
-                                };
-                            }
-
-                            // check if this is a function pointer variable
+                            // first check if this is a function pointer variable
                             if let Some((ptr, _, var_type)) = self
                                 .variables
                                 .get(name)
@@ -3033,37 +2998,6 @@ impl<'a> CodeGenerator<'a> {
                 body,
             } => Ok(self.generate_lambda_expression(expr, params, return_type, body)?),
             ExpressionKind::FieldAccess { expr, field } => {
-                // Check if this is accessing a stdlib module constant (e.g., math.pi)
-                if let ExpressionKind::Identifier(module_name) = &expr.kind {
-                    if let Some(symbol) = self.analyzer.symbol_table().lookup(module_name) {
-                        if symbol.kind == crate::semantics::SymbolKind::Import {
-                            // Check if this is a constant in the module
-                            if let Some(module_syms) =
-                                self.analyzer.imported_symbols().get(module_name)
-                            {
-                                if let Some(field_sym) = module_syms.get(field) {
-                                    if field_sym.kind == crate::semantics::SymbolKind::Constant {
-                                        // Generate constant value directly
-                                        use crate::semantics::symbol_table::{
-                                            ConstantValue, STDLIB_ITEMS,
-                                        };
-                                        let full_name = format!("{}.{}", module_name, field);
-                                        if let Some(item) = STDLIB_ITEMS.get(&full_name) {
-                                            if let crate::semantics::symbol_table::StdlibItem::Constant { value, .. } = item {
-                                                return match value {
-                                                    ConstantValue::Float(f) => Ok(self.context.f64_type().const_float(*f).into()),
-                                                    ConstantValue::Int(i) => Ok(self.context.i64_type().const_int(*i as u64, false).into()),
-                                                    ConstantValue::Bool(b) => Ok(self.context.bool_type().const_int(*b as u64, false).into()),
-                                                };
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
                 // Check if this is a tuple type - handle .left and .right specially
                 let expr_type = self
                     .analyzer
