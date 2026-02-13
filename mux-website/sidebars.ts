@@ -61,6 +61,15 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Standard Library',
+      collapsed: false,
+      items: [
+        'stdlib/index',
+        'stdlib/random',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Design Notes',
       collapsed: true,
       items: [

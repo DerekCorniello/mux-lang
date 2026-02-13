@@ -938,6 +938,29 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
 
+        // Random module functions
+        module.add_function(
+            "mux_rand_init",
+            void_type.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_rand_int", i64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_rand_range",
+            i64_type.fn_type(&[i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_rand_float", f64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_rand_bool",
+            context.bool_type().fn_type(&[], false),
+            None,
+        );
+
         let mut type_map = HashMap::new();
         let mut enum_variants = HashMap::new();
 
