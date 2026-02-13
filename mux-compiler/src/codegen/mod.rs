@@ -877,6 +877,55 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
 
+        // math module extern declarations
+        macro_rules! declare_extern_batch {
+            ($module:expr, $names:expr, $fn_type:expr) => {
+                for name in $names {
+                    $module.add_function(name, $fn_type, None);
+                }
+            };
+        }
+
+        declare_extern_batch!(
+            module,
+            &[
+                "mux_math_sqrt",
+                "mux_math_sin",
+                "mux_math_cos",
+                "mux_math_tan",
+                "mux_math_asin",
+                "mux_math_acos",
+                "mux_math_atan",
+                "mux_math_ln",
+                "mux_math_log2",
+                "mux_math_log10",
+                "mux_math_exp",
+                "mux_math_abs",
+                "mux_math_floor",
+                "mux_math_ceil",
+                "mux_math_round",
+            ],
+            f64_type.fn_type(&[f64_type.into()], false)
+        );
+
+        declare_extern_batch!(
+            module,
+            &[
+                "mux_math_atan2",
+                "mux_math_log",
+                "mux_math_min",
+                "mux_math_max",
+                "mux_math_hypot",
+            ],
+            f64_type.fn_type(&[f64_type.into(), f64_type.into()], false)
+        );
+
+        declare_extern_batch!(
+            module,
+            &["mux_math_pi", "mux_math_e"],
+            f64_type.fn_type(&[], false)
+        );
+
         module.add_function(
             "mux_rc_inc",
             context.void_type().fn_type(&[i8_ptr.into()], false),
