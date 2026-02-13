@@ -2917,7 +2917,7 @@ impl SemanticAnalyzer {
                 use crate::ast::ImportSpec;
 
                 // Handle std library specially (either std.X or just X for flat stdlib modules)
-                let stdlib_modules = ["random", "math", "io", "datetime", "net", "sql"];
+                let stdlib_modules = ["std", "random", "math"];
                 if module_path.starts_with("std.") || stdlib_modules.contains(&module_path.as_str())
                 {
                     self.handle_std_import(module_path, spec, stmt.span)?;
@@ -4005,25 +4005,48 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
 
-        // Check if this is a stdlib module (not built-in like print/range)
-        if module_path == "random" {
-            return self.handle_stdlib_random(spec, span);
-        }
-
-        match spec {
-            ImportSpec::Module { alias } => {
-                let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or_else(|| {
-                    module_path
-                        .split('.')
-                        .last()
-                        .expect("module path should have at least one component")
-                });
-
-                if let Some(sig) = self.get_builtin_sig(symbol_name) {
-                    self.symbol_table.add_symbol(
-                        symbol_name,
-                        Symbol {
-                            kind: SymbolKind::Function,
+        // Match on module_path to handle stdlib modules
+        match module_path {
+            "std" | "stdlib" => {
+                // import std - import all stdlib modules
+                match spec {
+                    ImportSpec::Module { .. } => {
+                        // import std - import all modules
+                        for module in STDLIB_MODULES {
+                            self.import_stdlib_module(
+                                module,
+                                &ImportSpec::Module { alias: None },
+                                span,
+                            )?;
+                        }
+                    }
+                    ImportSpec::Wildcard => {
+                        // import std.* - import all items flat
+                        for (key, item) in STDLIB_ITEMS.entries() {
+                            if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
+                                self.register_stdlib_item(item_name, item, span)?;
+                            }
+                        }
+                    }
+                    ImportSpec::Items { items } => {
+                        // import std.(math, random as r)
+                        for (item, alias) in items {
+                            self.import_stdlib_module(
+                                item,
+                                &ImportSpec::Module {
+                                    alias: alias.clone(),
+                                },
+                                span,
+                            )?;
+                        }
+                    }
+                    ImportSpec::Item { item, alias } => {
+                        // import std.math (as m)
+                        self.import_stdlib_module(
+                            item,
+                            &ImportSpec::Module {
+                                alias: alias.clone(),
+                            },
                             span,
                             type_: Some(Type::Function {
                                 params: sig.params.clone(),
@@ -4078,205 +4101,6 @@ impl SemanticAnalyzer {
             }
             _ => {
                 // Items and Wildcard can be supported similarly if needed
-            }
-        }
-        Ok(())
-    }
-
-    // Handle random stdlib module imports
-    fn handle_stdlib_random(
-        &mut self,
-        spec: &crate::ast::ImportSpec,
-        span: Span,
-    ) -> Result<(), SemanticError> {
-        use crate::ast::ImportSpec;
-
-        // Define all random module functions
-        let random_funcs = vec![
-            (
-                "seed",
-                vec![Type::Primitive(PrimitiveType::Int)],
-                Type::Void,
-                "mux_rand_init",
-            ),
-            (
-                "next_int",
-                vec![],
-                Type::Primitive(PrimitiveType::Int),
-                "mux_rand_int",
-            ),
-            (
-                "next_range",
-                vec![
-                    Type::Primitive(PrimitiveType::Int),
-                    Type::Primitive(PrimitiveType::Int),
-                ],
-                Type::Primitive(PrimitiveType::Int),
-                "mux_rand_range",
-            ),
-            (
-                "next_float",
-                vec![],
-                Type::Primitive(PrimitiveType::Float),
-                "mux_rand_float",
-            ),
-            (
-                "next_bool",
-                vec![],
-                Type::Primitive(PrimitiveType::Bool),
-                "mux_rand_bool",
-            ),
-        ];
-
-        match spec {
-            ImportSpec::Module { alias } => {
-                let module_name = alias.as_deref().unwrap_or("random");
-
-                // Add module namespace
-                self.symbol_table.add_symbol(
-                    module_name,
-                    Symbol {
-                        kind: SymbolKind::Import,
-                        span,
-                        type_: Some(Type::Module(module_name.to_string())),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    },
-                )?;
-
-                // Create module symbols map for imported_symbols
-                let mut module_symbols = std::collections::HashMap::new();
-
-                // Add all functions with namespaced names
-                for (_name, params, ret, llvm_name) in &random_funcs {
-                    let full_name = format!("{}.{}", module_name, _name);
-                    let symbol = Symbol {
-                        kind: SymbolKind::Function,
-                        span,
-                        type_: Some(Type::Function {
-                            params: params.clone(),
-                            returns: Box::new(ret.clone()),
-                            default_count: 0,
-                        }),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: Some(llvm_name.to_string()),
-                        default_param_count: 0,
-                        variants: None,
-                    };
-
-                    // Add to symbol table
-                    self.symbol_table.add_symbol(&full_name, symbol.clone())?;
-
-                    // Add to imported_symbols for module field resolution
-                    module_symbols.insert(_name.to_string(), symbol);
-                }
-
-                // Store module symbols for namespaced access
-                self.imported_symbols
-                    .insert(module_name.to_string(), module_symbols);
-            }
-            ImportSpec::Item { item, alias } => {
-                // Import specific function: import random.next_int
-                let func_name = alias.as_ref().map(|s| s.as_str()).unwrap_or(item);
-                if let Some((_name, params, ret, llvm_name)) =
-                    random_funcs.iter().find(|(n, _, _, _)| n == item)
-                {
-                    self.symbol_table.add_symbol(
-                        func_name,
-                        Symbol {
-                            kind: SymbolKind::Function,
-                            span,
-                            type_: Some(Type::Function {
-                                params: params.clone(),
-                                returns: Box::new(ret.clone()),
-                                default_count: 0,
-                            }),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: Some(llvm_name.to_string()),
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    )?;
-                } else {
-                    return Err(SemanticError {
-                        message: format!("Unknown function 'random.{}'", item),
-                        span,
-                    });
-                }
-            }
-            ImportSpec::Items { items } => {
-                // Import multiple functions: import random.(next_int, next_float)
-                for (item, alias) in items {
-                    let func_name = alias.as_ref().map(|s| s.as_str()).unwrap_or(item);
-                    if let Some((_name, params, ret, llvm_name)) =
-                        random_funcs.iter().find(|(n, _, _, _)| n == item)
-                    {
-                        self.symbol_table.add_symbol(
-                            func_name,
-                            Symbol {
-                                kind: SymbolKind::Function,
-                                span,
-                                type_: Some(Type::Function {
-                                    params: params.clone(),
-                                    returns: Box::new(ret.clone()),
-                                    default_count: 0,
-                                }),
-                                interfaces: std::collections::HashMap::new(),
-                                methods: std::collections::HashMap::new(),
-                                fields: std::collections::HashMap::new(),
-                                type_params: Vec::new(),
-                                original_name: None,
-                                llvm_name: Some(llvm_name.to_string()),
-                                default_param_count: 0,
-                                variants: None,
-                            },
-                        )?;
-                    } else {
-                        return Err(SemanticError {
-                            message: format!("Unknown function 'random.{}'", item),
-                            span,
-                        });
-                    }
-                }
-            }
-            ImportSpec::Wildcard => {
-                // Import all: import random.*
-                for (name, params, ret, llvm_name) in random_funcs {
-                    self.symbol_table.add_symbol(
-                        name,
-                        Symbol {
-                            kind: SymbolKind::Function,
-                            span,
-                            type_: Some(Type::Function {
-                                params: params.clone(),
-                                returns: Box::new(ret.clone()),
-                                default_count: 0,
-                            }),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: Some(llvm_name.to_string()),
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    )?;
-                }
             }
         }
         Ok(())
