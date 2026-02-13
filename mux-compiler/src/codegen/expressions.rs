@@ -3048,14 +3048,30 @@ impl<'a> CodeGenerator<'a> {
                                             ConstantValue, STDLIB_ITEMS,
                                         };
                                         let full_name = format!("{}.{}", module_name, field);
-                                        if let Some(item) = STDLIB_ITEMS.get(&full_name) {
-                                            if let crate::semantics::symbol_table::StdlibItem::Constant { value, .. } = item {
-                                                return match value {
-                                                    ConstantValue::Float(f) => Ok(self.context.f64_type().const_float(*f).into()),
-                                                    ConstantValue::Int(i) => Ok(self.context.i64_type().const_int(*i as u64, false).into()),
-                                                    ConstantValue::Bool(b) => Ok(self.context.bool_type().const_int(*b as u64, false).into()),
-                                                };
-                                            }
+                                        if let Some(
+                                            crate::semantics::symbol_table::StdlibItem::Constant {
+                                                value,
+                                                ..
+                                            },
+                                        ) = STDLIB_ITEMS.get(&full_name)
+                                        {
+                                            return match value {
+                                                ConstantValue::Float(f) => Ok(self
+                                                    .context
+                                                    .f64_type()
+                                                    .const_float(*f)
+                                                    .into()),
+                                                ConstantValue::Int(i) => Ok(self
+                                                    .context
+                                                    .i64_type()
+                                                    .const_int(*i as u64, false)
+                                                    .into()),
+                                                ConstantValue::Bool(b) => Ok(self
+                                                    .context
+                                                    .bool_type()
+                                                    .const_int(*b as u64, false)
+                                                    .into()),
+                                            };
                                         }
                                     }
                                 }

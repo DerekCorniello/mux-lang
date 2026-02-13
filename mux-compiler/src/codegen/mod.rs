@@ -926,6 +926,29 @@ impl<'a> CodeGenerator<'a> {
             f64_type.fn_type(&[], false)
         );
 
+        // random module extern declarations
+        module.add_function(
+            "mux_random_seed",
+            context.void_type().fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_random_next_int", i64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_random_next_range",
+            i64_type.fn_type(&[i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_random_next_float", f64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_random_next_bool",
+            context.bool_type().fn_type(&[], false),
+            None,
+        );
+
         module.add_function(
             "mux_rc_inc",
             context.void_type().fn_type(&[i8_ptr.into()], false),
