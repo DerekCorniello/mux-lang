@@ -37,6 +37,196 @@ fn register_batch(
     }
 }
 
+/// Value representation for compile-time constants
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum ConstantValue {
+    Float(f64),
+    Int(i64),
+    Bool(bool),
+}
+
+/// Types of items in stdlib modules
+/// Uses &'static [Type] instead of Vec<Type> for const compatibility in PHF
+#[derive(Debug, Clone, PartialEq)]
+pub enum StdlibItem {
+    Function {
+        params: &'static [Type],
+        ret: Type,
+        llvm_name: &'static str,
+    },
+    Constant {
+        ty: Type,
+        value: ConstantValue,
+    },
+}
+
+// Static arrays for function parameters (required for PHF const compatibility)
+static FLOAT_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Float)];
+static FLOAT_FLOAT_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Float),
+    Type::Primitive(PrimitiveType::Float),
+];
+static INT_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Int)];
+static INT_INT_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Int),
+    Type::Primitive(PrimitiveType::Int),
+];
+static EMPTY_PARAMS: &[Type] = &[];
+
+/// All stdlib items organized by module.function or module.constant
+/// Using PHF for O(1) compile-time perfect hashing - ideal for large stdlibs
+pub static STDLIB_ITEMS: phf::Map<&'static str, StdlibItem> = phf::phf_map! {
+    // Math module - single argument float -> float functions
+    "math.sqrt" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_sqrt",
+    },
+    "math.sin" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_sin",
+    },
+    "math.cos" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_cos",
+    },
+    "math.tan" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_tan",
+    },
+    "math.asin" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_asin",
+    },
+    "math.acos" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_acos",
+    },
+    "math.atan" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_atan",
+    },
+    "math.ln" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_ln",
+    },
+    "math.log2" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_log2",
+    },
+    "math.log10" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_log10",
+    },
+    "math.exp" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_exp",
+    },
+    "math.abs" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_abs",
+    },
+    "math.floor" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_floor",
+    },
+    "math.ceil" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_ceil",
+    },
+    "math.round" => StdlibItem::Function {
+        params: FLOAT_PARAM,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_round",
+    },
+
+    // Math module - two argument float -> float functions
+    "math.atan2" => StdlibItem::Function {
+        params: FLOAT_FLOAT_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_atan2",
+    },
+    "math.log" => StdlibItem::Function {
+        params: FLOAT_FLOAT_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_log",
+    },
+    "math.min" => StdlibItem::Function {
+        params: FLOAT_FLOAT_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_min",
+    },
+    "math.max" => StdlibItem::Function {
+        params: FLOAT_FLOAT_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_max",
+    },
+    "math.hypot" => StdlibItem::Function {
+        params: FLOAT_FLOAT_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_hypot",
+    },
+    "math.pow" => StdlibItem::Function {
+        params: FLOAT_FLOAT_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_math_pow",
+    },
+
+    // Math module - constants (NOT functions!)
+    "math.pi" => StdlibItem::Constant {
+        ty: Type::Primitive(PrimitiveType::Float),
+        value: ConstantValue::Float(std::f64::consts::PI),
+    },
+    "math.e" => StdlibItem::Constant {
+        ty: Type::Primitive(PrimitiveType::Float),
+        value: ConstantValue::Float(std::f64::consts::E),
+    },
+
+    // Random module functions
+    "random.seed" => StdlibItem::Function {
+        params: INT_PARAM,
+        ret: Type::Void,
+        llvm_name: "mux_random_seed",
+    },
+    "random.next_int" => StdlibItem::Function {
+        params: EMPTY_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Int),
+        llvm_name: "mux_random_next_int",
+    },
+    "random.next_range" => StdlibItem::Function {
+        params: INT_INT_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Int),
+        llvm_name: "mux_random_next_range",
+    },
+    "random.next_float" => StdlibItem::Function {
+        params: EMPTY_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_random_next_float",
+    },
+    "random.next_bool" => StdlibItem::Function {
+        params: EMPTY_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Bool),
+        llvm_name: "mux_random_next_bool",
+    },
+};
+
+/// List of all available stdlib modules for wildcard imports
+pub const STDLIB_MODULES: &[&str] = &["math", "random"];
+
 lazy_static! {
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
@@ -61,23 +251,6 @@ lazy_static! {
         // bool functions
         m.insert("bool_to_string", sig(vec![bool_()], str_()));
         m.insert("bool_to_int", sig(vec![bool_()], int()));
-
-        // math: single-arg float -> float
-        register_batch(&mut m, &[
-            "math_sqrt", "math_sin", "math_cos", "math_tan",
-            "math_asin", "math_acos", "math_atan",
-            "math_ln", "math_log2", "math_log10", "math_exp",
-            "math_abs", "math_floor", "math_ceil", "math_round",
-        ], sig(vec![float()], float()));
-
-        // math: two-arg (float, float) -> float
-        register_batch(&mut m, &[
-            "math_pow", "math_atan2", "math_log",
-            "math_min", "math_max", "math_hypot",
-        ], sig(vec![float(), float()], float()));
-
-        // math: zero-arg constants
-        register_batch(&mut m, &["math_pi", "math_e"], sig(vec![], float()));
 
         // io functions
         m.insert("print", sig(vec![str_()], Type::Void));

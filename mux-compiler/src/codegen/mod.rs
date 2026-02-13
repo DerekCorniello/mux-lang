@@ -878,15 +878,16 @@ impl<'a> CodeGenerator<'a> {
         );
 
         // math module extern declarations
-        let declare_extern_batch =
-            |module: &Module, names: &[&str], fn_type: inkwell::types::FunctionType| {
-                for name in names {
-                    module.add_function(name, fn_type, None);
+        macro_rules! declare_extern_batch {
+            ($module:expr, $names:expr, $fn_type:expr) => {
+                for name in $names {
+                    $module.add_function(name, $fn_type, None);
                 }
             };
+        }
 
-        declare_extern_batch(
-            &module,
+        declare_extern_batch!(
+            module,
             &[
                 "mux_math_sqrt",
                 "mux_math_sin",
@@ -904,11 +905,11 @@ impl<'a> CodeGenerator<'a> {
                 "mux_math_ceil",
                 "mux_math_round",
             ],
-            f64_type.fn_type(&[f64_type.into()], false),
+            f64_type.fn_type(&[f64_type.into()], false)
         );
 
-        declare_extern_batch(
-            &module,
+        declare_extern_batch!(
+            module,
             &[
                 "mux_math_atan2",
                 "mux_math_log",
@@ -916,13 +917,13 @@ impl<'a> CodeGenerator<'a> {
                 "mux_math_max",
                 "mux_math_hypot",
             ],
-            f64_type.fn_type(&[f64_type.into(), f64_type.into()], false),
+            f64_type.fn_type(&[f64_type.into(), f64_type.into()], false)
         );
 
-        declare_extern_batch(
-            &module,
+        declare_extern_batch!(
+            module,
             &["mux_math_pi", "mux_math_e"],
-            f64_type.fn_type(&[], false),
+            f64_type.fn_type(&[], false)
         );
 
         module.add_function(

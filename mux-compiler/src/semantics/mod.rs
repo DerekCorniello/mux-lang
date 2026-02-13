@@ -2917,7 +2917,7 @@ impl SemanticAnalyzer {
                 use crate::ast::ImportSpec;
 
                 // Handle std library specially
-                if module_path.starts_with("std.") {
+                if module_path == "std" || module_path.starts_with("std.") {
                     self.handle_std_import(module_path, spec, stmt.span)?;
                     return Ok(());
                 }
@@ -4030,77 +4030,280 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
+        use crate::semantics::symbol_table::{STDLIB_ITEMS, STDLIB_MODULES};
 
-        let module_name = module_path
-            .split('.')
-            .last()
-            .expect("module path should have at least one component");
-
-        match spec {
-            ImportSpec::Module { alias } => {
-                let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or(module_name);
-
-                if let Some(sig) = self.get_builtin_sig(symbol_name) {
-                    self.symbol_table.add_symbol(
-                        symbol_name,
-                        Symbol {
-                            kind: SymbolKind::Function,
+        match module_path {
+            "std" => {
+                // import std - import all stdlib modules
+                match spec {
+                    ImportSpec::Module { .. } => {
+                        // import std - import all modules
+                        for module in STDLIB_MODULES {
+                            self.import_stdlib_module(
+                                module,
+                                &ImportSpec::Module { alias: None },
+                                span,
+                            )?;
+                        }
+                    }
+                    ImportSpec::Wildcard => {
+                        // import std.* - import all items flat
+                        for (key, item) in STDLIB_ITEMS.entries() {
+                            if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
+                                self.register_stdlib_item(item_name, item, span)?;
+                            }
+                        }
+                    }
+                    ImportSpec::Items { items } => {
+                        // import std.(math, random as r)
+                        for (item, alias) in items {
+                            let module_name = alias.as_deref().unwrap_or(item);
+                            self.import_stdlib_module(
+                                module_name,
+                                &ImportSpec::Module {
+                                    alias: alias.clone(),
+                                },
+                                span,
+                            )?;
+                        }
+                    }
+                    ImportSpec::Item { item, alias } => {
+                        // import std.math (as m)
+                        self.import_stdlib_module(
+                            item,
+                            &ImportSpec::Module {
+                                alias: alias.clone(),
+                            },
                             span,
-                            type_: Some(Type::Function {
-                                params: sig.params.clone(),
-                                returns: Box::new(sig.return_type.clone()),
-                                default_count: 0,
-                            }),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    )?;
-                } else if symbol_name == "None" {
-                    self.symbol_table.add_symbol(
-                        symbol_name,
-                        Symbol {
-                            kind: SymbolKind::Constant,
-                            span,
-                            type_: Some(Type::Optional(Box::new(Type::Void))),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    )?;
-                } else {
-                    self.register_builtin_functions_with_prefix(&format!("{}_", symbol_name), span);
+                        )?;
+                    }
                 }
             }
-            ImportSpec::Item { item, alias } => {
-                let symbol_name = alias.as_ref().unwrap_or(item);
-                if let Some(sig) = self.get_builtin_sig(item).cloned() {
-                    self.register_builtin_function(symbol_name, &sig, span);
-                }
+            "std.math" | "math" => {
+                self.import_stdlib_module("math", spec, span)?;
             }
-            ImportSpec::Wildcard => {
-                self.register_builtin_functions_with_prefix(&format!("{}_", module_name), span);
+            "std.random" | "random" => {
+                self.import_stdlib_module("random", spec, span)?;
             }
-            ImportSpec::Items { items } => {
-                for (item, alias) in items {
-                    let qualified_name = format!("{}_{}", module_name, item);
-                    let symbol_name = alias.as_ref().unwrap_or(&qualified_name);
-                    if let Some(sig) = self.get_builtin_sig(&qualified_name).cloned() {
-                        self.register_builtin_function(symbol_name, &sig, span);
+            _ => {
+                // Fallback to old behavior for non-stdlib modules
+                let module_name = module_path
+                    .split('.')
+                    .last()
+                    .expect("module path should have at least one component");
+
+                match spec {
+                    ImportSpec::Module { alias } => {
+                        let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or(module_name);
+                        if let Some(sig) = self.get_builtin_sig(symbol_name).cloned() {
+                            self.register_builtin_function(symbol_name, &sig, span);
+                        } else if symbol_name == "None" {
+                            self.symbol_table.add_symbol(
+                                symbol_name,
+                                Symbol {
+                                    kind: SymbolKind::Constant,
+                                    span,
+                                    type_: Some(Type::Optional(Box::new(Type::Void))),
+                                    interfaces: std::collections::HashMap::new(),
+                                    methods: std::collections::HashMap::new(),
+                                    fields: std::collections::HashMap::new(),
+                                    type_params: Vec::new(),
+                                    original_name: None,
+                                    llvm_name: None,
+                                    default_param_count: 0,
+                                    variants: None,
+                                },
+                            )?;
+                        } else {
+                            self.register_builtin_functions_with_prefix(
+                                &format!("{}_", symbol_name),
+                                span,
+                            );
+                        }
+                    }
+                    ImportSpec::Item { item, alias } => {
+                        let symbol_name = alias.as_ref().unwrap_or(item);
+                        if let Some(sig) = self.get_builtin_sig(item).cloned() {
+                            self.register_builtin_function(symbol_name, &sig, span);
+                        }
+                    }
+                    ImportSpec::Wildcard => {
+                        self.register_builtin_functions_with_prefix(
+                            &format!("{}_", module_name),
+                            span,
+                        );
+                    }
+                    ImportSpec::Items { items } => {
+                        for (item, alias) in items {
+                            let qualified_name = format!("{}_{}", module_name, item);
+                            let symbol_name = alias.as_ref().unwrap_or(&qualified_name);
+                            if let Some(sig) = self.get_builtin_sig(&qualified_name).cloned() {
+                                self.register_builtin_function(symbol_name, &sig, span);
+                            }
+                        }
                     }
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Import a stdlib module (e.g., "math", "random")
+    fn import_stdlib_module(
+        &mut self,
+        module_name: &str,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        use crate::ast::ImportSpec;
+        use crate::semantics::symbol_table::{STDLIB_ITEMS, StdlibItem};
+
+        // Collect all items for this module
+        let mut module_symbols: std::collections::HashMap<String, Symbol> =
+            std::collections::HashMap::new();
+
+        for (key, item) in STDLIB_ITEMS.entries() {
+            if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
+                let symbol = match item {
+                    StdlibItem::Function {
+                        params,
+                        ret,
+                        llvm_name,
+                    } => Symbol {
+                        kind: SymbolKind::Function,
+                        span,
+                        type_: Some(Type::Function {
+                            params: params.to_vec(),
+                            returns: Box::new(ret.clone()),
+                            default_count: 0,
+                        }),
+                        interfaces: std::collections::HashMap::new(),
+                        methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
+                        type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: Some(llvm_name.to_string()),
+                        default_param_count: 0,
+                        variants: None,
+                    },
+                    StdlibItem::Constant { ty, .. } => Symbol {
+                        kind: SymbolKind::Constant,
+                        span,
+                        type_: Some(ty.clone()),
+                        interfaces: std::collections::HashMap::new(),
+                        methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
+                        type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
+                        default_param_count: 0,
+                        variants: None,
+                    },
+                };
+                module_symbols.insert(item_name.to_string(), symbol);
+            }
+        }
+
+        match spec {
+            ImportSpec::Module { alias } => {
+                let namespace = alias.as_deref().unwrap_or(module_name);
+                // Use the existing add_module_namespace but with our own llvm_name handling
+                // For stdlib, we don't want the mangling - use the llvm_name directly
+                self.imported_symbols
+                    .insert(namespace.to_string(), module_symbols.clone());
+
+                // Add module symbol to symbol table
+                self.symbol_table.add_symbol(
+                    namespace,
+                    Symbol {
+                        kind: SymbolKind::Import,
+                        span,
+                        type_: Some(Type::Module(namespace.to_string())),
+                        interfaces: std::collections::HashMap::new(),
+                        methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
+                        type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
+                        default_param_count: 0,
+                        variants: None,
+                    },
+                )?;
+            }
+            ImportSpec::Item { item, alias } => {
+                // import std.math.sin (flat import of single function)
+                let symbol_name = alias.as_ref().unwrap_or(item);
+                if let Some(symbol) = module_symbols.get(item) {
+                    self.symbol_table.add_symbol(symbol_name, symbol.clone())?;
+                }
+            }
+            ImportSpec::Wildcard => {
+                // import std.math.* (flat import of all items)
+                for (name, symbol) in module_symbols {
+                    self.symbol_table.add_symbol(&name, symbol)?;
+                }
+            }
+            ImportSpec::Items { items } => {
+                // import std.math.(sin, cos as c)
+                for (item, alias) in items {
+                    let symbol_name = alias.as_ref().unwrap_or(item);
+                    if let Some(symbol) = module_symbols.get(item) {
+                        self.symbol_table.add_symbol(symbol_name, symbol.clone())?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Register a single stdlib item to the symbol table (for flat imports)
+    fn register_stdlib_item(
+        &mut self,
+        name: &str,
+        item: &crate::semantics::symbol_table::StdlibItem,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        use crate::semantics::symbol_table::StdlibItem;
+
+        let symbol = match item {
+            StdlibItem::Function {
+                params,
+                ret,
+                llvm_name,
+            } => Symbol {
+                kind: SymbolKind::Function,
+                span,
+                type_: Some(Type::Function {
+                    params: params.to_vec(),
+                    returns: Box::new(ret.clone()),
+                    default_count: 0,
+                }),
+                interfaces: std::collections::HashMap::new(),
+                methods: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                type_params: Vec::new(),
+                original_name: None,
+                llvm_name: Some(llvm_name.to_string()),
+                default_param_count: 0,
+                variants: None,
+            },
+            StdlibItem::Constant { ty, .. } => Symbol {
+                kind: SymbolKind::Constant,
+                span,
+                type_: Some(ty.clone()),
+                interfaces: std::collections::HashMap::new(),
+                methods: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                type_params: Vec::new(),
+                original_name: None,
+                llvm_name: None,
+                default_param_count: 0,
+                variants: None,
+            },
+        };
+
+        self.symbol_table.add_symbol(name, symbol)?;
         Ok(())
     }
 
