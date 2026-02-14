@@ -159,7 +159,11 @@ impl<'a> Lexer<'a> {
         if found {
             Ok(comment)
         } else {
-            Err(LexerError::new("Unterminated block comment", start_span))
+            Err(LexerError::with_help(
+                "Unterminated block comment",
+                start_span,
+                "Add a closing '*/' to end the block comment",
+            ))
         }
     }
 
@@ -256,7 +260,11 @@ impl<'a> Lexer<'a> {
                     start_span.complete(self.source.line, self.source.col);
                     Ok(Token::new(TokenType::Or, start_span))
                 } else {
-                    Err(LexerError::new("Expected '|' after '|'", start_span))
+                    Err(LexerError::with_help(
+                        "Unexpected character '|'",
+                        start_span,
+                        "Single '|' is not a valid operator. Use '||' for logical OR",
+                    ))
                 }
             }
             '&' => {
@@ -312,9 +320,10 @@ impl<'a> Lexer<'a> {
                             }
                             Some(ch) => comment.push(ch),
                             None => {
-                                return Err(LexerError::new(
+                                return Err(LexerError::with_help(
                                     "Unterminated block comment",
                                     start_span,
+                                    "Add a closing '*/' to end the block comment",
                                 ));
                             }
                         }
@@ -382,9 +391,10 @@ impl<'a> Lexer<'a> {
                 };
                 Ok(Token::new(token_type, start_span))
             }
-            _ => Err(LexerError::new(
-                format!("unexpected character: '{}'", first_char),
+            _ => Err(LexerError::with_help(
+                format!("Unexpected character: '{}'", first_char),
                 start_span,
+                "This character is not recognized as valid Mux syntax. Check for accidental special characters or encoding issues.",
             )),
         }
     }
@@ -551,9 +561,10 @@ impl<'a> Lexer<'a> {
             }
 
             if !has_digit {
-                return Err(LexerError::new(
+                return Err(LexerError::with_help(
                     "Expected digit after decimal point",
                     Span::new(self.source.line, self.source.col),
+                    "A decimal point must be followed by at least one digit, e.g. 1.0",
                 ));
             }
         } else {
@@ -644,9 +655,10 @@ impl<'a> Lexer<'a> {
             }
 
             if !has_exponent_digit {
-                return Err(LexerError::new(
+                return Err(LexerError::with_help(
                     "Missing exponent in scientific notation",
                     Span::new(self.source.line, self.source.col),
+                    "The 'e' notation requires digits after it, e.g. 1e10, 2.5e-3",
                 ));
             }
         }
@@ -659,9 +671,10 @@ impl<'a> Lexer<'a> {
                 && self.source.peek_nth(1).is_some_and(|c| c.is_ascii_digit())
             {
                 self.consume_remaining_invalid(&mut num, &mut start_span);
-                return Err(LexerError::new(
+                return Err(LexerError::with_help(
                     format!("Invalid float literal: {}", num),
                     start_span,
+                    "A number can only have one decimal point. Use separate expressions for chained field access.",
                 ));
             }
 
@@ -672,9 +685,10 @@ impl<'a> Lexer<'a> {
                 .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             {
                 self.consume_remaining_invalid(&mut num, &mut start_span);
-                return Err(LexerError::new(
+                return Err(LexerError::with_help(
                     format!("Invalid float literal: {}", num),
                     start_span,
+                    "Float literals cannot contain letters. Use a space or separate expression.",
                 ));
             }
 
@@ -692,9 +706,10 @@ impl<'a> Lexer<'a> {
                 .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             {
                 self.consume_remaining_invalid(&mut num, &mut start_span);
-                return Err(LexerError::new(
+                return Err(LexerError::with_help(
                     format!("Invalid integer literal: {}", num),
                     start_span,
+                    "Integer literals cannot contain letters. Variable names must not start with a digit.",
                 ));
             }
 
@@ -703,7 +718,11 @@ impl<'a> Lexer<'a> {
                 .parse::<i64>()
                 .map(|i| Token::new(TokenType::Int(i), start_span))
                 .map_err(|_| {
-                    LexerError::new(format!("Invalid integer literal: {}", num), start_span)
+                    LexerError::with_help(
+                        format!("Invalid integer literal: {}", num),
+                        start_span,
+                        "The integer value is out of range. Valid integers are between -9223372036854775808 and 9223372036854775807.",
+                    )
                 })
         }
     }

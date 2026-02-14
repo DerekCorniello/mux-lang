@@ -2,7 +2,7 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-error: Expected '{' after class header
+error: Expected '{' after class header, but reached end of file
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_class_body.mux:2:7
    |
  2 | class Foo

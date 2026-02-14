@@ -11,3 +11,5 @@ error: Lambda must return a value of type 'int' on all code paths
    | ^^^^^^^^^^^^^^^^^^
  4 |             return x
    | ^^^^^^^^^^^^^^^^^^^^
+   |
+= help: Add a return statement at the end of every branch in the lambda body

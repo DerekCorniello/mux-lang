@@ -2,8 +2,10 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-error: Non-exhaustive match: type 'int' requires a wildcard '_' pattern
+error: Non-exhaustive match on type 'int'
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_match_missing_wildcard.mux:4:11
    |
  4 |     match x {
    |           ^
+   |
+= help: Add a wildcard '_' pattern as the last match arm to handle all remaining cases

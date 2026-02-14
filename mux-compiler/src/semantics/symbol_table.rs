@@ -386,4 +386,83 @@ impl SymbolTable {
         }
         None
     }
+
+    /// Find symbols with names similar to the given name (for "did you mean?" suggestions).
+    /// Uses a simple edit distance check to find candidates within a threshold.
+    pub fn find_similar(&self, name: &str) -> Option<String> {
+        let threshold = calculate_similarity_threshold(name);
+
+        let mut best: Option<(String, usize)> = None;
+
+        // Check all scopes
+        for scope in self.scopes.iter().rev() {
+            let scope_borrow = scope.borrow();
+            best = Self::find_best_match(name, threshold, scope_borrow.symbols.keys(), best);
+        }
+
+        // Also check all_symbols (hoisted functions, classes, etc.)
+        best = Self::find_best_match(name, threshold, self.all_symbols.keys(), best);
+
+        // Check built-in functions
+        best = Self::find_best_match(name, threshold, BUILT_IN_FUNCTIONS.keys().copied(), best);
+
+        best.map(|(name, _)| name)
+    }
+
+    fn find_best_match<S: AsRef<str>>(
+        name: &str,
+        threshold: usize,
+        candidates: impl Iterator<Item = S>,
+        best: Option<(String, usize)>,
+    ) -> Option<(String, usize)> {
+        let mut current_best = best;
+        for candidate in candidates {
+            let s = candidate.as_ref();
+            let dist = edit_distance(name, s);
+            if dist <= threshold && current_best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                current_best = Some((s.to_string(), dist));
+            }
+        }
+        current_best
+    }
+}
+
+/// Calculate the maximum allowed edit distance for suggesting similar names.
+/// Uses an adaptive threshold based on name length:
+/// - 1-2 chars: threshold of 1 (strict for short names)
+/// - 3-5 chars: threshold of 2 (moderate for medium names)
+/// - 6+ chars: threshold of 3 (permissive for long names)
+pub fn calculate_similarity_threshold(name: &str) -> usize {
+    match name.len() {
+        0..=2 => 1,
+        3..=5 => 2,
+        _ => 3,
+    }
+}
+
+/// Compute the Levenshtein edit distance between two strings.
+pub fn edit_distance(a: &str, b: &str) -> usize {
+    let a_len = a.chars().count();
+    let b_len = b.chars().count();
+
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0; b_len + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[b_len]
 }

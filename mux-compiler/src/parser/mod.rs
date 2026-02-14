@@ -420,28 +420,14 @@ impl<'a> Parser<'a> {
                     self.consume_token(TokenType::NewLine, "Expected newline")?;
                 }
                 _ => {
-                    let token_desc = match &self.peek().token_type {
-                        TokenType::Func => "'func' keyword".to_string(),
-                        TokenType::Class => "'class' keyword".to_string(),
-                        TokenType::Interface => "'interface' keyword".to_string(),
-                        TokenType::If => "'if' keyword".to_string(),
-                        TokenType::For => "'for' keyword".to_string(),
-                        TokenType::While => "'while' keyword".to_string(),
-                        TokenType::Return => "'return' keyword".to_string(),
-                        TokenType::OpenBrace => "'{'".to_string(),
-                        TokenType::CloseBrace => "'}'".to_string(),
-                        TokenType::OpenParen => "'('".to_string(),
-                        TokenType::CloseParen => "')'".to_string(),
-                        TokenType::Id(name) => format!("identifier '{}'", name),
-                        TokenType::Int(n) => format!("integer literal '{}'", n),
-                        TokenType::Float(n) => format!("float literal '{}'", n),
-                        TokenType::Str(s) => format!("string literal '\"{}\"'", s),
-                        TokenType::Eof => "end of file".to_string(),
-                        t => format!("'{:?}'", t),
-                    };
-                    return Err(ParserError::new(
-                        format!("Expected field declaration in class, found {}", token_desc),
-                        start_span,
+                    let token_desc = Self::describe_token(&self.peek().token_type);
+                    return Err(ParserError::with_help(
+                        format!(
+                            "Expected field or method declaration in class body, found {}",
+                            token_desc
+                        ),
+                        self.peek().span,
+                        "Class bodies can only contain field declarations (e.g., 'int x = 0') and method declarations (e.g., 'func foo() returns void { ... }')",
                     ));
                 }
             }
@@ -923,9 +909,10 @@ impl<'a> Parser<'a> {
                     let default_expr = self.parse_expression()?;
                     // Validate that default value is a literal
                     if !Self::is_literal_expression(&default_expr) {
-                        return Err(ParserError::new(
-                            "Default parameter values must be literals (int, float, string, bool, or char)",
+                        return Err(ParserError::with_help(
+                            "Default parameter values must be literals",
                             default_expr.span,
+                            "Only literal values (int, float, string, bool, char) are allowed as default parameter values. Example: func foo(int x = 10) returns void { ... }",
                         ));
                     }
                     has_default = true;
@@ -933,9 +920,10 @@ impl<'a> Parser<'a> {
                 } else {
                     // If we've already seen a default param, this one must also have a default
                     if has_default {
-                        return Err(ParserError::new(
-                            "Parameters without default values cannot come after parameters with default values",
+                        return Err(ParserError::with_help(
+                            "Required parameter cannot follow a parameter with a default value",
                             self.previous().span,
+                            "Move all parameters with default values to the end of the parameter list",
                         ));
                     }
                     None
@@ -956,9 +944,13 @@ impl<'a> Parser<'a> {
         let return_type = if self.matches(&[TokenType::Returns]) {
             self.parse_type()?
         } else {
-            return Err(ParserError::new(
-                "Expected 'returns' before return type",
+            return Err(ParserError::with_help(
+                format!(
+                    "Expected 'returns' before return type, found {}",
+                    Self::describe_token(&self.peek().token_type)
+                ),
                 self.peek().span,
+                "All functions must declare a return type. Use 'returns void' for functions that return nothing. Example: func foo() returns int { ... }",
             ));
         };
 
@@ -1473,9 +1465,10 @@ impl<'a> Parser<'a> {
         let start_span = self.tokens[self.current].span;
 
         if self.loop_depth == 0 {
-            return Err(ParserError::new(
-                "Cannot use 'break' outside of a loop".to_string(),
+            return Err(ParserError::with_help(
+                "Cannot use 'break' outside of a loop",
                 start_span,
+                "'break' can only be used inside a 'for' or 'while' loop",
             ));
         }
 
@@ -1489,9 +1482,10 @@ impl<'a> Parser<'a> {
         let start_span = self.tokens[self.current].span;
 
         if self.loop_depth == 0 {
-            return Err(ParserError::new(
-                "Cannot use 'continue' outside of a loop".to_string(),
+            return Err(ParserError::with_help(
+                "Cannot use 'continue' outside of a loop",
                 start_span,
+                "'continue' can only be used inside a 'for' or 'while' loop",
             ));
         }
 
@@ -1634,9 +1628,10 @@ impl<'a> Parser<'a> {
             } => {
                 // If this is a postfix ++ or --, it's nested and invalid
                 if *postfix && matches!(op, UnaryOp::Incr | UnaryOp::Decr) {
-                    return Err(ParserError::new(
-                        "Increment/Decrement operator can only be used individually, not as a part of an expression".to_string(),
+                    return Err(ParserError::with_help(
+                        "Increment/Decrement operator can only be used as a standalone statement",
                         expr.span,
+                        "Expressions like 'x + y++' are not supported. Use 'y++' as a separate statement before the expression.",
                     ));
                 }
                 // Otherwise, recurse into the inner expression
@@ -1988,9 +1983,10 @@ impl<'a> Parser<'a> {
         if let Some(op_token) = self.consume_if_unary_operator() {
             // Reject prefix ++ and --
             if matches!(op_token.token_type, TokenType::Incr | TokenType::Decr) {
-                return Err(ParserError::new(
-                    "Increment/Decrement operator can only be in the postfix position".to_string(),
+                return Err(ParserError::with_help(
+                    "Increment/Decrement operator can only be used in the postfix position",
                     op_token.span,
+                    "Place the operator after the variable: 'x++' or 'x--' instead of '++x' or '--x'",
                 ));
             }
             let expr = self.parse_precedence(Precedence::Unary)?;
@@ -2143,9 +2139,10 @@ impl<'a> Parser<'a> {
 
                 if self.check(TokenType::CloseParen) {
                     self.consume_token(TokenType::CloseParen, "Expected ')' after expression")?;
-                    return Err(ParserError::new(
-                        "Tuple must have exactly 2 elements",
+                    return Err(ParserError::with_help(
+                        "Tuple must have exactly 2 elements, found empty parentheses",
                         start_span.combine(&self.previous().span),
+                        "Tuples are created with two elements: (value1, value2). Example: auto pair = (1, \"hello\")",
                     ));
                 }
 
@@ -2160,9 +2157,10 @@ impl<'a> Parser<'a> {
                             TokenType::CloseParen,
                             "Expected ')' after tuple elements",
                         )?;
-                        return Err(ParserError::new(
-                            "Tuple must have exactly 2 elements",
+                        return Err(ParserError::with_help(
+                            "Tuple must have exactly 2 elements, found only 1",
                             start_span.combine(&self.previous().span),
+                            "Tuples require exactly two elements: (value1, value2). A trailing comma after a single value is not allowed.",
                         ));
                     }
 
@@ -2311,9 +2309,10 @@ impl<'a> Parser<'a> {
                         let param_type = self.parse_type()?;
                         let param_name = self.consume_identifier("Expected parameter name")?;
                         if self.matches(&[TokenType::Eq]) {
-                            return Err(ParserError::new(
-                                "Default arguments are not supported in lambda expressions. Use named functions instead.",
+                            return Err(ParserError::with_help(
+                                "Default arguments are not supported in lambda expressions",
                                 self.previous().span,
+                                "Lambda parameters cannot have default values. Define a named function instead if you need default parameters.",
                             ));
                         }
                         params.push(Param {
@@ -2334,9 +2333,13 @@ impl<'a> Parser<'a> {
                 let return_type = if self.matches(&[TokenType::Returns]) {
                     self.parse_type()?
                 } else {
-                    return Err(ParserError::new(
-                        "Expected 'returns' after parameters",
-                        start_span,
+                    return Err(ParserError::with_help(
+                        format!(
+                            "Expected 'returns' after lambda parameters, found {}",
+                            Self::describe_token(&self.peek().token_type)
+                        ),
+                        self.peek().span,
+                        "Lambda expressions require an explicit return type. Example: func(int x) returns int { return x + 1 }",
                     ));
                 };
 
@@ -2397,32 +2400,23 @@ impl<'a> Parser<'a> {
             }
 
             _ => {
-                let token_desc = match &token_type {
-                    TokenType::Func => "'func' keyword".to_string(),
-                    TokenType::Class => "'class' keyword".to_string(),
-                    TokenType::Interface => "'interface' keyword".to_string(),
-                    TokenType::Match => "'match' keyword".to_string(),
-                    TokenType::If => "'if' keyword".to_string(),
-                    TokenType::For => "'for' keyword".to_string(),
-                    TokenType::While => "'while' keyword".to_string(),
-                    TokenType::Return => "'return' keyword".to_string(),
-                    TokenType::OpenBrace => "'{'".to_string(),
-                    TokenType::CloseBrace => "'}'".to_string(),
-                    TokenType::OpenParen => "'('".to_string(),
-                    TokenType::CloseParen => "')'".to_string(),
-                    TokenType::Id(name) => format!("identifier '{}'", name),
-                    TokenType::Int(n) => format!("integer literal '{}'", n),
-                    TokenType::Float(n) => format!("float literal '{}'", n),
-                    TokenType::Str(s) => format!("string literal '\"{}\"'", s),
-                    TokenType::Eof => "end of file".to_string(),
-                    t => format!("'{:?}'", t),
-                };
+                let token_desc = Self::describe_token(&token_type);
 
                 // Special case for match - give a more helpful error
                 if matches!(token_type, TokenType::Match) {
-                    return Err(ParserError::new(
+                    return Err(ParserError::with_help(
                         "match cannot be used as an expression; it can only be used as a statement",
                         token_span,
+                        "Use 'match' as a standalone statement with 'return' in each arm, or use an if/else expression for inline conditionals.",
+                    ));
+                }
+
+                // Special case for return outside of function
+                if matches!(token_type, TokenType::Return) {
+                    return Err(ParserError::with_help(
+                        "Unexpected 'return' statement",
+                        token_span,
+                        "'return' can only be used inside a function body",
                     ));
                 }
 
@@ -2640,7 +2634,7 @@ impl<'a> Parser<'a> {
     fn consume_token(&mut self, expected: TokenType, error_msg: &str) -> ParserResult<Span> {
         if self.is_at_end() {
             return Err(ParserError::new(
-                error_msg,
+                format!("{}, but reached end of file", error_msg),
                 self.tokens.last().map(|t| t.span).unwrap_or_else(|| Span {
                     row_start: 1,
                     row_end: None,
@@ -2655,13 +2649,20 @@ impl<'a> Parser<'a> {
             self.current += 1;
             Ok(token.span)
         } else {
-            Err(ParserError::new(error_msg, token.span))
+            let found_desc = Self::describe_token(&token.token_type);
+            Err(ParserError::new(
+                format!("{}, found {}", error_msg, found_desc),
+                token.span,
+            ))
         }
     }
 
     fn consume_identifier(&mut self, error_msg: &str) -> ParserResult<String> {
         if self.is_at_end() {
-            return Err(ParserError::new(error_msg, self.peek().span));
+            return Err(ParserError::new(
+                format!("{}, but reached end of file", error_msg),
+                self.peek().span,
+            ));
         }
 
         match &self.peek().token_type {
@@ -2675,7 +2676,84 @@ impl<'a> Parser<'a> {
                 self.current += 1;
                 Ok(name_clone)
             }
-            _ => Err(ParserError::new(error_msg, self.peek().span)),
+            _ => {
+                let found_desc = Self::describe_token(&self.peek().token_type);
+                Err(ParserError::new(
+                    format!("{}, found {}", error_msg, found_desc),
+                    self.peek().span,
+                ))
+            }
+        }
+    }
+
+    /// Format a human-readable description of a token type for use in error messages.
+    fn describe_token(token_type: &TokenType) -> String {
+        match token_type {
+            TokenType::Auto => "'auto' keyword".to_string(),
+            TokenType::Func => "'func' keyword".to_string(),
+            TokenType::Returns => "'returns' keyword".to_string(),
+            TokenType::Return => "'return' keyword".to_string(),
+            TokenType::Class => "'class' keyword".to_string(),
+            TokenType::Interface => "'interface' keyword".to_string(),
+            TokenType::Enum => "'enum' keyword".to_string(),
+            TokenType::If => "'if' keyword".to_string(),
+            TokenType::Else => "'else' keyword".to_string(),
+            TokenType::For => "'for' keyword".to_string(),
+            TokenType::While => "'while' keyword".to_string(),
+            TokenType::Match => "'match' keyword".to_string(),
+            TokenType::Const => "'const' keyword".to_string(),
+            TokenType::Import => "'import' keyword".to_string(),
+            TokenType::Break => "'break' keyword".to_string(),
+            TokenType::Continue => "'continue' keyword".to_string(),
+            TokenType::In => "'in' keyword".to_string(),
+            TokenType::Is => "'is' keyword".to_string(),
+            TokenType::As => "'as' keyword".to_string(),
+            TokenType::Common => "'common' keyword".to_string(),
+            TokenType::None => "'None' keyword".to_string(),
+            TokenType::OpenBrace => "'{'".to_string(),
+            TokenType::CloseBrace => "'}'".to_string(),
+            TokenType::OpenParen => "'('".to_string(),
+            TokenType::CloseParen => "')'".to_string(),
+            TokenType::OpenBracket => "'['".to_string(),
+            TokenType::CloseBracket => "']'".to_string(),
+            TokenType::Dot => "'.'".to_string(),
+            TokenType::DotDot => "'..'".to_string(),
+            TokenType::Comma => "','".to_string(),
+            TokenType::Colon => "':'".to_string(),
+            TokenType::Eq => "'='".to_string(),
+            TokenType::Plus => "'+'".to_string(),
+            TokenType::Minus => "'-'".to_string(),
+            TokenType::Star => "'*'".to_string(),
+            TokenType::Slash => "'/'".to_string(),
+            TokenType::Percent => "'%'".to_string(),
+            TokenType::Lt => "'<'".to_string(),
+            TokenType::Gt => "'>'".to_string(),
+            TokenType::EqEq => "'=='".to_string(),
+            TokenType::NotEq => "'!='".to_string(),
+            TokenType::Bang => "'!'".to_string(),
+            TokenType::And => "'&&'".to_string(),
+            TokenType::Or => "'||'".to_string(),
+            TokenType::Id(name) => format!("identifier '{}'", name),
+            TokenType::Int(n) => format!("integer literal '{}'", n),
+            TokenType::Float(n) => format!("float literal '{}'", n),
+            TokenType::Str(s) => format!("string literal \"{}\"", s),
+            TokenType::Bool(b) => format!("boolean literal '{}'", b),
+            TokenType::Char(c) => format!("character literal '{}'", c),
+            TokenType::Eof => "end of file".to_string(),
+            TokenType::NewLine => "newline".to_string(),
+            TokenType::StarStar => "'**'".to_string(),
+            TokenType::Le => "'<='".to_string(),
+            TokenType::Ge => "'>='".to_string(),
+            TokenType::Incr => "'++'".to_string(),
+            TokenType::Decr => "'--'".to_string(),
+            TokenType::PlusEq => "'+='".to_string(),
+            TokenType::MinusEq => "'-='".to_string(),
+            TokenType::StarEq => "'*='".to_string(),
+            TokenType::SlashEq => "'/='".to_string(),
+            TokenType::PercentEq => "'%='".to_string(),
+            TokenType::Ref => "'&'".to_string(),
+            TokenType::Underscore => "'_'".to_string(),
+            _ => format!("{:?}", token_type),
         }
     }
 
@@ -2820,9 +2898,10 @@ impl<'a> Parser<'a> {
 
             // Validate it's a literal expression
             if !Self::is_literal_expression(&expr) {
-                return Err(ParserError::new(
-                    "Field default values must be literals (int, float, string, bool, char)",
+                return Err(ParserError::with_help(
+                    "Field default values must be literals",
                     expr.span,
+                    "Only literal values (int, float, string, bool, char) are allowed as field defaults. Example: int count = 0",
                 ));
             }
             Some(expr)
@@ -2832,9 +2911,10 @@ impl<'a> Parser<'a> {
 
         // For const fields, require a default value
         if is_const && default_value.is_none() {
-            return Err(ParserError::new(
+            return Err(ParserError::with_help(
                 "Const fields must have a default value",
                 self.previous().span,
+                "Add a default value to the const field. Example: const int MAX_SIZE = 100",
             ));
         }
 

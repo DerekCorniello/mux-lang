@@ -7,3 +7,5 @@ error: Unterminated block comment
    |
  2 | /* hello
    | ^
+   |
+= help: Add a closing '*/' to end the block comment

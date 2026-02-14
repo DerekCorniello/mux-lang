@@ -28,6 +28,13 @@ impl ParserError {
             span: token.span,
         }
     }
+
+    pub fn with_help(message: impl Into<String>, span: Span, help: impl Into<String>) -> Self {
+        Self {
+            message: diagnostic::format_with_help(message, help),
+            span,
+        }
+    }
 }
 
 impl ToDiagnostic for ParserError {

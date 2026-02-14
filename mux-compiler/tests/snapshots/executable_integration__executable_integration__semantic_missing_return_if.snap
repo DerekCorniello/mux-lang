@@ -11,3 +11,5 @@ error: Function must return a value of type 'int' on all code paths
    | ^^^^^^^^^^^^^^
  3 |         return x * 2
    | ^^^^^^^^^^^^^^^^^^^^
+   |
+= help: Add a return statement at the end of every branch (if/else, match, etc.)

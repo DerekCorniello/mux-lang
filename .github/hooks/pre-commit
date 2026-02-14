@@ -1,0 +1,30 @@
+#!/bin/sh
+
+echo "Checking formatting..."
+if ! cargo fmt -- --check; then
+  echo ""
+  echo "Formatting check failed."
+  echo "Run 'cargo fmt' to format the code."
+  exit 1
+fi
+echo "Formatting OK"
+
+echo ""
+echo "Running Clippy (warnings denied)..."
+if ! cargo clippy --all-targets --all-features -- -D warnings; then
+  echo ""
+  echo "Clippy check failed."
+  echo "Fix the reported warnings before committing."
+  exit 1
+fi
+echo "Clippy OK"
+
+echo ""
+echo "Running tests..."
+if ! cargo test; then
+  echo ""
+  echo "Tests failed."
+  echo "Fix failing tests before committing."
+  exit 1
+fi
+echo "Tests OK"

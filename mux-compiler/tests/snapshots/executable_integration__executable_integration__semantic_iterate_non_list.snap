@@ -2,8 +2,10 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-error: Cannot iterate over non-list type
+error: Cannot iterate over type int
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_iterate_non_list.mux:2:14
    |
  2 | for int i in 5 {
    |              ^
+   |
+= help: The 'for' loop can only iterate over list types. Use .to_list() for sets/maps, or range(start, end) for numeric ranges.

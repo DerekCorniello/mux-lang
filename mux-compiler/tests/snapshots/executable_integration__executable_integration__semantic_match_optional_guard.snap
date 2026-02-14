@@ -2,8 +2,10 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-error: Non-exhaustive match: patterns not covering all variants of 'Optional'. Missing: Some
+error: Non-exhaustive match: missing pattern for Optional: Some
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_match_optional_guard.mux:4:11
    |
  4 |     match x {
    |           ^
+   |
+= help: Add match arm for: Some, or add a wildcard '_' pattern

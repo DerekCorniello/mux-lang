@@ -7,3 +7,5 @@ error: Cannot use 'self' outside of a method
    |
  2 | auto s = self
    |          ^^^^
+   |
+= help: 'self' is only available inside instance methods of a class

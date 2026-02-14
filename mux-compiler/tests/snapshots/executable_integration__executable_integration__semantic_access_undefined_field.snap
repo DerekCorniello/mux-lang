@@ -2,8 +2,10 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-error: Unknown field 'undefined_field' on type C
+error: Field 'undefined_field' not found on type 'C'
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_access_undefined_field.mux:6:10
    |
  6 | auto y = c.undefined_field
    |          ^
+   |
+= help: Available fields: x

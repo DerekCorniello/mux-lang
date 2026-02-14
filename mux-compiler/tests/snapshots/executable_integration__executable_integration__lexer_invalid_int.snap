@@ -7,3 +7,5 @@ error: Invalid integer literal: 123abc
    |
  2 | auto n = 123abc
    |          ^^^^^^
+   |
+= help: Integer literals cannot contain letters. Variable names must not start with a digit.
