@@ -168,7 +168,7 @@ impl SemanticAnalyzer {
             SemanticError::with_help(
                 format!("Undefined {} '{}'", kind, name),
                 span,
-                format!("Did you mean '{}'", suggestion),
+                format!("Did you mean '{}'?", suggestion),
             )
         } else {
             SemanticError::new(format!("Undefined {} '{}'", kind, name), span)
@@ -196,8 +196,10 @@ impl SemanticAnalyzer {
             let threshold = calculate_similarity_threshold(item);
             let suggestion = available_items
                 .iter()
-                .filter(|f| levenshtein_distance(item, f) <= threshold)
-                .min_by_key(|f| levenshtein_distance(item, f));
+                .map(|f| (f, levenshtein_distance(item, f)))
+                .filter(|(_, dist)| *dist <= threshold)
+                .min_by_key(|(_, dist)| *dist)
+                .map(|(f, _)| f);
             let available = available_items.join(", ");
             if let Some(similar) = suggestion {
                 SemanticError::with_help(

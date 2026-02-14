@@ -299,8 +299,8 @@ pub fn calculate_similarity_threshold(name: &str) -> usize {
 
 /// Compute the Levenshtein edit distance between two strings.
 pub fn edit_distance(a: &str, b: &str) -> usize {
-    let a_len = a.len();
-    let b_len = b.len();
+    let a_len = a.chars().count();
+    let b_len = b.chars().count();
 
     if a_len == 0 {
         return b_len;
@@ -322,4 +322,5 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
     }
 
     prev[b_len]
+}
 }
