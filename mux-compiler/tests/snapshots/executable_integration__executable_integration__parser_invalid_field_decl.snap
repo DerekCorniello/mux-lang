@@ -4,7 +4,7 @@ expression: output_to_snapshot
 ---
 error: 2 errors found
 
-error: Expected field name
+error: Expected field name, found newline
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_field_decl.mux:3:8
    |
  3 |     int

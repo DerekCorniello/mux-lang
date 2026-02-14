@@ -7,3 +7,5 @@ error: Cannot use 'return' outside of a function
    |
  2 | return 5
    |        ^
+   |
+= help: 'return' can only be used inside a function body

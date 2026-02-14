@@ -7,3 +7,5 @@ error: Cannot return a value from a void function
    |
  3 |   return 1
    |          ^
+   |
+= help: This function is declared as 'returns void'. Either remove the return value or change the function's return type.

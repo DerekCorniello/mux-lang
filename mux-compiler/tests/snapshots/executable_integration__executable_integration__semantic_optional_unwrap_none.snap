@@ -9,6 +9,8 @@ error: match cannot be used as an expression; it can only be used as a statement
    |
  6 | auto x = match opt {
    |          ^^^^^
+   |
+= help: Use 'match' as a standalone statement with 'return' in each arm, or use an if/else expression for inline conditionals.
 
 error: Expected newline before statement
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_optional_unwrap_none.mux:6:20

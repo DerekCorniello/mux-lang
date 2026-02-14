@@ -7,3 +7,5 @@ error: Generic type 'Pair' requires 2 type argument(s), got 1
    |
  3 | auto p = Pair<int>
    |          ^^^^^^^^^
+   |
+= help: Provide exactly 2 type arguments in angle brackets, e.g. Pair<T, U>

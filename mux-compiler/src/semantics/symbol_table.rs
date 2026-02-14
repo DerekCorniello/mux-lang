@@ -243,4 +243,89 @@ impl SymbolTable {
         }
         None
     }
+
+    /// Find symbols with names similar to the given name (for "did you mean?" suggestions).
+    /// Uses a simple edit distance check to find candidates within a threshold.
+    pub fn find_similar(&self, name: &str) -> Option<String> {
+        let threshold = match name.len() {
+            0..=2 => 1,
+            3..=5 => 2,
+            _ => 3,
+        };
+
+        let mut best: Option<(String, usize)> = None;
+
+        // Check all scopes
+        for scope in self.scopes.iter().rev() {
+            let scope_borrow = scope.borrow();
+            best = Self::find_best_match(name, threshold, scope_borrow.symbols.keys(), best);
+        }
+
+        // Also check all_symbols (hoisted functions, classes, etc.)
+        best = Self::find_best_match(name, threshold, self.all_symbols.keys(), best);
+
+        // Check built-in functions
+        best = Self::find_best_match_str(name, threshold, BUILT_IN_FUNCTIONS.keys().copied(), best);
+
+        best.map(|(name, _)| name)
+    }
+
+    fn find_best_match<'a>(
+        name: &str,
+        threshold: usize,
+        candidates: impl Iterator<Item = &'a String>,
+        best: Option<(String, usize)>,
+    ) -> Option<(String, usize)> {
+        let mut current_best = best;
+        for candidate in candidates {
+            let dist = edit_distance(name, candidate);
+            if dist <= threshold && current_best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                current_best = Some((candidate.clone(), dist));
+            }
+        }
+        current_best
+    }
+
+    fn find_best_match_str<'a>(
+        name: &str,
+        threshold: usize,
+        candidates: impl Iterator<Item = &'a str>,
+        best: Option<(String, usize)>,
+    ) -> Option<(String, usize)> {
+        let mut current_best = best;
+        for candidate in candidates {
+            let dist = edit_distance(name, candidate);
+            if dist <= threshold && current_best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                current_best = Some((candidate.to_string(), dist));
+            }
+        }
+        current_best
+    }
+}
+
+/// Compute the Levenshtein edit distance between two strings.
+pub fn edit_distance(a: &str, b: &str) -> usize {
+    let a_len = a.len();
+    let b_len = b.len();
+
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0; b_len + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[b_len]
 }

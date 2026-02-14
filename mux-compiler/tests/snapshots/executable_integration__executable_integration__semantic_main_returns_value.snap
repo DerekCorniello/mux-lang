@@ -7,3 +7,5 @@ error: Function 'main' must return void, not 'int'
    |
  2 | func main() returns int {
    |                     ^^^
+   |
+= help: The entry point 'main' function must be declared as 'returns void'. Change the return type to void.

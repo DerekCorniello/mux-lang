@@ -4,7 +4,7 @@ expression: output_to_snapshot
 ---
 error: 4 errors found
 
-error: Expected ')' after parameters
+error: Expected ')' after parameters, found identifier 'int'
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux:2:16
    |
  2 | func foo(int a int b) returns int {
@@ -16,7 +16,7 @@ error: Expected expression, found ')'
  2 | func foo(int a int b) returns int {
    |                     ^
 
-error: Expected expression, found 'Returns'
+error: Expected expression, found 'returns' keyword
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_comma_params.mux:2:23
    |
  2 | func foo(int a int b) returns int {

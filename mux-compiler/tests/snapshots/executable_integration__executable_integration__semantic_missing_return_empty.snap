@@ -7,3 +7,5 @@ error: Function must return a value of type 'int' on all code paths
    |
  1 | func foo() returns int {
    | ^^^^
+   |
+= help: Add a return statement at the end of every branch (if/else, match, etc.)

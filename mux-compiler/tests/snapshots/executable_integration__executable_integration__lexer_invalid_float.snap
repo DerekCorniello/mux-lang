@@ -7,3 +7,5 @@ error: Invalid float literal: 1.2.3
    |
  2 | auto x = 1.2.3
    |          ^^^^^
+   |
+= help: A number can only have one decimal point. Use separate expressions for chained field access.

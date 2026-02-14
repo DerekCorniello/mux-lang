@@ -2,7 +2,7 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-error: Expected module path
+error: Expected module path, found newline
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_import_path.mux:2:7
    |
  2 | import

@@ -7,3 +7,5 @@ error: Cannot use 'self' in a common method
    |
  4 |     self.x
    |     ^^^^
+   |
+= help: Common (static) methods do not have access to 'self'. Remove the 'common' modifier or access the class through a parameter instead.

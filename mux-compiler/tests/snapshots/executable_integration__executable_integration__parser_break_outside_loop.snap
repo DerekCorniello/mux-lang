@@ -7,3 +7,5 @@ error: Cannot use 'break' outside of a loop
    |
  2 | break
    |      ^
+   |
+= help: 'break' can only be used inside a 'for' or 'while' loop

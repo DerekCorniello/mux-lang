@@ -2,8 +2,10 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-error: Map keys must be hashable (primitive types only). Found '[?]'
+error: Map keys must be a hashable type, found '[?]'
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_map_key.mux:2:11
    |
  2 | auto m = {[]: 1}
    |           ^
+   |
+= help: Only primitive types (int, float, string, bool, char) can be used as map keys
