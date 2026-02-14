@@ -258,31 +258,48 @@ impl SymbolTable {
         // Check all scopes
         for scope in self.scopes.iter().rev() {
             let scope_borrow = scope.borrow();
-            for candidate in scope_borrow.symbols.keys() {
-                let dist = edit_distance(name, candidate);
-                if dist <= threshold && best.as_ref().is_none_or(|(_, d)| dist < *d) {
-                    best = Some((candidate.clone(), dist));
-                }
-            }
+            best = Self::find_best_match(name, threshold, scope_borrow.symbols.keys(), best);
         }
 
         // Also check all_symbols (hoisted functions, classes, etc.)
-        for candidate in self.all_symbols.keys() {
-            let dist = edit_distance(name, candidate);
-            if dist <= threshold && best.as_ref().is_none_or(|(_, d)| dist < *d) {
-                best = Some((candidate.clone(), dist));
-            }
-        }
+        best = Self::find_best_match(name, threshold, self.all_symbols.keys(), best);
 
         // Check built-in functions
-        for candidate in BUILT_IN_FUNCTIONS.keys() {
-            let dist = edit_distance(name, candidate);
-            if dist <= threshold && best.as_ref().is_none_or(|(_, d)| dist < *d) {
-                best = Some((candidate.to_string(), dist));
-            }
-        }
+        best = Self::find_best_match_str(name, threshold, BUILT_IN_FUNCTIONS.keys().copied(), best);
 
         best.map(|(name, _)| name)
+    }
+
+    fn find_best_match<'a>(
+        name: &str,
+        threshold: usize,
+        candidates: impl Iterator<Item = &'a String>,
+        best: Option<(String, usize)>,
+    ) -> Option<(String, usize)> {
+        let mut current_best = best;
+        for candidate in candidates {
+            let dist = edit_distance(name, candidate);
+            if dist <= threshold && current_best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                current_best = Some((candidate.clone(), dist));
+            }
+        }
+        current_best
+    }
+
+    fn find_best_match_str<'a>(
+        name: &str,
+        threshold: usize,
+        candidates: impl Iterator<Item = &'a str>,
+        best: Option<(String, usize)>,
+    ) -> Option<(String, usize)> {
+        let mut current_best = best;
+        for candidate in candidates {
+            let dist = edit_distance(name, candidate);
+            if dist <= threshold && current_best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                current_best = Some((candidate.to_string(), dist));
+            }
+        }
+        current_best
     }
 }
 
