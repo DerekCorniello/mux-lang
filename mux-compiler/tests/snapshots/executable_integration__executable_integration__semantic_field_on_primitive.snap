@@ -2,7 +2,7 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-error: Undefined method 'x' on type int
+error: Undefined method 'x' on type 'int'
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_field_on_primitive.mux:2:10
    |
  2 | auto x = 5.x

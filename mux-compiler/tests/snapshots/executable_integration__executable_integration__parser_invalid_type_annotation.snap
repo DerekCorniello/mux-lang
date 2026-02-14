@@ -4,13 +4,13 @@ expression: output_to_snapshot
 ---
 error: 2 errors found
 
-error: Expected '=' after variable name
+error: Expected '=' after variable name, found ':'
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_type_annotation.mux:2:7
    |
  2 | auto x: invalid = 5
    |       ^
 
-error: Expected expression, found 'Colon'
+error: Expected expression, found ':'
 --> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_invalid_type_annotation.mux:2:7
    |
  2 | auto x: invalid = 5

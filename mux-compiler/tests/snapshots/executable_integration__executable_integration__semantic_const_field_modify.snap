@@ -7,3 +7,5 @@ error: Cannot assign to const field 'x'
    |
  6 | c.x = 10
    | ^^^^^^^^
+   |
+= help: Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.

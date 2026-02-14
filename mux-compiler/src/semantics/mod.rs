@@ -8,7 +8,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -202,38 +202,62 @@ impl SemanticAnalyzer {
         }
     }
 
-    /// Build a field-not-found error, suggesting similar field names if available.
-    fn field_not_found_error(&self, field: &str, type_name: &str, span: Span) -> SemanticError {
-        let available_fields = self.get_available_fields(type_name);
-        if available_fields.is_empty() {
-            SemanticError::new(
-                format!("Field '{}' not found on type '{}'", field, type_name),
-                span,
-            )
+    /// Generic helper for item-not-found errors, suggesting similar names if available.
+    fn item_not_found_error<F, M>(
+        &self,
+        item_type: &str,
+        item: &str,
+        type_name: &str,
+        span: Span,
+        get_available: F,
+        message_format: M,
+    ) -> SemanticError
+    where
+        F: Fn(&str) -> Vec<String>,
+        M: Fn(&str, &str, &str) -> String,
+    {
+        let available_items = get_available(type_name);
+        if available_items.is_empty() {
+            SemanticError::new(message_format(item_type, item, type_name), span)
         } else {
-            // Try to find a similar field name
-            let suggestion = available_fields.iter().find(|f| {
-                let dist = levenshtein_distance(field, f);
+            let suggestion = available_items.iter().find(|f| {
+                let dist = levenshtein_distance(item, f);
                 dist <= 2
             });
-            let available = available_fields.join(", ");
+            let available = available_items.join(", ");
             if let Some(similar) = suggestion {
                 SemanticError::with_help(
-                    format!("Field '{}' not found on type '{}'", field, type_name),
+                    message_format(item_type, item, type_name),
                     span,
                     format!(
-                        "Did you mean '{}'? Available fields: {}",
-                        similar, available
+                        "Did you mean '{}'? Available {}s: {}",
+                        similar,
+                        item_type.to_lowercase(),
+                        available
                     ),
                 )
             } else {
                 SemanticError::with_help(
-                    format!("Field '{}' not found on type '{}'", field, type_name),
+                    message_format(item_type, item, type_name),
                     span,
-                    format!("Available fields: {}", available),
+                    format!("Available {}s: {}", item_type.to_lowercase(), available),
                 )
             }
         }
+    }
+
+    /// Build a field-not-found error, suggesting similar field names if available.
+    fn field_not_found_error(&self, field: &str, type_name: &str, span: Span) -> SemanticError {
+        self.item_not_found_error(
+            "Field",
+            field,
+            type_name,
+            span,
+            |t| self.get_available_fields(t),
+            |_item_type, item, type_name| {
+                format!("Field '{}' not found on type '{}'", item, type_name)
+            },
+        )
     }
 
     /// Get a list of field names for a given type.
@@ -247,35 +271,16 @@ impl SemanticAnalyzer {
 
     /// Build a method-not-found error, suggesting similar method names if available.
     fn method_not_found_error(&self, method: &str, type_name: &str, span: Span) -> SemanticError {
-        let available_methods = self.get_available_methods(type_name);
-        if available_methods.is_empty() {
-            SemanticError::new(
-                format!("Undefined method '{}' on type '{}'", method, type_name),
-                span,
-            )
-        } else {
-            let suggestion = available_methods.iter().find(|m| {
-                let dist = levenshtein_distance(method, m);
-                dist <= 2
-            });
-            let available = available_methods.join(", ");
-            if let Some(similar) = suggestion {
-                SemanticError::with_help(
-                    format!("Undefined method '{}' on type '{}'", method, type_name),
-                    span,
-                    format!(
-                        "Did you mean '{}'? Available methods: {}",
-                        similar, available
-                    ),
-                )
-            } else {
-                SemanticError::with_help(
-                    format!("Undefined method '{}' on type '{}'", method, type_name),
-                    span,
-                    format!("Available methods: {}", available),
-                )
-            }
-        }
+        self.item_not_found_error(
+            "Method",
+            method,
+            type_name,
+            span,
+            |t| self.get_available_methods(t),
+            |_item_type, item, type_name| {
+                format!("Undefined method '{}' on type '{}'", item, type_name)
+            },
+        )
     }
 
     /// Get a list of method names for a given type.
@@ -3187,7 +3192,7 @@ impl SemanticAnalyzer {
                         SemanticError::with_help(
                             format!("Failed to import module '{}'", module_path),
                             stmt.span,
-                            format!("{}", e),
+                            e.to_string(),
                         )
                     })?;
 
@@ -4651,5 +4656,4 @@ impl SemanticAnalyzer {
 
 /// Compute the Levenshtein edit distance between two strings.
 // Use the existing edit_distance from symbol_table instead of duplicating
-use super::symbol_table::edit_distance as levenshtein_distance;
-}
+use crate::semantics::symbol_table::edit_distance as levenshtein_distance;

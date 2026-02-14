@@ -51,15 +51,6 @@ impl Label {
             style: LabelStyle::Primary,
         }
     }
-
-    pub fn secondary(span: Span, message: impl Into<String>) -> Self {
-        let msg = message.into();
-        Self {
-            span,
-            message: if msg.is_empty() { None } else { Some(msg) },
-            style: LabelStyle::Secondary,
-        }
-    }
 }
 
 /// A diagnostic message with associated labels and help text.

@@ -260,10 +260,8 @@ impl SymbolTable {
             let scope_borrow = scope.borrow();
             for candidate in scope_borrow.symbols.keys() {
                 let dist = edit_distance(name, candidate);
-                if dist <= threshold {
-                    if best.as_ref().is_none_or(|(_, d)| dist < *d) {
-                        best = Some((candidate.clone(), dist));
-                    }
+                if dist <= threshold && best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                    best = Some((candidate.clone(), dist));
                 }
             }
         }
@@ -271,20 +269,16 @@ impl SymbolTable {
         // Also check all_symbols (hoisted functions, classes, etc.)
         for candidate in self.all_symbols.keys() {
             let dist = edit_distance(name, candidate);
-            if dist <= threshold {
-                if best.as_ref().is_none_or(|(_, d)| dist < *d) {
-                    best = Some((candidate.clone(), dist));
-                }
+            if dist <= threshold && best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                best = Some((candidate.clone(), dist));
             }
         }
 
         // Check built-in functions
         for candidate in BUILT_IN_FUNCTIONS.keys() {
             let dist = edit_distance(name, candidate);
-            if dist <= threshold {
-                if best.as_ref().is_none_or(|(_, d)| dist < *d) {
-                    best = Some((candidate.to_string(), dist));
-                }
+            if dist <= threshold && best.as_ref().is_none_or(|(_, d)| dist < *d) {
+                best = Some((candidate.to_string(), dist));
             }
         }
 
@@ -293,7 +287,7 @@ impl SymbolTable {
 }
 
 /// Compute the Levenshtein edit distance between two strings.
-fn edit_distance(a: &str, b: &str) -> usize {
+pub fn edit_distance(a: &str, b: &str) -> usize {
     let a_len = a.len();
     let b_len = b.len();
 

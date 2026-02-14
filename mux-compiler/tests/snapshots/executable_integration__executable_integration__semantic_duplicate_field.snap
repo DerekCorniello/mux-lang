@@ -7,3 +7,5 @@ error: Duplicate field 'x' in class 'C'
    |
  4 |     int x
    |     ^^^
+   |
+= help: Each field name must be unique within a class. Rename or remove the duplicate field.
