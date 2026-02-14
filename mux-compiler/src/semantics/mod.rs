@@ -8,7 +8,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
+pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -134,22 +134,22 @@ impl SemanticAnalyzer {
     }
 
     /// Generate helpful context for binary operator type mismatches.
-    fn binary_op_help(left: &Type, right: &Type, _op: &crate::ast::BinaryOp) -> String {
+    fn binary_op_help(left: &Type, right: &Type, op: &crate::ast::BinaryOp) -> String {
         match (left, right) {
             (Type::Primitive(crate::ast::PrimitiveType::Str), Type::Primitive(crate::ast::PrimitiveType::Int))
             | (Type::Primitive(crate::ast::PrimitiveType::Int), Type::Primitive(crate::ast::PrimitiveType::Str)) => {
-                "Strings and integers cannot be combined directly. Use int_to_string() to convert the integer first, then concatenate with '++'.".to_string()
+                "Strings and integers cannot be combined directly. Use int_to_string() to convert the integer first, then use '+' for concatenation.".to_string()
             }
             (Type::Primitive(crate::ast::PrimitiveType::Str), Type::Primitive(crate::ast::PrimitiveType::Float))
             | (Type::Primitive(crate::ast::PrimitiveType::Float), Type::Primitive(crate::ast::PrimitiveType::Str)) => {
-                "Strings and floats cannot be combined directly. Use float_to_string() to convert the float first, then concatenate with '++'.".to_string()
+                "Strings and floats cannot be combined directly. Use float_to_string() to convert the float first, then use '+' for concatenation.".to_string()
             }
             (Type::Primitive(crate::ast::PrimitiveType::Int), Type::Primitive(crate::ast::PrimitiveType::Float))
             | (Type::Primitive(crate::ast::PrimitiveType::Float), Type::Primitive(crate::ast::PrimitiveType::Int)) => {
                 "Cannot mix int and float in arithmetic. Use int_to_float() or float_to_int() to convert one operand.".to_string()
             }
             (Type::Primitive(crate::ast::PrimitiveType::Str), Type::Primitive(crate::ast::PrimitiveType::Str)) => {
-                "Use '++' for string concatenation instead of '+'.".to_string()
+                format!("The '{}' operator is not supported between two strings.", format_binary_op(op))
             }
             _ => {
                 format!(
@@ -161,44 +161,17 @@ impl SemanticAnalyzer {
         }
     }
 
-    /// Build an "undefined variable" error with a "did you mean?" suggestion if a similar
+    /// Build an "undefined symbol" error with a "did you mean?" suggestion if a similar
     /// symbol exists in the current scope.
-    fn undefined_variable_error(&self, name: &str, span: Span) -> SemanticError {
+    fn undefined_symbol_error(&self, kind: &str, name: &str, span: Span) -> SemanticError {
         if let Some(suggestion) = self.symbol_table.find_similar(name) {
             SemanticError::with_help(
-                format!("Undefined variable '{}'", name),
+                format!("Undefined {} '{}'", kind, name),
                 span,
-                format!("Did you mean '{}'?", suggestion),
+                format!("Did you mean '{}'", suggestion),
             )
         } else {
-            SemanticError::new(format!("Undefined variable '{}'", name), span)
-        }
-    }
-
-    /// Build an "undefined function" error with a "did you mean?" suggestion if a similar
-    /// symbol exists in the current scope.
-    fn undefined_function_error(&self, name: &str, span: Span) -> SemanticError {
-        if let Some(suggestion) = self.symbol_table.find_similar(name) {
-            SemanticError::with_help(
-                format!("Undefined function '{}'", name),
-                span,
-                format!("Did you mean '{}'?", suggestion),
-            )
-        } else {
-            SemanticError::new(format!("Undefined function '{}'", name), span)
-        }
-    }
-
-    /// Build an "undefined type" error with a "did you mean?" suggestion.
-    fn undefined_type_error(&self, name: &str, span: Span) -> SemanticError {
-        if let Some(suggestion) = self.symbol_table.find_similar(name) {
-            SemanticError::with_help(
-                format!("Undefined type '{}'", name),
-                span,
-                format!("Did you mean '{}'?", suggestion),
-            )
-        } else {
-            SemanticError::new(format!("Undefined type '{}'", name), span)
+            SemanticError::new(format!("Undefined {} '{}'", kind, name), span)
         }
     }
 
@@ -220,10 +193,11 @@ impl SemanticAnalyzer {
         if available_items.is_empty() {
             SemanticError::new(message_format(item_type, item, type_name), span)
         } else {
-            let suggestion = available_items.iter().find(|f| {
-                let dist = levenshtein_distance(item, f);
-                dist <= 2
-            });
+            let threshold = calculate_similarity_threshold(item);
+            let suggestion = available_items
+                .iter()
+                .filter(|f| levenshtein_distance(item, f) <= threshold)
+                .min_by_key(|f| levenshtein_distance(item, f));
             let available = available_items.join(", ");
             if let Some(similar) = suggestion {
                 SemanticError::with_help(
@@ -537,7 +511,7 @@ impl SemanticAnalyzer {
                             default_count: 0,
                         })
                     } else {
-                        Err(self.undefined_variable_error(name, expr.span))
+                        Err(self.undefined_symbol_error("variable", name, expr.span))
                     }
                 }
             }
@@ -553,10 +527,9 @@ impl SemanticAnalyzer {
 
                 if *op == crate::ast::BinaryOp::Assign {
                     if let crate::ast::ExpressionKind::Identifier(name) = &left.kind {
-                        let symbol = self
-                            .symbol_table
-                            .lookup(name)
-                            .ok_or_else(|| self.undefined_variable_error(name, left.span))?;
+                        let symbol = self.symbol_table.lookup(name).ok_or_else(|| {
+                            self.undefined_symbol_error("variable", name, left.span)
+                        })?;
 
                         // Check if trying to assign to a constant
                         if symbol.kind == SymbolKind::Constant {
@@ -659,10 +632,9 @@ impl SemanticAnalyzer {
                         | crate::ast::BinaryOp::ModuloAssign
                 ) {
                     if let crate::ast::ExpressionKind::Identifier(name) = &left.kind {
-                        let symbol = self
-                            .symbol_table
-                            .lookup(name)
-                            .ok_or_else(|| self.undefined_variable_error(name, left.span))?;
+                        let symbol = self.symbol_table.lookup(name).ok_or_else(|| {
+                            self.undefined_symbol_error("variable", name, left.span)
+                        })?;
 
                         // Check if trying to modify a constant
                         if symbol.kind == SymbolKind::Constant {
@@ -847,7 +819,7 @@ impl SemanticAnalyzer {
                     ExpressionKind::Identifier(name) => match self.get_expression_type(func) {
                         Ok(t) => t,
                         Err(e) if e.message.contains("Undefined variable") => {
-                            return Err(self.undefined_function_error(name, func.span));
+                            return Err(self.undefined_symbol_error("function", name, func.span));
                         }
                         Err(e) => return Err(e),
                     },
@@ -1160,7 +1132,7 @@ impl SemanticAnalyzer {
                 }
 
                 if !self.symbol_table.exists(name) {
-                    return Err(self.undefined_type_error(name, expr.span));
+                    return Err(self.undefined_symbol_error("type", name, expr.span));
                 }
 
                 // Check type argument count
@@ -1274,7 +1246,7 @@ impl SemanticAnalyzer {
                 }
                 return Err(self.field_not_found_error(field, name, span));
             }
-            return Err(self.undefined_type_error(name, span));
+            return Err(self.undefined_symbol_error("type", name, span));
         }
         if let Some(method_sig) = self.get_method_sig(inner_type, field) {
             return Ok(Type::Function {
@@ -1476,14 +1448,24 @@ impl SemanticAnalyzer {
         let symbol = self
             .symbol_table
             .get_cloned(name)
-            .ok_or_else(|| self.undefined_type_error(name, span))?;
+            .ok_or_else(|| self.undefined_symbol_error("type", name, span))?;
         if symbol.kind != SymbolKind::Class {
             return Err(SemanticError::with_help(
                 format!("'{}' is not a class", name),
                 span,
                 format!(
-                    "'{}' is a {:?}, not a class. Only classes can be instantiated with .new()",
-                    name, symbol.kind
+                    "'{}' is a {}not a class. Only classes can be instantiated with .new()",
+                    name,
+                    match symbol.kind {
+                        SymbolKind::Function => "a function, ",
+                        SymbolKind::Variable => "a variable, ",
+                        SymbolKind::Interface => "an interface, ",
+                        SymbolKind::Enum => "an enum, ",
+                        SymbolKind::Constant => "a constant, ",
+                        SymbolKind::Import => "an import, ",
+                        SymbolKind::Type => "a type parameter, ",
+                        _ => "",
+                    }
                 ),
             ));
         }
@@ -3586,7 +3568,7 @@ impl SemanticAnalyzer {
                         let symbol = self
                             .symbol_table
                             .lookup(enum_name)
-                            .ok_or_else(|| self.undefined_type_error(enum_name, span))?;
+                            .ok_or_else(|| self.undefined_symbol_error("type", enum_name, span))?;
                         self.match_enum_variant(name, args, enum_name, &symbol, span)?;
                     }
                     _ => {
@@ -3743,7 +3725,7 @@ impl SemanticAnalyzer {
                     return Ok(());
                 }
                 if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
-                    return Err(self.undefined_variable_error(name, expr.span));
+                    return Err(self.undefined_symbol_error("variable", name, expr.span));
                 }
                 Ok(())
             }
@@ -3860,7 +3842,7 @@ impl SemanticAnalyzer {
                 // Check for undefined function before analyzing
                 if let ExpressionKind::Identifier(name) = &func.kind {
                     if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
-                        return Err(self.undefined_function_error(name, func.span));
+                        return Err(self.undefined_symbol_error("function", name, func.span));
                     }
                 }
 
@@ -4200,7 +4182,7 @@ impl SemanticAnalyzer {
                     return Ok(());
                 }
                 if !self.symbol_table.exists(name) {
-                    return Err(self.undefined_type_error(name, expr.span));
+                    return Err(self.undefined_symbol_error("type", name, expr.span));
                 }
                 Ok(())
             }
@@ -4656,4 +4638,6 @@ impl SemanticAnalyzer {
 
 /// Compute the Levenshtein edit distance between two strings.
 // Use the existing edit_distance from symbol_table instead of duplicating
-use crate::semantics::symbol_table::edit_distance as levenshtein_distance;
+use crate::semantics::symbol_table::{
+    calculate_similarity_threshold, edit_distance as levenshtein_distance,
+};

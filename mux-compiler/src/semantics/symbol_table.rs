@@ -247,11 +247,7 @@ impl SymbolTable {
     /// Find symbols with names similar to the given name (for "did you mean?" suggestions).
     /// Uses a simple edit distance check to find candidates within a threshold.
     pub fn find_similar(&self, name: &str) -> Option<String> {
-        let threshold = match name.len() {
-            0..=2 => 1,
-            3..=5 => 2,
-            _ => 3,
-        };
+        let threshold = calculate_similarity_threshold(name);
 
         let mut best: Option<(String, usize)> = None;
 
@@ -265,41 +261,39 @@ impl SymbolTable {
         best = Self::find_best_match(name, threshold, self.all_symbols.keys(), best);
 
         // Check built-in functions
-        best = Self::find_best_match_str(name, threshold, BUILT_IN_FUNCTIONS.keys().copied(), best);
+        best = Self::find_best_match(name, threshold, BUILT_IN_FUNCTIONS.keys().copied(), best);
 
         best.map(|(name, _)| name)
     }
 
-    fn find_best_match<'a>(
+    fn find_best_match<S: AsRef<str>>(
         name: &str,
         threshold: usize,
-        candidates: impl Iterator<Item = &'a String>,
+        candidates: impl Iterator<Item = S>,
         best: Option<(String, usize)>,
     ) -> Option<(String, usize)> {
         let mut current_best = best;
         for candidate in candidates {
-            let dist = edit_distance(name, candidate);
+            let s = candidate.as_ref();
+            let dist = edit_distance(name, s);
             if dist <= threshold && current_best.as_ref().is_none_or(|(_, d)| dist < *d) {
-                current_best = Some((candidate.clone(), dist));
+                current_best = Some((s.to_string(), dist));
             }
         }
         current_best
     }
+}
 
-    fn find_best_match_str<'a>(
-        name: &str,
-        threshold: usize,
-        candidates: impl Iterator<Item = &'a str>,
-        best: Option<(String, usize)>,
-    ) -> Option<(String, usize)> {
-        let mut current_best = best;
-        for candidate in candidates {
-            let dist = edit_distance(name, candidate);
-            if dist <= threshold && current_best.as_ref().is_none_or(|(_, d)| dist < *d) {
-                current_best = Some((candidate.to_string(), dist));
-            }
-        }
-        current_best
+/// Calculate the maximum allowed edit distance for suggesting similar names.
+/// Uses an adaptive threshold based on name length:
+/// - 1-2 chars: threshold of 1 (strict for short names)
+/// - 3-5 chars: threshold of 2 (moderate for medium names)
+/// - 6+ chars: threshold of 3 (permissive for long names)
+pub fn calculate_similarity_threshold(name: &str) -> usize {
+    match name.len() {
+        0..=2 => 1,
+        3..=5 => 2,
+        _ => 3,
     }
 }
 
