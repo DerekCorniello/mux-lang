@@ -2741,6 +2741,18 @@ impl<'a> Parser<'a> {
             TokenType::Char(c) => format!("character literal '{}'", c),
             TokenType::Eof => "end of file".to_string(),
             TokenType::NewLine => "newline".to_string(),
+            TokenType::StarStar => "'**'".to_string(),
+            TokenType::Le => "'<='".to_string(),
+            TokenType::Ge => "'>='".to_string(),
+            TokenType::Incr => "'++'".to_string(),
+            TokenType::Decr => "'--'".to_string(),
+            TokenType::PlusEq => "'+='".to_string(),
+            TokenType::MinusEq => "'-='".to_string(),
+            TokenType::StarEq => "'*='".to_string(),
+            TokenType::SlashEq => "'/='".to_string(),
+            TokenType::PercentEq => "'%='".to_string(),
+            TokenType::Ref => "'&'".to_string(),
+            TokenType::Underscore => "'_'".to_string(),
             _ => format!("{:?}", token_type),
         }
     }
