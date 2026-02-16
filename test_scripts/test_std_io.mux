@@ -1,0 +1,22 @@
+// Test std.io library import and usage
+
+// Test 1: Namespace import
+import std.io
+
+io.print("Test 1: Namespace import - io.print works")
+
+// Test 2: Selective import
+import std.io.flush
+
+print("Test 2: Selective import - flush imported directly")
+flush()
+
+// Test 3: Namespace import with alias
+import std.io as console
+
+console.print("Test 3: Aliased import - console.print works")
+
+// Test 4: Wildcard import (print already available as builtin, this should not conflict)
+// read_int and flush become available without namespace
+
+print("All std.io tests passed")

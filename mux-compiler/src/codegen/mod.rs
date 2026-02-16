@@ -878,6 +878,28 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_math_sqrt",
+            f64_type.fn_type(&[f64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_math_sin",
+            f64_type.fn_type(&[f64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_math_cos",
+            f64_type.fn_type(&[f64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_read_int", i64_type.fn_type(&[], false), None);
+
+        module.add_function("mux_flush_stdout", void_type.fn_type(&[], false), None);
+
+        module.add_function(
             "mux_rc_inc",
             context.void_type().fn_type(&[i8_ptr.into()], false),
             None,

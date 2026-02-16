@@ -1580,6 +1580,60 @@ impl<'a> CodeGenerator<'a> {
                                                 field.to_string()
                                             };
 
+                                        // Handle std library functions that need special codegen
+                                        match llvm_function_name.as_str() {
+                                            "mux_print" => {
+                                                if args.len() != 1 {
+                                                    return Err(
+                                                        "print takes 1 argument".to_string()
+                                                    );
+                                                }
+                                                let arg_val = self.generate_expression(&args[0])?;
+                                                let func_print = self
+                                                    .module
+                                                    .get_function("mux_print")
+                                                    .ok_or("mux_print not found")?;
+                                                self.builder
+                                                    .build_call(
+                                                        func_print,
+                                                        &[arg_val.into()],
+                                                        "print_call",
+                                                    )
+                                                    .map_err(|e| e.to_string())?;
+                                                return Ok(self
+                                                    .context
+                                                    .i32_type()
+                                                    .const_int(0, false)
+                                                    .into());
+                                            }
+                                            "mux_read_line" => {
+                                                if !args.is_empty() {
+                                                    return Err(
+                                                        "read_line takes 0 arguments".to_string()
+                                                    );
+                                                }
+                                                let func_read_line = self
+                                                    .module
+                                                    .get_function("mux_read_line")
+                                                    .ok_or("mux_read_line not found")?;
+                                                let call = self
+                                                    .builder
+                                                    .build_call(
+                                                        func_read_line,
+                                                        &[],
+                                                        "read_line_call",
+                                                    )
+                                                    .map_err(|e| e.to_string())?;
+                                                let cstr_ptr = call
+                                                    .try_as_basic_value()
+                                                    .left()
+                                                    .ok_or("mux_read_line returned no value")?
+                                                    .into_pointer_value();
+                                                return self.box_string_value(cstr_ptr);
+                                            }
+                                            _ => {}
+                                        }
+
                                         if let Some(func) =
                                             self.module.get_function(&llvm_function_name)
                                         {

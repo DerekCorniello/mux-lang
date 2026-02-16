@@ -4347,6 +4347,88 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    /// Returns the set of functions for a std package, mapping function name to
+    /// (BuiltInSig, llvm_function_name). Returns None if the package is not recognized.
+    fn get_std_package_functions(
+        &self,
+        package_name: &str,
+    ) -> Option<Vec<(&'static str, BuiltInSig, &'static str)>> {
+        match package_name {
+            "io" => Some(vec![
+                (
+                    "print",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Void,
+                    },
+                    "mux_print",
+                ),
+                (
+                    "read_line",
+                    BuiltInSig {
+                        params: vec![],
+                        return_type: Type::Primitive(PrimitiveType::Str),
+                    },
+                    "mux_read_line",
+                ),
+                (
+                    "read_int",
+                    BuiltInSig {
+                        params: vec![],
+                        return_type: Type::Primitive(PrimitiveType::Int),
+                    },
+                    "mux_read_int",
+                ),
+                (
+                    "flush",
+                    BuiltInSig {
+                        params: vec![],
+                        return_type: Type::Void,
+                    },
+                    "mux_flush_stdout",
+                ),
+            ]),
+            "math" => Some(vec![
+                (
+                    "pow",
+                    BuiltInSig {
+                        params: vec![
+                            Type::Primitive(PrimitiveType::Float),
+                            Type::Primitive(PrimitiveType::Float),
+                        ],
+                        return_type: Type::Primitive(PrimitiveType::Float),
+                    },
+                    "mux_math_pow",
+                ),
+                (
+                    "sqrt",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Float)],
+                        return_type: Type::Primitive(PrimitiveType::Float),
+                    },
+                    "mux_math_sqrt",
+                ),
+                (
+                    "sin",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Float)],
+                        return_type: Type::Primitive(PrimitiveType::Float),
+                    },
+                    "mux_math_sin",
+                ),
+                (
+                    "cos",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Float)],
+                        return_type: Type::Primitive(PrimitiveType::Float),
+                    },
+                    "mux_math_cos",
+                ),
+            ]),
+            _ => None,
+        }
+    }
+
     // Handle std library imports
     fn handle_std_import(
         &mut self,
@@ -4356,6 +4438,122 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
 
+        // Extract the package name from the path (e.g., "io" from "std.io")
+        let package_name = module_path
+            .strip_prefix("std.")
+            .unwrap_or(module_path)
+            .split('.')
+            .next()
+            .unwrap_or(module_path);
+
+        // Check if this is a known std package with namespace support
+        if let Some(package_functions) = self.get_std_package_functions(package_name) {
+            match spec {
+                ImportSpec::Module { alias } => {
+                    let namespace = alias.as_ref().map(|s| s.as_str()).unwrap_or(package_name);
+
+                    let mut symbols = std::collections::HashMap::new();
+                    for (func_name, sig, llvm_name) in &package_functions {
+                        let mut sym = Self::make_symbol(
+                            SymbolKind::Function,
+                            span,
+                            Some(Type::Function {
+                                params: sig.params.clone(),
+                                returns: Box::new(sig.return_type.clone()),
+                                default_count: 0,
+                            }),
+                        );
+                        sym.llvm_name = Some(llvm_name.to_string());
+                        symbols.insert(func_name.to_string(), sym);
+                    }
+
+                    self.imported_symbols.insert(namespace.to_string(), symbols);
+
+                    self.symbol_table.add_symbol(
+                        namespace,
+                        Self::make_symbol(
+                            SymbolKind::Import,
+                            span,
+                            Some(Type::Module(namespace.to_string())),
+                        ),
+                    )?;
+                }
+                ImportSpec::Item { item, alias } => {
+                    let symbol_name = alias.as_ref().unwrap_or(item);
+                    if let Some((_, sig, llvm_name)) = package_functions
+                        .iter()
+                        .find(|(name, _, _)| *name == item.as_str())
+                    {
+                        let mut sym = Self::make_symbol(
+                            SymbolKind::Function,
+                            span,
+                            Some(Type::Function {
+                                params: sig.params.clone(),
+                                returns: Box::new(sig.return_type.clone()),
+                                default_count: 0,
+                            }),
+                        );
+                        sym.llvm_name = Some(llvm_name.to_string());
+                        self.symbol_table.add_symbol(symbol_name, sym)?;
+                    } else {
+                        let available: Vec<&str> =
+                            package_functions.iter().map(|(n, _, _)| *n).collect();
+                        return Err(SemanticError::with_help(
+                            format!("Symbol '{}' not found in std.{}", item, package_name),
+                            span,
+                            format!("Available symbols: {}", available.join(", ")),
+                        ));
+                    }
+                }
+                ImportSpec::Items { items } => {
+                    for (item, alias) in items {
+                        let symbol_name = alias.as_ref().unwrap_or(item);
+                        if let Some((_, sig, llvm_name)) = package_functions
+                            .iter()
+                            .find(|(name, _, _)| *name == item.as_str())
+                        {
+                            let mut sym = Self::make_symbol(
+                                SymbolKind::Function,
+                                span,
+                                Some(Type::Function {
+                                    params: sig.params.clone(),
+                                    returns: Box::new(sig.return_type.clone()),
+                                    default_count: 0,
+                                }),
+                            );
+                            sym.llvm_name = Some(llvm_name.to_string());
+                            self.symbol_table.add_symbol(symbol_name, sym)?;
+                        } else {
+                            let available: Vec<&str> =
+                                package_functions.iter().map(|(n, _, _)| *n).collect();
+                            return Err(SemanticError::with_help(
+                                format!("Symbol '{}' not found in std.{}", item, package_name),
+                                span,
+                                format!("Available symbols: {}", available.join(", ")),
+                            ));
+                        }
+                    }
+                }
+                ImportSpec::Wildcard => {
+                    for (func_name, sig, llvm_name) in &package_functions {
+                        let mut sym = Self::make_symbol(
+                            SymbolKind::Function,
+                            span,
+                            Some(Type::Function {
+                                params: sig.params.clone(),
+                                returns: Box::new(sig.return_type.clone()),
+                                default_count: 0,
+                            }),
+                        );
+                        sym.llvm_name = Some(llvm_name.to_string());
+                        let _ = self.symbol_table.add_symbol(func_name, sym);
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // Fallback: handle individual builtin function imports (legacy path)
         match spec {
             ImportSpec::Module { alias } => {
                 let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or_else(|| {
