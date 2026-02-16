@@ -1588,6 +1588,82 @@ impl<'a> CodeGenerator<'a> {
 
                     // handle method calls - prioritize variable resolution over class lookup
                     match &expr.kind {
+                        // Handle nested module access: module.submodule.function() where expr is FieldAccess
+                        ExpressionKind::FieldAccess {
+                            expr: inner_expr,
+                            field: submodule_name,
+                        } => {
+                            // Check if inner_expr is an Identifier that is an Import
+                            if let ExpressionKind::Identifier(module_name) = &inner_expr.kind {
+                                if let Some(symbol) =
+                                    self.analyzer.symbol_table().lookup(module_name)
+                                {
+                                    if symbol.kind == crate::semantics::SymbolKind::Import {
+                                        // Check if submodule_name is in the module's imported_symbols
+                                        if let Some(_submodule) = self
+                                            .analyzer
+                                            .imported_symbols()
+                                            .get(module_name)
+                                            .and_then(|module_syms| module_syms.get(submodule_name))
+                                        {
+                                            // submodule is an Import, check if field is a function in submodule
+                                            if let Some(function_symbol) = self
+                                                .analyzer
+                                                .imported_symbols()
+                                                .get(submodule_name)
+                                                .and_then(|submodule_syms| {
+                                                    submodule_syms.get(field)
+                                                })
+                                            {
+                                                let llvm_function_name = function_symbol
+                                                    .llvm_name
+                                                    .clone()
+                                                    .unwrap_or_else(|| field.to_string());
+
+                                                // Handle std library functions that need special codegen
+                                                match llvm_function_name.as_str() {
+                                                    "mux_print" => {
+                                                        return self.generate_print_call(args);
+                                                    }
+                                                    "mux_read_line" => {
+                                                        return self.generate_read_line_call(args);
+                                                    }
+                                                    _ => {}
+                                                }
+
+                                                if let Some(func) =
+                                                    self.module.get_function(&llvm_function_name)
+                                                {
+                                                    let mut call_args = vec![];
+                                                    for arg in args {
+                                                        call_args.push(
+                                                            self.generate_expression(arg)?.into(),
+                                                        );
+                                                    }
+                                                    let call = self
+                                                        .builder
+                                                        .build_call(
+                                                            func,
+                                                            &call_args,
+                                                            &format!("{}_call", field),
+                                                        )
+                                                        .map_err(|e| e.to_string())?;
+                                                    return match call.try_as_basic_value().left() {
+                                                        Some(val) => Ok(val),
+                                                        None => Ok(self
+                                                            .context
+                                                            .i32_type()
+                                                            .const_int(0, false)
+                                                            .into()),
+                                                    };
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // Not a nested module access - continue to normal handling
+                        }
                         ExpressionKind::Identifier(name) => {
                             // first check if this is a variable in current scope
                             if let Some((_, _, var_type)) = self

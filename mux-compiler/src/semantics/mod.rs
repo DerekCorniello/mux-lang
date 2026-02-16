@@ -8,7 +8,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -3156,7 +3156,7 @@ impl SemanticAnalyzer {
                 use crate::ast::ImportSpec;
 
                 // Handle std library specially
-                if module_path.starts_with("std.") {
+                if module_path == "std" || module_path.starts_with("std.") {
                     self.handle_std_import(module_path, spec, stmt.span)?;
                     return Ok(());
                 }
@@ -3166,8 +3166,29 @@ impl SemanticAnalyzer {
                     SemanticError::new("Module resolver not available", stmt.span)
                 })?;
 
+                // Check if module is a file, directory, or both
+                let (has_file, has_directory) = resolver.borrow().check_module_path(module_path);
+
+                if has_file && has_directory {
+                    return Err(SemanticError::with_help(
+                        format!("Ambiguous import: '{}'", module_path),
+                        stmt.span,
+                        format!(
+                            "Both {}.mux and {}/ directory exist. Please remove one.",
+                            module_path.replace('.', "/"),
+                            module_path.replace('.', "/")
+                        ),
+                    ));
+                }
+
                 // Files must be available for import processing
                 let files = files.expect("Files registry must be available for import processing");
+
+                if has_directory {
+                    // Directory-based import - handle submodules
+                    self.handle_directory_import(module_path, spec, stmt.span, resolver, files)?;
+                    return Ok(());
+                }
 
                 let module_nodes = resolver
                     .borrow_mut()
@@ -4263,6 +4284,410 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    // Handle directory-based module import (e.g., import utils where utils/ is a directory)
+    fn handle_directory_import(
+        &mut self,
+        module_path: &str,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+        resolver: std::rc::Rc<std::cell::RefCell<crate::module_resolver::ModuleResolver>>,
+        files: &mut crate::diagnostic::Files,
+    ) -> Result<(), SemanticError> {
+        use crate::ast::ImportSpec;
+
+        // Get all submodules in the directory
+        let submodules = resolver
+            .borrow()
+            .get_submodules(module_path)
+            .map_err(|e| SemanticError::new(format!("Failed to get submodules: {}", e), span))?;
+
+        match spec {
+            ImportSpec::Module { alias } => {
+                // import utils or import utils as u
+                let namespace = alias.as_ref().map(|s| s.as_str()).unwrap_or(module_path);
+
+                // Import each submodule and register it
+                let mut module_symbols = std::collections::HashMap::new();
+
+                for submodule_name in &submodules {
+                    let submodule_path = format!("{}.{}", module_path, submodule_name);
+
+                    // Resolve and analyze the submodule
+                    let submodule_nodes = resolver
+                        .borrow_mut()
+                        .resolve_import_path(&submodule_path, self.current_file.as_deref(), files)
+                        .map_err(|e| {
+                            SemanticError::with_help(
+                                format!("Failed to import submodule '{}'", submodule_path),
+                                span,
+                                e.to_string(),
+                            )
+                        })?;
+
+                    // Analyze the submodule
+                    let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+                    submodule_analyzer.set_current_file(std::path::PathBuf::from(
+                        submodule_path.replace('.', "/") + ".mux",
+                    ));
+                    let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
+                    if !errors.is_empty() {
+                        let error_messages: Vec<String> =
+                            errors.iter().map(|e| e.message.clone()).collect();
+                        return Err(SemanticError::with_help(
+                            format!("Errors in submodule '{}'", submodule_path),
+                            span,
+                            format!(
+                                "Fix the following errors in '{}':\n  {}",
+                                submodule_path,
+                                error_messages.join("\n  ")
+                            ),
+                        ));
+                    }
+
+                    // Get symbols from submodule
+                    let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
+
+                    // Register submodule in imported_symbols
+                    let mangled_submodule_symbols =
+                        self.mangle_module_symbols(&submodule_symbols, &submodule_path);
+                    self.imported_symbols
+                        .insert(submodule_name.to_string(), mangled_submodule_symbols);
+
+                    // Add submodule as Import symbol in parent's symbols
+                    let submodule_sym = Symbol {
+                        kind: SymbolKind::Import,
+                        span,
+                        type_: Some(Type::Module(submodule_name.to_string())),
+                        interfaces: std::collections::HashMap::new(),
+                        methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
+                        type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
+                        default_param_count: 0,
+                        variants: None,
+                    };
+                    module_symbols.insert(submodule_name.to_string(), submodule_sym);
+
+                    // Cache the submodule
+                    resolver
+                        .borrow_mut()
+                        .cache_module(&submodule_path, submodule_nodes.clone());
+                    resolver.borrow_mut().finish_import(&submodule_path);
+
+                    self.all_module_asts
+                        .insert(submodule_path.clone(), submodule_nodes);
+
+                    if !self.module_dependencies.contains(&submodule_path) {
+                        self.module_dependencies.push(submodule_path);
+                    }
+                }
+
+                // Store parent module's symbols (which are just the submodules)
+                self.imported_symbols
+                    .insert(namespace.to_string(), module_symbols);
+
+                // Add parent module symbol to symbol table
+                self.symbol_table.add_symbol(
+                    namespace,
+                    Symbol {
+                        kind: SymbolKind::Import,
+                        span,
+                        type_: Some(Type::Module(namespace.to_string())),
+                        interfaces: std::collections::HashMap::new(),
+                        methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
+                        type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
+                        default_param_count: 0,
+                        variants: None,
+                    },
+                )?;
+            }
+            ImportSpec::Item { item, alias } => {
+                // import utils.helpers or import utils.helpers as h
+                let submodule_name = item.as_str();
+                if !submodules.contains(&submodule_name.to_string()) {
+                    return Err(SemanticError::with_help(
+                        format!(
+                            "Submodule '{}' not found in '{}'",
+                            submodule_name, module_path
+                        ),
+                        span,
+                        format!("Available submodules: {}", submodules.join(", ")),
+                    ));
+                }
+
+                let submodule_path = format!("{}.{}", module_path, submodule_name);
+                let namespace = alias.as_ref().map(|s| s.as_str()).unwrap_or(submodule_name);
+
+                // Resolve and analyze the submodule
+                let submodule_nodes = resolver
+                    .borrow_mut()
+                    .resolve_import_path(&submodule_path, self.current_file.as_deref(), files)
+                    .map_err(|e| {
+                        SemanticError::with_help(
+                            format!("Failed to import submodule '{}'", submodule_path),
+                            span,
+                            e.to_string(),
+                        )
+                    })?;
+
+                // Analyze the submodule
+                let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+                submodule_analyzer.set_current_file(std::path::PathBuf::from(
+                    submodule_path.replace('.', "/") + ".mux",
+                ));
+                let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
+                if !errors.is_empty() {
+                    let error_messages: Vec<String> =
+                        errors.iter().map(|e| e.message.clone()).collect();
+                    return Err(SemanticError::with_help(
+                        format!("Errors in submodule '{}'", submodule_path),
+                        span,
+                        format!(
+                            "Fix the following errors in '{}':\n  {}",
+                            submodule_path,
+                            error_messages.join("\n  ")
+                        ),
+                    ));
+                }
+
+                // Get symbols from submodule
+                let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
+
+                // Register submodule in imported_symbols
+                let mangled_submodule_symbols =
+                    self.mangle_module_symbols(&submodule_symbols, &submodule_path);
+                self.imported_symbols
+                    .insert(namespace.to_string(), mangled_submodule_symbols);
+
+                // Add submodule symbol to symbol table
+                self.symbol_table.add_symbol(
+                    namespace,
+                    Symbol {
+                        kind: SymbolKind::Import,
+                        span,
+                        type_: Some(Type::Module(namespace.to_string())),
+                        interfaces: std::collections::HashMap::new(),
+                        methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
+                        type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
+                        default_param_count: 0,
+                        variants: None,
+                    },
+                )?;
+
+                // Cache the submodule
+                resolver
+                    .borrow_mut()
+                    .cache_module(&submodule_path, submodule_nodes.clone());
+                resolver.borrow_mut().finish_import(&submodule_path);
+
+                self.all_module_asts
+                    .insert(submodule_path.clone(), submodule_nodes);
+
+                if !self.module_dependencies.contains(&submodule_path) {
+                    self.module_dependencies.push(submodule_path);
+                }
+            }
+            ImportSpec::Items { items } => {
+                // import utils.(helpers, math)
+                for (item, alias) in items {
+                    let submodule_name = item.as_str();
+                    if !submodules.contains(&submodule_name.to_string()) {
+                        return Err(SemanticError::with_help(
+                            format!(
+                                "Submodule '{}' not found in '{}'",
+                                submodule_name, module_path
+                            ),
+                            span,
+                            format!("Available submodules: {}", submodules.join(", ")),
+                        ));
+                    }
+
+                    let submodule_path = format!("{}.{}", module_path, submodule_name);
+                    let namespace = alias.as_ref().map(|s| s.as_str()).unwrap_or(submodule_name);
+
+                    // Resolve and analyze the submodule
+                    let submodule_nodes = resolver
+                        .borrow_mut()
+                        .resolve_import_path(&submodule_path, self.current_file.as_deref(), files)
+                        .map_err(|e| {
+                            SemanticError::with_help(
+                                format!("Failed to import submodule '{}'", submodule_path),
+                                span,
+                                e.to_string(),
+                            )
+                        })?;
+
+                    // Analyze the submodule
+                    let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+                    submodule_analyzer.set_current_file(std::path::PathBuf::from(
+                        submodule_path.replace('.', "/") + ".mux",
+                    ));
+                    let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
+                    if !errors.is_empty() {
+                        let error_messages: Vec<String> =
+                            errors.iter().map(|e| e.message.clone()).collect();
+                        return Err(SemanticError::with_help(
+                            format!("Errors in submodule '{}'", submodule_path),
+                            span,
+                            format!(
+                                "Fix the following errors in '{}':\n  {}",
+                                submodule_path,
+                                error_messages.join("\n  ")
+                            ),
+                        ));
+                    }
+
+                    // Get symbols from submodule
+                    let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
+
+                    // Register submodule in imported_symbols
+                    let mangled_submodule_symbols =
+                        self.mangle_module_symbols(&submodule_symbols, &submodule_path);
+                    self.imported_symbols
+                        .insert(namespace.to_string(), mangled_submodule_symbols);
+
+                    // Add submodule symbol to symbol table
+                    self.symbol_table.add_symbol(
+                        namespace,
+                        Symbol {
+                            kind: SymbolKind::Import,
+                            span,
+                            type_: Some(Type::Module(namespace.to_string())),
+                            interfaces: std::collections::HashMap::new(),
+                            methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
+                            type_params: Vec::new(),
+                            original_name: None,
+                            llvm_name: None,
+                            default_param_count: 0,
+                            variants: None,
+                        },
+                    )?;
+
+                    // Cache the submodule
+                    resolver
+                        .borrow_mut()
+                        .cache_module(&submodule_path, submodule_nodes.clone());
+                    resolver.borrow_mut().finish_import(&submodule_path);
+
+                    self.all_module_asts
+                        .insert(submodule_path.clone(), submodule_nodes);
+
+                    if !self.module_dependencies.contains(&submodule_path) {
+                        self.module_dependencies.push(submodule_path);
+                    }
+                }
+            }
+            ImportSpec::Wildcard => {
+                // import utils.* - import all submodules at top level
+                for submodule_name in &submodules {
+                    let submodule_path = format!("{}.{}", module_path, submodule_name);
+
+                    // Resolve and analyze the submodule
+                    let submodule_nodes = resolver
+                        .borrow_mut()
+                        .resolve_import_path(&submodule_path, self.current_file.as_deref(), files)
+                        .map_err(|e| {
+                            SemanticError::with_help(
+                                format!("Failed to import submodule '{}'", submodule_path),
+                                span,
+                                e.to_string(),
+                            )
+                        })?;
+
+                    // Analyze the submodule
+                    let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+                    submodule_analyzer.set_current_file(std::path::PathBuf::from(
+                        submodule_path.replace('.', "/") + ".mux",
+                    ));
+                    let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
+                    if !errors.is_empty() {
+                        let error_messages: Vec<String> =
+                            errors.iter().map(|e| e.message.clone()).collect();
+                        return Err(SemanticError::with_help(
+                            format!("Errors in submodule '{}'", submodule_path),
+                            span,
+                            format!(
+                                "Fix the following errors in '{}':\n  {}",
+                                submodule_path,
+                                error_messages.join("\n  ")
+                            ),
+                        ));
+                    }
+
+                    // Get symbols from submodule
+                    let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
+
+                    // Register submodule in imported_symbols
+                    let mangled_submodule_symbols =
+                        self.mangle_module_symbols(&submodule_symbols, &submodule_path);
+                    self.imported_symbols
+                        .insert(submodule_name.to_string(), mangled_submodule_symbols);
+
+                    // Add submodule symbol to symbol table
+                    self.symbol_table.add_symbol(
+                        submodule_name,
+                        Symbol {
+                            kind: SymbolKind::Import,
+                            span,
+                            type_: Some(Type::Module(submodule_name.to_string())),
+                            interfaces: std::collections::HashMap::new(),
+                            methods: std::collections::HashMap::new(),
+                            fields: std::collections::HashMap::new(),
+                            type_params: Vec::new(),
+                            original_name: None,
+                            llvm_name: None,
+                            default_param_count: 0,
+                            variants: None,
+                        },
+                    )?;
+
+                    // Cache the submodule
+                    resolver
+                        .borrow_mut()
+                        .cache_module(&submodule_path, submodule_nodes.clone());
+                    resolver.borrow_mut().finish_import(&submodule_path);
+
+                    self.all_module_asts
+                        .insert(submodule_path.clone(), submodule_nodes);
+
+                    if !self.module_dependencies.contains(&submodule_path) {
+                        self.module_dependencies.push(submodule_path);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // Helper method to mangle module symbols
+    fn mangle_module_symbols(
+        &self,
+        symbols: &std::collections::HashMap<String, Symbol>,
+        module_path: &str,
+    ) -> std::collections::HashMap<String, Symbol> {
+        let module_name_for_mangling = Self::sanitize_module_path(module_path);
+        let mut mangled_symbols = std::collections::HashMap::new();
+
+        for (name, symbol) in symbols {
+            let mut mangled_symbol = symbol.clone();
+            if matches!(symbol.kind, SymbolKind::Function) {
+                mangled_symbol.llvm_name = Some(format!("{}!{}", module_name_for_mangling, name));
+            }
+            mangled_symbols.insert(name.clone(), mangled_symbol);
+        }
+
+        mangled_symbols
+    }
+
     // Import single symbol (import logger.log)
     fn import_single_symbol(
         &mut self,
@@ -4437,6 +4862,181 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
+
+        // Handle import std (all packages under std namespace) and import std.* (all packages at top level)
+        if module_path == "std" {
+            match spec {
+                ImportSpec::Module { alias } => {
+                    // import std - register all packages under the "std" namespace
+                    let namespace = alias.as_ref().map(|s| s.as_str()).unwrap_or("std");
+
+                    // Register each package as a submodule
+                    let mut std_symbols = std::collections::HashMap::new();
+                    for package_name in ["io", "math"] {
+                        if let Some(package_functions) =
+                            self.get_std_package_functions(package_name)
+                        {
+                            let mut package_symbols = std::collections::HashMap::new();
+                            for (func_name, sig, llvm_name) in &package_functions {
+                                let mut sym = Self::make_symbol(
+                                    SymbolKind::Function,
+                                    span,
+                                    Some(Type::Function {
+                                        params: sig.params.clone(),
+                                        returns: Box::new(sig.return_type.clone()),
+                                        default_count: 0,
+                                    }),
+                                );
+                                sym.llvm_name = Some(llvm_name.to_string());
+                                package_symbols.insert(func_name.to_string(), sym);
+                            }
+
+                            // Store package symbols both in std's symbols and as a separate module
+                            let package_sym = Self::make_symbol(
+                                SymbolKind::Import,
+                                span,
+                                Some(Type::Module(package_name.to_string())),
+                            );
+                            std_symbols.insert(package_name.to_string(), package_sym);
+
+                            // Also register the package as a top-level imported module for nested lookup
+                            self.imported_symbols
+                                .insert(package_name.to_string(), package_symbols);
+                        }
+                    }
+
+                    self.imported_symbols
+                        .insert(namespace.to_string(), std_symbols);
+
+                    self.symbol_table.add_symbol(
+                        namespace,
+                        Self::make_symbol(
+                            SymbolKind::Import,
+                            span,
+                            Some(Type::Module(namespace.to_string())),
+                        ),
+                    )?;
+                }
+                ImportSpec::Wildcard => {
+                    // import std.* - import all packages at top level
+                    for package_name in ["io", "math"] {
+                        if let Some(package_functions) =
+                            self.get_std_package_functions(package_name)
+                        {
+                            // Register the package as a module
+                            let mut package_symbols = std::collections::HashMap::new();
+                            for (func_name, sig, llvm_name) in &package_functions {
+                                let mut sym = Self::make_symbol(
+                                    SymbolKind::Function,
+                                    span,
+                                    Some(Type::Function {
+                                        params: sig.params.clone(),
+                                        returns: Box::new(sig.return_type.clone()),
+                                        default_count: 0,
+                                    }),
+                                );
+                                sym.llvm_name = Some(llvm_name.to_string());
+                                package_symbols.insert(func_name.to_string(), sym);
+                            }
+
+                            self.imported_symbols
+                                .insert(package_name.to_string(), package_symbols);
+
+                            self.symbol_table.add_symbol(
+                                package_name,
+                                Self::make_symbol(
+                                    SymbolKind::Import,
+                                    span,
+                                    Some(Type::Module(package_name.to_string())),
+                                ),
+                            )?;
+                        }
+                    }
+                }
+                ImportSpec::Item { item, alias } => {
+                    // import std.math - import a specific package
+                    let package_name = item.as_str();
+                    if let Some(package_functions) = self.get_std_package_functions(package_name) {
+                        let namespace = alias.as_ref().map(|s| s.as_str()).unwrap_or(package_name);
+
+                        let mut symbols = std::collections::HashMap::new();
+                        for (func_name, sig, llvm_name) in &package_functions {
+                            let mut sym = Self::make_symbol(
+                                SymbolKind::Function,
+                                span,
+                                Some(Type::Function {
+                                    params: sig.params.clone(),
+                                    returns: Box::new(sig.return_type.clone()),
+                                    default_count: 0,
+                                }),
+                            );
+                            sym.llvm_name = Some(llvm_name.to_string());
+                            symbols.insert(func_name.to_string(), sym);
+                        }
+
+                        self.imported_symbols.insert(namespace.to_string(), symbols);
+
+                        self.symbol_table.add_symbol(
+                            namespace,
+                            Self::make_symbol(
+                                SymbolKind::Import,
+                                span,
+                                Some(Type::Module(namespace.to_string())),
+                            ),
+                        )?;
+                    } else {
+                        return Err(SemanticError::new(
+                            format!("Unknown std package: {}", package_name),
+                            span,
+                        ));
+                    }
+                }
+                ImportSpec::Items { items } => {
+                    // import std.(math, io) - import multiple packages
+                    for (item, alias) in items {
+                        let package_name = item.as_str();
+                        if let Some(package_functions) =
+                            self.get_std_package_functions(package_name)
+                        {
+                            let namespace =
+                                alias.as_ref().map(|s| s.as_str()).unwrap_or(package_name);
+
+                            let mut symbols = std::collections::HashMap::new();
+                            for (func_name, sig, llvm_name) in &package_functions {
+                                let mut sym = Self::make_symbol(
+                                    SymbolKind::Function,
+                                    span,
+                                    Some(Type::Function {
+                                        params: sig.params.clone(),
+                                        returns: Box::new(sig.return_type.clone()),
+                                        default_count: 0,
+                                    }),
+                                );
+                                sym.llvm_name = Some(llvm_name.to_string());
+                                symbols.insert(func_name.to_string(), sym);
+                            }
+
+                            self.imported_symbols.insert(namespace.to_string(), symbols);
+
+                            self.symbol_table.add_symbol(
+                                namespace,
+                                Self::make_symbol(
+                                    SymbolKind::Import,
+                                    span,
+                                    Some(Type::Module(namespace.to_string())),
+                                ),
+                            )?;
+                        } else {
+                            return Err(SemanticError::new(
+                                format!("Unknown std package: {}", package_name),
+                                span,
+                            ));
+                        }
+                    }
+                }
+            }
+            return Ok(());
+        }
 
         // Extract the package name from the path (e.g., "io" from "std.io")
         let package_name = module_path

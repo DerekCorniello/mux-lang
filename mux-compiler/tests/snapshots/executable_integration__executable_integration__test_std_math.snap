@@ -2,4 +2,8 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-
+Test 1: math.pow(2.0, 3.0) = 8.0
+Test 2: math.sqrt(16.0) = 4.0
+Test 3: sin(0.0) = 0.0
+Test 4: m.cos(0.0) = 1.0
+All std.math tests passed
