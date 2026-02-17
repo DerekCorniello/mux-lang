@@ -33,3 +33,6 @@ phf = { version = "0.11", features = ["macros"] }
 
 [dev-dependencies]
 insta = { version = "1.43.1", features = ["yaml"] }
+
+[build-dependencies]
+set-git-hooks-dir = "1.0"
