@@ -564,9 +564,9 @@ cfg.current_retry = 1  // OK - mutable field
 ```
 
 **Const Enforcement:**
-- Cannot reassign: `const_var = new_value` → ERROR
-- Cannot use compound assignment: `const_var += 1` → ERROR
-- Cannot increment/decrement: `const_var++` or `const_var--` → ERROR
+- Cannot reassign: `const_var = new_value` -> ERROR
+- Cannot use compound assignment: `const_var += 1` -> ERROR
+- Cannot increment/decrement: `const_var++` or `const_var--` -> ERROR
 - Applies to both identifiers and class fields
 - Use `const` when you want a value that won't change after initialization
 
@@ -1604,9 +1604,9 @@ When `mux_rc_dec` returns `true`, the refcount reached zero and memory is freed 
 
 The compiler generates cleanup code using a **scope stack**:
 
-1. **Enter scope** → `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
-2. **Track variable** → `track_rc_variable(name, alloca)` for each RC-allocated variable
-3. **Exit scope** → `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
+1. **Enter scope** -> `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
+2. **Track variable** -> `track_rc_variable(name, alloca)` for each RC-allocated variable
+3. **Exit scope** -> `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
 
 This ensures proper cleanup order and handles early returns.
 
@@ -1661,10 +1661,12 @@ print("val after update: " + x.to_string())  // 21
 
 ```
 import math
+import std.math
 import shapes.circle as circle
 
 // Usage with inference
 float pi = math.PI         // type inferred from math module
+float root = math.sqrt(9.0)
 auto c = circle.new(5.0)  // type inferred from constructor
 
 // Import with unused alias for completeness
@@ -1675,6 +1677,7 @@ import utils.logger as _  // imported but not directly used in this scope
 - Module paths map directly to file paths
 - Imported symbols can be used with type inference
 - Use `_` alias when importing for side effects only
+- Standard library modules are imported as `import std.<module>` and used as `<module>.<item>`
 
 ### 15.1 Technical Design: Module System
 
@@ -1685,11 +1688,13 @@ Mux uses Python-style module imports with compile-time resolution.
 ```mux
 import math          // math.mux in same directory
 import shapes.circle // shapes/circle.mux
+import std.math      // stdlib math module
 ```
 
 File paths map to module paths:
-- `import foo` → `foo.mux`
-- `import shapes.circle` → `shapes/circle.mux`
+- `import foo` -> `foo.mux`
+- `import shapes.circle` -> `shapes/circle.mux`
+- `import std.math` -> stdlib `math` module namespace (`math.*`)
 
 #### Name Mangling for Imported Functions
 

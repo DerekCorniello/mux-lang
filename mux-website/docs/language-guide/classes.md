@@ -215,8 +215,8 @@ cfg.current_retry = 1  // OK - mutable field
 ```
 
 **Const Enforcement:**
-- Cannot reassign: `self.MAX_RETRIES = value` → ERROR
-- Cannot increment/decrement: `self.MAX_RETRIES++` → ERROR
+- Cannot reassign: `self.MAX_RETRIES = value` -> ERROR
+- Cannot increment/decrement: `self.MAX_RETRIES++` -> ERROR
 - Use `const` for fields that shouldn't change after initialization
 
 ## Generic Classes

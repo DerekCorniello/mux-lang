@@ -4244,7 +4244,7 @@ impl<'a> CodeGenerator<'a> {
     /// For base[i1][i2]...[iN] = value:
     /// 1. If N == 1: base[i1] = value (base case, direct assignment)
     /// 2. If N > 1:
-    ///    a. Get base[i1] → temp (copy)
+    ///    a. Get base[i1] -> temp (copy)
     ///    b. Recursively: temp[i2]...[iN] = value
     ///    c. Write temp back: base[i1] = temp
     fn generate_nested_collection_assignment(
@@ -4304,7 +4304,7 @@ impl<'a> CodeGenerator<'a> {
         } else {
             // RECURSIVE CASE: base[i1][i2]...[iN] = value where N > 1
             // Strategy:
-            // 1. Get base[i1] → temp (copy)
+            // 1. Get base[i1] -> temp (copy)
             // 2. Recursively handle temp[i2]...[iN] = value
             // 3. Write temp back to base[i1]
 

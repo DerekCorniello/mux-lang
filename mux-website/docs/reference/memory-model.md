@@ -82,9 +82,9 @@ When `mux_rc_dec` returns `true`, the refcount reached zero and memory is freed:
 
 The compiler generates cleanup code using a scope stack:
 
-1. **Enter scope** → `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
-2. **Track variable** → `track_rc_variable(name, alloca)` for each RC-allocated variable
-3. **Exit scope** → `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
+1. **Enter scope** -> `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
+2. **Track variable** -> `track_rc_variable(name, alloca)` for each RC-allocated variable
+3. **Exit scope** -> `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
 
 ### Example: Scope Cleanup
 
@@ -137,11 +137,11 @@ auto nested = [
 ```
 
 Cleanup order:
-1. Outer list refcount → 0
+1. Outer list refcount -> 0
 2. Drop outer list
-3. Each map's refcount → 0
+3. Each map's refcount -> 0
 4. Drop each map
-5. Each inner list's refcount → 0
+5. Each inner list's refcount -> 0
 6. Drop inner lists
 7. All strings freed
 
