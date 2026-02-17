@@ -166,9 +166,7 @@ pub extern "C" fn mux_io_write_file(path: *const c_char, content: *const c_char)
     let content_str = unsafe { CStr::from_ptr(content).to_string_lossy() };
 
     match std::fs::write(&*path_str, content_str.as_bytes()) {
-        Ok(_) => Box::into_raw(Box::new(MuxResult::ok(Value::Tuple(Box::new(
-            crate::Tuple(Value::Int(0), Value::Int(0)),
-        ))))),
+        Ok(_) => Box::into_raw(Box::new(MuxResult::ok(Value::Unit))),
         Err(e) => Box::into_raw(Box::new(MuxResult::err(format!(
             "Failed to write file '{}': {}",
             path_str, e
@@ -193,9 +191,7 @@ pub extern "C" fn mux_io_remove(path: *const c_char) -> *mut MuxResult {
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
 
     match std::fs::remove_file(&*path_str) {
-        Ok(_) => Box::into_raw(Box::new(MuxResult::ok(Value::Tuple(Box::new(
-            crate::Tuple(Value::Int(0), Value::Int(0)),
-        ))))),
+        Ok(_) => Box::into_raw(Box::new(MuxResult::ok(Value::Unit))),
         Err(e) => Box::into_raw(Box::new(MuxResult::err(format!(
             "Failed to remove '{}': {}",
             path_str, e
@@ -234,9 +230,7 @@ pub extern "C" fn mux_io_mkdir(path: *const c_char) -> *mut MuxResult {
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
 
     match std::fs::create_dir_all(&*path_str) {
-        Ok(_) => Box::into_raw(Box::new(MuxResult::ok(Value::Tuple(Box::new(
-            crate::Tuple(Value::Int(0), Value::Int(0)),
-        ))))),
+        Ok(_) => Box::into_raw(Box::new(MuxResult::ok(Value::Unit))),
         Err(e) => Box::into_raw(Box::new(MuxResult::err(format!(
             "Failed to create directory '{}': {}",
             path_str, e

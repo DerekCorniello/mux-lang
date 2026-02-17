@@ -311,6 +311,7 @@ pub extern "C" fn mux_value_get_bool(val: *const Value) -> i32 {
 pub extern "C" fn mux_value_get_type_tag(val: *const Value) -> i32 {
     unsafe {
         match &*val {
+            Value::Unit => 11,
             Value::Bool(_) => 0,
             Value::Int(_) => 1,
             Value::Float(_) => 2,

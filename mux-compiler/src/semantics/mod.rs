@@ -4285,6 +4285,82 @@ impl SemanticAnalyzer {
     }
 
     // Handle directory-based module import (e.g., import utils where utils/ is a directory)
+    fn resolve_and_register_submodule(
+        &mut self,
+        submodule_path: &str,
+        namespace: &str,
+        span: Span,
+        resolver: &Rc<RefCell<crate::module_resolver::ModuleResolver>>,
+        files: &mut Files,
+    ) -> Result<Symbol, SemanticError> {
+        let submodule_nodes = resolver
+            .borrow_mut()
+            .resolve_import_path(submodule_path, self.current_file.as_deref(), files)
+            .map_err(|e| {
+                SemanticError::with_help(
+                    format!("Failed to import submodule '{}'", submodule_path),
+                    span,
+                    e.to_string(),
+                )
+            })?;
+
+        let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+        submodule_analyzer.set_current_file(std::path::PathBuf::from(
+            submodule_path.replace('.', "/") + ".mux",
+        ));
+        let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
+        if !errors.is_empty() {
+            let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+            return Err(SemanticError::with_help(
+                format!("Errors in submodule '{}'", submodule_path),
+                span,
+                format!(
+                    "Fix the following errors in '{}':\n  {}",
+                    submodule_path,
+                    error_messages.join("\n  ")
+                ),
+            ));
+        }
+
+        let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
+
+        let mangled_submodule_symbols =
+            self.mangle_module_symbols(&submodule_symbols, submodule_path);
+        self.imported_symbols
+            .insert(namespace.to_string(), mangled_submodule_symbols);
+
+        let symbol = Symbol {
+            kind: SymbolKind::Import,
+            span,
+            type_: Some(Type::Module(namespace.to_string())),
+            interfaces: std::collections::HashMap::new(),
+            methods: std::collections::HashMap::new(),
+            fields: std::collections::HashMap::new(),
+            type_params: Vec::new(),
+            original_name: None,
+            llvm_name: None,
+            default_param_count: 0,
+            variants: None,
+        };
+
+        resolver
+            .borrow_mut()
+            .cache_module(submodule_path, submodule_nodes.clone());
+        resolver.borrow_mut().finish_import(submodule_path);
+
+        self.all_module_asts
+            .insert(submodule_path.to_string(), submodule_nodes);
+
+        if !self
+            .module_dependencies
+            .contains(&submodule_path.to_string())
+        {
+            self.module_dependencies.push(submodule_path.to_string());
+        }
+
+        Ok(symbol)
+    }
+
     fn handle_directory_import(
         &mut self,
         module_path: &str,
@@ -4312,75 +4388,15 @@ impl SemanticAnalyzer {
                 for submodule_name in &submodules {
                     let submodule_path = format!("{}.{}", module_path, submodule_name);
 
-                    // Resolve and analyze the submodule
-                    let submodule_nodes = resolver
-                        .borrow_mut()
-                        .resolve_import_path(&submodule_path, self.current_file.as_deref(), files)
-                        .map_err(|e| {
-                            SemanticError::with_help(
-                                format!("Failed to import submodule '{}'", submodule_path),
-                                span,
-                                e.to_string(),
-                            )
-                        })?;
-
-                    // Analyze the submodule
-                    let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
-                    submodule_analyzer.set_current_file(std::path::PathBuf::from(
-                        submodule_path.replace('.', "/") + ".mux",
-                    ));
-                    let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
-                    if !errors.is_empty() {
-                        let error_messages: Vec<String> =
-                            errors.iter().map(|e| e.message.clone()).collect();
-                        return Err(SemanticError::with_help(
-                            format!("Errors in submodule '{}'", submodule_path),
-                            span,
-                            format!(
-                                "Fix the following errors in '{}':\n  {}",
-                                submodule_path,
-                                error_messages.join("\n  ")
-                            ),
-                        ));
-                    }
-
-                    // Get symbols from submodule
-                    let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
-
-                    // Register submodule in imported_symbols
-                    let mangled_submodule_symbols =
-                        self.mangle_module_symbols(&submodule_symbols, &submodule_path);
-                    self.imported_symbols
-                        .insert(submodule_name.to_string(), mangled_submodule_symbols);
-
-                    // Add submodule as Import symbol in parent's symbols
-                    let submodule_sym = Symbol {
-                        kind: SymbolKind::Import,
+                    let symbol = self.resolve_and_register_submodule(
+                        &submodule_path,
+                        submodule_name,
                         span,
-                        type_: Some(Type::Module(submodule_name.to_string())),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    };
-                    module_symbols.insert(submodule_name.to_string(), submodule_sym);
+                        &resolver,
+                        files,
+                    )?;
 
-                    // Cache the submodule
-                    resolver
-                        .borrow_mut()
-                        .cache_module(&submodule_path, submodule_nodes.clone());
-                    resolver.borrow_mut().finish_import(&submodule_path);
-
-                    self.all_module_asts
-                        .insert(submodule_path.clone(), submodule_nodes);
-
-                    if !self.module_dependencies.contains(&submodule_path) {
-                        self.module_dependencies.push(submodule_path);
-                    }
+                    module_symbols.insert(submodule_name.to_string(), symbol);
                 }
 
                 // Store parent module's symbols (which are just the submodules)
@@ -4422,77 +4438,15 @@ impl SemanticAnalyzer {
                 let submodule_path = format!("{}.{}", module_path, submodule_name);
                 let namespace = alias.as_ref().map(|s| s.as_str()).unwrap_or(submodule_name);
 
-                // Resolve and analyze the submodule
-                let submodule_nodes = resolver
-                    .borrow_mut()
-                    .resolve_import_path(&submodule_path, self.current_file.as_deref(), files)
-                    .map_err(|e| {
-                        SemanticError::with_help(
-                            format!("Failed to import submodule '{}'", submodule_path),
-                            span,
-                            e.to_string(),
-                        )
-                    })?;
-
-                // Analyze the submodule
-                let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
-                submodule_analyzer.set_current_file(std::path::PathBuf::from(
-                    submodule_path.replace('.', "/") + ".mux",
-                ));
-                let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
-                if !errors.is_empty() {
-                    let error_messages: Vec<String> =
-                        errors.iter().map(|e| e.message.clone()).collect();
-                    return Err(SemanticError::with_help(
-                        format!("Errors in submodule '{}'", submodule_path),
-                        span,
-                        format!(
-                            "Fix the following errors in '{}':\n  {}",
-                            submodule_path,
-                            error_messages.join("\n  ")
-                        ),
-                    ));
-                }
-
-                // Get symbols from submodule
-                let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
-
-                // Register submodule in imported_symbols
-                let mangled_submodule_symbols =
-                    self.mangle_module_symbols(&submodule_symbols, &submodule_path);
-                self.imported_symbols
-                    .insert(namespace.to_string(), mangled_submodule_symbols);
-
-                // Add submodule symbol to symbol table
-                self.symbol_table.add_symbol(
+                let symbol = self.resolve_and_register_submodule(
+                    &submodule_path,
                     namespace,
-                    Symbol {
-                        kind: SymbolKind::Import,
-                        span,
-                        type_: Some(Type::Module(namespace.to_string())),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    },
+                    span,
+                    &resolver,
+                    files,
                 )?;
 
-                // Cache the submodule
-                resolver
-                    .borrow_mut()
-                    .cache_module(&submodule_path, submodule_nodes.clone());
-                resolver.borrow_mut().finish_import(&submodule_path);
-
-                self.all_module_asts
-                    .insert(submodule_path.clone(), submodule_nodes);
-
-                if !self.module_dependencies.contains(&submodule_path) {
-                    self.module_dependencies.push(submodule_path);
-                }
+                self.symbol_table.add_symbol(namespace, symbol)?;
             }
             ImportSpec::Items { items } => {
                 // import utils.(helpers, math)
@@ -4512,77 +4466,15 @@ impl SemanticAnalyzer {
                     let submodule_path = format!("{}.{}", module_path, submodule_name);
                     let namespace = alias.as_ref().map(|s| s.as_str()).unwrap_or(submodule_name);
 
-                    // Resolve and analyze the submodule
-                    let submodule_nodes = resolver
-                        .borrow_mut()
-                        .resolve_import_path(&submodule_path, self.current_file.as_deref(), files)
-                        .map_err(|e| {
-                            SemanticError::with_help(
-                                format!("Failed to import submodule '{}'", submodule_path),
-                                span,
-                                e.to_string(),
-                            )
-                        })?;
-
-                    // Analyze the submodule
-                    let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
-                    submodule_analyzer.set_current_file(std::path::PathBuf::from(
-                        submodule_path.replace('.', "/") + ".mux",
-                    ));
-                    let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
-                    if !errors.is_empty() {
-                        let error_messages: Vec<String> =
-                            errors.iter().map(|e| e.message.clone()).collect();
-                        return Err(SemanticError::with_help(
-                            format!("Errors in submodule '{}'", submodule_path),
-                            span,
-                            format!(
-                                "Fix the following errors in '{}':\n  {}",
-                                submodule_path,
-                                error_messages.join("\n  ")
-                            ),
-                        ));
-                    }
-
-                    // Get symbols from submodule
-                    let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
-
-                    // Register submodule in imported_symbols
-                    let mangled_submodule_symbols =
-                        self.mangle_module_symbols(&submodule_symbols, &submodule_path);
-                    self.imported_symbols
-                        .insert(namespace.to_string(), mangled_submodule_symbols);
-
-                    // Add submodule symbol to symbol table
-                    self.symbol_table.add_symbol(
+                    let symbol = self.resolve_and_register_submodule(
+                        &submodule_path,
                         namespace,
-                        Symbol {
-                            kind: SymbolKind::Import,
-                            span,
-                            type_: Some(Type::Module(namespace.to_string())),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
+                        span,
+                        &resolver,
+                        files,
                     )?;
 
-                    // Cache the submodule
-                    resolver
-                        .borrow_mut()
-                        .cache_module(&submodule_path, submodule_nodes.clone());
-                    resolver.borrow_mut().finish_import(&submodule_path);
-
-                    self.all_module_asts
-                        .insert(submodule_path.clone(), submodule_nodes);
-
-                    if !self.module_dependencies.contains(&submodule_path) {
-                        self.module_dependencies.push(submodule_path);
-                    }
+                    self.symbol_table.add_symbol(namespace, symbol)?;
                 }
             }
             ImportSpec::Wildcard => {
@@ -4590,77 +4482,15 @@ impl SemanticAnalyzer {
                 for submodule_name in &submodules {
                     let submodule_path = format!("{}.{}", module_path, submodule_name);
 
-                    // Resolve and analyze the submodule
-                    let submodule_nodes = resolver
-                        .borrow_mut()
-                        .resolve_import_path(&submodule_path, self.current_file.as_deref(), files)
-                        .map_err(|e| {
-                            SemanticError::with_help(
-                                format!("Failed to import submodule '{}'", submodule_path),
-                                span,
-                                e.to_string(),
-                            )
-                        })?;
-
-                    // Analyze the submodule
-                    let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
-                    submodule_analyzer.set_current_file(std::path::PathBuf::from(
-                        submodule_path.replace('.', "/") + ".mux",
-                    ));
-                    let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
-                    if !errors.is_empty() {
-                        let error_messages: Vec<String> =
-                            errors.iter().map(|e| e.message.clone()).collect();
-                        return Err(SemanticError::with_help(
-                            format!("Errors in submodule '{}'", submodule_path),
-                            span,
-                            format!(
-                                "Fix the following errors in '{}':\n  {}",
-                                submodule_path,
-                                error_messages.join("\n  ")
-                            ),
-                        ));
-                    }
-
-                    // Get symbols from submodule
-                    let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
-
-                    // Register submodule in imported_symbols
-                    let mangled_submodule_symbols =
-                        self.mangle_module_symbols(&submodule_symbols, &submodule_path);
-                    self.imported_symbols
-                        .insert(submodule_name.to_string(), mangled_submodule_symbols);
-
-                    // Add submodule symbol to symbol table
-                    self.symbol_table.add_symbol(
+                    let symbol = self.resolve_and_register_submodule(
+                        &submodule_path,
                         submodule_name,
-                        Symbol {
-                            kind: SymbolKind::Import,
-                            span,
-                            type_: Some(Type::Module(submodule_name.to_string())),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
+                        span,
+                        &resolver,
+                        files,
                     )?;
 
-                    // Cache the submodule
-                    resolver
-                        .borrow_mut()
-                        .cache_module(&submodule_path, submodule_nodes.clone());
-                    resolver.borrow_mut().finish_import(&submodule_path);
-
-                    self.all_module_asts
-                        .insert(submodule_path.clone(), submodule_nodes);
-
-                    if !self.module_dependencies.contains(&submodule_path) {
-                        self.module_dependencies.push(submodule_path);
-                    }
+                    self.symbol_table.add_symbol(submodule_name, symbol)?;
                 }
             }
         }
@@ -4807,7 +4637,7 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
-        use crate::semantics::symbol_table::{STDLIB_ITEMS, STDLIB_MODULES};
+        use crate::semantics::symbol_table::{STDLIB_MODULES, all_stdlib_items};
 
         // Match on module_path to handle stdlib modules
         match module_path {
@@ -4866,7 +4696,7 @@ impl SemanticAnalyzer {
                     }
                     ImportSpec::Wildcard => {
                         // import std.* - import all items flat
-                        for (key, item) in STDLIB_ITEMS.entries() {
+                        for (key, item) in all_stdlib_items() {
                             if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
                                 self.register_stdlib_item(item_name, item, span)?;
                             }
@@ -4896,7 +4726,7 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            "std.math" | "math" => {
+            "std.math" => {
                 self.import_stdlib_module("math", spec, span)?;
             }
             "std.io" => {
@@ -4976,154 +4806,25 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
-        use crate::semantics::symbol_table::{STDLIB_ITEMS, StdlibItem};
+        use crate::semantics::symbol_table::{StdlibItem, all_stdlib_items};
 
         // Collect all items for this module
         let mut module_symbols: std::collections::HashMap<String, Symbol> =
             std::collections::HashMap::new();
 
-        if module_name == "io" {
-            let io_functions = vec![
-                (
-                    "read_file",
-                    vec![Type::Primitive(PrimitiveType::Str)],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Str),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    "mux_io_read_file",
-                ),
-                (
-                    "write_file",
-                    vec![
-                        Type::Primitive(PrimitiveType::Str),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
-                    ),
-                    "mux_io_write_file",
-                ),
-                (
-                    "exists",
-                    vec![Type::Primitive(PrimitiveType::Str)],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Bool),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    "mux_io_exists",
-                ),
-                (
-                    "remove",
-                    vec![Type::Primitive(PrimitiveType::Str)],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
-                    ),
-                    "mux_io_remove",
-                ),
-                (
-                    "is_file",
-                    vec![Type::Primitive(PrimitiveType::Str)],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Bool),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    "mux_io_is_file",
-                ),
-                (
-                    "is_dir",
-                    vec![Type::Primitive(PrimitiveType::Str)],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Bool),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    "mux_io_is_dir",
-                ),
-                (
-                    "mkdir",
-                    vec![Type::Primitive(PrimitiveType::Str)],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
-                    ),
-                    "mux_io_mkdir",
-                ),
-                (
-                    "listdir",
-                    vec![Type::Primitive(PrimitiveType::Str)],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![
-                            Type::List(Box::new(Type::Primitive(PrimitiveType::Str))),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    "mux_io_listdir",
-                ),
-                (
-                    "join",
-                    vec![
-                        Type::Primitive(PrimitiveType::Str),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Str),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    "mux_io_join",
-                ),
-                (
-                    "basename",
-                    vec![Type::Primitive(PrimitiveType::Str)],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Str),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    "mux_io_basename",
-                ),
-                (
-                    "dirname",
-                    vec![Type::Primitive(PrimitiveType::Str)],
-                    Type::Named(
-                        "Result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Str),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    "mux_io_dirname",
-                ),
-            ];
-
-            for (name, params, ret, llvm_name) in io_functions {
-                module_symbols.insert(
-                    name.to_string(),
-                    Symbol {
+        for (key, item) in all_stdlib_items() {
+            if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
+                let symbol = match item {
+                    StdlibItem::Function {
+                        params,
+                        ret,
+                        llvm_name,
+                    } => Symbol {
                         kind: SymbolKind::Function,
                         span,
                         type_: Some(Type::Function {
-                            params,
-                            returns: Box::new(ret),
+                            params: params.to_vec(),
+                            returns: Box::new(ret.clone()),
                             default_count: 0,
                         }),
                         interfaces: std::collections::HashMap::new(),
@@ -5135,49 +4836,21 @@ impl SemanticAnalyzer {
                         default_param_count: 0,
                         variants: None,
                     },
-                );
-            }
-        } else {
-            for (key, item) in STDLIB_ITEMS.entries() {
-                if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
-                    let symbol = match item {
-                        StdlibItem::Function {
-                            params,
-                            ret,
-                            llvm_name,
-                        } => Symbol {
-                            kind: SymbolKind::Function,
-                            span,
-                            type_: Some(Type::Function {
-                                params: params.to_vec(),
-                                returns: Box::new(ret.clone()),
-                                default_count: 0,
-                            }),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: Some(llvm_name.to_string()),
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                        StdlibItem::Constant { ty, .. } => Symbol {
-                            kind: SymbolKind::Constant,
-                            span,
-                            type_: Some(ty.clone()),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    };
-                    module_symbols.insert(item_name.to_string(), symbol);
-                }
+                    StdlibItem::Constant { ty, .. } => Symbol {
+                        kind: SymbolKind::Constant,
+                        span,
+                        type_: Some(ty.clone()),
+                        interfaces: std::collections::HashMap::new(),
+                        methods: std::collections::HashMap::new(),
+                        fields: std::collections::HashMap::new(),
+                        type_params: Vec::new(),
+                        original_name: None,
+                        llvm_name: None,
+                        default_param_count: 0,
+                        variants: None,
+                    },
+                };
+                module_symbols.insert(item_name.to_string(), symbol);
             }
         }
 

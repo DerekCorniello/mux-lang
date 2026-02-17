@@ -72,6 +72,11 @@ static INT_INT_PARAMS: &[Type] = &[
     Type::Primitive(PrimitiveType::Int),
     Type::Primitive(PrimitiveType::Int),
 ];
+static STR_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Str)];
+static STR_STR_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Str),
+    Type::Primitive(PrimitiveType::Str),
+];
 static EMPTY_PARAMS: &[Type] = &[];
 
 /// All stdlib items organized by module.function or module.constant
@@ -228,6 +233,158 @@ pub static STDLIB_ITEMS: phf::Map<&'static str, StdlibItem> = phf::phf_map! {
 pub const STDLIB_MODULES: &[&str] = &["io", "math", "random"];
 
 lazy_static! {
+    // io uses lazy_static rather than PHF because signatures include Type::Named(Result<...>),
+    // and Type currently stores owned Strings, which are not const-constructible for PHF values.
+    pub static ref IO_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        m.insert(
+            "io.read_file",
+            StdlibItem::Function {
+                params: STR_PARAM,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![
+                        Type::Primitive(PrimitiveType::Str),
+                        Type::Primitive(PrimitiveType::Str),
+                    ],
+                ),
+                llvm_name: "mux_io_read_file",
+            },
+        );
+        m.insert(
+            "io.write_file",
+            StdlibItem::Function {
+                params: STR_STR_PARAMS,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
+                ),
+                llvm_name: "mux_io_write_file",
+            },
+        );
+        m.insert(
+            "io.exists",
+            StdlibItem::Function {
+                params: STR_PARAM,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![
+                        Type::Primitive(PrimitiveType::Bool),
+                        Type::Primitive(PrimitiveType::Str),
+                    ],
+                ),
+                llvm_name: "mux_io_exists",
+            },
+        );
+        m.insert(
+            "io.remove",
+            StdlibItem::Function {
+                params: STR_PARAM,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
+                ),
+                llvm_name: "mux_io_remove",
+            },
+        );
+        m.insert(
+            "io.is_file",
+            StdlibItem::Function {
+                params: STR_PARAM,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![
+                        Type::Primitive(PrimitiveType::Bool),
+                        Type::Primitive(PrimitiveType::Str),
+                    ],
+                ),
+                llvm_name: "mux_io_is_file",
+            },
+        );
+        m.insert(
+            "io.is_dir",
+            StdlibItem::Function {
+                params: STR_PARAM,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![
+                        Type::Primitive(PrimitiveType::Bool),
+                        Type::Primitive(PrimitiveType::Str),
+                    ],
+                ),
+                llvm_name: "mux_io_is_dir",
+            },
+        );
+        m.insert(
+            "io.mkdir",
+            StdlibItem::Function {
+                params: STR_PARAM,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
+                ),
+                llvm_name: "mux_io_mkdir",
+            },
+        );
+        m.insert(
+            "io.listdir",
+            StdlibItem::Function {
+                params: STR_PARAM,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![
+                        Type::List(Box::new(Type::Primitive(PrimitiveType::Str))),
+                        Type::Primitive(PrimitiveType::Str),
+                    ],
+                ),
+                llvm_name: "mux_io_listdir",
+            },
+        );
+        m.insert(
+            "io.join",
+            StdlibItem::Function {
+                params: STR_STR_PARAMS,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![
+                        Type::Primitive(PrimitiveType::Str),
+                        Type::Primitive(PrimitiveType::Str),
+                    ],
+                ),
+                llvm_name: "mux_io_join",
+            },
+        );
+        m.insert(
+            "io.basename",
+            StdlibItem::Function {
+                params: STR_PARAM,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![
+                        Type::Primitive(PrimitiveType::Str),
+                        Type::Primitive(PrimitiveType::Str),
+                    ],
+                ),
+                llvm_name: "mux_io_basename",
+            },
+        );
+        m.insert(
+            "io.dirname",
+            StdlibItem::Function {
+                params: STR_PARAM,
+                ret: Type::Named(
+                    "Result".to_string(),
+                    vec![
+                        Type::Primitive(PrimitiveType::Str),
+                        Type::Primitive(PrimitiveType::Str),
+                    ],
+                ),
+                llvm_name: "mux_io_dirname",
+            },
+        );
+        m
+    };
+
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
 
@@ -271,6 +428,13 @@ lazy_static! {
         ));
         m
     };
+}
+
+pub fn all_stdlib_items() -> impl Iterator<Item = (&'static str, &'static StdlibItem)> {
+    STDLIB_ITEMS
+        .entries()
+        .map(|(key, item)| (*key, item))
+        .chain(IO_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
 }
 
 #[derive(Debug)]
