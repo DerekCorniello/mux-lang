@@ -13,13 +13,14 @@ Thanks for your interest! This guide explains how to contribute to Mux.
 5. Run the tests (`cargo test`) to make sure everything is working.
 6. Running your code should be done via `cargo run -- `, followed by the command you want to run, e.g. `cargo run -- run test_file.mux`. So `mux` is substituted by `cargo run -- `.
 7. Always run `cargo fmt` and `cargo clippy` before committing changes.
-8. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
-9. Make your changes.
-10. Run tests again to ensure nothing is broken.
-11. Commit your changes with clear messages.
-12. Push your branch to your fork.
-13. Open a Pull Request against the `main` branch of the original repository.
-14. AI agents should follow the guidelines in [AGENTS.md](AGENTS.md).
+8. Install git hooks with `bash scripts/install-hooks.sh`.
+9. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
+10. Make your changes.
+11. Run tests again to ensure nothing is broken.
+12. Commit your changes with clear messages.
+13. Push your branch to your fork.
+14. Open a Pull Request against the `main` branch of the original repository.
+15. AI agents should follow the guidelines in [AGENTS.md](AGENTS.md).
 
 ---
 
@@ -46,6 +47,13 @@ We generally don't accept contributions that:
 - Ensure all new code is covered by tests.
 - Snapshot testing uses [insta](https://insta.rs/) - run `cargo insta test` to review snapshots.
 - I don't care what your commit messages look like, as long as they are clear about what changed.
+
+---
+
+## Tooling
+
+- Install git hooks once per clone with `bash scripts/install-hooks.sh`.
+- Run the full local checks with `bash scripts/run-checks.sh`.
 
 ---
 
