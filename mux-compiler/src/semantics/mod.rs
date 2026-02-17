@@ -8,7 +8,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -4976,6 +4976,40 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// Registers a single std function from package_functions into the symbol table.
+    fn register_std_function(
+        &mut self,
+        item: &str,
+        alias: Option<&str>,
+        package_functions: &[(&str, BuiltInSig, &str)],
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let symbol_name = alias.unwrap_or(item);
+        if let Some((_, sig, llvm_name)) =
+            package_functions.iter().find(|(name, _, _)| *name == item)
+        {
+            let mut sym = Self::make_symbol(
+                SymbolKind::Function,
+                span,
+                Some(Type::Function {
+                    params: sig.params.clone(),
+                    returns: Box::new(sig.return_type.clone()),
+                    default_count: 0,
+                }),
+            );
+            sym.llvm_name = Some(llvm_name.to_string());
+            self.symbol_table.add_symbol(symbol_name, sym)?;
+            Ok(())
+        } else {
+            let available: Vec<&str> = package_functions.iter().map(|(n, _, _)| *n).collect();
+            Err(SemanticError::with_help(
+                format!("Symbol '{}' not found in std package", item),
+                span,
+                format!("Available symbols: {}", available.join(", ")),
+            ))
+        }
+    }
+
     // Handle std library imports
     fn handle_std_import(
         &mut self,
@@ -5201,59 +5235,16 @@ impl SemanticAnalyzer {
                     )?;
                 }
                 ImportSpec::Item { item, alias } => {
-                    let symbol_name = alias.as_ref().unwrap_or(item);
-                    if let Some((_, sig, llvm_name)) = package_functions
-                        .iter()
-                        .find(|(name, _, _)| *name == item.as_str())
-                    {
-                        let mut sym = Self::make_symbol(
-                            SymbolKind::Function,
-                            span,
-                            Some(Type::Function {
-                                params: sig.params.clone(),
-                                returns: Box::new(sig.return_type.clone()),
-                                default_count: 0,
-                            }),
-                        );
-                        sym.llvm_name = Some(llvm_name.to_string());
-                        self.symbol_table.add_symbol(symbol_name, sym)?;
-                    } else {
-                        let available: Vec<&str> =
-                            package_functions.iter().map(|(n, _, _)| *n).collect();
-                        return Err(SemanticError::with_help(
-                            format!("Symbol '{}' not found in std.{}", item, package_name),
-                            span,
-                            format!("Available symbols: {}", available.join(", ")),
-                        ));
-                    }
+                    self.register_std_function(item, alias.as_deref(), &package_functions, span)?;
                 }
                 ImportSpec::Items { items } => {
                     for (item, alias) in items {
-                        let symbol_name = alias.as_ref().unwrap_or(item);
-                        if let Some((_, sig, llvm_name)) = package_functions
-                            .iter()
-                            .find(|(name, _, _)| *name == item.as_str())
-                        {
-                            let mut sym = Self::make_symbol(
-                                SymbolKind::Function,
-                                span,
-                                Some(Type::Function {
-                                    params: sig.params.clone(),
-                                    returns: Box::new(sig.return_type.clone()),
-                                    default_count: 0,
-                                }),
-                            );
-                            sym.llvm_name = Some(llvm_name.to_string());
-                            self.symbol_table.add_symbol(symbol_name, sym)?;
-                        } else {
-                            let available: Vec<&str> =
-                                package_functions.iter().map(|(n, _, _)| *n).collect();
-                            return Err(SemanticError::with_help(
-                                format!("Symbol '{}' not found in std.{}", item, package_name),
-                                span,
-                                format!("Available symbols: {}", available.join(", ")),
-                            ));
-                        }
+                        self.register_std_function(
+                            item,
+                            alias.as_deref(),
+                            &package_functions,
+                            span,
+                        )?;
                     }
                 }
                 ImportSpec::Wildcard => {
@@ -5268,7 +5259,14 @@ impl SemanticAnalyzer {
                             }),
                         );
                         sym.llvm_name = Some(llvm_name.to_string());
-                        let _ = self.symbol_table.add_symbol(func_name, sym);
+                        // Wildcard imports intentionally ignore duplicate symbol errors
+                        // (multiple packages may export the same name), but propagate
+                        // other unexpected errors like "No active scope".
+                        if let Err(e) = self.symbol_table.add_symbol(func_name, sym) {
+                            if !e.message.contains("Duplicate declaration") {
+                                return Err(e);
+                            }
+                        }
                     }
                 }
             }
