@@ -79,6 +79,26 @@ static STR_STR_PARAMS: &[Type] = &[
 ];
 static EMPTY_PARAMS: &[Type] = &[];
 
+fn io_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
+    StdlibItem::Function {
+        params,
+        ret,
+        llvm_name: name,
+    }
+}
+
+fn io_str_fn(name: &'static str, ret: Type) -> StdlibItem {
+    io_fn(name, STR_PARAM, ret)
+}
+
+fn io_str_str_fn(name: &'static str, ret: Type) -> StdlibItem {
+    io_fn(name, STR_STR_PARAMS, ret)
+}
+
+fn io_result(ok: Type) -> Type {
+    Type::Named("Result".to_string(), vec![ok, str_()])
+}
+
 /// All stdlib items organized by module.function or module.constant
 /// Using PHF for O(1) compile-time perfect hashing - ideal for large stdlibs
 pub static STDLIB_ITEMS: phf::Map<&'static str, StdlibItem> = phf::phf_map! {
@@ -237,151 +257,26 @@ lazy_static! {
     // and Type currently stores owned Strings, which are not const-constructible for PHF values.
     pub static ref IO_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
         let mut m = HashMap::new();
-        m.insert(
-            "io.read_file",
-            StdlibItem::Function {
-                params: STR_PARAM,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::Primitive(PrimitiveType::Str),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                ),
-                llvm_name: "mux_io_read_file",
-            },
-        );
+        m.insert("io.read_file", io_str_fn("mux_io_read_file", io_result(str_())));
         m.insert(
             "io.write_file",
-            StdlibItem::Function {
-                params: STR_STR_PARAMS,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
-                ),
-                llvm_name: "mux_io_write_file",
-            },
+            io_str_str_fn("mux_io_write_file", io_result(Type::Void)),
         );
-        m.insert(
-            "io.exists",
-            StdlibItem::Function {
-                params: STR_PARAM,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::Primitive(PrimitiveType::Bool),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                ),
-                llvm_name: "mux_io_exists",
-            },
-        );
-        m.insert(
-            "io.remove",
-            StdlibItem::Function {
-                params: STR_PARAM,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
-                ),
-                llvm_name: "mux_io_remove",
-            },
-        );
-        m.insert(
-            "io.is_file",
-            StdlibItem::Function {
-                params: STR_PARAM,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::Primitive(PrimitiveType::Bool),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                ),
-                llvm_name: "mux_io_is_file",
-            },
-        );
-        m.insert(
-            "io.is_dir",
-            StdlibItem::Function {
-                params: STR_PARAM,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::Primitive(PrimitiveType::Bool),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                ),
-                llvm_name: "mux_io_is_dir",
-            },
-        );
-        m.insert(
-            "io.mkdir",
-            StdlibItem::Function {
-                params: STR_PARAM,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
-                ),
-                llvm_name: "mux_io_mkdir",
-            },
-        );
+        m.insert("io.exists", io_str_fn("mux_io_exists", io_result(bool_())));
+        m.insert("io.remove", io_str_fn("mux_io_remove", io_result(Type::Void)));
+        m.insert("io.is_file", io_str_fn("mux_io_is_file", io_result(bool_())));
+        m.insert("io.is_dir", io_str_fn("mux_io_is_dir", io_result(bool_())));
+        m.insert("io.mkdir", io_str_fn("mux_io_mkdir", io_result(Type::Void)));
         m.insert(
             "io.listdir",
-            StdlibItem::Function {
-                params: STR_PARAM,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::List(Box::new(Type::Primitive(PrimitiveType::Str))),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                ),
-                llvm_name: "mux_io_listdir",
-            },
+            io_str_fn(
+                "mux_io_listdir",
+                io_result(Type::List(Box::new(Type::Primitive(PrimitiveType::Str)))),
+            ),
         );
-        m.insert(
-            "io.join",
-            StdlibItem::Function {
-                params: STR_STR_PARAMS,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::Primitive(PrimitiveType::Str),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                ),
-                llvm_name: "mux_io_join",
-            },
-        );
-        m.insert(
-            "io.basename",
-            StdlibItem::Function {
-                params: STR_PARAM,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::Primitive(PrimitiveType::Str),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                ),
-                llvm_name: "mux_io_basename",
-            },
-        );
-        m.insert(
-            "io.dirname",
-            StdlibItem::Function {
-                params: STR_PARAM,
-                ret: Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::Primitive(PrimitiveType::Str),
-                        Type::Primitive(PrimitiveType::Str),
-                    ],
-                ),
-                llvm_name: "mux_io_dirname",
-            },
-        );
+        m.insert("io.join", io_str_str_fn("mux_io_join", io_result(str_())));
+        m.insert("io.basename", io_str_fn("mux_io_basename", io_result(str_())));
+        m.insert("io.dirname", io_str_fn("mux_io_dirname", io_result(str_())));
         m
     };
 
