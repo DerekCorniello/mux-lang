@@ -4779,40 +4779,7 @@ impl SemanticAnalyzer {
         package_name: &str,
     ) -> Option<Vec<(&'static str, BuiltInSig, &'static str)>> {
         match package_name {
-            "io" => Some(vec![
-                (
-                    "print",
-                    BuiltInSig {
-                        params: vec![Type::Primitive(PrimitiveType::Str)],
-                        return_type: Type::Void,
-                    },
-                    "mux_print",
-                ),
-                (
-                    "read_line",
-                    BuiltInSig {
-                        params: vec![],
-                        return_type: Type::Primitive(PrimitiveType::Str),
-                    },
-                    "mux_read_line",
-                ),
-                (
-                    "read_int",
-                    BuiltInSig {
-                        params: vec![],
-                        return_type: Type::Primitive(PrimitiveType::Int),
-                    },
-                    "mux_read_int",
-                ),
-                (
-                    "flush",
-                    BuiltInSig {
-                        params: vec![],
-                        return_type: Type::Void,
-                    },
-                    "mux_flush_stdout",
-                ),
-            ]),
+            "io" => Some(vec![]),
             "math" => Some(vec![
                 (
                     "pow",
