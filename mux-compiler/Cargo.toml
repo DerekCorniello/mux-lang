@@ -32,3 +32,6 @@ mux-runtime = "0.1.2"
 
 [dev-dependencies]
 insta = { version = "1.43.1", features = ["yaml"] }
+
+[build-dependencies]
+set-git-hooks-dir = "1.0"

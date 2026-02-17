@@ -7,6 +7,11 @@ fn main() {
         .parent()
         .expect("mux-compiler should have a parent directory");
 
+    // Set up git hooks path for development
+    if env::var("CI").is_err() {
+        let _ = set_git_hooks_dir::setup(workspace_root.join(".github/hooks"), workspace_root);
+    }
+
     let profile = if env::var("CARGO_PROFILE_RELEASE").is_ok() {
         "release"
     } else {

@@ -241,6 +241,7 @@ dependencies = [
  "lazy_static",
  "mux-runtime",
  "ordered-float",
+ "set-git-hooks-dir",
  "unicode-width",
 ]
 
@@ -342,6 +343,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "set-git-hooks-dir"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3d0b1c7ab9a3a3466dc6ba62d2aa33c23f79b1b47baa326b521147a9d59df77"
 
 [[package]]
 name = "shlex"

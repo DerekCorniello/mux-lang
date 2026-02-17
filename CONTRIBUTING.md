@@ -13,7 +13,7 @@ Thanks for your interest! This guide explains how to contribute to Mux.
 5. Run the tests (`cargo test`) to make sure everything is working.
 6. Running your code should be done via `cargo run -- `, followed by the command you want to run, e.g. `cargo run -- run test_file.mux`. So `mux` is substituted by `cargo run -- `.
 7. Always run `cargo fmt` and `cargo clippy` before committing changes.
-8. Install git hooks with `bash scripts/install-hooks.sh`.
+8. Configure git hooks: `git config core.hooksPath .github/hooks`.
 9. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
 10. Make your changes.
 11. Run tests again to ensure nothing is broken.
@@ -52,8 +52,7 @@ We generally don't accept contributions that:
 
 ## Tooling
 
-- Install git hooks once per clone with `bash scripts/install-hooks.sh`.
-- Run the full local checks with `bash scripts/run-checks.sh`.
+- Configure git hooks once per clone: `git config core.hooksPath .github/hooks`.
 
 ---
 
