@@ -877,44 +877,53 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
 
-        module.add_function(
-            "mux_math_sqrt",
-            f64_type.fn_type(&[f64_type.into()], false),
-            None,
+        // math module extern declarations
+        macro_rules! declare_extern_batch {
+            ($module:expr, $names:expr, $fn_type:expr) => {
+                for name in $names {
+                    $module.add_function(name, $fn_type, None);
+                }
+            };
+        }
+
+        declare_extern_batch!(
+            module,
+            &[
+                "mux_math_sqrt",
+                "mux_math_sin",
+                "mux_math_cos",
+                "mux_math_tan",
+                "mux_math_asin",
+                "mux_math_acos",
+                "mux_math_atan",
+                "mux_math_ln",
+                "mux_math_log2",
+                "mux_math_log10",
+                "mux_math_exp",
+                "mux_math_abs",
+                "mux_math_floor",
+                "mux_math_ceil",
+                "mux_math_round",
+            ],
+            f64_type.fn_type(&[f64_type.into()], false)
         );
 
-        module.add_function(
-            "mux_math_sin",
-            f64_type.fn_type(&[f64_type.into()], false),
-            None,
+        declare_extern_batch!(
+            module,
+            &[
+                "mux_math_atan2",
+                "mux_math_log",
+                "mux_math_min",
+                "mux_math_max",
+                "mux_math_hypot",
+            ],
+            f64_type.fn_type(&[f64_type.into(), f64_type.into()], false)
         );
 
-        module.add_function(
-            "mux_math_cos",
-            f64_type.fn_type(&[f64_type.into()], false),
-            None,
-        );
-
-        module.add_function(
-            "mux_rand_init",
-            void_type.fn_type(&[i64_type.into()], false),
-            None,
-        );
-
-        module.add_function("mux_rand_int", i64_type.fn_type(&[], false), None);
-
-        module.add_function(
-            "mux_rand_range",
-            i64_type.fn_type(&[i64_type.into(), i64_type.into()], false),
-            None,
-        );
-
-        module.add_function("mux_rand_float", f64_type.fn_type(&[], false), None);
-
-        module.add_function(
-            "mux_rand_bool",
-            context.bool_type().fn_type(&[], false),
-            None,
+        declare_extern_batch!(
+            module,
+            &["mux_math_pi", "mux_math_e"],
+            f64_type.fn_type(&[], false)
         );
 
         module.add_function("mux_read_int", i64_type.fn_type(&[], false), None);
@@ -999,6 +1008,29 @@ impl<'a> CodeGenerator<'a> {
         module.add_function(
             "mux_rc_dec",
             context.bool_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        // Random module functions
+        module.add_function(
+            "mux_rand_init",
+            void_type.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_rand_int", i64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_rand_range",
+            i64_type.fn_type(&[i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_rand_float", f64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_rand_bool",
+            context.bool_type().fn_type(&[], false),
             None,
         );
 

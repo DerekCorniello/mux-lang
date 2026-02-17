@@ -1,0 +1,40 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+--- Constants ---
+pi: 3.141592653589793
+e: 2.718281828459045
+--- Trig ---
+sin(0.0): 0.0
+cos(0.0): 1.0
+tan(0.0): 0.0
+--- Inverse Trig ---
+asin(1.0): 1.5707963267948966
+acos(1.0): 0.0
+atan(1.0): 0.7853981633974483
+atan2(1.0, 1.0): 0.7853981633974483
+--- Power/Root ---
+pow(2.0, 10.0): 1024.0
+sqrt(144.0): 12.0
+--- Logarithms ---
+ln(1.0): 0.0
+log(100.0, 10.0): 2.0
+log2(8.0): 3.0
+log10(1000.0): 3.0
+--- Exponential ---
+exp(0.0): 1.0
+exp(1.0): 2.718281828459045
+--- Abs ---
+abs(-5.5): 5.5
+abs(3.0): 3.0
+--- Rounding ---
+floor(3.7): 3.0
+ceil(3.2): 4.0
+round(3.5): 4.0
+round(3.4): 3.0
+--- Min/Max ---
+min(2.0, 5.0): 2.0
+max(2.0, 5.0): 5.0
+--- Hypot ---
+hypot(3.0, 4.0): 5.0
