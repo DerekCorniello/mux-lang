@@ -92,6 +92,22 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn make_module_symbol(&self, module_name: &str, span: Span) -> Symbol {
+        Self::make_symbol(
+            SymbolKind::Import,
+            span,
+            Some(Type::Module(module_name.to_string())),
+        )
+    }
+
+    fn stdlib_modules() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("std.math", "math"),
+            ("std.io", "io"),
+            ("std.random", "random"),
+        ]
+    }
+
     pub fn set_current_file(&mut self, file: std::path::PathBuf) {
         self.current_file = Some(file);
     }
@@ -3155,10 +3171,8 @@ impl SemanticAnalyzer {
             StatementKind::Import { module_path, spec } => {
                 use crate::ast::ImportSpec;
 
-                // Handle std library specially (either std.X or just X for flat stdlib modules)
-                let stdlib_modules = ["std", "random", "math"];
-                if module_path.starts_with("std.") || stdlib_modules.contains(&module_path.as_str())
-                {
+                // Handle std library specially
+                if module_path == "std" || module_path.starts_with("std.") {
                     self.handle_std_import(module_path, spec, stmt.span)?;
                     return Ok(());
                 }
@@ -3168,8 +3182,29 @@ impl SemanticAnalyzer {
                     SemanticError::new("Module resolver not available", stmt.span)
                 })?;
 
+                // Check if module is a file, directory, or both
+                let (has_file, has_directory) = resolver.borrow().check_module_path(module_path);
+
+                if has_file && has_directory {
+                    return Err(SemanticError::with_help(
+                        format!("Ambiguous import: '{}'", module_path),
+                        stmt.span,
+                        format!(
+                            "Both {}.mux and {}/ directory exist. Please remove one.",
+                            module_path.replace('.', "/"),
+                            module_path.replace('.', "/")
+                        ),
+                    ));
+                }
+
                 // Files must be available for import processing
                 let files = files.expect("Files registry must be available for import processing");
+
+                if has_directory {
+                    // Directory-based import - handle submodules
+                    self.handle_directory_import(module_path, spec, stmt.span, resolver, files)?;
+                    return Ok(());
+                }
 
                 let module_nodes = resolver
                     .borrow_mut()
@@ -4265,6 +4300,285 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    // Handle directory-based module import (e.g., import utils where utils/ is a directory)
+    fn resolve_and_register_submodule(
+        &mut self,
+        submodule_path: &str,
+        namespace: &str,
+        span: Span,
+        resolver: &Rc<RefCell<crate::module_resolver::ModuleResolver>>,
+        files: &mut Files,
+    ) -> Result<Symbol, SemanticError> {
+        let submodule_nodes = resolver
+            .borrow_mut()
+            .resolve_import_path(submodule_path, self.current_file.as_deref(), files)
+            .map_err(|e| {
+                SemanticError::with_help(
+                    format!("Failed to import submodule '{}'", submodule_path),
+                    span,
+                    e.to_string(),
+                )
+            })?;
+
+        let mut submodule_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+        submodule_analyzer.set_current_file(std::path::PathBuf::from(
+            submodule_path.replace('.', "/") + ".mux",
+        ));
+        let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
+        if !errors.is_empty() {
+            let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+            return Err(SemanticError::with_help(
+                format!("Errors in submodule '{}'", submodule_path),
+                span,
+                format!(
+                    "Fix the following errors in '{}':\n  {}",
+                    submodule_path,
+                    error_messages.join("\n  ")
+                ),
+            ));
+        }
+
+        let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
+
+        let mangled_submodule_symbols =
+            self.mangle_module_symbols(&submodule_symbols, submodule_path);
+        self.imported_symbols
+            .insert(namespace.to_string(), mangled_submodule_symbols);
+
+        let symbol = Symbol {
+            kind: SymbolKind::Import,
+            span,
+            type_: Some(Type::Module(namespace.to_string())),
+            interfaces: std::collections::HashMap::new(),
+            methods: std::collections::HashMap::new(),
+            fields: std::collections::HashMap::new(),
+            type_params: Vec::new(),
+            original_name: None,
+            llvm_name: None,
+            default_param_count: 0,
+            variants: None,
+        };
+
+        resolver
+            .borrow_mut()
+            .cache_module(submodule_path, submodule_nodes.clone());
+        resolver.borrow_mut().finish_import(submodule_path);
+
+        self.all_module_asts
+            .insert(submodule_path.to_string(), submodule_nodes);
+
+        if !self
+            .module_dependencies
+            .contains(&submodule_path.to_string())
+        {
+            self.module_dependencies.push(submodule_path.to_string());
+        }
+
+        Ok(symbol)
+    }
+
+    fn handle_directory_import(
+        &mut self,
+        module_path: &str,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+        resolver: std::rc::Rc<std::cell::RefCell<crate::module_resolver::ModuleResolver>>,
+        files: &mut crate::diagnostic::Files,
+    ) -> Result<(), SemanticError> {
+        use crate::ast::ImportSpec;
+        let submodules = self.get_directory_submodules(module_path, span, &resolver)?;
+        match spec {
+            ImportSpec::Module { alias } => self.import_directory_as_module(
+                module_path,
+                alias.as_deref(),
+                &submodules,
+                span,
+                &resolver,
+                files,
+            )?,
+            ImportSpec::Item { item, alias } => {
+                self.ensure_directory_submodule_exists(module_path, item, &submodules, span)?;
+                self.import_directory_single_item(
+                    module_path,
+                    item,
+                    alias.as_deref(),
+                    span,
+                    &resolver,
+                    files,
+                )?
+            }
+            ImportSpec::Items { items } => self.import_directory_items(
+                module_path,
+                items,
+                &submodules,
+                span,
+                &resolver,
+                files,
+            )?,
+            ImportSpec::Wildcard => {
+                self.import_directory_wildcard(module_path, &submodules, span, &resolver, files)?
+            }
+        }
+        Ok(())
+    }
+
+    fn get_directory_submodules(
+        &self,
+        module_path: &str,
+        span: Span,
+        resolver: &std::rc::Rc<std::cell::RefCell<crate::module_resolver::ModuleResolver>>,
+    ) -> Result<Vec<String>, SemanticError> {
+        resolver
+            .borrow()
+            .get_submodules(module_path)
+            .map_err(|e| SemanticError::new(format!("Failed to get submodules: {}", e), span))
+    }
+
+    fn ensure_directory_submodule_exists(
+        &self,
+        module_path: &str,
+        submodule_name: &str,
+        submodules: &[String],
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        if submodules.contains(&submodule_name.to_string()) {
+            return Ok(());
+        }
+        Err(SemanticError::with_help(
+            format!(
+                "Submodule '{}' not found in '{}'",
+                submodule_name, module_path
+            ),
+            span,
+            format!("Available submodules: {}", submodules.join(", ")),
+        ))
+    }
+
+    fn import_directory_as_module(
+        &mut self,
+        module_path: &str,
+        alias: Option<&str>,
+        submodules: &[String],
+        span: Span,
+        resolver: &std::rc::Rc<std::cell::RefCell<crate::module_resolver::ModuleResolver>>,
+        files: &mut crate::diagnostic::Files,
+    ) -> Result<(), SemanticError> {
+        let namespace = alias.unwrap_or(module_path);
+        let mut module_symbols = std::collections::HashMap::new();
+        for submodule_name in submodules {
+            let submodule_path = format!("{}.{}", module_path, submodule_name);
+            let symbol = self.resolve_and_register_submodule(
+                &submodule_path,
+                submodule_name,
+                span,
+                resolver,
+                files,
+            )?;
+            module_symbols.insert(submodule_name.to_string(), symbol);
+        }
+        self.imported_symbols
+            .insert(namespace.to_string(), module_symbols);
+        self.symbol_table.add_symbol(
+            namespace,
+            Symbol {
+                kind: SymbolKind::Import,
+                span,
+                type_: Some(Type::Module(namespace.to_string())),
+                interfaces: std::collections::HashMap::new(),
+                methods: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                type_params: Vec::new(),
+                original_name: None,
+                llvm_name: None,
+                default_param_count: 0,
+                variants: None,
+            },
+        )?;
+        Ok(())
+    }
+
+    fn import_directory_single_item(
+        &mut self,
+        module_path: &str,
+        item: &str,
+        alias: Option<&str>,
+        span: Span,
+        resolver: &std::rc::Rc<std::cell::RefCell<crate::module_resolver::ModuleResolver>>,
+        files: &mut crate::diagnostic::Files,
+    ) -> Result<(), SemanticError> {
+        let submodule_path = format!("{}.{}", module_path, item);
+        let namespace = alias.unwrap_or(item);
+        let symbol =
+            self.resolve_and_register_submodule(&submodule_path, namespace, span, resolver, files)?;
+        self.symbol_table.add_symbol(namespace, symbol)?;
+        Ok(())
+    }
+
+    fn import_directory_items(
+        &mut self,
+        module_path: &str,
+        items: &[(String, Option<String>)],
+        submodules: &[String],
+        span: Span,
+        resolver: &std::rc::Rc<std::cell::RefCell<crate::module_resolver::ModuleResolver>>,
+        files: &mut crate::diagnostic::Files,
+    ) -> Result<(), SemanticError> {
+        for (item, alias) in items {
+            self.ensure_directory_submodule_exists(module_path, item, submodules, span)?;
+            self.import_directory_single_item(
+                module_path,
+                item,
+                alias.as_deref(),
+                span,
+                resolver,
+                files,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn import_directory_wildcard(
+        &mut self,
+        module_path: &str,
+        submodules: &[String],
+        span: Span,
+        resolver: &std::rc::Rc<std::cell::RefCell<crate::module_resolver::ModuleResolver>>,
+        files: &mut crate::diagnostic::Files,
+    ) -> Result<(), SemanticError> {
+        for submodule_name in submodules {
+            let submodule_path = format!("{}.{}", module_path, submodule_name);
+            let symbol = self.resolve_and_register_submodule(
+                &submodule_path,
+                submodule_name,
+                span,
+                resolver,
+                files,
+            )?;
+            self.symbol_table.add_symbol(submodule_name, symbol)?;
+        }
+        Ok(())
+    }
+
+    // Helper method to mangle module symbols
+    fn mangle_module_symbols(
+        &self,
+        symbols: &std::collections::HashMap<String, Symbol>,
+        module_path: &str,
+    ) -> std::collections::HashMap<String, Symbol> {
+        let module_name_for_mangling = Self::sanitize_module_path(module_path);
+        let mut mangled_symbols = std::collections::HashMap::new();
+
+        for (name, symbol) in symbols {
+            let mut mangled_symbol = symbol.clone();
+            if matches!(symbol.kind, SymbolKind::Function) {
+                mangled_symbol.llvm_name = Some(format!("{}!{}", module_name_for_mangling, name));
+            }
+            mangled_symbols.insert(name.clone(), mangled_symbol);
+        }
+
+        mangled_symbols
+    }
+
     // Import single symbol (import logger.log)
     fn import_single_symbol(
         &mut self,
@@ -4349,7 +4663,6 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    // Handle std library imports
     /// Register a single built-in function into the symbol table from its signature.
     fn register_builtin_function(&mut self, name: &str, sig: &BuiltInSig, span: Span) {
         let _ = self.symbol_table.add_symbol(
@@ -4384,118 +4697,122 @@ impl SemanticAnalyzer {
         spec: &crate::ast::ImportSpec,
         span: Span,
     ) -> Result<(), SemanticError> {
-        use crate::ast::ImportSpec;
-        use crate::semantics::symbol_table::{STDLIB_ITEMS, STDLIB_MODULES};
+        if let Some(module_name) = Self::stdlib_modules()
+            .iter()
+            .find(|(path, _)| *path == module_path)
+            .map(|(_, name)| name)
+        {
+            return self.import_stdlib_module(module_name, spec, span);
+        }
 
-        // Match on module_path to handle stdlib modules
         match module_path {
-            "std" | "stdlib" => {
-                // import std - import all stdlib modules
-                match spec {
-                    ImportSpec::Module { .. } => {
-                        // import std - import all modules
-                        for module in STDLIB_MODULES {
-                            self.import_stdlib_module(
-                                module,
-                                &ImportSpec::Module { alias: None },
-                                span,
-                            )?;
-                        }
-                    }
-                    ImportSpec::Wildcard => {
-                        // import std.* - import all items flat
-                        for (key, item) in STDLIB_ITEMS.entries() {
-                            if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
-                                self.register_stdlib_item(item_name, item, span)?;
-                            }
-                        }
-                    }
-                    ImportSpec::Items { items } => {
-                        // import std.(math, random as r)
-                        for (item, alias) in items {
-                            self.import_stdlib_module(
-                                item,
-                                &ImportSpec::Module {
-                                    alias: alias.clone(),
-                                },
-                                span,
-                            )?;
-                        }
-                    }
-                    ImportSpec::Item { item, alias } => {
-                        // import std.math (as m)
-                        self.import_stdlib_module(
-                            item,
-                            &ImportSpec::Module {
-                                alias: alias.clone(),
-                            },
-                            span,
-                        )?;
+            "std" | "stdlib" => self.handle_std_import_all(spec, span),
+            _ => self.handle_non_stdlib_import(module_path, spec, span),
+        }
+    }
+
+    fn handle_std_import_all(
+        &mut self,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        use crate::ast::ImportSpec;
+        use crate::semantics::symbol_table::{STDLIB_MODULES, all_stdlib_items};
+
+        match spec {
+            ImportSpec::Module { alias } => {
+                let namespace = alias.as_deref().unwrap_or("std");
+                let namespace_symbols: std::collections::HashMap<String, Symbol> = STDLIB_MODULES
+                    .iter()
+                    .map(|m| (m.to_string(), self.make_module_symbol(m, span)))
+                    .collect();
+
+                for module in STDLIB_MODULES {
+                    self.import_stdlib_module(module, &ImportSpec::Module { alias: None }, span)?;
+                }
+
+                self.imported_symbols
+                    .insert(namespace.to_string(), namespace_symbols);
+                self.symbol_table
+                    .add_symbol(namespace, self.make_module_symbol(namespace, span))?;
+            }
+            ImportSpec::Wildcard => {
+                for (key, item) in all_stdlib_items() {
+                    if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
+                        self.register_stdlib_item(item_name, item, span)?;
                     }
                 }
             }
-            "std.math" | "math" => {
-                self.import_stdlib_module("math", spec, span)?;
+            ImportSpec::Items { items } => {
+                for (item, alias) in items {
+                    self.import_stdlib_module(
+                        item,
+                        &ImportSpec::Module {
+                            alias: alias.clone(),
+                        },
+                        span,
+                    )?;
+                }
             }
-            "std.random" | "random" => {
-                self.import_stdlib_module("random", spec, span)?;
+            ImportSpec::Item { item, alias } => {
+                self.import_stdlib_module(
+                    item,
+                    &ImportSpec::Module {
+                        alias: alias.clone(),
+                    },
+                    span,
+                )?;
             }
-            _ => {
-                // Fallback to old behavior for non-stdlib modules
-                let module_name = module_path
-                    .split('.')
-                    .last()
-                    .expect("module path should have at least one component");
+        }
+        Ok(())
+    }
 
-                match spec {
-                    ImportSpec::Module { alias } => {
-                        let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or(module_name);
-                        if let Some(sig) = self.get_builtin_sig(symbol_name).cloned() {
-                            self.register_builtin_function(symbol_name, &sig, span);
-                        } else if symbol_name == "None" {
-                            self.symbol_table.add_symbol(
-                                symbol_name,
-                                Symbol {
-                                    kind: SymbolKind::Constant,
-                                    span,
-                                    type_: Some(Type::Optional(Box::new(Type::Void))),
-                                    interfaces: std::collections::HashMap::new(),
-                                    methods: std::collections::HashMap::new(),
-                                    fields: std::collections::HashMap::new(),
-                                    type_params: Vec::new(),
-                                    original_name: None,
-                                    llvm_name: None,
-                                    default_param_count: 0,
-                                    variants: None,
-                                },
-                            )?;
-                        } else {
-                            self.register_builtin_functions_with_prefix(
-                                &format!("{}_", symbol_name),
-                                span,
-                            );
-                        }
-                    }
-                    ImportSpec::Item { item, alias } => {
-                        let symbol_name = alias.as_ref().unwrap_or(item);
-                        if let Some(sig) = self.get_builtin_sig(item).cloned() {
-                            self.register_builtin_function(symbol_name, &sig, span);
-                        }
-                    }
-                    ImportSpec::Wildcard => {
-                        self.register_builtin_functions_with_prefix(
-                            &format!("{}_", module_name),
+    fn handle_non_stdlib_import(
+        &mut self,
+        module_path: &str,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        use crate::ast::ImportSpec;
+
+        let module_name = module_path
+            .split('.')
+            .last()
+            .expect("module path should have at least one component");
+
+        match spec {
+            ImportSpec::Module { alias } => {
+                let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or(module_name);
+                if let Some(sig) = self.get_builtin_sig(symbol_name).cloned() {
+                    self.register_builtin_function(symbol_name, &sig, span);
+                } else if symbol_name == "None" {
+                    self.symbol_table.add_symbol(
+                        symbol_name,
+                        Self::make_symbol(
+                            SymbolKind::Constant,
                             span,
-                        );
-                    }
-                    ImportSpec::Items { items } => {
-                        for (item, alias) in items {
-                            let qualified_name = format!("{}_{}", module_name, item);
-                            let symbol_name = alias.as_ref().unwrap_or(&qualified_name);
-                            if let Some(sig) = self.get_builtin_sig(&qualified_name).cloned() {
-                                self.register_builtin_function(symbol_name, &sig, span);
-                            }
-                        }
+                            Some(Type::Optional(Box::new(Type::Void))),
+                        ),
+                    )?;
+                } else {
+                    self.register_builtin_functions_with_prefix(&format!("{}_", symbol_name), span);
+                }
+            }
+            ImportSpec::Item { item, alias } => {
+                let symbol_name = alias.as_ref().unwrap_or(item);
+                if let Some(sig) = self.get_builtin_sig(item).cloned() {
+                    self.register_builtin_function(symbol_name, &sig, span);
+                }
+            }
+            ImportSpec::Wildcard => {
+                self.register_builtin_functions_with_prefix(&format!("{}_", module_name), span);
+            }
+            ImportSpec::Items { items } => {
+                for (item, alias) in items {
+                    let qualified_name = format!("{}_{}", module_name, item);
+                    let symbol_name = alias.as_ref().unwrap_or(&qualified_name);
+                    if let Some(sig) = self.get_builtin_sig(&qualified_name).cloned() {
+                        self.register_builtin_function(symbol_name, &sig, span);
                     }
                 }
             }
@@ -4510,64 +4827,43 @@ impl SemanticAnalyzer {
         spec: &crate::ast::ImportSpec,
         span: Span,
     ) -> Result<(), SemanticError> {
-        use crate::ast::ImportSpec;
-        use crate::semantics::symbol_table::{STDLIB_ITEMS, StdlibItem};
+        let module_symbols = self.collect_stdlib_module_symbols(module_name, span);
+        self.apply_stdlib_module_import_spec(module_name, spec, span, module_symbols)
+    }
 
-        // Collect all items for this module
-        let mut module_symbols: std::collections::HashMap<String, Symbol> =
-            std::collections::HashMap::new();
+    fn collect_stdlib_module_symbols(
+        &self,
+        module_name: &str,
+        span: Span,
+    ) -> std::collections::HashMap<String, Symbol> {
+        use crate::semantics::symbol_table::all_stdlib_items;
 
-        for (key, item) in STDLIB_ITEMS.entries() {
+        let mut module_symbols = std::collections::HashMap::new();
+        for (key, item) in all_stdlib_items() {
             if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
-                let symbol = match item {
-                    StdlibItem::Function {
-                        params,
-                        ret,
-                        llvm_name,
-                    } => Symbol {
-                        kind: SymbolKind::Function,
-                        span,
-                        type_: Some(Type::Function {
-                            params: params.to_vec(),
-                            returns: Box::new(ret.clone()),
-                            default_count: 0,
-                        }),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: Some(llvm_name.to_string()),
-                        default_param_count: 0,
-                        variants: None,
-                    },
-                    StdlibItem::Constant { ty, .. } => Symbol {
-                        kind: SymbolKind::Constant,
-                        span,
-                        type_: Some(ty.clone()),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: Vec::new(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: 0,
-                        variants: None,
-                    },
-                };
-                module_symbols.insert(item_name.to_string(), symbol);
+                module_symbols.insert(
+                    item_name.to_string(),
+                    Self::stdlib_item_to_symbol(item, span),
+                );
             }
         }
+        module_symbols
+    }
+
+    fn apply_stdlib_module_import_spec(
+        &mut self,
+        module_name: &str,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+        module_symbols: std::collections::HashMap<String, Symbol>,
+    ) -> Result<(), SemanticError> {
+        use crate::ast::ImportSpec;
 
         match spec {
             ImportSpec::Module { alias } => {
                 let namespace = alias.as_deref().unwrap_or(module_name);
-                // Use the existing add_module_namespace but with our own llvm_name handling
-                // For stdlib, we don't want the mangling - use the llvm_name directly
                 self.imported_symbols
                     .insert(namespace.to_string(), module_symbols.clone());
-
-                // Add module symbol to symbol table
                 self.symbol_table.add_symbol(
                     namespace,
                     Symbol {
@@ -4586,20 +4882,17 @@ impl SemanticAnalyzer {
                 )?;
             }
             ImportSpec::Item { item, alias } => {
-                // import std.math.sin (flat import of single function)
                 let symbol_name = alias.as_ref().unwrap_or(item);
                 if let Some(symbol) = module_symbols.get(item) {
                     self.symbol_table.add_symbol(symbol_name, symbol.clone())?;
                 }
             }
             ImportSpec::Wildcard => {
-                // import std.math.* (flat import of all items)
                 for (name, symbol) in module_symbols {
                     self.symbol_table.add_symbol(&name, symbol)?;
                 }
             }
             ImportSpec::Items { items } => {
-                // import std.math.(sin, cos as c)
                 for (item, alias) in items {
                     let symbol_name = alias.as_ref().unwrap_or(item);
                     if let Some(symbol) = module_symbols.get(item) {
@@ -4608,20 +4901,16 @@ impl SemanticAnalyzer {
                 }
             }
         }
-
         Ok(())
     }
 
-    /// Register a single stdlib item to the symbol table (for flat imports)
-    fn register_stdlib_item(
-        &mut self,
-        name: &str,
+    fn stdlib_item_to_symbol(
         item: &crate::semantics::symbol_table::StdlibItem,
         span: Span,
-    ) -> Result<(), SemanticError> {
+    ) -> Symbol {
         use crate::semantics::symbol_table::StdlibItem;
 
-        let symbol = match item {
+        match item {
             StdlibItem::Function {
                 params,
                 ret,
@@ -4656,7 +4945,17 @@ impl SemanticAnalyzer {
                 default_param_count: 0,
                 variants: None,
             },
-        };
+        }
+    }
+
+    /// Register a single stdlib item to the symbol table (for flat imports)
+    fn register_stdlib_item(
+        &mut self,
+        name: &str,
+        item: &crate::semantics::symbol_table::StdlibItem,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let symbol = Self::stdlib_item_to_symbol(item, span);
 
         self.symbol_table.add_symbol(name, symbol)?;
         Ok(())

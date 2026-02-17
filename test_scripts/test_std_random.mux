@@ -1,5 +1,5 @@
 // Test random stdlib module
-import random
+import std.random
 
 print("Testing random module...")
 

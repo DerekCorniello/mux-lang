@@ -557,9 +557,9 @@ cfg.current_retry = 1  // OK - mutable field
 ```
 
 **Const Enforcement:**
-- Cannot reassign: `const_var = new_value` → ERROR
-- Cannot use compound assignment: `const_var += 1` → ERROR
-- Cannot increment/decrement: `const_var++` or `const_var--` → ERROR
+- Cannot reassign: `const_var = new_value` -> ERROR
+- Cannot use compound assignment: `const_var += 1` -> ERROR
+- Cannot increment/decrement: `const_var++` or `const_var--` -> ERROR
 - Applies to both identifiers and class fields
 - Use `const` when you want a value that won't change after initialization
 
@@ -1597,9 +1597,9 @@ When `mux_rc_dec` returns `true`, the refcount reached zero and memory is freed 
 
 The compiler generates cleanup code using a **scope stack**:
 
-1. **Enter scope** → `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
-2. **Track variable** → `track_rc_variable(name, alloca)` for each RC-allocated variable
-3. **Exit scope** → `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
+1. **Enter scope** -> `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
+2. **Track variable** -> `track_rc_variable(name, alloca)` for each RC-allocated variable
+3. **Exit scope** -> `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
 
 This ensures proper cleanup order and handles early returns.
 
@@ -1654,10 +1654,12 @@ print("val after update: " + x.to_string())  // 21
 
 ```
 import math
+import std.math
 import shapes.circle as circle
 
 // Usage with inference
 float pi = math.PI         // type inferred from math module
+float root = math.sqrt(9.0)
 auto c = circle.new(5.0)  // type inferred from constructor
 
 // Import with unused alias for completeness
@@ -1668,6 +1670,7 @@ import utils.logger as _  // imported but not directly used in this scope
 - Module paths map directly to file paths
 - Imported symbols can be used with type inference
 - Use `_` alias when importing for side effects only
+- Standard library modules are imported as `import std.<module>` and used as `<module>.<item>`
 
 ### 15.1 Technical Design: Module System
 
@@ -1678,11 +1681,13 @@ Mux uses Python-style module imports with compile-time resolution.
 ```mux
 import math          // math.mux in same directory
 import shapes.circle // shapes/circle.mux
+import std.math      // stdlib math module
 ```
 
 File paths map to module paths:
-- `import foo` → `foo.mux`
-- `import shapes.circle` → `shapes/circle.mux`
+- `import foo` -> `foo.mux`
+- `import shapes.circle` -> `shapes/circle.mux`
+- `import std.math` -> stdlib `math` module namespace (`math.*`)
 
 #### Name Mangling for Imported Functions
 
@@ -1851,21 +1856,43 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library provides essential modules for common programming tasks. Import modules using the `import` keyword.
+The Mux standard library includes `math`, `io`, and `random`.
 
-### 17.1 Random Module
+Import styles:
 
-The `random` module provides pseudorandom number generation.
+```mux
+import std                    // use std.math, std.io, std.random
+import std.math               // use math.*
+import std.io                 // use io.*
+import std.random             // use random.*
+import std.(math, random as r)
+import std.*                  // flat import of stdlib items
+```
 
-| Function | Returns | Description |
-|----------|---------|-------------|
-| `random.seed(int seed)` | `void` | Initialize the random number generator with a specific seed for reproducible results |
-| `random.next_int()` | `int` | Generate a random integer (0 to RAND_MAX) |
-| `random.next_range(int min, int max)` | `int` | Generate a random integer in range [min, max) |
-| `random.next_float()` | `float` | Generate a random float in range [0.0, 1.0) |
-| `random.next_bool()` | `bool` | Generate a random boolean (true or false with equal probability) |
+### 17.1 math
 
-The random module auto-initializes with the current time on first use if not explicitly seeded.
+`math` provides floating-point constants and functions.
+
+- Constants: `math.pi`, `math.e`
+- Unary functions: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log2`, `log10`, `exp`, `abs`, `floor`, `ceil`, `round`
+- Binary functions: `atan2`, `log`, `min`, `max`, `hypot`, `pow`
+
+### 17.2 io
+
+`io` provides filesystem and path operations with explicit error handling via `Result<T, string>`.
+
+- File operations: `read_file`, `write_file`, `exists`, `remove`, `mkdir`, `listdir`
+- Path operations: `is_file`, `is_dir`, `join`, `basename`, `dirname`
+
+### 17.3 random
+
+`random` provides pseudorandom generation:
+
+- `random.seed(int seed) -> void`
+- `random.next_int() -> int`
+- `random.next_range(int min, int max) -> int`
+- `random.next_float() -> float`
+- `random.next_bool() -> bool`
 
 ---
 

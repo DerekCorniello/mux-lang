@@ -65,6 +65,8 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'stdlib/index',
+        'stdlib/math',
+        'stdlib/io',
         'stdlib/random',
       ],
     },

@@ -81,9 +81,9 @@ cfg.current_retry = 1  // OK - mutable field
 
 ### Const Enforcement
 
-- Cannot reassign: `const_var = new_value` → ERROR
-- Cannot use compound assignment: `const_var += 1` → ERROR
-- Cannot increment/decrement: `const_var++` or `const_var--` → ERROR
+- Cannot reassign: `const_var = new_value` -> ERROR
+- Cannot use compound assignment: `const_var += 1` -> ERROR
+- Cannot increment/decrement: `const_var++` or `const_var--` -> ERROR
 - Applies to both identifiers and class fields
 - Use `const` when you want a value that won't change after initialization
 

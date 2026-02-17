@@ -223,8 +223,13 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .ok_or("mux_value_get_bool returned no value")?;
-                Ok((val, Type::Primitive(PrimitiveType::Bool)))
+                    .ok_or("mux_value_get_bool returned no value")?
+                    .into_int_value();
+                let i1_val = self
+                    .builder
+                    .build_int_truncate(val, self.context.bool_type(), "trunc_to_i1")
+                    .map_err(|e| e.to_string())?;
+                Ok((i1_val.into(), Type::Primitive(PrimitiveType::Bool)))
             }
             Type::Primitive(PrimitiveType::Char) => {
                 // Char is stored as int

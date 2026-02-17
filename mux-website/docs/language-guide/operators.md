@@ -8,12 +8,12 @@ Standard arithmetic operations with strict type requirements:
 
 | Operator | Description | Types | Example |
 |----------|-------------|-------|---------|
-| `+` | Addition | `int`, `float`, `string` | `5 + 3` → `8` |
-| `-` | Subtraction | `int`, `float` | `10 - 4` → `6` |
-| `*` | Multiplication | `int`, `float` | `6 * 7` → `42` |
-| `/` | Division | `int`, `float` | `15 / 3` → `5` |
-| `%` | Modulo | `int`, `float` | `10 % 3` → `1` |
-| `**` | Exponentiation | `int`, `float` | `2 ** 3` → `8` |
+| `+` | Addition | `int`, `float`, `string` | `5 + 3` -> `8` |
+| `-` | Subtraction | `int`, `float` | `10 - 4` -> `6` |
+| `*` | Multiplication | `int`, `float` | `6 * 7` -> `42` |
+| `/` | Division | `int`, `float` | `15 / 3` -> `5` |
+| `%` | Modulo | `int`, `float` | `10 % 3` -> `1` |
+| `**` | Exponentiation | `int`, `float` | `2 ** 3` -> `8` |
 
 ### Examples
 

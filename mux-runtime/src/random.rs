@@ -9,7 +9,7 @@ static SEED_INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// # Safety
 /// This function is thread-safe due to atomic initialization check
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_random_seed(seed: i32) {
+pub extern "C" fn mux_rand_init(seed: i64) {
     unsafe { libc::srand(seed as u32) }
     SEED_INITIALIZED.store(true, Ordering::SeqCst);
 }
@@ -17,7 +17,7 @@ pub extern "C" fn mux_random_seed(seed: i32) {
 /// Get random integer (0 to RAND_MAX)
 /// Auto-initializes with time on first call if not explicitly seeded
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_random_next_int() -> i32 {
+pub extern "C" fn mux_rand_int() -> i64 {
     // Auto-initialize with time if not done
     if !SEED_INITIALIZED.load(Ordering::SeqCst) {
         let time_seed = std::time::SystemTime::now()
@@ -27,30 +27,30 @@ pub extern "C" fn mux_random_next_int() -> i32 {
         unsafe { libc::srand(time_seed as u32) }
         SEED_INITIALIZED.store(true, Ordering::SeqCst);
     }
-    unsafe { libc::rand() }
+    unsafe { libc::rand() as i64 }
 }
 
 /// Get random integer in range [min, max)
 /// Returns min if min >= max
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_random_next_range(min: i64, max: i64) -> i64 {
+pub extern "C" fn mux_rand_range(min: i64, max: i64) -> i64 {
     if min >= max {
         return min;
     }
-    let r = mux_random_next_int() as i64;
+    let r = mux_rand_int();
     let range_size = max - min;
     min + (r % range_size)
 }
 
 /// Get random float [0.0, 1.0)
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_random_next_float() -> f64 {
-    let r = mux_random_next_int() as f64;
+pub extern "C" fn mux_rand_float() -> f64 {
+    let r = mux_rand_int() as f64;
     r / ((libc::RAND_MAX as f64) + 1.0)
 }
 
 /// Get random boolean (true or false with equal probability)
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_random_next_bool() -> bool {
-    mux_random_next_int() % 2 == 0
+pub extern "C" fn mux_rand_bool() -> bool {
+    mux_rand_int() % 2 == 0
 }

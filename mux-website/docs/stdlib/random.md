@@ -5,7 +5,7 @@ The `random` module provides pseudorandom number generation for Mux programs. It
 ## Import
 
 ```mux
-import random
+import std.random
 ```
 
 ## Functions
@@ -19,7 +19,7 @@ random.seed(int seed) returns void
 Initialize the random number generator with a specific seed. Use this when you need reproducible random sequences, such as in testing or simulations.
 
 ```mux title="seed_example.mux"
-import random
+import std.random
 
 func main() returns void {
     // Seed for reproducible results
@@ -47,7 +47,7 @@ Generate a random integer between 0 and RAND_MAX (platform-dependent, typically 
 The generator auto-initializes with the current time on first use if not explicitly seeded.
 
 ```mux title="dice_roll.mux"
-import random
+import std.random
 
 func roll_die() returns int {
     // Random number from 1 to 6
@@ -71,7 +71,7 @@ Generate a random integer in the range [min, max). The lower bound is inclusive,
 Returns `min` if `min >= max`.
 
 ```mux title="lottery_numbers.mux"
-import random
+import std.random
 
 func generate_lotto_numbers() returns list<int> {
     list<int> numbers = []
@@ -105,7 +105,7 @@ Generate a random floating-point number in the range [0.0, 1.0).
 Useful for probabilities, animations, and scientific calculations.
 
 ```mux title="probability_example.mux"
-import random
+import std.random
 
 func should_event_occur(float probability) returns bool {
     auto roll = random.next_float()
@@ -131,7 +131,7 @@ random.next_bool() returns bool
 Generate a random boolean value (true or false) with equal probability (50/50).
 
 ```mux title="coin_flip.mux"
-import random
+import std.random
 
 func flip_coin() returns string {
     if random.next_bool() {
@@ -149,7 +149,7 @@ func main() returns void {
 ## Complete Example
 
 ```mux title="random_demo.mux"
-import random
+import std.random
 
 func main() returns void {
     // Seed for reproducible output

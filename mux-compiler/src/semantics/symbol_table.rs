@@ -72,7 +72,32 @@ static INT_INT_PARAMS: &[Type] = &[
     Type::Primitive(PrimitiveType::Int),
     Type::Primitive(PrimitiveType::Int),
 ];
+static STR_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Str)];
+static STR_STR_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Str),
+    Type::Primitive(PrimitiveType::Str),
+];
 static EMPTY_PARAMS: &[Type] = &[];
+
+fn io_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
+    StdlibItem::Function {
+        params,
+        ret,
+        llvm_name: name,
+    }
+}
+
+fn io_str_fn(name: &'static str, ret: Type) -> StdlibItem {
+    io_fn(name, STR_PARAM, ret)
+}
+
+fn io_str_str_fn(name: &'static str, ret: Type) -> StdlibItem {
+    io_fn(name, STR_STR_PARAMS, ret)
+}
+
+fn io_result(ok: Type) -> Type {
+    Type::Named("Result".to_string(), vec![ok, str_()])
+}
 
 /// All stdlib items organized by module.function or module.constant
 /// Using PHF for O(1) compile-time perfect hashing - ideal for large stdlibs
@@ -200,34 +225,61 @@ pub static STDLIB_ITEMS: phf::Map<&'static str, StdlibItem> = phf::phf_map! {
     "random.seed" => StdlibItem::Function {
         params: INT_PARAM,
         ret: Type::Void,
-        llvm_name: "mux_random_seed",
+        llvm_name: "mux_rand_init",
     },
     "random.next_int" => StdlibItem::Function {
         params: EMPTY_PARAMS,
         ret: Type::Primitive(PrimitiveType::Int),
-        llvm_name: "mux_random_next_int",
+        llvm_name: "mux_rand_int",
     },
     "random.next_range" => StdlibItem::Function {
         params: INT_INT_PARAMS,
         ret: Type::Primitive(PrimitiveType::Int),
-        llvm_name: "mux_random_next_range",
+        llvm_name: "mux_rand_range",
     },
     "random.next_float" => StdlibItem::Function {
         params: EMPTY_PARAMS,
         ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_random_next_float",
+        llvm_name: "mux_rand_float",
     },
     "random.next_bool" => StdlibItem::Function {
         params: EMPTY_PARAMS,
         ret: Type::Primitive(PrimitiveType::Bool),
-        llvm_name: "mux_random_next_bool",
+        llvm_name: "mux_rand_bool",
     },
 };
 
 /// List of all available stdlib modules for wildcard imports
-pub const STDLIB_MODULES: &[&str] = &["math", "random"];
+pub const STDLIB_MODULES: &[&str] = &["io", "math", "random"];
 
 lazy_static! {
+    // io uses lazy_static rather than PHF because signatures include Type::Named(Result<...>),
+    // and Type currently stores owned Strings, which are not const-constructible for PHF values.
+    pub static ref IO_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        m.insert("io.read_file", io_str_fn("mux_io_read_file", io_result(str_())));
+        m.insert(
+            "io.write_file",
+            io_str_str_fn("mux_io_write_file", io_result(Type::Void)),
+        );
+        m.insert("io.exists", io_str_fn("mux_io_exists", io_result(bool_())));
+        m.insert("io.remove", io_str_fn("mux_io_remove", io_result(Type::Void)));
+        m.insert("io.is_file", io_str_fn("mux_io_is_file", io_result(bool_())));
+        m.insert("io.is_dir", io_str_fn("mux_io_is_dir", io_result(bool_())));
+        m.insert("io.mkdir", io_str_fn("mux_io_mkdir", io_result(Type::Void)));
+        m.insert(
+            "io.listdir",
+            io_str_fn(
+                "mux_io_listdir",
+                io_result(Type::List(Box::new(Type::Primitive(PrimitiveType::Str)))),
+            ),
+        );
+        m.insert("io.join", io_str_str_fn("mux_io_join", io_result(str_())));
+        m.insert("io.basename", io_str_fn("mux_io_basename", io_result(str_())));
+        m.insert("io.dirname", io_str_fn("mux_io_dirname", io_result(str_())));
+        m
+    };
+
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
 
@@ -271,6 +323,13 @@ lazy_static! {
         ));
         m
     };
+}
+
+pub fn all_stdlib_items() -> impl Iterator<Item = (&'static str, &'static StdlibItem)> {
+    STDLIB_ITEMS
+        .entries()
+        .map(|(key, item)| (*key, item))
+        .chain(IO_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
 }
 
 #[derive(Debug)]
