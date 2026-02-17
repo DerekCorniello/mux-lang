@@ -17,6 +17,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install LLVM 17
         run: sudo apt-get update && sudo apt-get install -y llvm-17-dev clang-17
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - name: Formatting check
         run: cargo fmt -- --check
       - name: Clippy
