@@ -4,5 +4,5 @@
 import std
 
 float result = std.math.pow(2.0, 3.0)
-std.io.print("Test 1: std.math.pow(2.0, 3.0) = " + result.to_string())
-std.io.print("Test 1 passed!")
+print("Test 1: std.math.pow(2.0, 3.0) = " + result.to_string())
+print("Test 1 passed!")

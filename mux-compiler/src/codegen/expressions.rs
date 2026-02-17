@@ -10,9 +10,9 @@
 //! - Index access
 //! - Match expressions
 
+use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
-use inkwell::AddressSpace;
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,
@@ -23,6 +23,48 @@ use crate::semantics::{GenericContext, SymbolKind, Type};
 use super::CodeGenerator;
 
 impl<'a> CodeGenerator<'a> {
+    fn build_import_call_args(
+        &mut self,
+        args: &[ExpressionNode],
+        func_type: Option<&Type>,
+    ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
+        let param_types = match func_type {
+            Some(Type::Function { params, .. }) => Some(params.as_slice()),
+            _ => None,
+        };
+
+        let mut call_args = Vec::with_capacity(args.len());
+        for (idx, arg) in args.iter().enumerate() {
+            let arg_val = self.generate_expression(arg)?;
+            if let Some(params) = param_types {
+                if let Some(param_type) = params.get(idx) {
+                    let coerced = self.coerce_import_arg(arg_val, param_type)?;
+                    call_args.push(coerced.into());
+                    continue;
+                }
+            }
+            call_args.push(arg_val.into());
+        }
+        Ok(call_args)
+    }
+
+    fn coerce_import_arg(
+        &mut self,
+        arg_val: BasicValueEnum<'a>,
+        param_type: &Type,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match param_type {
+            Type::Primitive(PrimitiveType::Str) => {
+                if !arg_val.is_pointer_value() {
+                    return Err("String arguments must be boxed values".to_string());
+                }
+                let cstr = self.extract_c_string_from_value(arg_val.into_pointer_value())?;
+                Ok(cstr.into())
+            }
+            _ => Ok(arg_val),
+        }
+    }
+
     /// Helper function to resolve the class/struct name from any expression
     /// Uses the semantic analyzer to get the expression type
     fn resolve_expression_class_name(&mut self, expr: &ExpressionNode) -> Option<String> {
@@ -1615,6 +1657,7 @@ impl<'a> CodeGenerator<'a> {
                                                     submodule_syms.get(field)
                                                 })
                                             {
+                                                let func_type = function_symbol.type_.clone();
                                                 let llvm_function_name = function_symbol
                                                     .llvm_name
                                                     .clone()
@@ -1634,12 +1677,10 @@ impl<'a> CodeGenerator<'a> {
                                                 if let Some(func) =
                                                     self.module.get_function(&llvm_function_name)
                                                 {
-                                                    let mut call_args = vec![];
-                                                    for arg in args {
-                                                        call_args.push(
-                                                            self.generate_expression(arg)?.into(),
-                                                        );
-                                                    }
+                                                    let call_args = self.build_import_call_args(
+                                                        args,
+                                                        func_type.as_ref(),
+                                                    )?;
                                                     let call = self
                                                         .builder
                                                         .build_call(
@@ -1691,6 +1732,8 @@ impl<'a> CodeGenerator<'a> {
                                             .imported_symbols()
                                             .get(name)
                                             .and_then(|module_syms| module_syms.get(field));
+                                        let func_type =
+                                            function_symbol.and_then(|s| s.type_.clone());
 
                                         let llvm_function_name =
                                             if let Some(func_sym) = function_symbol {
@@ -1716,11 +1759,8 @@ impl<'a> CodeGenerator<'a> {
                                         if let Some(func) =
                                             self.module.get_function(&llvm_function_name)
                                         {
-                                            let mut call_args = vec![];
-                                            for arg in args {
-                                                call_args
-                                                    .push(self.generate_expression(arg)?.into());
-                                            }
+                                            let call_args = self
+                                                .build_import_call_args(args, func_type.as_ref())?;
                                             let call = self
                                                 .builder
                                                 .build_call(

@@ -899,6 +899,75 @@ impl<'a> CodeGenerator<'a> {
 
         module.add_function("mux_flush_stdout", void_type.fn_type(&[], false), None);
 
+        // IO Package Functions - All return *mut MuxResult (opaque pointer)
+        module.add_function(
+            "mux_io_read_file",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_io_write_file",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_io_exists",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_io_remove",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_io_is_file",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_io_is_dir",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        // IO Package Functions - Directory Operations
+        module.add_function(
+            "mux_io_mkdir",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_io_listdir",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        // IO Package Functions - Path Operations
+        module.add_function(
+            "mux_io_join",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_io_basename",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_io_dirname",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
         module.add_function(
             "mux_rc_inc",
             context.void_type().fn_type(&[i8_ptr.into()], false),

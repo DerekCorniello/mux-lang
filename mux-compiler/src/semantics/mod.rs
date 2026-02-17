@@ -8,7 +8,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
+pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -4779,7 +4779,162 @@ impl SemanticAnalyzer {
         package_name: &str,
     ) -> Option<Vec<(&'static str, BuiltInSig, &'static str)>> {
         match package_name {
-            "io" => Some(vec![]),
+            "io" => Some(vec![
+                // File Operations
+                (
+                    "read_file",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![
+                                Type::Primitive(PrimitiveType::Str),
+                                Type::Primitive(PrimitiveType::Str),
+                            ],
+                        ),
+                    },
+                    "mux_io_read_file",
+                ),
+                (
+                    "write_file",
+                    BuiltInSig {
+                        params: vec![
+                            Type::Primitive(PrimitiveType::Str),
+                            Type::Primitive(PrimitiveType::Str),
+                        ],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
+                        ),
+                    },
+                    "mux_io_write_file",
+                ),
+                (
+                    "exists",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![
+                                Type::Primitive(PrimitiveType::Bool),
+                                Type::Primitive(PrimitiveType::Str),
+                            ],
+                        ),
+                    },
+                    "mux_io_exists",
+                ),
+                (
+                    "remove",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
+                        ),
+                    },
+                    "mux_io_remove",
+                ),
+                (
+                    "is_file",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![
+                                Type::Primitive(PrimitiveType::Bool),
+                                Type::Primitive(PrimitiveType::Str),
+                            ],
+                        ),
+                    },
+                    "mux_io_is_file",
+                ),
+                (
+                    "is_dir",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![
+                                Type::Primitive(PrimitiveType::Bool),
+                                Type::Primitive(PrimitiveType::Str),
+                            ],
+                        ),
+                    },
+                    "mux_io_is_dir",
+                ),
+                // Directory Operations
+                (
+                    "mkdir",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![Type::Void, Type::Primitive(PrimitiveType::Str)],
+                        ),
+                    },
+                    "mux_io_mkdir",
+                ),
+                (
+                    "listdir",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![
+                                Type::List(Box::new(Type::Primitive(PrimitiveType::Str))),
+                                Type::Primitive(PrimitiveType::Str),
+                            ],
+                        ),
+                    },
+                    "mux_io_listdir",
+                ),
+                // Path Operations
+                (
+                    "join",
+                    BuiltInSig {
+                        params: vec![
+                            Type::Primitive(PrimitiveType::Str),
+                            Type::Primitive(PrimitiveType::Str),
+                        ],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![
+                                Type::Primitive(PrimitiveType::Str),
+                                Type::Primitive(PrimitiveType::Str),
+                            ],
+                        ),
+                    },
+                    "mux_io_join",
+                ),
+                (
+                    "basename",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![
+                                Type::Primitive(PrimitiveType::Str),
+                                Type::Primitive(PrimitiveType::Str),
+                            ],
+                        ),
+                    },
+                    "mux_io_basename",
+                ),
+                (
+                    "dirname",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Str)],
+                        return_type: Type::Named(
+                            "Result".to_string(),
+                            vec![
+                                Type::Primitive(PrimitiveType::Str),
+                                Type::Primitive(PrimitiveType::Str),
+                            ],
+                        ),
+                    },
+                    "mux_io_dirname",
+                ),
+            ]),
             "math" => Some(vec![
                 (
                     "pow",
