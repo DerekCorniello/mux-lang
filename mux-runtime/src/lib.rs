@@ -266,6 +266,7 @@ pub mod map;
 pub mod math;
 pub mod object;
 pub mod optional;
+pub mod random;
 pub mod refcount;
 pub mod result;
 pub mod set;

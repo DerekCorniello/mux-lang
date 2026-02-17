@@ -8,7 +8,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{SymbolTable, BUILT_IN_FUNCTIONS};
+pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -4972,6 +4972,51 @@ impl SemanticAnalyzer {
                     "mux_math_cos",
                 ),
             ]),
+            "random" => Some(vec![
+                (
+                    "seed",
+                    BuiltInSig {
+                        params: vec![Type::Primitive(PrimitiveType::Int)],
+                        return_type: Type::Void,
+                    },
+                    "mux_rand_init",
+                ),
+                (
+                    "next_int",
+                    BuiltInSig {
+                        params: vec![],
+                        return_type: Type::Primitive(PrimitiveType::Int),
+                    },
+                    "mux_rand_int",
+                ),
+                (
+                    "next_range",
+                    BuiltInSig {
+                        params: vec![
+                            Type::Primitive(PrimitiveType::Int),
+                            Type::Primitive(PrimitiveType::Int),
+                        ],
+                        return_type: Type::Primitive(PrimitiveType::Int),
+                    },
+                    "mux_rand_range",
+                ),
+                (
+                    "next_float",
+                    BuiltInSig {
+                        params: vec![],
+                        return_type: Type::Primitive(PrimitiveType::Float),
+                    },
+                    "mux_rand_float",
+                ),
+                (
+                    "next_bool",
+                    BuiltInSig {
+                        params: vec![],
+                        return_type: Type::Primitive(PrimitiveType::Bool),
+                    },
+                    "mux_rand_bool",
+                ),
+            ]),
             _ => None,
         }
     }
@@ -5028,7 +5073,7 @@ impl SemanticAnalyzer {
 
                     // Register each package as a submodule
                     let mut std_symbols = std::collections::HashMap::new();
-                    for package_name in ["io", "math"] {
+                    for package_name in ["io", "math", "random"] {
                         if let Some(package_functions) =
                             self.get_std_package_functions(package_name)
                         {
@@ -5075,7 +5120,7 @@ impl SemanticAnalyzer {
                 }
                 ImportSpec::Wildcard => {
                     // import std.* - import all packages at top level
-                    for package_name in ["io", "math"] {
+                    for package_name in ["io", "math", "random"] {
                         if let Some(package_functions) =
                             self.get_std_package_functions(package_name)
                         {
