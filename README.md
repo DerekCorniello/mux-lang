@@ -1856,12 +1856,13 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `math`, `io`, `random`, and `datetime`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, and `datetime`.
 
 Import styles:
 
 ```mux
-import std                    // use std.math, std.io, std.random, std.datetime
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime
+import std.assert              // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*
 import std.random             // use random.*
@@ -1870,7 +1871,21 @@ import std.(math, random as r)
 import std.*                  // flat import of stdlib items
 ```
 
-### 17.1 math
+### 17.1 assert
+
+`assert` provides test assertions that panic immediately on failure with descriptive error messages.
+
+- `assert.assert_true(bool condition) -> void` - Panics if false
+- `assert.assert_false(bool condition) -> void` - Panics if true
+- `assert.assert(bool condition, string message) -> void` - Panics with custom message if false
+- `assert.assert_eq(T actual, T expected) -> void` - Panics if values differ (generic)
+- `assert.assert_ne(T actual, T expected) -> void` - Panics if values equal (generic)
+- `assert.assert_some(Optional<T> value) -> void` - Panics if None
+- `assert.assert_none(Optional<T> value) -> void` - Panics if Some
+- `assert.assert_ok(Result<T, E> value) -> void` - Panics if Err
+- `assert.assert_err(Result<T, E> value) -> void` - Panics if Ok
+
+### 17.2 math
 
 `math` provides floating-point constants and functions.
 
@@ -1878,14 +1893,14 @@ import std.*                  // flat import of stdlib items
 - Unary functions: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log2`, `log10`, `exp`, `abs`, `floor`, `ceil`, `round`
 - Binary functions: `atan2`, `log`, `min`, `max`, `hypot`, `pow`
 
-### 17.2 io
+### 17.3 io
 
 `io` provides filesystem and path operations with explicit error handling via `Result<T, string>`.
 
 - File operations: `read_file`, `write_file`, `exists`, `remove`, `mkdir`, `listdir`
 - Path operations: `is_file`, `is_dir`, `join`, `basename`, `dirname`
 
-### 17.3 random
+### 17.4 random
 
 `random` provides pseudorandom generation:
 
@@ -1895,7 +1910,7 @@ import std.*                  // flat import of stdlib items
 - `random.next_float() -> float`
 - `random.next_bool() -> bool`
 
-### 17.4 datetime
+### 17.5 datetime
 
 `datetime` provides Unix-timestamp based date and time helpers.
 

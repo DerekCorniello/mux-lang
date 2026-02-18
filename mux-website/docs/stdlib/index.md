@@ -30,6 +30,7 @@ import std.*                  // flat import of all stdlib items
 
 | Module | Description | Status |
 |--------|-------------|--------|
+| [assert](./assert) | Test assertions that panic on failure | Available |
 | [math](./math) | Mathematical functions and constants | Available |
 | [io](./io) | File and path operations with `Result`-based errors | Available |
 | [random](./random) | Pseudorandom number generation | Available |
