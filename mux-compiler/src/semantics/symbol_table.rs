@@ -262,7 +262,7 @@ pub static STDLIB_ITEMS: phf::Map<&'static str, StdlibItem> = phf::phf_map! {
 };
 
 /// List of all available stdlib modules for wildcard imports
-pub const STDLIB_MODULES: &[&str] = &["datetime", "io", "math", "random"];
+pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random"];
 
 lazy_static! {
     // io uses lazy_static rather than PHF because signatures include Type::Named(Result<...>),
@@ -307,6 +307,29 @@ lazy_static! {
         m.insert("datetime.format_local", datetime_fn("mux_datetime_format_local", INT_STR_PARAMS, io_result(str_())));
         m.insert("datetime.sleep", datetime_fn("mux_datetime_sleep", INT_PARAM, io_result(Type::Void)));
         m.insert("datetime.sleep_millis", datetime_fn("mux_datetime_sleep_millis", INT_PARAM, io_result(Type::Void)));
+        m
+    };
+
+    pub static ref ASSERT_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        fn make_item(name: &'static str, params: Vec<Type>) -> StdlibItem {
+            StdlibItem::Function {
+                params: Box::leak(params.into_boxed_slice()),
+                ret: Type::Void,
+                llvm_name: name,
+            }
+        }
+        let t = || Type::Variable("T".to_string());
+        let e = || Type::Variable("E".to_string());
+        let mut m = HashMap::new();
+        m.insert("assert.assert", make_item("mux_assert_assert", vec![bool_(), str_()]));
+        m.insert("assert.assert_eq", make_item("mux_assert_eq", vec![t(), t()]));
+        m.insert("assert.assert_ne", make_item("mux_assert_ne", vec![t(), t()]));
+        m.insert("assert.assert_true", make_item("mux_assert_true", vec![bool_()]));
+        m.insert("assert.assert_false", make_item("mux_assert_false", vec![bool_()]));
+        m.insert("assert.assert_some", make_item("mux_assert_some", vec![Type::Optional(Box::new(t()))]));
+        m.insert("assert.assert_none", make_item("mux_assert_none", vec![Type::Optional(Box::new(t()))]));
+        m.insert("assert.assert_ok", make_item("mux_assert_ok", vec![Type::Named("Result".to_string(), vec![t(), e()])]));
+        m.insert("assert.assert_err", make_item("mux_assert_err", vec![Type::Named("Result".to_string(), vec![t(), e()])]));
         m
     };
 
@@ -361,6 +384,7 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (&'static str, &'static Stdlib
         .map(|(key, item)| (*key, item))
         .chain(IO_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
         .chain(DATETIME_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
+        .chain(ASSERT_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
 }
 
 #[derive(Debug)]

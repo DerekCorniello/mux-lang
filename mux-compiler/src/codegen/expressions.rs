@@ -64,6 +64,10 @@ impl<'a> CodeGenerator<'a> {
                 let cstr = self.extract_c_string_from_value(arg_val.into_pointer_value())?;
                 Ok(cstr.into())
             }
+            Type::Variable(_) | Type::Optional(_) | Type::Named(..) => {
+                let boxed = self.box_value(arg_val);
+                Ok(boxed.into())
+            }
             _ => Ok(arg_val),
         }
     }

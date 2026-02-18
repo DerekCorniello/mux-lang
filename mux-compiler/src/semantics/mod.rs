@@ -4728,7 +4728,9 @@ impl SemanticAnalyzer {
                     .collect();
 
                 for module in STDLIB_MODULES {
-                    self.import_stdlib_module(module, &ImportSpec::Module { alias: None }, span)?;
+                    let module_symbols = self.collect_stdlib_module_symbols(module, span);
+                    self.imported_symbols
+                        .insert(module.to_string(), module_symbols);
                 }
 
                 self.imported_symbols

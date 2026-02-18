@@ -818,6 +818,53 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
 
+        // Assert module functions - all return void
+        module.add_function(
+            "mux_assert_assert",
+            void_type.fn_type(&[context.bool_type().into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_eq",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_ne",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_true",
+            void_type.fn_type(&[context.bool_type().into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_false",
+            void_type.fn_type(&[context.bool_type().into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_some",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_none",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_ok",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_err",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
         let mut type_map = HashMap::new();
         let mut enum_variants = HashMap::new();
 

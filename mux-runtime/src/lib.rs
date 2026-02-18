@@ -9,8 +9,6 @@ use ::std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type TypeId = u32;
 
-/// Internal data that needs cleanup when all ObjectRefs are dropped.
-/// Shared across clones via Rc.
 struct ObjectData {
     ptr: *mut c_void,
     type_id: TypeId,
@@ -20,8 +18,6 @@ struct ObjectData {
 
 impl Drop for ObjectData {
     fn drop(&mut self) {
-        // When the Arc holding this ObjectData is dropped (all ObjectRefs gone),
-        // free the underlying object memory
         if !self.ptr.is_null() && self.size > 0 {
             let layout =
                 ::std::alloc::Layout::from_size_align(self.size, ::std::mem::align_of::<u8>())
@@ -38,7 +34,6 @@ pub struct ObjectRef {
     data: Rc<ObjectData>,
 }
 
-// Manual Debug to show ref_count from atomic
 impl ::std::fmt::Debug for ObjectData {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         f.debug_struct("ObjectData")
@@ -167,7 +162,6 @@ impl PartialOrd for Value {
 }
 
 impl Value {
-    /// Stable ordering index for cross-variant comparisons.
     fn variant_order(&self) -> u8 {
         match self {
             Value::Unit => 0,
@@ -262,6 +256,7 @@ impl fmt::Display for Value {
     }
 }
 
+pub mod assert;
 pub mod bool;
 pub mod boxing;
 pub mod datetime;
@@ -281,7 +276,6 @@ pub mod std;
 pub mod string;
 pub mod tuple;
 
-// Re-export extern "C" functions for C linkage
 pub use std::{mux_value_list_get_value, mux_value_list_length, mux_value_list_slice};
 
 #[unsafe(no_mangle)]
