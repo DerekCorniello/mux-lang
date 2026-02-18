@@ -8,6 +8,7 @@ Import standard library modules using the `import` keyword:
 
 ```mux title="import_example.mux"
 import std.random
+import std.datetime
 
 func main() returns void {
     auto roll = random.next_range(1, 7)
@@ -18,8 +19,9 @@ func main() returns void {
 You can import stdlib in multiple forms:
 
 ```mux title="stdlib_import_forms.mux"
-import std                    // namespace import: std.math, std.io, std.random
+import std                    // namespace import: std.math, std.io, std.random, std.datetime
 import std.math               // single module namespace
+import std.datetime
 import std.(math, random as r)
 import std.*                  // flat import of all stdlib items
 ```
@@ -31,6 +33,7 @@ import std.*                  // flat import of all stdlib items
 | [math](./math) | Mathematical functions and constants | Available |
 | [io](./io) | File and path operations with `Result`-based errors | Available |
 | [random](./random) | Pseudorandom number generation | Available |
+| [datetime](./datetime) | Time retrieval, formatting, and sleep helpers | Available |
 
 ## Module Stability
 
@@ -41,7 +44,6 @@ The standard library is actively being developed. While the core functionality i
 Planned additions include:
 
 - `string` - String manipulation utilities
-- `time` - Date and time handling
 - `collections` - Additional collection types and algorithms
 
 ## Contributing

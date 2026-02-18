@@ -758,6 +758,31 @@ impl<'a> CodeGenerator<'a> {
             &[i8_ptr.into(), i8_ptr.into()],
         );
 
+        // DateTime module functions - all return *mut MuxResult (i8_ptr)
+        for name in ["mux_datetime_now", "mux_datetime_now_millis"] {
+            module.add_function(name, i8_ptr.fn_type(&[], false), None);
+        }
+        for name in [
+            "mux_datetime_year",
+            "mux_datetime_month",
+            "mux_datetime_day",
+            "mux_datetime_hour",
+            "mux_datetime_minute",
+            "mux_datetime_second",
+            "mux_datetime_weekday",
+            "mux_datetime_sleep",
+            "mux_datetime_sleep_millis",
+        ] {
+            module.add_function(name, i8_ptr.fn_type(&[i64_type.into()], false), None);
+        }
+        for name in ["mux_datetime_format", "mux_datetime_format_local"] {
+            module.add_function(
+                name,
+                i8_ptr.fn_type(&[i64_type.into(), i8_ptr.into()], false),
+                None,
+            );
+        }
+
         module.add_function(
             "mux_rc_inc",
             context.void_type().fn_type(&[i8_ptr.into()], false),

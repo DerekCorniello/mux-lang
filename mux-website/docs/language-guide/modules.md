@@ -9,6 +9,7 @@ import math
 import shapes.circle
 import utils.logger as log
 import std.math
+import std.datetime
 ```
 
 - Python-style imports only
@@ -24,11 +25,12 @@ import std
 import std.math
 import std.io
 import std.random
+import std.datetime
 import std.(math, random as r)
 import std.*
 ```
 
-- `import std` exposes module namespaces like `std.math` and `std.io`
+- `import std` exposes module namespaces like `std.math`, `std.io`, and `std.datetime`
 - `import std.<module>` imports a single stdlib module namespace
 - `import std.*` performs a flat import of stdlib items into the current scope
 

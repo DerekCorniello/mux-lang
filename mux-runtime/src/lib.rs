@@ -264,6 +264,7 @@ impl fmt::Display for Value {
 
 pub mod bool;
 pub mod boxing;
+pub mod datetime;
 pub mod float;
 pub mod int;
 pub mod io;

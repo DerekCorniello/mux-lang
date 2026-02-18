@@ -4514,6 +4514,7 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .expect("mux_new_string_from_cstr should always return a value");
                 self.generate_runtime_call("mux_print", &[error_str.into()]);
+                self.generate_runtime_call("mux_flush_stdout", &[]);
                 self.generate_runtime_call(
                     "exit",
                     &[self.context.i32_type().const_int(1, false).into()],

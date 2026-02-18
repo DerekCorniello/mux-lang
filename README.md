@@ -1856,15 +1856,16 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `math`, `io`, and `random`.
+The Mux standard library includes `math`, `io`, `random`, and `datetime`.
 
 Import styles:
 
 ```mux
-import std                    // use std.math, std.io, std.random
+import std                    // use std.math, std.io, std.random, std.datetime
 import std.math               // use math.*
 import std.io                 // use io.*
 import std.random             // use random.*
+import std.datetime           // use datetime.*
 import std.(math, random as r)
 import std.*                  // flat import of stdlib items
 ```
@@ -1893,6 +1894,31 @@ import std.*                  // flat import of stdlib items
 - `random.next_range(int min, int max) -> int`
 - `random.next_float() -> float`
 - `random.next_bool() -> bool`
+
+### 17.4 datetime
+
+`datetime` provides Unix-timestamp based date and time helpers.
+
+- `datetime.now() -> Result<int, string>` (seconds since Unix epoch, UTC)
+- `datetime.now_millis() -> Result<int, string>` (milliseconds since Unix epoch, UTC)
+- `datetime.year(int ts) -> Result<int, string>`
+- `datetime.month(int ts) -> Result<int, string>`
+- `datetime.day(int ts) -> Result<int, string>`
+- `datetime.hour(int ts) -> Result<int, string>`
+- `datetime.minute(int ts) -> Result<int, string>`
+- `datetime.second(int ts) -> Result<int, string>`
+- `datetime.weekday(int ts) -> Result<int, string>` where `0=Sun ... 6=Sat`
+- `datetime.format(int ts, string pattern) -> Result<string, string>` (UTC)
+- `datetime.format_local(int ts, string pattern) -> Result<string, string>` (local timezone)
+- `datetime.sleep(int seconds) -> Result<void, string>` (blocking at call site)
+- `datetime.sleep_millis(int milliseconds) -> Result<void, string>` (blocking at call site)
+
+Format patterns use chrono `strftime` tokens, for example:
+- `%A` full weekday name
+- `%a` abbreviated weekday name
+- `%B` full month name
+- `%b` abbreviated month name
+- `%Y-%m-%d %H:%M:%S`
 
 ---
 

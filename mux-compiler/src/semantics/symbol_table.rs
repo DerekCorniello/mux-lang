@@ -68,6 +68,10 @@ static FLOAT_FLOAT_PARAMS: &[Type] = &[
     Type::Primitive(PrimitiveType::Float),
 ];
 static INT_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Int)];
+static INT_STR_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Int),
+    Type::Primitive(PrimitiveType::Str),
+];
 static INT_INT_PARAMS: &[Type] = &[
     Type::Primitive(PrimitiveType::Int),
     Type::Primitive(PrimitiveType::Int),
@@ -97,6 +101,14 @@ fn io_str_str_fn(name: &'static str, ret: Type) -> StdlibItem {
 
 fn io_result(ok: Type) -> Type {
     Type::Named("Result".to_string(), vec![ok, str_()])
+}
+
+fn datetime_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
+    StdlibItem::Function {
+        params,
+        ret,
+        llvm_name: name,
+    }
 }
 
 /// All stdlib items organized by module.function or module.constant
@@ -250,7 +262,7 @@ pub static STDLIB_ITEMS: phf::Map<&'static str, StdlibItem> = phf::phf_map! {
 };
 
 /// List of all available stdlib modules for wildcard imports
-pub const STDLIB_MODULES: &[&str] = &["io", "math", "random"];
+pub const STDLIB_MODULES: &[&str] = &["datetime", "io", "math", "random"];
 
 lazy_static! {
     // io uses lazy_static rather than PHF because signatures include Type::Named(Result<...>),
@@ -277,6 +289,24 @@ lazy_static! {
         m.insert("io.join", io_str_str_fn("mux_io_join", io_result(str_())));
         m.insert("io.basename", io_str_fn("mux_io_basename", io_result(str_())));
         m.insert("io.dirname", io_str_fn("mux_io_dirname", io_result(str_())));
+        m
+    };
+
+    pub static ref DATETIME_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        m.insert("datetime.now", datetime_fn("mux_datetime_now", EMPTY_PARAMS, io_result(int())));
+        m.insert("datetime.now_millis", datetime_fn("mux_datetime_now_millis", EMPTY_PARAMS, io_result(int())));
+        m.insert("datetime.year", datetime_fn("mux_datetime_year", INT_PARAM, io_result(int())));
+        m.insert("datetime.month", datetime_fn("mux_datetime_month", INT_PARAM, io_result(int())));
+        m.insert("datetime.day", datetime_fn("mux_datetime_day", INT_PARAM, io_result(int())));
+        m.insert("datetime.hour", datetime_fn("mux_datetime_hour", INT_PARAM, io_result(int())));
+        m.insert("datetime.minute", datetime_fn("mux_datetime_minute", INT_PARAM, io_result(int())));
+        m.insert("datetime.second", datetime_fn("mux_datetime_second", INT_PARAM, io_result(int())));
+        m.insert("datetime.weekday", datetime_fn("mux_datetime_weekday", INT_PARAM, io_result(int())));
+        m.insert("datetime.format", datetime_fn("mux_datetime_format", INT_STR_PARAMS, io_result(str_())));
+        m.insert("datetime.format_local", datetime_fn("mux_datetime_format_local", INT_STR_PARAMS, io_result(str_())));
+        m.insert("datetime.sleep", datetime_fn("mux_datetime_sleep", INT_PARAM, io_result(Type::Void)));
+        m.insert("datetime.sleep_millis", datetime_fn("mux_datetime_sleep_millis", INT_PARAM, io_result(Type::Void)));
         m
     };
 
@@ -330,6 +360,7 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (&'static str, &'static Stdlib
         .entries()
         .map(|(key, item)| (*key, item))
         .chain(IO_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
+        .chain(DATETIME_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
 }
 
 #[derive(Debug)]

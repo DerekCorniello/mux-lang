@@ -1662,6 +1662,7 @@ print("val after update: " + x.to_string())  // 21
 ```
 import math
 import std.math
+import std.datetime
 import shapes.circle as circle
 
 // Usage with inference
@@ -1689,12 +1690,14 @@ Mux uses Python-style module imports with compile-time resolution.
 import math          // math.mux in same directory
 import shapes.circle // shapes/circle.mux
 import std.math      // stdlib math module
+import std.datetime  // stdlib datetime module
 ```
 
 File paths map to module paths:
 - `import foo` -> `foo.mux`
 - `import shapes.circle` -> `shapes/circle.mux`
 - `import std.math` -> stdlib `math` module namespace (`math.*`)
+- `import std.datetime` -> stdlib `datetime` module namespace (`datetime.*`)
 
 #### Name Mangling for Imported Functions
 
