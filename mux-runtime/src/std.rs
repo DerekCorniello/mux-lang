@@ -147,6 +147,42 @@ pub extern "C" fn mux_value_get_set(val: *mut Value) -> *mut Set {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_value_get_optional(val: *mut Value) -> *mut crate::optional::Optional {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*val {
+            Value::Optional(Some(v)) => {
+                Box::into_raw(Box::new(crate::optional::Optional::some(*v.clone())))
+            }
+            Value::Optional(None) => Box::into_raw(Box::new(crate::optional::Optional::none())),
+            _ => std::ptr::null_mut(),
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_value_get_result(val: *mut Value) -> *mut crate::result::MuxResult {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*val {
+            Value::Result(Ok(v)) => {
+                Box::into_raw(Box::new(crate::result::MuxResult::ok(*v.clone())))
+            }
+            Value::Result(Err(e)) => {
+                Box::into_raw(Box::new(crate::result::MuxResult::err(e.clone())))
+            }
+            _ => std::ptr::null_mut(),
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_value_to_string(val: *mut Value) -> *mut c_char {
     let value = unsafe { &*val };
     let s = value.to_string();

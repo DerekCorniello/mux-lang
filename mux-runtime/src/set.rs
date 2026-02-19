@@ -126,3 +126,27 @@ pub extern "C" fn mux_set_union(a: *const Set, b: *const Set) -> *mut Set {
     result.extend(unsafe { (*b).0.clone() });
     Box::into_raw(Box::new(Set(result)))
 }
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::mutable_key_type)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_intersection(a: *const Set, b: *const Set) -> *mut Set {
+    if a.is_null() || b.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let result: BTreeSet<Value> = unsafe { (*a).0.intersection(&(*b).0).cloned().collect() };
+    Box::into_raw(Box::new(Set(result)))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::mutable_key_type)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_difference(a: *const Set, b: *const Set) -> *mut Set {
+    if a.is_null() || b.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let result: BTreeSet<Value> = unsafe { (*a).0.difference(&(*b).0).cloned().collect() };
+    Box::into_raw(Box::new(Set(result)))
+}

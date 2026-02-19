@@ -1654,6 +1654,38 @@ impl SemanticAnalyzer {
 
     fn get_method_sig(&self, type_: &Type, method_name: &str) -> Option<MethodSig> {
         match type_ {
+            Type::Named(name, args) if name == "Result" && args.len() == 2 => {
+                let ok_type = args[0].clone();
+                let err_type = args[1].clone();
+                match method_name {
+                    "is_ok" => Some(MethodSig {
+                        params: vec![],
+                        return_type: Type::Primitive(PrimitiveType::Bool),
+                        is_static: false,
+                    }),
+                    "is_err" => Some(MethodSig {
+                        params: vec![],
+                        return_type: Type::Primitive(PrimitiveType::Bool),
+                        is_static: false,
+                    }),
+                    "unwrap" => Some(MethodSig {
+                        params: vec![],
+                        return_type: ok_type,
+                        is_static: false,
+                    }),
+                    "unwrap_err" => Some(MethodSig {
+                        params: vec![],
+                        return_type: err_type,
+                        is_static: false,
+                    }),
+                    "unwrap_or" => Some(MethodSig {
+                        params: vec![ok_type.clone()],
+                        return_type: ok_type,
+                        is_static: false,
+                    }),
+                    _ => None,
+                }
+            }
             Type::Named(name, args) => {
                 let symbol = self.symbol_table.lookup(name)?;
                 if let Some(sig) = symbol.methods.get(method_name) {
@@ -1932,6 +1964,76 @@ impl SemanticAnalyzer {
                     return_type: Type::Primitive(PrimitiveType::Str),
                     is_static: false,
                 }),
+                "sort" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Void,
+                    is_static: false,
+                }),
+                "reverse" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Void,
+                    is_static: false,
+                }),
+                "contains" => Some(MethodSig {
+                    params: vec![*elem_type.clone()],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "index_of" => Some(MethodSig {
+                    params: vec![*elem_type.clone()],
+                    return_type: Type::Optional(Box::new(Type::Primitive(PrimitiveType::Int))),
+                    is_static: false,
+                }),
+                "clear" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Void,
+                    is_static: false,
+                }),
+                "filter" => Some(MethodSig {
+                    params: vec![Type::Function {
+                        params: vec![*elem_type.clone()],
+                        returns: Box::new(Type::Primitive(PrimitiveType::Bool)),
+                        default_count: 0,
+                    }],
+                    return_type: Type::List(elem_type.clone()),
+                    is_static: false,
+                }),
+                "map" => {
+                    let result_type = Type::Variable("U".to_string());
+                    Some(MethodSig {
+                        params: vec![Type::Function {
+                            params: vec![*elem_type.clone()],
+                            returns: Box::new(result_type.clone()),
+                            default_count: 0,
+                        }],
+                        return_type: Type::List(Box::new(result_type)),
+                        is_static: false,
+                    })
+                }
+                "reduce" => {
+                    let accum_type = Type::Variable("U".to_string());
+                    Some(MethodSig {
+                        params: vec![
+                            accum_type.clone(),
+                            Type::Function {
+                                params: vec![accum_type.clone(), *elem_type.clone()],
+                                returns: Box::new(accum_type.clone()),
+                                default_count: 0,
+                            },
+                        ],
+                        return_type: accum_type,
+                        is_static: false,
+                    })
+                }
+                "find" => Some(MethodSig {
+                    params: vec![Type::Function {
+                        params: vec![*elem_type.clone()],
+                        returns: Box::new(Type::Primitive(PrimitiveType::Bool)),
+                        default_count: 0,
+                    }],
+                    return_type: Type::Optional(elem_type.clone()),
+                    is_static: false,
+                }),
                 _ => None,
             },
             Type::Map(key_type, value_type) => match method_name {
@@ -1950,7 +2052,17 @@ impl SemanticAnalyzer {
                     return_type: Type::List(key_type.clone()),
                     is_static: false,
                 }),
+                "keys" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::List(key_type.clone()),
+                    is_static: false,
+                }),
                 "get_values" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::List(value_type.clone()),
+                    is_static: false,
+                }),
+                "values" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::List(value_type.clone()),
                     is_static: false,
@@ -1964,6 +2076,11 @@ impl SemanticAnalyzer {
                     is_static: false,
                 }),
                 "contains" => Some(MethodSig {
+                    params: vec![*key_type.clone()],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "contains_key" => Some(MethodSig {
                     params: vec![*key_type.clone()],
                     return_type: Type::Primitive(PrimitiveType::Bool),
                     is_static: false,
@@ -1986,6 +2103,20 @@ impl SemanticAnalyzer {
                 "to_string" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
+                "clear" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Void,
+                    is_static: false,
+                }),
+                "filter" => Some(MethodSig {
+                    params: vec![Type::Function {
+                        params: vec![*key_type.clone(), *value_type.clone()],
+                        returns: Box::new(Type::Primitive(PrimitiveType::Bool)),
+                        default_count: 0,
+                    }],
+                    return_type: Type::Map(key_type.clone(), value_type.clone()),
                     is_static: false,
                 }),
                 _ => None,
@@ -2021,12 +2152,47 @@ impl SemanticAnalyzer {
                     return_type: Type::Primitive(PrimitiveType::Str),
                     is_static: false,
                 }),
+                "union" => Some(MethodSig {
+                    params: vec![Type::Set(elem_type.clone())],
+                    return_type: Type::Set(elem_type.clone()),
+                    is_static: false,
+                }),
+                "intersection" => Some(MethodSig {
+                    params: vec![Type::Set(elem_type.clone())],
+                    return_type: Type::Set(elem_type.clone()),
+                    is_static: false,
+                }),
+                "difference" => Some(MethodSig {
+                    params: vec![Type::Set(elem_type.clone())],
+                    return_type: Type::Set(elem_type.clone()),
+                    is_static: false,
+                }),
                 _ => None,
             },
-            Type::Optional(_) => match method_name {
+            Type::Optional(inner) => match method_name {
                 "to_string" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
+                "is_some" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "is_none" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "unwrap" => Some(MethodSig {
+                    params: vec![],
+                    return_type: *inner.clone(),
+                    is_static: false,
+                }),
+                "unwrap_or" => Some(MethodSig {
+                    params: vec![*inner.clone()],
+                    return_type: *inner.clone(),
                     is_static: false,
                 }),
                 _ => None,

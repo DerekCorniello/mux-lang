@@ -296,3 +296,45 @@ pub extern "C" fn mux_list_concat(a: *const List, b: *const List) -> *mut List {
 pub extern "C" fn mux_list_contains(list: *const List, val: *const Value) -> bool {
     unsafe { (*list).0.iter().any(|item| item == &*val) }
 }
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_sort(list: *mut List) {
+    unsafe {
+        (*list).0.sort();
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_reverse(list: *mut List) {
+    unsafe {
+        (*list).0.reverse();
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_index_of(list: *const List, val: *const Value) -> i64 {
+    unsafe {
+        (*list)
+            .0
+            .iter()
+            .position(|item| item == &*val)
+            .map(|i| i as i64)
+            .unwrap_or(-1)
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_clear(list: *mut List) {
+    unsafe {
+        (*list).0.clear();
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_new() -> *mut Value {
+    mux_rc_alloc(Value::List(Vec::new()))
+}

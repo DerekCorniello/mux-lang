@@ -205,3 +205,14 @@ pub extern "C" fn mux_map_merge(a: *const Map, b: *const Map) -> *mut Map {
     result.extend(unsafe { (*b).0.clone() });
     Box::into_raw(Box::new(Map(result)))
 }
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_map_clear(map: *mut Map) {
+    if map.is_null() {
+        return;
+    }
+    unsafe {
+        (*map).0.clear();
+    }
+}
