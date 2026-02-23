@@ -52,6 +52,15 @@ pub extern "C" fn mux_optional_is_some(opt: *mut Optional) -> bool {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_optional_is_none(opt: *mut Optional) -> bool {
+    if opt.is_null() {
+        return false;
+    }
+    unsafe { matches!(&*opt, Optional::None) }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_optional_get_value(opt: *mut Optional) -> *mut Value {
     if opt.is_null() {
         return std::ptr::null_mut();

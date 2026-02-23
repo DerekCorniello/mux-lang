@@ -662,6 +662,12 @@ impl<'a> CodeGenerator<'a> {
         Self::add_typed_getter(
             &module,
             i8_ptr,
+            "mux_optional_is_none",
+            context.bool_type().into(),
+        );
+        Self::add_typed_getter(
+            &module,
+            i8_ptr,
             "mux_result_discriminant",
             context.i32_type().into(),
         );

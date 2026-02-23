@@ -1138,7 +1138,6 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("to_string() method takes no arguments".to_string());
                 }
-                // use the standard mux_value_to_string function which handles Optional case
                 let func = self
                     .module
                     .get_function("mux_value_to_string")
@@ -1167,6 +1166,40 @@ impl<'a> CodeGenerator<'a> {
                     .try_as_basic_value()
                     .left()
                     .expect("mux_new_string_from_cstr should return a basic value"))
+            }
+            "is_some" => {
+                if !args.is_empty() {
+                    return Err("is_some() method takes no arguments".to_string());
+                }
+                let is_some_fn = self
+                    .module
+                    .get_function("mux_optional_is_some")
+                    .ok_or("mux_optional_is_some not found")?;
+                let call = self
+                    .builder
+                    .build_call(is_some_fn, &[obj_value.into()], "is_some")
+                    .map_err(|e| e.to_string())?;
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_optional_is_some should return a basic value"))
+            }
+            "is_none" => {
+                if !args.is_empty() {
+                    return Err("is_none() method takes no arguments".to_string());
+                }
+                let is_none_fn = self
+                    .module
+                    .get_function("mux_optional_is_none")
+                    .ok_or("mux_optional_is_none not found")?;
+                let call = self
+                    .builder
+                    .build_call(is_none_fn, &[obj_value.into()], "is_none")
+                    .map_err(|e| e.to_string())?;
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_optional_is_none should return a basic value"))
             }
             _ => Err(format!(
                 "Method {} not implemented for Optionals",
