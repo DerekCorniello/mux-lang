@@ -1,5 +1,4 @@
 // Module declarations
-#![allow(clippy::collapsible_if)]
 
 pub mod error;
 pub mod format;
@@ -401,12 +400,11 @@ impl SemanticAnalyzer {
             },
             TypeKind::Named(name, type_args) => {
                 // Handle type parameters (generic type variables)
-                if type_args.is_empty() {
-                    if let Some(symbol) = self.symbol_table.lookup(name) {
-                        if matches!(symbol.kind, SymbolKind::Type) {
-                            return Ok(Type::Variable(name.clone()));
-                        }
-                    }
+                if type_args.is_empty()
+                    && let Some(symbol) = self.symbol_table.lookup(name)
+                    && matches!(symbol.kind, SymbolKind::Type)
+                {
+                    return Ok(Type::Variable(name.clone()));
                 }
 
                 // Handle built-in generic types
@@ -570,28 +568,25 @@ impl SemanticAnalyzer {
                         // Check if trying to assign to a const field
                         let obj_type = self.get_expression_type(obj_expr)?;
 
-                        if let Type::Named(class_name, _) = &obj_type {
-                            if let Some(symbol) = self.symbol_table.lookup(class_name) {
-                                if let Some((field_type, is_const)) = symbol.fields.get(field) {
-                                    // Check if trying to assign to a const field
-                                    if *is_const {
-                                        return Err(SemanticError::with_help(
-                                            format!("Cannot assign to const field '{}'", field),
-                                            expr.span,
-                                            "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
-                                        ));
-                                    }
+                        if let Type::Named(class_name, _) = &obj_type
+                            && let Some(symbol) = self.symbol_table.lookup(class_name)
+                        {
+                            if let Some((_field_type, is_const)) = symbol.fields.get(field)
+                                && *is_const
+                            {
+                                return Err(SemanticError::with_help(
+                                    format!("Cannot assign to const field '{}'", field),
+                                    expr.span,
+                                    "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
+                                ));
+                            }
 
-                                    self.check_type_compatibility(
-                                        field_type,
-                                        &right_type,
-                                        expr.span,
-                                    )?;
-                                } else {
-                                    return Err(
-                                        self.field_not_found_error(field, class_name, left.span)
-                                    );
-                                }
+                            if let Some((field_type, _)) = symbol.fields.get(field) {
+                                self.check_type_compatibility(field_type, &right_type, expr.span)?;
+                            } else {
+                                return Err(
+                                    self.field_not_found_error(field, class_name, left.span)
+                                );
                             }
                         }
                     } else if let crate::ast::ExpressionKind::Unary {
@@ -662,38 +657,37 @@ impl SemanticAnalyzer {
                     {
                         let obj_type = self.get_expression_type(obj_expr)?;
 
-                        if let Type::Named(class_name, _) = &obj_type {
-                            if let Some(symbol) = self.symbol_table.lookup(class_name) {
-                                if let Some((_field_type, is_const)) = symbol.fields.get(field) {
-                                    // Check if trying to modify a const field
-                                    if *is_const {
-                                        return Err(SemanticError::with_help(
-                                            format!("Cannot modify const field '{}'", field),
-                                            expr.span,
-                                            "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
-                                        ));
+                        if let Type::Named(class_name, _) = &obj_type
+                            && let Some(symbol) = self.symbol_table.lookup(class_name)
+                        {
+                            if let Some((_field_type, is_const)) = symbol.fields.get(field) {
+                                // Check if trying to modify a const field
+                                if *is_const {
+                                    return Err(SemanticError::with_help(
+                                        format!("Cannot modify const field '{}'", field),
+                                        expr.span,
+                                        "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
+                                    ));
+                                }
+
+                                let base_op = match op {
+                                    crate::ast::BinaryOp::AddAssign => crate::ast::BinaryOp::Add,
+                                    crate::ast::BinaryOp::SubtractAssign => {
+                                        crate::ast::BinaryOp::Subtract
                                     }
+                                    crate::ast::BinaryOp::MultiplyAssign => {
+                                        crate::ast::BinaryOp::Multiply
+                                    }
+                                    crate::ast::BinaryOp::DivideAssign => {
+                                        crate::ast::BinaryOp::Divide
+                                    }
+                                    crate::ast::BinaryOp::ModuloAssign => {
+                                        crate::ast::BinaryOp::Modulo
+                                    }
+                                    _ => unreachable!(),
+                                };
 
-                                    let base_op = match op {
-                                        crate::ast::BinaryOp::AddAssign => {
-                                            crate::ast::BinaryOp::Add
-                                        }
-                                        crate::ast::BinaryOp::SubtractAssign => {
-                                            crate::ast::BinaryOp::Subtract
-                                        }
-                                        crate::ast::BinaryOp::MultiplyAssign => {
-                                            crate::ast::BinaryOp::Multiply
-                                        }
-                                        crate::ast::BinaryOp::DivideAssign => {
-                                            crate::ast::BinaryOp::Divide
-                                        }
-                                        crate::ast::BinaryOp::ModuloAssign => {
-                                            crate::ast::BinaryOp::Modulo
-                                        }
-                                        _ => unreachable!(),
-                                    };
-
-                                    self.resolve_binary_operator(&left_type, &right_type, &base_op)
+                                self.resolve_binary_operator(&left_type, &right_type, &base_op)
                                         .ok_or_else(|| SemanticError::with_help(
                                             format!(
                                                 "Operator '{}' is not supported between types {} and {}",
@@ -709,11 +703,10 @@ impl SemanticAnalyzer {
                                                 format_type(&right_type)
                                             ),
                                         ))?;
-                                } else {
-                                    return Err(
-                                        self.field_not_found_error(field, class_name, left.span)
-                                    );
-                                }
+                            } else {
+                                return Err(
+                                    self.field_not_found_error(field, class_name, left.span)
+                                );
                             }
                         }
                     } else if let crate::ast::ExpressionKind::Unary {
@@ -1680,12 +1673,11 @@ impl SemanticAnalyzer {
                     if let Some(sig) = self.get_builtin_interface_method(bound, method_name) {
                         return Some(sig);
                     }
-                    if let Some(interface_symbol) = self.symbol_table.lookup(bound) {
-                        if let Some(sig) =
+                    if let Some(interface_symbol) = self.symbol_table.lookup(bound)
+                        && let Some(sig) =
                             self.find_interface_method(&interface_symbol, method_name)
-                        {
-                            return Some(sig);
-                        }
+                    {
+                        return Some(sig);
                     }
                 }
                 None
@@ -2307,47 +2299,46 @@ impl SemanticAnalyzer {
                     let mut implemented_interfaces = std::collections::HashMap::new();
                     for trait_ref in traits {
                         // lookup the interface and get its methods
-                        if let Some(interface_symbol) = self.symbol_table.lookup(&trait_ref.name) {
-                            if let Some(interface_methods) =
+                        if let Some(interface_symbol) = self.symbol_table.lookup(&trait_ref.name)
+                            && let Some(interface_methods) =
                                 interface_symbol.interfaces.get(&trait_ref.name)
-                            {
-                                // Substitute type_args into interface methods
-                                let resolved_args = trait_ref
-                                    .type_args
+                        {
+                            // Substitute type_args into interface methods
+                            let resolved_args = trait_ref
+                                .type_args
+                                .iter()
+                                .map(|arg| self.resolve_type(arg))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            let interface_type_params = &interface_symbol.type_params;
+                            let mut substituted_methods = std::collections::HashMap::new();
+                            for (method_name, method_sig) in interface_methods {
+                                let sub_params = method_sig
+                                    .params
                                     .iter()
-                                    .map(|arg| self.resolve_type(arg))
-                                    .collect::<Result<Vec<_>, _>>()?;
-                                let interface_type_params = &interface_symbol.type_params;
-                                let mut substituted_methods = std::collections::HashMap::new();
-                                for (method_name, method_sig) in interface_methods {
-                                    let sub_params = method_sig
-                                        .params
-                                        .iter()
-                                        .map(|p| {
-                                            self.substitute_type_params(
-                                                p,
-                                                interface_type_params,
-                                                &resolved_args,
-                                            )
-                                        })
-                                        .collect();
-                                    let sub_return = self.substitute_type_params(
-                                        &method_sig.return_type,
-                                        interface_type_params,
-                                        &resolved_args,
-                                    );
-                                    substituted_methods.insert(
-                                        method_name.clone(),
-                                        MethodSig {
-                                            params: sub_params,
-                                            return_type: sub_return,
-                                            is_static: method_sig.is_static,
-                                        },
-                                    );
-                                }
-                                implemented_interfaces
-                                    .insert(trait_ref.name.clone(), substituted_methods);
+                                    .map(|p| {
+                                        self.substitute_type_params(
+                                            p,
+                                            interface_type_params,
+                                            &resolved_args,
+                                        )
+                                    })
+                                    .collect();
+                                let sub_return = self.substitute_type_params(
+                                    &method_sig.return_type,
+                                    interface_type_params,
+                                    &resolved_args,
+                                );
+                                substituted_methods.insert(
+                                    method_name.clone(),
+                                    MethodSig {
+                                        params: sub_params,
+                                        return_type: sub_return,
+                                        is_static: method_sig.is_static,
+                                    },
+                                );
                             }
+                            implemented_interfaces
+                                .insert(trait_ref.name.clone(), substituted_methods);
                         }
                     }
                     let type_param_bounds: Vec<(String, Vec<String>)> = type_params
@@ -3172,20 +3163,20 @@ impl SemanticAnalyzer {
                 }
 
                 // Check if we're NOT in a void function (missing return value)
-                if !matches!(self.current_return_type, Some(Type::Void)) {
-                    if let Some(expected_type) = &self.current_return_type {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Missing return value; function expects '{}', but return has no value",
-                                format_type(expected_type)
-                            ),
-                            stmt.span,
-                            format!(
-                                "Add a value after 'return' that matches the function's return type '{}'. Example: return some_value",
-                                format_type(expected_type)
-                            ),
-                        ));
-                    }
+                if !matches!(self.current_return_type, Some(Type::Void))
+                    && let Some(expected_type) = &self.current_return_type
+                {
+                    return Err(SemanticError::with_help(
+                        format!(
+                            "Missing return value; function expects '{}', but return has no value",
+                            format_type(expected_type)
+                        ),
+                        stmt.span,
+                        format!(
+                            "Add a value after 'return' that matches the function's return type '{}'. Example: return some_value",
+                            format_type(expected_type)
+                        ),
+                    ));
                 }
                 return Ok(());
             }
@@ -3408,67 +3399,67 @@ impl SemanticAnalyzer {
             }
             Type::Named(type_name, _) => {
                 // Check if this is an enum type
-                if let Some(symbol) = self.symbol_table.lookup(type_name) {
-                    if let Some(variant_names) = &symbol.variants {
-                        // Enum exhaustiveness: check all variants covered
-                        let mut covered: std::collections::HashSet<String> =
-                            std::collections::HashSet::new();
-                        let mut has_wildcard = false;
+                if let Some(symbol) = self.symbol_table.lookup(type_name)
+                    && let Some(variant_names) = &symbol.variants
+                {
+                    // Enum exhaustiveness: check all variants covered
+                    let mut covered: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
+                    let mut has_wildcard = false;
 
-                        for arm in arms {
-                            match &arm.pattern {
-                                PatternNode::Wildcard => {
-                                    has_wildcard = true;
-                                    break;
-                                }
-                                PatternNode::EnumVariant { name, .. } => {
-                                    // Only count variant as covered if NO guard
-                                    if arm.guard.is_none() {
-                                        covered.insert(name.clone());
-                                    }
-                                }
-                                PatternNode::Identifier(name) => {
-                                    // Only count variant as covered if NO guard
-                                    if arm.guard.is_none() && variant_names.contains(name) {
-                                        covered.insert(name.clone());
-                                    }
-                                }
-                                _ => {}
+                    for arm in arms {
+                        match &arm.pattern {
+                            PatternNode::Wildcard => {
+                                has_wildcard = true;
+                                break;
                             }
+                            PatternNode::EnumVariant { name, .. } => {
+                                // Only count variant as covered if NO guard
+                                if arm.guard.is_none() {
+                                    covered.insert(name.clone());
+                                }
+                            }
+                            PatternNode::Identifier(name) => {
+                                // Only count variant as covered if NO guard
+                                if arm.guard.is_none() && variant_names.contains(name) {
+                                    covered.insert(name.clone());
+                                }
+                            }
+                            _ => {}
                         }
+                    }
 
-                        if has_wildcard {
-                            return Ok(());
-                        }
-
-                        let uncovered: Vec<&String> = variant_names
-                            .iter()
-                            .filter(|v| !covered.contains(*v))
-                            .collect();
-
-                        if !uncovered.is_empty() {
-                            let uncovered_list = uncovered
-                                .iter()
-                                .map(|s| s.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Non-exhaustive match: missing variant{} of '{}': {}",
-                                    if uncovered.len() > 1 { "s" } else { "" },
-                                    type_name,
-                                    uncovered_list
-                                ),
-                                expr_span,
-                                format!(
-                                    "Add match arm{} for: {}, or add a wildcard '_' pattern",
-                                    if uncovered.len() > 1 { "s" } else { "" },
-                                    uncovered_list
-                                ),
-                            ));
-                        }
+                    if has_wildcard {
                         return Ok(());
                     }
+
+                    let uncovered: Vec<&String> = variant_names
+                        .iter()
+                        .filter(|v| !covered.contains(*v))
+                        .collect();
+
+                    if !uncovered.is_empty() {
+                        let uncovered_list = uncovered
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return Err(SemanticError::with_help(
+                            format!(
+                                "Non-exhaustive match: missing variant{} of '{}': {}",
+                                if uncovered.len() > 1 { "s" } else { "" },
+                                type_name,
+                                uncovered_list
+                            ),
+                            expr_span,
+                            format!(
+                                "Add match arm{} for: {}, or add a wildcard '_' pattern",
+                                if uncovered.len() > 1 { "s" } else { "" },
+                                uncovered_list
+                            ),
+                        ));
+                    }
+                    return Ok(());
                 }
                 // Named type but not an enum and not Result: require wildcard
                 self.require_wildcard_pattern(arms, expr_type, expr_span)
@@ -3853,16 +3844,15 @@ impl SemanticAnalyzer {
                         }
 
                         // Check if trying to modify a constant
-                        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
-                            if let Some(symbol) = self.symbol_table.lookup(name) {
-                                if symbol.kind == SymbolKind::Constant {
-                                    return Err(SemanticError::with_help(
-                                        format!("Cannot modify constant '{}'", name),
-                                        *op_span,
-                                        "Constants cannot be modified after initialization",
-                                    ));
-                                }
-                            }
+                        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind
+                            && let Some(symbol) = self.symbol_table.lookup(name)
+                            && symbol.kind == SymbolKind::Constant
+                        {
+                            return Err(SemanticError::with_help(
+                                format!("Cannot modify constant '{}'", name),
+                                *op_span,
+                                "Constants cannot be modified after initialization",
+                            ));
                         }
 
                         if let crate::ast::ExpressionKind::FieldAccess {
@@ -3872,19 +3862,16 @@ impl SemanticAnalyzer {
                         {
                             // Check if field is const
                             let obj_type = self.get_expression_type(obj_expr)?;
-                            if let Type::Named(class_name, _) = &obj_type {
-                                if let Some(symbol) = self.symbol_table.lookup(class_name) {
-                                    if let Some((_field_type, is_const)) = symbol.fields.get(field)
-                                    {
-                                        if *is_const {
-                                            return Err(SemanticError::with_help(
-                                                format!("Cannot modify const field '{}'", field),
-                                                *op_span,
-                                                "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
-                                            ));
-                                        }
-                                    }
-                                }
+                            if let Type::Named(class_name, _) = &obj_type
+                                && let Some(symbol) = self.symbol_table.lookup(class_name)
+                                && let Some((_field_type, is_const)) = symbol.fields.get(field)
+                                && *is_const
+                            {
+                                return Err(SemanticError::with_help(
+                                    format!("Cannot modify const field '{}'", field),
+                                    *op_span,
+                                    "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
+                                ));
                             }
                         }
 
@@ -3896,10 +3883,11 @@ impl SemanticAnalyzer {
             }
             ExpressionKind::Call { func, args } => {
                 // Check for undefined function before analyzing
-                if let ExpressionKind::Identifier(name) = &func.kind {
-                    if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
-                        return Err(self.undefined_symbol_error("function", name, func.span));
-                    }
+                if let ExpressionKind::Identifier(name) = &func.kind
+                    && !self.symbol_table.exists(name)
+                    && self.get_builtin_sig(name).is_none()
+                {
+                    return Err(self.undefined_symbol_error("function", name, func.span));
                 }
 
                 self.analyze_expression(func)?;
@@ -3907,23 +3895,23 @@ impl SemanticAnalyzer {
                     self.analyze_expression(arg)?;
                 }
                 // Special check for Some
-                if let ExpressionKind::Identifier(name) = &func.kind {
-                    if name == "Some" {
-                        if args.len() != 1 {
-                            return Err(SemanticError::with_help(
-                                format!("Some() takes exactly 1 argument, got {}", args.len()),
-                                expr.span,
-                                "Wrap a single value in Some(), e.g. Some(42)",
-                            ));
-                        }
-                        let arg_type = self.get_expression_type(&args[0])?;
-                        if let Type::Optional(_) = arg_type {
-                            return Err(SemanticError::with_help(
-                                "Some() cannot wrap an Optional value",
-                                expr.span,
-                                "The argument to Some() must not be Optional. Remove the nested Some() or unwrap the inner value first.",
-                            ));
-                        }
+                if let ExpressionKind::Identifier(name) = &func.kind
+                    && name == "Some"
+                {
+                    if args.len() != 1 {
+                        return Err(SemanticError::with_help(
+                            format!("Some() takes exactly 1 argument, got {}", args.len()),
+                            expr.span,
+                            "Wrap a single value in Some(), e.g. Some(42)",
+                        ));
+                    }
+                    let arg_type = self.get_expression_type(&args[0])?;
+                    if let Type::Optional(_) = arg_type {
+                        return Err(SemanticError::with_help(
+                            "Some() cannot wrap an Optional value",
+                            expr.span,
+                            "The argument to Some() must not be Optional. Remove the nested Some() or unwrap the inner value first.",
+                        ));
                     }
                 }
                 // Trigger comprehensive type checking (callable, method existence, args)
@@ -4196,15 +4184,15 @@ impl SemanticAnalyzer {
                             "Add a return statement at the end of every branch in the lambda body",
                         ));
                     }
-                    if let Some(last_stmt) = body.last() {
-                        if let StatementKind::Return(Some(ret_expr)) = &last_stmt.kind {
-                            let actual_type = self.get_expression_type(ret_expr)?;
-                            self.check_type_compatibility(
-                                &lambda_return_type,
-                                &actual_type,
-                                ret_expr.span,
-                            )?;
-                        }
+                    if let Some(last_stmt) = body.last()
+                        && let StatementKind::Return(Some(ret_expr)) = &last_stmt.kind
+                    {
+                        let actual_type = self.get_expression_type(ret_expr)?;
+                        self.check_type_compatibility(
+                            &lambda_return_type,
+                            &actual_type,
+                            ret_expr.span,
+                        )?;
                     }
                 }
 
@@ -5073,12 +5061,11 @@ impl SemanticAnalyzer {
                 // Check if it's a local variable (parameter or declared in lambda body)
                 if !local_vars.contains(name) {
                     // Check if it exists in outer scopes
-                    if let Some(symbol) = self.symbol_table.lookup(name) {
-                        if matches!(symbol.kind, SymbolKind::Variable) {
-                            if let Some(var_type) = &symbol.type_ {
-                                free_vars.insert(name.clone(), var_type.clone());
-                            }
-                        }
+                    if let Some(symbol) = self.symbol_table.lookup(name)
+                        && matches!(symbol.kind, SymbolKind::Variable)
+                        && let Some(var_type) = &symbol.type_
+                    {
+                        free_vars.insert(name.clone(), var_type.clone());
                     }
                 }
             }
@@ -5156,14 +5143,14 @@ impl SemanticAnalyzer {
         op_span: &Span,
     ) -> Result<(), SemanticError> {
         if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
-            if let Some(symbol) = self.symbol_table.lookup(name) {
-                if symbol.kind == SymbolKind::Constant {
-                    return Err(SemanticError::with_help(
-                        format!("Cannot modify constant '{}'", name),
-                        *op_span,
-                        "Constants cannot be modified after initialization",
-                    ));
-                }
+            if let Some(symbol) = self.symbol_table.lookup(name)
+                && symbol.kind == SymbolKind::Constant
+            {
+                return Err(SemanticError::with_help(
+                    format!("Cannot modify constant '{}'", name),
+                    *op_span,
+                    "Constants cannot be modified after initialization",
+                ));
             }
         } else if let crate::ast::ExpressionKind::FieldAccess {
             expr: obj_expr,
@@ -5171,18 +5158,16 @@ impl SemanticAnalyzer {
         } = &expr.kind
         {
             let obj_type = self.get_expression_type(obj_expr)?;
-            if let Type::Named(class_name, _) = &obj_type {
-                if let Some(symbol) = self.symbol_table.lookup(class_name) {
-                    if let Some((_, is_const)) = symbol.fields.get(field) {
-                        if *is_const {
-                            return Err(SemanticError::with_help(
-                                format!("Cannot modify const field '{}'", field),
-                                *op_span,
-                                "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
-                            ));
-                        }
-                    }
-                }
+            if let Type::Named(class_name, _) = &obj_type
+                && let Some(symbol) = self.symbol_table.lookup(class_name)
+                && let Some((_, is_const)) = symbol.fields.get(field)
+                && *is_const
+            {
+                return Err(SemanticError::with_help(
+                    format!("Cannot modify const field '{}'", field),
+                    *op_span,
+                    "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
+                ));
             }
         }
         Ok(())

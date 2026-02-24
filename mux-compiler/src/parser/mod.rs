@@ -2,8 +2,6 @@
 //!
 //! This module contains the parser which converts a stream of tokens into an AST.
 
-#![allow(clippy::collapsible_if)]
-
 mod error;
 
 pub use error::{ParserError, ParserResult};
@@ -1018,10 +1016,9 @@ impl<'a> Parser<'a> {
                     StatementKind::If { .. } | StatementKind::While { .. } | StatementKind::For { .. } | StatementKind::Match { .. } | StatementKind::Function { .. }
                 )
             )
+            && let Err(e) = self.check_statement_termination()
         {
-            if let Err(e) = self.check_statement_termination() {
-                self.errors.push(e);
-            }
+            self.errors.push(e);
         }
 
         Ok(result)
@@ -1086,14 +1083,13 @@ impl<'a> Parser<'a> {
             }
         }
 
-        if let Some(j) = skip_type(&self.tokens, i) {
-            if j < n {
-                if let TokenType::Id(_) = self.tokens[j].token_type {
-                    if j + 1 < n && self.tokens[j + 1].token_type == TokenType::Eq {
-                        return true;
-                    }
-                }
-            }
+        if let Some(j) = skip_type(&self.tokens, i)
+            && j < n
+            && let TokenType::Id(_) = self.tokens[j].token_type
+            && j + 1 < n
+            && self.tokens[j + 1].token_type == TokenType::Eq
+        {
+            return true;
         }
         false
     }
@@ -1608,10 +1604,11 @@ impl<'a> Parser<'a> {
 
     fn validate_postfix_in_statement(&self, expr: &ExpressionNode) -> ParserResult<()> {
         // If this is a postfix ++ or -- at the top level, it's valid
-        if let ExpressionKind::Unary { op, postfix, .. } = &expr.kind {
-            if *postfix && matches!(op, UnaryOp::Incr | UnaryOp::Decr) {
-                return Ok(());
-            }
+        if let ExpressionKind::Unary { op, postfix, .. } = &expr.kind
+            && *postfix
+            && matches!(op, UnaryOp::Incr | UnaryOp::Decr)
+        {
+            return Ok(());
         }
         // Otherwise, check that no nested postfix ++ or -- exist
         self.check_no_postfix_increment_decrement(expr)
@@ -2588,15 +2585,13 @@ impl<'a> Parser<'a> {
                     }
                 }
 
-                if found_newlines {
-                    if let Some(next) = self.tokens.get(lookahead) {
-                        match next.token_type {
-                            TokenType::Dot | TokenType::OpenParen | TokenType::OpenBracket => {
-                                self.current = lookahead;
-                                continue;
-                            }
-                            _ => {}
+                if found_newlines && let Some(next) = self.tokens.get(lookahead) {
+                    match next.token_type {
+                        TokenType::Dot | TokenType::OpenParen | TokenType::OpenBracket => {
+                            self.current = lookahead;
+                            continue;
                         }
+                        _ => {}
                     }
                 }
                 break;
@@ -3307,16 +3302,16 @@ mod tests {
                 }
             }
             Err((nodes, errors)) => {
-                if !nodes.is_empty() {
-                    if let AstNode::Function(func) = &nodes[0] {
-                        assert_eq!(func.name, "add");
-                        assert_eq!(func.params.len(), 2);
-                        assert_eq!(
-                            func.return_type.kind,
-                            TypeKind::Primitive(PrimitiveType::Int)
-                        );
-                        return;
-                    }
+                if !nodes.is_empty()
+                    && let AstNode::Function(func) = &nodes[0]
+                {
+                    assert_eq!(func.name, "add");
+                    assert_eq!(func.params.len(), 2);
+                    assert_eq!(
+                        func.return_type.kind,
+                        TypeKind::Primitive(PrimitiveType::Int)
+                    );
+                    return;
                 }
                 panic!("Failed to parse function: {:?}", errors);
             }
