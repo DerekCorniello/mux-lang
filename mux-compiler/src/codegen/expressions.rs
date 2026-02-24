@@ -53,6 +53,13 @@ impl<'a> CodeGenerator<'a> {
         Ok(call_args)
     }
 
+    /// Coerce arguments for FFI/calling convention compatibility.
+    /// This is NOT type coercion (types are already verified by semantic analysis).
+    /// Instead, this converts from Mux representation to C/FFI representation:
+    /// - Strings: extract raw *mut c_char from boxed Mux string
+    /// - Complex types (Variable, Optional, Named): box the value
+    ///
+    /// This is necessary infrastructure for calling external/runtime functions.
     fn coerce_import_arg(
         &mut self,
         arg_val: BasicValueEnum<'a>,

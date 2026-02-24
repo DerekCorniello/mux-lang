@@ -48,90 +48,49 @@ fn read_pattern(pattern: *const c_char) -> Result<String, String> {
     Ok(pattern)
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_datetime_year(timestamp: i64) -> *mut MuxResult {
+fn datetime_field(timestamp: i64, get_field: impl FnOnce(&DateTime<Utc>) -> i64) -> *mut MuxResult {
     match timestamp_to_datetime(timestamp) {
-        Some(dt) => Box::into_raw(Box::new(MuxResult::ok(crate::Value::Int(dt.year() as i64)))),
+        Some(dt) => Box::into_raw(Box::new(MuxResult::ok(crate::Value::Int(get_field(&dt))))),
         None => Box::into_raw(Box::new(MuxResult::err(format!(
             "Invalid timestamp: {}",
             timestamp
         )))),
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_datetime_year(timestamp: i64) -> *mut MuxResult {
+    datetime_field(timestamp, |dt| dt.year() as i64)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_datetime_month(timestamp: i64) -> *mut MuxResult {
-    match timestamp_to_datetime(timestamp) {
-        Some(dt) => Box::into_raw(Box::new(MuxResult::ok(
-            crate::Value::Int(dt.month() as i64),
-        ))),
-        None => Box::into_raw(Box::new(MuxResult::err(format!(
-            "Invalid timestamp: {}",
-            timestamp
-        )))),
-    }
+    datetime_field(timestamp, |dt| dt.month() as i64)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_datetime_day(timestamp: i64) -> *mut MuxResult {
-    match timestamp_to_datetime(timestamp) {
-        Some(dt) => Box::into_raw(Box::new(MuxResult::ok(crate::Value::Int(dt.day() as i64)))),
-        None => Box::into_raw(Box::new(MuxResult::err(format!(
-            "Invalid timestamp: {}",
-            timestamp
-        )))),
-    }
+    datetime_field(timestamp, |dt| dt.day() as i64)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_datetime_hour(timestamp: i64) -> *mut MuxResult {
-    match timestamp_to_datetime(timestamp) {
-        Some(dt) => Box::into_raw(Box::new(MuxResult::ok(crate::Value::Int(dt.hour() as i64)))),
-        None => Box::into_raw(Box::new(MuxResult::err(format!(
-            "Invalid timestamp: {}",
-            timestamp
-        )))),
-    }
+    datetime_field(timestamp, |dt| dt.hour() as i64)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_datetime_minute(timestamp: i64) -> *mut MuxResult {
-    match timestamp_to_datetime(timestamp) {
-        Some(dt) => Box::into_raw(Box::new(MuxResult::ok(crate::Value::Int(
-            dt.minute() as i64
-        )))),
-        None => Box::into_raw(Box::new(MuxResult::err(format!(
-            "Invalid timestamp: {}",
-            timestamp
-        )))),
-    }
+    datetime_field(timestamp, |dt| dt.minute() as i64)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_datetime_second(timestamp: i64) -> *mut MuxResult {
-    match timestamp_to_datetime(timestamp) {
-        Some(dt) => Box::into_raw(Box::new(MuxResult::ok(crate::Value::Int(
-            dt.second() as i64
-        )))),
-        None => Box::into_raw(Box::new(MuxResult::err(format!(
-            "Invalid timestamp: {}",
-            timestamp
-        )))),
-    }
+    datetime_field(timestamp, |dt| dt.second() as i64)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_datetime_weekday(timestamp: i64) -> *mut MuxResult {
-    match timestamp_to_datetime(timestamp) {
-        Some(dt) => {
-            let weekday = dt.weekday().num_days_from_sunday() as i64;
-            Box::into_raw(Box::new(MuxResult::ok(crate::Value::Int(weekday))))
-        }
-        None => Box::into_raw(Box::new(MuxResult::err(format!(
-            "Invalid timestamp: {}",
-            timestamp
-        )))),
-    }
+    datetime_field(timestamp, |dt| dt.weekday().num_days_from_sunday() as i64)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -178,6 +137,9 @@ pub extern "C" fn mux_datetime_format_local(
     }
 }
 
+/// Sleep for the specified number of seconds.
+/// Blocks the executing thread. For async/parallel use cases, consider using the `sync` module.
+/// Returns error if seconds is negative.
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_datetime_sleep(seconds: i64) -> *mut MuxResult {
     if seconds < 0 {
@@ -189,6 +151,9 @@ pub extern "C" fn mux_datetime_sleep(seconds: i64) -> *mut MuxResult {
     Box::into_raw(Box::new(MuxResult::ok(crate::Value::Unit)))
 }
 
+/// Sleep for the specified number of milliseconds.
+/// Blocks the executing thread. For async/parallel use cases, consider using the `sync` module.
+/// Returns error if milliseconds is negative.
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_datetime_sleep_millis(milliseconds: i64) -> *mut MuxResult {
     if milliseconds < 0 {

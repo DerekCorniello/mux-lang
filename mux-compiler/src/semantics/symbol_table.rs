@@ -114,115 +114,6 @@ fn datetime_fn(name: &'static str, params: &'static [Type], ret: Type) -> Stdlib
 /// All stdlib items organized by module.function or module.constant
 /// Using PHF for O(1) compile-time perfect hashing - ideal for large stdlibs
 pub static STDLIB_ITEMS: phf::Map<&'static str, StdlibItem> = phf::phf_map! {
-    // Math module - single argument float -> float functions
-    "math.sqrt" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_sqrt",
-    },
-    "math.sin" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_sin",
-    },
-    "math.cos" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_cos",
-    },
-    "math.tan" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_tan",
-    },
-    "math.asin" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_asin",
-    },
-    "math.acos" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_acos",
-    },
-    "math.atan" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_atan",
-    },
-    "math.ln" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_ln",
-    },
-    "math.log2" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_log2",
-    },
-    "math.log10" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_log10",
-    },
-    "math.exp" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_exp",
-    },
-    "math.abs" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_abs",
-    },
-    "math.floor" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_floor",
-    },
-    "math.ceil" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_ceil",
-    },
-    "math.round" => StdlibItem::Function {
-        params: FLOAT_PARAM,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_round",
-    },
-
-    // Math module - two argument float -> float functions
-    "math.atan2" => StdlibItem::Function {
-        params: FLOAT_FLOAT_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_atan2",
-    },
-    "math.log" => StdlibItem::Function {
-        params: FLOAT_FLOAT_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_log",
-    },
-    "math.min" => StdlibItem::Function {
-        params: FLOAT_FLOAT_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_min",
-    },
-    "math.max" => StdlibItem::Function {
-        params: FLOAT_FLOAT_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_max",
-    },
-    "math.hypot" => StdlibItem::Function {
-        params: FLOAT_FLOAT_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_hypot",
-    },
-    "math.pow" => StdlibItem::Function {
-        params: FLOAT_FLOAT_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Float),
-        llvm_name: "mux_math_pow",
-    },
-
     // Math module - constants (NOT functions!)
     "math.pi" => StdlibItem::Constant {
         ty: Type::Primitive(PrimitiveType::Float),
@@ -289,6 +180,48 @@ lazy_static! {
         m.insert("io.join", io_str_str_fn("mux_io_join", io_result(str_())));
         m.insert("io.basename", io_str_fn("mux_io_basename", io_result(str_())));
         m.insert("io.dirname", io_str_fn("mux_io_dirname", io_result(str_())));
+        m
+    };
+
+    // Math module - single argument float -> float functions
+    // Math module - two argument float -> float functions
+    pub static ref MATH_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        fn make_math_fn(name: &str, params: &'static [Type]) -> StdlibItem {
+            let llvm_name = format!("mux_math_{}", name);
+            StdlibItem::Function {
+                params,
+                ret: Type::Primitive(PrimitiveType::Float),
+                llvm_name: Box::leak(llvm_name.into_boxed_str()),
+            }
+        }
+
+        let mut m = HashMap::new();
+
+        // Single-arg math functions
+        m.insert("math.sqrt", make_math_fn("sqrt", FLOAT_PARAM));
+        m.insert("math.sin", make_math_fn("sin", FLOAT_PARAM));
+        m.insert("math.cos", make_math_fn("cos", FLOAT_PARAM));
+        m.insert("math.tan", make_math_fn("tan", FLOAT_PARAM));
+        m.insert("math.asin", make_math_fn("asin", FLOAT_PARAM));
+        m.insert("math.acos", make_math_fn("acos", FLOAT_PARAM));
+        m.insert("math.atan", make_math_fn("atan", FLOAT_PARAM));
+        m.insert("math.ln", make_math_fn("ln", FLOAT_PARAM));
+        m.insert("math.log2", make_math_fn("log2", FLOAT_PARAM));
+        m.insert("math.log10", make_math_fn("log10", FLOAT_PARAM));
+        m.insert("math.exp", make_math_fn("exp", FLOAT_PARAM));
+        m.insert("math.abs", make_math_fn("abs", FLOAT_PARAM));
+        m.insert("math.floor", make_math_fn("floor", FLOAT_PARAM));
+        m.insert("math.ceil", make_math_fn("ceil", FLOAT_PARAM));
+        m.insert("math.round", make_math_fn("round", FLOAT_PARAM));
+
+        // Two-arg math functions
+        m.insert("math.atan2", make_math_fn("atan2", FLOAT_FLOAT_PARAMS));
+        m.insert("math.log", make_math_fn("log", FLOAT_FLOAT_PARAMS));
+        m.insert("math.min", make_math_fn("min", FLOAT_FLOAT_PARAMS));
+        m.insert("math.max", make_math_fn("max", FLOAT_FLOAT_PARAMS));
+        m.insert("math.hypot", make_math_fn("hypot", FLOAT_FLOAT_PARAMS));
+        m.insert("math.pow", make_math_fn("pow", FLOAT_FLOAT_PARAMS));
+
         m
     };
 
@@ -383,6 +316,7 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (&'static str, &'static Stdlib
         .entries()
         .map(|(key, item)| (*key, item))
         .chain(IO_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
+        .chain(MATH_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
         .chain(DATETIME_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
         .chain(ASSERT_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
 }

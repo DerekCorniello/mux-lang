@@ -1,32 +1,29 @@
 //! Random number generation for Mux standard library
 
 use libc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Once;
 
-static SEED_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static INIT: Once = Once::new();
 
 /// Initialize random seed with a specific value
 /// # Safety
-/// This function is thread-safe due to atomic initialization check
+/// This function is thread-safe due to the Once implementation
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_rand_init(seed: i64) {
-    unsafe { libc::srand(seed as u32) }
-    SEED_INITIALIZED.store(true, Ordering::SeqCst);
+    INIT.call_once(|| unsafe { libc::srand(seed as u32) });
 }
 
 /// Get random integer (0 to RAND_MAX)
 /// Auto-initializes with time on first call if not explicitly seeded
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_rand_int() -> i64 {
-    // Auto-initialize with time if not done
-    if !SEED_INITIALIZED.load(Ordering::SeqCst) {
+    INIT.call_once(|| {
         let time_seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i32;
         unsafe { libc::srand(time_seed as u32) }
-        SEED_INITIALIZED.store(true, Ordering::SeqCst);
-    }
+    });
     unsafe { libc::rand() as i64 }
 }
 
@@ -37,9 +34,9 @@ pub extern "C" fn mux_rand_range(min: i64, max: i64) -> i64 {
     if min >= max {
         return min;
     }
-    let r = mux_rand_int();
     let range_size = max - min;
-    min + (r % range_size)
+    let scaled = ((mux_rand_int() as u128) * (range_size as u128)) >> 32;
+    min + (scaled as i64)
 }
 
 /// Get random float [0.0, 1.0)

@@ -9,6 +9,14 @@ fn panic_assert(msg: &str) -> ! {
     std::process::abort();
 }
 
+#[inline]
+fn deref_ptr<T>(ptr: *mut T, context: &str) -> &T {
+    if ptr.is_null() {
+        panic_assert(&format!("{} received null pointer", context));
+    }
+    unsafe { &*ptr }
+}
+
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_assert_assert(condition: i32, message: *const c_char) {
@@ -27,11 +35,8 @@ pub extern "C" fn mux_assert_assert(condition: i32, message: *const c_char) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_assert_eq(actual: *mut Value, expected: *mut Value) {
-    if actual.is_null() || expected.is_null() {
-        panic_assert("assert_eq received null pointer");
-    }
-    let actual_val = unsafe { &*actual };
-    let expected_val = unsafe { &*expected };
+    let actual_val = deref_ptr(actual, "assert_eq");
+    let expected_val = deref_ptr(expected, "assert_eq");
     if actual_val != expected_val {
         panic_assert(&format!("expected {}, got {}", expected_val, actual_val));
     }
@@ -40,11 +45,8 @@ pub extern "C" fn mux_assert_eq(actual: *mut Value, expected: *mut Value) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_assert_ne(actual: *mut Value, expected: *mut Value) {
-    if actual.is_null() || expected.is_null() {
-        panic_assert("assert_ne received null pointer");
-    }
-    let actual_val = unsafe { &*actual };
-    let expected_val = unsafe { &*expected };
+    let actual_val = deref_ptr(actual, "assert_ne");
+    let expected_val = deref_ptr(expected, "assert_ne");
     if actual_val == expected_val {
         panic_assert(&format!(
             "expected values to differ, but both were {}",
@@ -70,10 +72,8 @@ pub extern "C" fn mux_assert_false(condition: i32) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_assert_some(opt: *mut Optional) {
-    if opt.is_null() {
-        panic_assert("assert_some received null pointer");
-    }
-    match unsafe { &*opt } {
+    let opt_val = deref_ptr(opt, "assert_some");
+    match opt_val {
         Optional::None => panic_assert("expected Some, got None"),
         Optional::Some(_) => {}
     }
@@ -82,10 +82,8 @@ pub extern "C" fn mux_assert_some(opt: *mut Optional) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_assert_none(opt: *mut Optional) {
-    if opt.is_null() {
-        panic_assert("assert_none received null pointer");
-    }
-    match unsafe { &*opt } {
+    let opt_val = deref_ptr(opt, "assert_none");
+    match opt_val {
         Optional::None => {}
         Optional::Some(v) => panic_assert(&format!("expected None, got Some({})", v)),
     }
@@ -94,10 +92,8 @@ pub extern "C" fn mux_assert_none(opt: *mut Optional) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_assert_ok(res: *mut MuxResult) {
-    if res.is_null() {
-        panic_assert("assert_ok received null pointer");
-    }
-    match unsafe { &*res } {
+    let res_val = deref_ptr(res, "assert_ok");
+    match res_val {
         MuxResult::Err(e) => panic_assert(&format!("expected Ok, got Err({})", e)),
         MuxResult::Ok(_) => {}
     }
@@ -106,10 +102,8 @@ pub extern "C" fn mux_assert_ok(res: *mut MuxResult) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_assert_err(res: *mut MuxResult) {
-    if res.is_null() {
-        panic_assert("assert_err received null pointer");
-    }
-    match unsafe { &*res } {
+    let res_val = deref_ptr(res, "assert_err");
+    match res_val {
         MuxResult::Err(_) => {}
         MuxResult::Ok(v) => panic_assert(&format!("expected Err, got Ok({})", v)),
     }

@@ -133,11 +133,21 @@ mux_math_extern!(max, a, b);
 mux_math_extern!(hypot, x, y);
 
 /// Integer exponentiation using exponentiation by squaring.
-/// Returns 0 for negative exponents (integer division semantics).
+/// Handles negative exponents: 1^(-n)=1, (-1)^(-n)=1/-1, other^(-n)=0 (truncates).
 /// Uses wrapping multiplication on overflow.
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_int_pow(base: i64, exp: i64) -> i64 {
     if exp < 0 {
+        // Handle special cases: 1^(-n) = 1, (-1)^(-n) = 1/-1
+        if base == 1 {
+            return 1;
+        }
+        if base == -1 {
+            // (-1)^(-n) = 1/((-1)^n)
+            // If n is odd: 1/(-1) = -1; if n is even: 1/1 = 1
+            return if (-exp) % 2 == 0 { 1 } else { -1 };
+        }
+        // 1/(other^n) truncates to 0 for integers
         return 0;
     }
     let mut result = 1i64;
