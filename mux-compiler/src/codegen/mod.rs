@@ -93,6 +93,73 @@ impl<'a> CodeGenerator<'a> {
         let module = context.create_module("mux_module");
         let builder = context.create_builder();
 
+        Self::declare_runtime_functions(&module, context);
+
+        let mut type_map = HashMap::new();
+        let mut enum_variants = HashMap::new();
+
+        let i32_type = context.i32_type();
+        let i8_ptr = context.ptr_type(AddressSpace::default());
+        let struct_type = context.struct_type(&[i32_type.into(), i8_ptr.into()], false);
+        type_map.insert("Optional".to_string(), struct_type.into());
+        type_map.insert("Result".to_string(), struct_type.into());
+
+        use std::collections::BTreeMap;
+        let mut ordered_variants = BTreeMap::new();
+        ordered_variants.insert(
+            "Optional".to_string(),
+            vec!["Some".to_string(), "None".to_string()],
+        );
+        ordered_variants.insert(
+            "Result".to_string(),
+            vec!["Ok".to_string(), "Err".to_string()],
+        );
+
+        for (enum_name, variants) in ordered_variants {
+            enum_variants.insert(enum_name, variants);
+        }
+
+        for (name, symbol) in analyzer.all_symbols() {
+            if symbol.kind == crate::semantics::SymbolKind::Enum {
+                let mut variants = vec![];
+                for method_name in symbol.methods.keys() {
+                    variants.push(method_name.clone());
+                }
+                enum_variants.insert(name.clone(), variants);
+            }
+        }
+
+        Self {
+            context,
+            module,
+            builder,
+            analyzer,
+            type_map,
+            vtable_map: HashMap::new(),
+            vtable_type_map: HashMap::new(),
+            enum_variants,
+            enum_variant_fields: HashMap::new(),
+            field_map: HashMap::new(),
+            field_types_map: HashMap::new(),
+            classes: HashMap::new(),
+            constructors: HashMap::new(),
+            lambda_counter: 0,
+            string_counter: 0,
+            label_counter: 0,
+            variables: HashMap::new(),
+            global_variables: HashMap::new(),
+            functions: HashMap::new(),
+            function_nodes: HashMap::new(),
+            current_function_name: None,
+            current_function_return_type: None,
+            generic_context: None,
+            context_stack: Vec::new(),
+            generated_methods: HashMap::new(),
+            rc_scope_stack: Vec::new(),
+        }
+    }
+
+    fn declare_runtime_functions(module: &Module<'a>, context: &'a Context) {
         let void_type = context.void_type();
         let i64_type = context.i64_type();
         let f64_type = context.f64_type();
@@ -191,7 +258,7 @@ impl<'a> CodeGenerator<'a> {
             ("mux_char_to_int", i64_type.into()),
             ("mux_char_to_string", i64_type.into()),
         ] {
-            Self::add_conversion_fn(&module, i8_ptr, name, from_ty);
+            Self::add_conversion_fn(module, i8_ptr, name, from_ty);
         }
 
         for name in [
@@ -206,7 +273,7 @@ impl<'a> CodeGenerator<'a> {
             "mux_set_value",
             "mux_map_to_string",
         ] {
-            Self::add_i8_fn(&module, i8_ptr, name, &[i8_ptr.into()]);
+            Self::add_i8_fn(module, i8_ptr, name, &[i8_ptr.into()]);
         }
 
         module.add_function(
@@ -357,16 +424,16 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
 
-        Self::add_typed_getter(&module, i8_ptr, "mux_value_get_int", i64_type.into());
-        Self::add_typed_getter(&module, i8_ptr, "mux_value_get_float", f64_type.into());
+        Self::add_typed_getter(module, i8_ptr, "mux_value_get_int", i64_type.into());
+        Self::add_typed_getter(module, i8_ptr, "mux_value_get_float", f64_type.into());
         Self::add_typed_getter(
-            &module,
+            module,
             i8_ptr,
             "mux_value_get_bool",
             context.i32_type().into(),
         );
         Self::add_typed_getter(
-            &module,
+            module,
             i8_ptr,
             "mux_value_get_type_tag",
             context.i32_type().into(),
@@ -609,18 +676,18 @@ impl<'a> CodeGenerator<'a> {
             ("mux_float_value", f64_type.into()),
             ("mux_bool_value", context.i32_type().into()),
         ] {
-            Self::add_conversion_fn(&module, i8_ptr, name, from_ty);
+            Self::add_conversion_fn(module, i8_ptr, name, from_ty);
         }
-        Self::add_i8_fn(&module, i8_ptr, "mux_string_value", &[i8_ptr.into()]);
-        Self::add_typed_getter(&module, i8_ptr, "mux_int_from_value", i64_type.into());
-        Self::add_typed_getter(&module, i8_ptr, "mux_float_from_value", f64_type.into());
+        Self::add_i8_fn(module, i8_ptr, "mux_string_value", &[i8_ptr.into()]);
+        Self::add_typed_getter(module, i8_ptr, "mux_int_from_value", i64_type.into());
+        Self::add_typed_getter(module, i8_ptr, "mux_float_from_value", f64_type.into());
         Self::add_typed_getter(
-            &module,
+            module,
             i8_ptr,
             "mux_bool_from_value",
             context.i32_type().into(),
         );
-        Self::add_i8_fn(&module, i8_ptr, "mux_string_from_value", &[i8_ptr.into()]);
+        Self::add_i8_fn(module, i8_ptr, "mux_string_from_value", &[i8_ptr.into()]);
 
         for (name, from_ty) in [
             ("mux_optional_some_int", i64_type.into()),
@@ -632,7 +699,7 @@ impl<'a> CodeGenerator<'a> {
             ("mux_result_ok_bool", context.i32_type().into()),
             ("mux_result_ok_char", i64_type.into()),
         ] {
-            Self::add_conversion_fn(&module, i8_ptr, name, from_ty);
+            Self::add_conversion_fn(module, i8_ptr, name, from_ty);
         }
         for name in [
             "mux_optional_some_string",
@@ -644,41 +711,41 @@ impl<'a> CodeGenerator<'a> {
             "mux_optional_get_value",
             "mux_result_data",
         ] {
-            Self::add_i8_fn(&module, i8_ptr, name, &[i8_ptr.into()]);
+            Self::add_i8_fn(module, i8_ptr, name, &[i8_ptr.into()]);
         }
         module.add_function("mux_optional_none", i8_ptr.fn_type(&[], false), None);
         Self::add_typed_getter(
-            &module,
+            module,
             i8_ptr,
             "mux_optional_discriminant",
             context.i32_type().into(),
         );
         Self::add_typed_getter(
-            &module,
+            module,
             i8_ptr,
             "mux_optional_is_some",
             context.bool_type().into(),
         );
         Self::add_typed_getter(
-            &module,
+            module,
             i8_ptr,
             "mux_optional_is_none",
             context.bool_type().into(),
         );
         Self::add_typed_getter(
-            &module,
+            module,
             i8_ptr,
             "mux_result_discriminant",
             context.i32_type().into(),
         );
         Self::add_typed_getter(
-            &module,
+            module,
             i8_ptr,
             "mux_result_is_ok",
             context.bool_type().into(),
         );
         Self::add_typed_getter(
-            &module,
+            module,
             i8_ptr,
             "mux_result_is_err",
             context.bool_type().into(),
@@ -696,7 +763,6 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
 
-        // math module extern declarations
         macro_rules! declare_extern_batch {
             ($module:expr, $names:expr, $fn_type:expr) => {
                 for name in $names {
@@ -749,7 +815,6 @@ impl<'a> CodeGenerator<'a> {
 
         module.add_function("mux_flush_stdout", void_type.fn_type(&[], false), None);
 
-        // IO Package Functions - All return *mut MuxResult (opaque pointer)
         for name in [
             "mux_io_read_file",
             "mux_io_exists",
@@ -761,22 +826,21 @@ impl<'a> CodeGenerator<'a> {
             "mux_io_basename",
             "mux_io_dirname",
         ] {
-            Self::add_i8_fn(&module, i8_ptr, name, &[i8_ptr.into()]);
+            Self::add_i8_fn(module, i8_ptr, name, &[i8_ptr.into()]);
         }
         Self::add_i8_fn(
-            &module,
+            module,
             i8_ptr,
             "mux_io_write_file",
             &[i8_ptr.into(), i8_ptr.into()],
         );
         Self::add_i8_fn(
-            &module,
+            module,
             i8_ptr,
             "mux_io_join",
             &[i8_ptr.into(), i8_ptr.into()],
         );
 
-        // DateTime module functions - all return *mut MuxResult (i8_ptr)
         for name in ["mux_datetime_now", "mux_datetime_now_millis"] {
             module.add_function(name, i8_ptr.fn_type(&[], false), None);
         }
@@ -813,7 +877,6 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
 
-        // Random module functions
         module.add_function(
             "mux_rand_init",
             void_type.fn_type(&[i64_type.into()], false),
@@ -836,7 +899,6 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
 
-        // Assert module functions - all return void
         module.add_function(
             "mux_assert_assert",
             void_type.fn_type(&[context.bool_type().into(), i8_ptr.into()], false),
@@ -882,70 +944,6 @@ impl<'a> CodeGenerator<'a> {
             void_type.fn_type(&[i8_ptr.into()], false),
             None,
         );
-
-        let mut type_map = HashMap::new();
-        let mut enum_variants = HashMap::new();
-
-        let i32_type = context.i32_type();
-        let i8_ptr = context.ptr_type(AddressSpace::default());
-        let struct_type = context.struct_type(&[i32_type.into(), i8_ptr.into()], false);
-        type_map.insert("Optional".to_string(), struct_type.into());
-        type_map.insert("Result".to_string(), struct_type.into());
-
-        // use BTreeMap to ensure deterministic ordering of enum variants
-        use std::collections::BTreeMap;
-        let mut ordered_variants = BTreeMap::new();
-        ordered_variants.insert(
-            "Optional".to_string(),
-            vec!["Some".to_string(), "None".to_string()],
-        );
-        ordered_variants.insert(
-            "Result".to_string(),
-            vec!["Ok".to_string(), "Err".to_string()],
-        );
-
-        for (enum_name, variants) in ordered_variants {
-            enum_variants.insert(enum_name, variants);
-        }
-
-        for (name, symbol) in analyzer.all_symbols() {
-            if symbol.kind == crate::semantics::SymbolKind::Enum {
-                let mut variants = vec![];
-                for method_name in symbol.methods.keys() {
-                    variants.push(method_name.clone());
-                }
-                enum_variants.insert(name.clone(), variants);
-            }
-        }
-
-        Self {
-            context,
-            module,
-            builder,
-            analyzer,
-            type_map,
-            vtable_map: HashMap::new(),
-            vtable_type_map: HashMap::new(),
-            enum_variants,
-            enum_variant_fields: HashMap::new(),
-            field_map: HashMap::new(),
-            field_types_map: HashMap::new(),
-            classes: HashMap::new(),
-            constructors: HashMap::new(),
-            lambda_counter: 0,
-            string_counter: 0,
-            label_counter: 0,
-            variables: HashMap::new(),
-            global_variables: HashMap::new(),
-            functions: HashMap::new(),
-            function_nodes: HashMap::new(),
-            current_function_name: None,
-            current_function_return_type: None,
-            generic_context: None,
-            context_stack: Vec::new(),
-            generated_methods: HashMap::new(),
-            rc_scope_stack: Vec::new(),
-        }
     }
     /// Create an alloca instruction in the entry block of the current function.
     /// This ensures proper LLVM dominance - allocas must be in the entry block
