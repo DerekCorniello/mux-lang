@@ -68,10 +68,10 @@ impl ModuleResolver {
             .map_err(|e| format!("Cannot resolve module path {}: {}", module_path, e))?;
 
         // Check cache by canonical path
-        if let Some(cached_module_path) = self.canonical_cache.get(&canonical_path) {
-            if let Some(nodes) = self.compiled_modules.get(cached_module_path) {
-                return Ok(nodes.clone());
-            }
+        if let Some(cached_module_path) = self.canonical_cache.get(&canonical_path)
+            && let Some(nodes) = self.compiled_modules.get(cached_module_path)
+        {
+            return Ok(nodes.clone());
         }
 
         // Check circular imports
@@ -105,6 +105,50 @@ impl ModuleResolver {
 
     pub fn cache_module(&mut self, module_path: &str, nodes: Vec<AstNode>) {
         self.compiled_modules.insert(module_path.to_string(), nodes);
+    }
+
+    /// Check if a module path resolves to a file, directory, both, or neither.
+    /// Returns (has_file, has_directory) tuple.
+    pub fn check_module_path(&self, module_path: &str) -> (bool, bool) {
+        let mut file_path = self.base_path.clone();
+        for part in module_path.split('.') {
+            file_path.push(part);
+        }
+
+        let mux_file = file_path.with_extension("mux");
+        let dir_path = file_path;
+
+        let has_file = mux_file.exists() && mux_file.is_file();
+        let has_directory = dir_path.exists() && dir_path.is_dir();
+
+        (has_file, has_directory)
+    }
+
+    /// Get all .mux files in a directory module
+    pub fn get_submodules(&self, module_path: &str) -> Result<Vec<String>, String> {
+        let mut dir_path = self.base_path.clone();
+        for part in module_path.split('.') {
+            dir_path.push(part);
+        }
+
+        if !dir_path.exists() || !dir_path.is_dir() {
+            return Err(format!("Module directory not found: {}", module_path));
+        }
+
+        let mut submodules = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&dir_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file()
+                    && path.extension().is_some_and(|ext| ext == "mux")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    submodules.push(stem.to_string());
+                }
+            }
+        }
+
+        Ok(submodules)
     }
 
     fn module_path_to_file(&self, module_path: &str) -> Result<PathBuf, String> {

@@ -77,6 +77,8 @@ impl<'a> CodeGenerator<'a> {
             Type::Tuple(_, _) => true,
             // Optional contains boxed values
             Type::Optional(_) => true,
+            // Result contains boxed values
+            Type::Result(_, _) => true,
             // References are pointers to RC values
             Type::Reference(_) => true,
             // Function types are pointers, not RC

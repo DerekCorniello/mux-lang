@@ -2,7 +2,5 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-stdout:
 Key not found in map
-
 Program exited with status: exit status: 1

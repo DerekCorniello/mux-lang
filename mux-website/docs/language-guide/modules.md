@@ -8,11 +8,31 @@ Mux uses Python-style imports for code organization and reuse.
 import math
 import shapes.circle
 import utils.logger as log
+import std.math
+import std.datetime
 ```
 
 - Python-style imports only
 - Module paths map directly to file paths
 - Imported symbols can be used immediately
+
+## Standard Library Imports
+
+The stdlib uses the `std` namespace:
+
+```mux title="stdlib_imports.mux"
+import std
+import std.math
+import std.io
+import std.random
+import std.datetime
+import std.(math, random as r)
+import std.*
+```
+
+- `import std` exposes module namespaces like `std.math`, `std.io`, and `std.datetime`
+- `import std.<module>` imports a single stdlib module namespace
+- `import std.*` performs a flat import of stdlib items into the current scope
 
 ## Module Resolution
 
@@ -171,7 +191,7 @@ func helper() returns void {
 }
 ```
 
-Initialization order: `c` → `b` → `a` → `main`
+Initialization order: `c` -> `b` -> `a` -> `main`
 
 ## Module Scope
 

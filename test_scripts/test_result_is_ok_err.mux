@@ -1,0 +1,38 @@
+// Test Result is_ok() and is_err() methods
+
+print("=== Testing Result is_ok() and is_err() ===")
+
+// Test 1: is_ok() with Ok value
+Result<int, string> res1 = Ok(42)
+print("res1 = Ok(42)")
+print("res1.is_ok() = " + res1.is_ok().to_string())
+print("res1.is_err() = " + res1.is_err().to_string())
+
+// Test 2: is_ok() with Err value
+Result<int, string> res2 = Err("error")
+print("")
+print("res2 = Err(\"error\")")
+print("res2.is_ok() = " + res2.is_ok().to_string())
+print("res2.is_err() = " + res2.is_err().to_string())
+
+// Test 3: Using in conditionals
+print("")
+print("=== Testing in conditionals ===")
+
+if res1.is_ok() {
+    print("✓ res1.is_ok() returned true")
+}
+
+if res2.is_err() {
+    print("✓ res2.is_err() returned true")
+}
+
+// Test 4: Result<string, string>
+Result<string, string> res3 = Ok("success")
+print("")
+print("res3 = Ok(\"success\")")
+print("res3.is_ok() = " + res3.is_ok().to_string())
+print("res3.is_err() = " + res3.is_err().to_string())
+
+print("")
+print("=== All tests completed ===")

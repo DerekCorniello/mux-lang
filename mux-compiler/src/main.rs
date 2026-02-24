@@ -16,7 +16,7 @@ use std::cell::RefCell;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{self, Command};
+use std::process::{self, Command, Stdio};
 use std::rc::Rc;
 
 fn emit_diagnostics<E: ToDiagnostic>(files: &Files, file_id: FileId, errors: &[E]) {
@@ -500,24 +500,16 @@ fn main() {
         } else {
             PathBuf::from("./").join(&exe_file)
         };
-        let output = Command::new(&run_path).output();
+        let status = Command::new(&run_path)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status();
 
-        match output {
-            Ok(output) if output.status.success() => {
-                print!("{}", String::from_utf8_lossy(&output.stdout));
-            }
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-
-                if !stdout.is_empty() {
-                    eprintln!("stdout:\n{}", stdout);
-                }
-                if !stderr.is_empty() {
-                    eprintln!("stderr:\n{}", stderr);
-                }
-
-                eprintln!("Program exited with status: {}", output.status);
+        match status {
+            Ok(status) if status.success() => {}
+            Ok(status) => {
+                eprintln!("Program exited with status: {}", status);
                 process::exit(1);
             }
             Err(e) => {

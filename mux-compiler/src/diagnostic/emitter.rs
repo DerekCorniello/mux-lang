@@ -207,11 +207,11 @@ impl DiagnosticEmitter for StandardEmitter {
         let mut by_file: HashMap<String, Vec<&Diagnostic>> = HashMap::new();
 
         for diagnostic in diagnostics {
-            if let Some(file_id) = diagnostic.file_id {
-                if let Some(file_info) = files.get(file_id) {
-                    let file = file_info.path.to_string_lossy().to_string();
-                    by_file.entry(file).or_default().push(diagnostic);
-                }
+            if let Some(file_id) = diagnostic.file_id
+                && let Some(file_info) = files.get(file_id)
+            {
+                let file = file_info.path.to_string_lossy().to_string();
+                by_file.entry(file).or_default().push(diagnostic);
             }
         }
 
@@ -232,10 +232,10 @@ impl DiagnosticEmitter for StandardEmitter {
         // Emit diagnostics grouped by file
         for (file_path, file_diagnostics) in by_file {
             for diagnostic in file_diagnostics {
-                if let Some(file_id) = diagnostic.file_id {
-                    if let Some(file_info) = files.get(file_id) {
-                        self.emit_single(diagnostic, &file_info.source, &file_path);
-                    }
+                if let Some(file_id) = diagnostic.file_id
+                    && let Some(file_info) = files.get(file_id)
+                {
+                    self.emit_single(diagnostic, &file_info.source, &file_path);
                 }
             }
         }

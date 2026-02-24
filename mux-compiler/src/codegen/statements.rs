@@ -6,8 +6,6 @@
 //! - If statements with proper block handling
 //! - While and for loops
 //! - Expression statements
-//! - Match statements for pattern matching
-//! - RC scope management for statements
 
 use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
@@ -149,22 +147,21 @@ impl<'a> CodeGenerator<'a> {
             }
             StatementKind::Return(Some(expr)) => {
                 // special handling for boolean literals in boolean functions
-                if let ExpressionKind::Literal(LiteralNode::Boolean(b)) = &expr.kind {
-                    if let Some(ResolvedType::Primitive(PrimitiveType::Bool)) =
+                if let ExpressionKind::Literal(LiteralNode::Boolean(b)) = &expr.kind
+                    && let Some(ResolvedType::Primitive(PrimitiveType::Bool)) =
                         &self.current_function_return_type
-                    {
-                        // Generate cleanup before returning bool literal
-                        self.generate_all_scopes_cleanup()?;
-                        // return boolean literal directly as i1
-                        let bool_val = self
-                            .context
-                            .bool_type()
-                            .const_int(if *b { 1 } else { 0 }, false);
-                        self.builder
-                            .build_return(Some(&bool_val))
-                            .map_err(|e| e.to_string())?;
-                        return Ok(());
-                    }
+                {
+                    // Generate cleanup before returning bool literal
+                    self.generate_all_scopes_cleanup()?;
+                    // return boolean literal directly as i1
+                    let bool_val = self
+                        .context
+                        .bool_type()
+                        .const_int(if *b { 1 } else { 0 }, false);
+                    self.builder
+                        .build_return(Some(&bool_val))
+                        .map_err(|e| e.to_string())?;
+                    return Ok(());
                 }
                 let value = self.generate_expression(expr)?;
                 // check if we need to return raw primitive or boxed value
@@ -334,12 +331,10 @@ impl<'a> CodeGenerator<'a> {
                 for stmt in then_block {
                     self.generate_statement(stmt, Some(function))?;
                 }
-                if !then_ends_with_return {
-                    if let Some(merge_bb) = merge_bb {
-                        self.builder
-                            .build_unconditional_branch(merge_bb)
-                            .map_err(|e| e.to_string())?;
-                    }
+                if !then_ends_with_return && let Some(merge_bb) = merge_bb {
+                    self.builder
+                        .build_unconditional_branch(merge_bb)
+                        .map_err(|e| e.to_string())?;
                 }
                 // else block
                 self.builder.position_at_end(else_bb);
@@ -348,12 +343,10 @@ impl<'a> CodeGenerator<'a> {
                         self.generate_statement(stmt, Some(function))?;
                     }
                 }
-                if !else_ends_with_return {
-                    if let Some(merge_bb) = merge_bb {
-                        self.builder
-                            .build_unconditional_branch(merge_bb)
-                            .map_err(|e| e.to_string())?;
-                    }
+                if !else_ends_with_return && let Some(merge_bb) = merge_bb {
+                    self.builder
+                        .build_unconditional_branch(merge_bb)
+                        .map_err(|e| e.to_string())?;
                 }
                 // merge
                 if let Some(merge_bb) = merge_bb {
@@ -760,17 +753,13 @@ impl<'a> CodeGenerator<'a> {
                 }
 
                 // clean up temporary variables created for complex match expressions
-                if let ExpressionKind::Identifier(temp_name) = &match_expr.kind {
-                    if temp_name.starts_with("match_temp_") {
-                        self.variables.remove(temp_name);
-                    }
+                if let ExpressionKind::Identifier(temp_name) = &match_expr.kind
+                    && temp_name.starts_with("match_temp_")
+                {
+                    self.variables.remove(temp_name);
                 }
             }
             StatementKind::Expression(expr) => {
-                if let ExpressionKind::Identifier(_name) = &expr.kind {
-                } else if let ExpressionKind::Call { func, args: _args } = &expr.kind {
-                    if let ExpressionKind::Identifier(_name) = &func.kind {}
-                }
                 self.generate_expression(expr)?;
             }
             StatementKind::Function(func) => {
@@ -840,10 +829,10 @@ impl<'a> CodeGenerator<'a> {
                 self.variables = saved_variables;
 
                 // Re-position builder to the correct block after generating nested function
-                if let Some(current_fn) = function {
-                    if let Some(block) = current_fn.get_last_basic_block() {
-                        self.builder.position_at_end(block);
-                    }
+                if let Some(current_fn) = function
+                    && let Some(block) = current_fn.get_last_basic_block()
+                {
+                    self.builder.position_at_end(block);
                 }
             }
             _ => {} // skip other statement types for now
@@ -854,7 +843,7 @@ impl<'a> CodeGenerator<'a> {
     /// Determines if a type should use enum-based (discriminant) matching.
     fn is_enum_match_type(&self, match_type: &Type) -> bool {
         match match_type {
-            Type::Optional(_) => true,
+            Type::Optional(_) | Type::Result(_, _) => true,
             Type::Named(name, _) => {
                 // Check if it's an enum in the enum_variants map or symbol table
                 if self.enum_variants.contains_key(name) {
@@ -885,6 +874,7 @@ impl<'a> CodeGenerator<'a> {
                         match var_type {
                             Type::Named(n, _) => n.clone(),
                             Type::Optional(_) => "Optional".to_string(),
+                            Type::Result(_, _) => "Result".to_string(),
                             _ => {
                                 return Err(format!(
                                     "Match expression must be an enum type, got {:?}",
@@ -899,6 +889,7 @@ impl<'a> CodeGenerator<'a> {
                     match var_type {
                         Type::Named(n, _) => n.clone(),
                         Type::Optional(_) => "Optional".to_string(),
+                        Type::Result(_, _) => "Result".to_string(),
                         _ => {
                             return Err("Match expression must be an enum type".to_string());
                         }
@@ -908,6 +899,7 @@ impl<'a> CodeGenerator<'a> {
                         match symbol_type {
                             Type::Named(n, _) => n.clone(),
                             Type::Optional(_) => "Optional".to_string(),
+                            Type::Result(_, _) => "Result".to_string(),
                             _ => {
                                 return Err("Match expression must be an enum type".to_string());
                             }
@@ -1093,83 +1085,66 @@ impl<'a> CodeGenerator<'a> {
 
             // bind variables for enum variants
             if let PatternNode::EnumVariant { name, args } = &arm.pattern {
-                if let Some(expr_ptr) = expr_ptr_opt {
-                    if (*name == "Some" || *name == "Ok" || *name == "Err") && !args.is_empty() {
-                        if let PatternNode::Identifier(var) = &args[0] {
-                            let data_func = if enum_name == "Optional" {
-                                "mux_optional_data"
-                            } else if enum_name == "Result" {
-                                "mux_result_data"
-                            } else {
-                                return Err(format!("Unknown enum {}", enum_name));
-                            };
-                            let func = self
-                                .module
-                                .get_function(data_func)
-                                .ok_or(format!("{} not found", data_func))?;
-                            let data_call = self
-                                .builder
-                                .build_call(func, &[expr_ptr.into()], "data_call")
-                                .map_err(|e| e.to_string())?;
-                            let data_ptr = data_call
-                                .try_as_basic_value()
-                                .left()
-                                .expect("data function should return a basic value")
-                                .into_pointer_value();
+                if let Some(expr_ptr) = expr_ptr_opt
+                    && (*name == "Some" || *name == "Ok" || *name == "Err")
+                    && !args.is_empty()
+                    && let PatternNode::Identifier(var) = &args[0]
+                {
+                    let data_func = if enum_name == "Optional" {
+                        "mux_optional_data"
+                    } else if enum_name == "Result" {
+                        "mux_result_data"
+                    } else {
+                        return Err(format!("Unknown enum {}", enum_name));
+                    };
+                    let func = self
+                        .module
+                        .get_function(data_func)
+                        .ok_or(format!("{} not found", data_func))?;
+                    let data_call = self
+                        .builder
+                        .build_call(func, &[expr_ptr.into()], "data_call")
+                        .map_err(|e| e.to_string())?;
+                    let data_ptr = data_call
+                        .try_as_basic_value()
+                        .left()
+                        .expect("data function should return a basic value")
+                        .into_pointer_value();
 
-                            let (data_val, resolved_type) = if enum_name == "Optional" {
-                                if let Type::Optional(inner_type) = match_expr_type {
-                                    self.extract_value_from_ptr(data_ptr, inner_type, "Some")?
-                                } else {
-                                    return Err(format!(
-                                        "Type mismatch: expected Optional, got {:?}",
-                                        match_expr_type
-                                    ));
-                                }
-                            } else if enum_name == "Result" {
-                                if let Type::Named(_, generics) = match_expr_type {
-                                    if generics.len() != 2 {
-                                        return Err(format!(
-                                            "Result must have 2 type parameters, got {}",
-                                            generics.len()
-                                        ));
-                                    }
-                                    let target_type = if *name == "Ok" {
-                                        &generics[0]
-                                    } else {
-                                        &generics[1]
-                                    };
-                                    let variant_name = if *name == "Ok" { "Ok" } else { "Err" };
-                                    self.extract_value_from_ptr(
-                                        data_ptr,
-                                        target_type,
-                                        variant_name,
-                                    )?
-                                } else {
-                                    return Err(format!(
-                                        "Type mismatch: expected Result, got {:?}",
-                                        match_expr_type
-                                    ));
-                                }
-                            } else {
-                                return Err(format!(
-                                    "Unknown enum {} for value extraction",
-                                    enum_name
-                                ));
-                            };
-
-                            let boxed = self.box_value(data_val);
-                            let ptr_type = self.context.ptr_type(AddressSpace::default());
-                            let alloca = self.create_entry_alloca(ptr_type.into(), var)?;
-                            self.builder
-                                .build_store(alloca, boxed)
-                                .map_err(|e| e.to_string())?;
-
-                            self.variables
-                                .insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
+                    let (data_val, resolved_type) = if enum_name == "Optional" {
+                        if let Type::Optional(inner_type) = match_expr_type {
+                            self.extract_value_from_ptr(data_ptr, inner_type, "Some")?
+                        } else {
+                            return Err(format!(
+                                "Type mismatch: expected Optional, got {:?}",
+                                match_expr_type
+                            ));
                         }
-                    }
-                } else {
+                    } else if enum_name == "Result" {
+                        if let Type::Result(ok_type, err_type) = match_expr_type {
+                            let target_type = if *name == "Ok" { ok_type } else { err_type };
+                            let variant_name = if *name == "Ok" { "Ok" } else { "Err" };
+                            self.extract_value_from_ptr(data_ptr, target_type, variant_name)?
+                        } else {
+                            return Err(format!(
+                                "Type mismatch: expected Result, got {:?}",
+                                match_expr_type
+                            ));
+                        }
+                    } else {
+                        return Err(format!("Unknown enum {} for value extraction", enum_name));
+                    };
+
+                    let boxed = self.box_value(data_val);
+                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let alloca = self.create_entry_alloca(ptr_type.into(), var)?;
+                    self.builder
+                        .build_store(alloca, boxed)
+                        .map_err(|e| e.to_string())?;
+
+                    self.variables
+                        .insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
+                } else if expr_ptr_opt.is_none() {
                     // custom enum - use variant-specific field information
                     let struct_type = self
                         .type_map

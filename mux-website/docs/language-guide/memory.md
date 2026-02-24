@@ -207,9 +207,9 @@ When all references are gone, the object is freed:
 
 The compiler generates cleanup code using a scope stack:
 
-1. **Enter scope** → `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
-2. **Track variable** → `track_rc_variable(name, alloca)` for each RC-allocated variable
-3. **Exit scope** → `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
+1. **Enter scope** -> `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
+2. **Track variable** -> `track_rc_variable(name, alloca)` for each RC-allocated variable
+3. **Exit scope** -> `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
 
 This ensures proper cleanup order and handles early returns.
 

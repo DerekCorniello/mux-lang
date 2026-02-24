@@ -62,6 +62,31 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    fn extract_primitive_from_ptr<T: TryFrom<BasicValueEnum<'a>>>(
+        &mut self,
+        ptr: PointerValue<'a>,
+        getter_func_name: &str,
+        error_msg: &str,
+    ) -> Result<T, String>
+    where
+        <T as TryFrom<BasicValueEnum<'a>>>::Error: std::fmt::Debug,
+    {
+        let func = self
+            .module
+            .get_function(getter_func_name)
+            .ok_or(format!("{} not found", getter_func_name))?;
+        let result = self
+            .builder
+            .build_call(func, &[ptr.into()], "extract")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or(error_msg)?;
+        result
+            .try_into()
+            .map_err(|_| format!("Conversion failed for {}", getter_func_name))
+    }
+
     pub(super) fn get_raw_int_value(
         &mut self,
         val: BasicValueEnum<'a>,
@@ -69,20 +94,8 @@ impl<'a> CodeGenerator<'a> {
         if val.is_int_value() {
             Ok(val.into_int_value())
         } else if val.is_pointer_value() {
-            // use safe runtime function to extract int
             let ptr = val.into_pointer_value();
-            let get_int_fn = self
-                .module
-                .get_function("mux_value_get_int")
-                .ok_or("mux_value_get_int not found")?;
-            let result = self
-                .builder
-                .build_call(get_int_fn, &[ptr.into()], "get_int")
-                .map_err(|e| e.to_string())?
-                .try_as_basic_value()
-                .left()
-                .ok_or("Call returned no value")?;
-            Ok(result.into_int_value())
+            self.extract_primitive_from_ptr(ptr, "mux_value_get_int", "Call returned no value")
         } else {
             Err("Expected int value or pointer".to_string())
         }
@@ -95,20 +108,8 @@ impl<'a> CodeGenerator<'a> {
         if val.is_float_value() {
             Ok(val.into_float_value())
         } else if val.is_pointer_value() {
-            // use safe runtime function to extract float
             let ptr = val.into_pointer_value();
-            let get_float_fn = self
-                .module
-                .get_function("mux_value_get_float")
-                .ok_or("mux_value_get_float not found")?;
-            let result = self
-                .builder
-                .build_call(get_float_fn, &[ptr.into()], "get_float")
-                .map_err(|e| e.to_string())?
-                .try_as_basic_value()
-                .left()
-                .ok_or("Call returned no value")?;
-            Ok(result.into_float_value())
+            self.extract_primitive_from_ptr(ptr, "mux_value_get_float", "Call returned no value")
         } else {
             Err("Expected float value or pointer".to_string())
         }
@@ -223,8 +224,13 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .ok_or("mux_value_get_bool returned no value")?;
-                Ok((val, Type::Primitive(PrimitiveType::Bool)))
+                    .ok_or("mux_value_get_bool returned no value")?
+                    .into_int_value();
+                let i1_val = self
+                    .builder
+                    .build_int_truncate(val, self.context.bool_type(), "trunc_to_i1")
+                    .map_err(|e| e.to_string())?;
+                Ok((i1_val.into(), Type::Primitive(PrimitiveType::Bool)))
             }
             Type::Primitive(PrimitiveType::Char) => {
                 // Char is stored as int
@@ -292,6 +298,7 @@ impl<'a> CodeGenerator<'a> {
             | Type::Tuple(_, _)
             | Type::Named(_, _)
             | Type::Optional(_)
+            | Type::Result(_, _)
             | Type::Instantiated(_, _) => {
                 // These are already *mut Value pointers, no extraction needed
                 Ok((data_ptr.into(), wrapped_type.clone()))

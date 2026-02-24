@@ -29,6 +29,7 @@ lazy_static = "1.4"
 inkwell = { version = "0.6.0", features = ["llvm17-0"] }
 clap = { version = "4", features = ["derive"] }
 mux-runtime = "0.1.2"
+phf = { version = "0.11", features = ["macros"] }
 
 [dev-dependencies]
 insta = { version = "1.43.1", features = ["yaml"] }

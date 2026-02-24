@@ -1,0 +1,34 @@
+// Test random stdlib module
+import std.random
+
+print("Testing random module...")
+
+random.seed(1)
+
+// Test next_int
+print("Random int 1: " + random.next_int().to_string())
+print("Random int 2: " + random.next_int().to_string())
+print("Random int 3: " + random.next_int().to_string())
+
+// Test next_range
+print("Random 1-10 (1): " + random.next_range(1, 10).to_string())
+print("Random 1-10 (2): " + random.next_range(1, 10).to_string())
+print("Random 1-10 (3): " + random.next_range(1, 10).to_string())
+
+// Test next_float
+print("Random float 1: " + random.next_float().to_string())
+print("Random float 2: " + random.next_float().to_string())
+
+// Test next_bool
+print("Random bool 1: " + random.next_bool().to_string())
+print("Random bool 2: " + random.next_bool().to_string())
+print("Random bool 3: " + random.next_bool().to_string())
+
+// Test seed (for reproducibility)
+print("Testing seed...")
+random.seed(12345)
+print("Seeded random 1: " + random.next_int().to_string())
+random.seed(12345)
+print("Seeded random 2: " + random.next_int().to_string())
+
+print("Random module tests complete!")

@@ -52,6 +52,24 @@ auto failure2 = Err(404)                    // Result<T, int>
 Result<int, string> result = Ok(100)
 ```
 
+### Result Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.is_ok()` | `bool` | Returns `true` if the Result is an Ok variant |
+| `.is_err()` | `bool` | Returns `true` if the Result is an Err variant |
+| `.to_string()` | `string` | String representation |
+
+```mux title="result_methods.mux"
+Result<int, string> res1 = Ok(42)
+Result<int, string> res2 = Err("error")
+
+print(res1.is_ok().to_string())   // true
+print(res1.is_err().to_string())  // false
+print(res2.is_ok().to_string())   // false
+print(res2.is_err().to_string())  // true
+```
+
 ### Pattern Matching Results
 
 ```mux title="pattern_matching_results.mux"
@@ -116,7 +134,25 @@ match maybeEven {
 }
 ```
 
-### Optional Variants
+### Optional Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.is_some()` | `bool` | Returns `true` if the Optional contains a value |
+| `.is_none()` | `bool` | Returns `true` if the Optional is empty |
+| `.to_string()` | `string` | String representation |
+
+```mux title="optional_methods.mux"
+Optional<int> opt1 = Some(42)
+Optional<int> opt2 = None
+
+print(opt1.is_some().to_string())  // true
+print(opt1.is_none().to_string())  // false
+print(opt2.is_some().to_string())  // false
+print(opt2.is_none().to_string())  // true
+```
+
+### Result Methods
 
 ```mux title="optional_variants.mux"
 enum Optional<T> {

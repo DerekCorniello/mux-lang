@@ -2,7 +2,5 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
-stdout:
 List index out of bounds
-
 Program exited with status: exit status: 1

@@ -461,6 +461,13 @@ impl<'a> CodeGenerator<'a> {
                     .expect("mux_optional_none should always return a value");
                 Ok(optional_ptr.into_pointer_value())
             }
+            Type::Result(ok_type, _) => {
+                let ok_value = self.create_default_value_ptr(&ok_type)?;
+                let result_ptr = self
+                    .generate_runtime_call("mux_result_ok_value", &[ok_value.into()])
+                    .expect("mux_result_ok_value should always return a value");
+                Ok(result_ptr.into_pointer_value())
+            }
             Type::Named(name, type_args) => {
                 if name == "Optional" {
                     let optional_ptr = self
@@ -503,10 +510,11 @@ impl<'a> CodeGenerator<'a> {
         type_args: &[Type],
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
-        if class_name == "tuple" && type_args.len() == 2 {
-            if let [left_type, right_type] = type_args {
-                return self.generate_tuple_constructor(left_type, right_type);
-            }
+        if class_name == "tuple"
+            && type_args.len() == 2
+            && let [left_type, right_type] = type_args
+        {
+            return self.generate_tuple_constructor(left_type, right_type);
         }
         // create generic context for this instantiation
         let context = GenericContext {
@@ -561,6 +569,11 @@ impl<'a> CodeGenerator<'a> {
             Type::Set(inner) => format!("set_{}", self.sanitize_type_name(inner)),
 
             Type::Optional(inner) => format!("optional_{}", self.sanitize_type_name(inner)),
+            Type::Result(ok, err) => format!(
+                "result_{}_{}",
+                self.sanitize_type_name(ok),
+                self.sanitize_type_name(err)
+            ),
             Type::Instantiated(name, type_args) => {
                 let args_str = type_args
                     .iter()
@@ -715,15 +728,14 @@ impl<'a> CodeGenerator<'a> {
         let method_func_name = format!("{}.{}", class_name, method_name);
 
         // check if method is static
-        if let Some(class) = self.analyzer.symbol_table().lookup(class_name) {
-            if let Some(method) = class.methods.get(method_name) {
-                if method.is_static {
-                    return Err(format!(
-                        "Cannot call static method {} with self",
-                        method_name
-                    ));
-                }
-            }
+        if let Some(class) = self.analyzer.symbol_table().lookup(class_name)
+            && let Some(method) = class.methods.get(method_name)
+            && method.is_static
+        {
+            return Err(format!(
+                "Cannot call static method {} with self",
+                method_name
+            ));
         }
 
         // get the function

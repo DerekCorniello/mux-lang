@@ -7,127 +7,318 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-lazy_static! {
-    pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
-        let mut m = HashMap::new();
-        // int functions
-        m.insert("int_to_string", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("int_to_float", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("int_add", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_sub", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_mul", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_div", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_rem", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("int_eq", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Bool),
-        });
-        m.insert("int_lt", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::Primitive(PrimitiveType::Bool),
-        });
-        // float functions
-        m.insert("float_to_string", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("float_to_int", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("float_add", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        // string functions
-        m.insert("string_to_int", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        m.insert("string_to_float", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("string_concat", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str), Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("string_length", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        // bool functions
-        m.insert("bool_to_string", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Bool)],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        m.insert("bool_to_int", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Bool)],
-            return_type: Type::Primitive(PrimitiveType::Int),
-        });
-        // math functions
-        m.insert("math_pow", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float), Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_sqrt", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_sin", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        m.insert("math_cos", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Float)],
-            return_type: Type::Primitive(PrimitiveType::Float),
-        });
-        // io functions
-        m.insert("print", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Str)],
-            return_type: Type::Void,
-        });
-        m.insert("read_line", BuiltInSig {
-            params: vec![],
-            return_type: Type::Primitive(PrimitiveType::Str),
-        });
-        // std functions
-        m.insert("range", BuiltInSig {
-            params: vec![Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)],
-            return_type: Type::List(Box::new(Type::Primitive(PrimitiveType::Int))),
-        });
-        m.insert("Some", BuiltInSig {
-            params: vec![Type::Variable("T".to_string())],
-            return_type: Type::Optional(Box::new(Type::Variable("T".to_string()))),
-        });
+fn float() -> Type {
+    Type::Primitive(PrimitiveType::Float)
+}
+fn int() -> Type {
+    Type::Primitive(PrimitiveType::Int)
+}
+fn str_() -> Type {
+    Type::Primitive(PrimitiveType::Str)
+}
+fn bool_() -> Type {
+    Type::Primitive(PrimitiveType::Bool)
+}
 
-        m.insert("None", BuiltInSig {
-            params: vec![],
-            return_type: Type::Optional(Box::new(Type::Void)),
-        });
+fn sig(params: Vec<Type>, return_type: Type) -> BuiltInSig {
+    BuiltInSig {
+        params,
+        return_type,
+    }
+}
+
+fn register_batch(
+    m: &mut HashMap<&'static str, BuiltInSig>,
+    names: &[&'static str],
+    sig: BuiltInSig,
+) {
+    for name in names {
+        m.insert(name, sig.clone());
+    }
+}
+
+/// Value representation for compile-time constants
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum ConstantValue {
+    Float(f64),
+    Int(i64),
+    Bool(bool),
+}
+
+/// Types of items in stdlib modules
+/// Uses &'static [Type] instead of Vec<Type> for const compatibility in PHF
+#[derive(Debug, Clone, PartialEq)]
+pub enum StdlibItem {
+    Function {
+        params: &'static [Type],
+        ret: Type,
+        llvm_name: &'static str,
+    },
+    Constant {
+        ty: Type,
+        value: ConstantValue,
+    },
+}
+
+// Static arrays for function parameters (required for PHF const compatibility)
+static FLOAT_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Float)];
+static FLOAT_FLOAT_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Float),
+    Type::Primitive(PrimitiveType::Float),
+];
+static INT_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Int)];
+static INT_STR_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Int),
+    Type::Primitive(PrimitiveType::Str),
+];
+static INT_INT_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Int),
+    Type::Primitive(PrimitiveType::Int),
+];
+static STR_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Str)];
+static STR_STR_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Str),
+    Type::Primitive(PrimitiveType::Str),
+];
+static EMPTY_PARAMS: &[Type] = &[];
+
+fn io_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
+    StdlibItem::Function {
+        params,
+        ret,
+        llvm_name: name,
+    }
+}
+
+fn io_str_fn(name: &'static str, ret: Type) -> StdlibItem {
+    io_fn(name, STR_PARAM, ret)
+}
+
+fn io_str_str_fn(name: &'static str, ret: Type) -> StdlibItem {
+    io_fn(name, STR_STR_PARAMS, ret)
+}
+
+fn io_result(ok: Type) -> Type {
+    Type::Result(Box::new(ok), Box::new(str_()))
+}
+
+fn datetime_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
+    StdlibItem::Function {
+        params,
+        ret,
+        llvm_name: name,
+    }
+}
+
+/// All stdlib items organized by module.function or module.constant
+/// Using PHF for O(1) compile-time perfect hashing - ideal for large stdlibs
+pub static STDLIB_ITEMS: phf::Map<&'static str, StdlibItem> = phf::phf_map! {
+    // Math module - constants (NOT functions!)
+    "math.pi" => StdlibItem::Constant {
+        ty: Type::Primitive(PrimitiveType::Float),
+        value: ConstantValue::Float(std::f64::consts::PI),
+    },
+    "math.e" => StdlibItem::Constant {
+        ty: Type::Primitive(PrimitiveType::Float),
+        value: ConstantValue::Float(std::f64::consts::E),
+    },
+
+    // Random module functions
+    "random.seed" => StdlibItem::Function {
+        params: INT_PARAM,
+        ret: Type::Void,
+        llvm_name: "mux_rand_init",
+    },
+    "random.next_int" => StdlibItem::Function {
+        params: EMPTY_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Int),
+        llvm_name: "mux_rand_int",
+    },
+    "random.next_range" => StdlibItem::Function {
+        params: INT_INT_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Int),
+        llvm_name: "mux_rand_range",
+    },
+    "random.next_float" => StdlibItem::Function {
+        params: EMPTY_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Float),
+        llvm_name: "mux_rand_float",
+    },
+    "random.next_bool" => StdlibItem::Function {
+        params: EMPTY_PARAMS,
+        ret: Type::Primitive(PrimitiveType::Bool),
+        llvm_name: "mux_rand_bool",
+    },
+};
+
+/// List of all available stdlib modules for wildcard imports
+pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random"];
+
+lazy_static! {
+    // io uses lazy_static rather than PHF because signatures include Type::Named(Result<...>),
+    // and Type currently stores owned Strings, which are not const-constructible for PHF values.
+    pub static ref IO_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        m.insert("io.read_file", io_str_fn("mux_io_read_file", io_result(str_())));
+        m.insert(
+            "io.write_file",
+            io_str_str_fn("mux_io_write_file", io_result(Type::Void)),
+        );
+        m.insert("io.exists", io_str_fn("mux_io_exists", io_result(bool_())));
+        m.insert("io.remove", io_str_fn("mux_io_remove", io_result(Type::Void)));
+        m.insert("io.is_file", io_str_fn("mux_io_is_file", io_result(bool_())));
+        m.insert("io.is_dir", io_str_fn("mux_io_is_dir", io_result(bool_())));
+        m.insert("io.mkdir", io_str_fn("mux_io_mkdir", io_result(Type::Void)));
+        m.insert(
+            "io.listdir",
+            io_str_fn(
+                "mux_io_listdir",
+                io_result(Type::List(Box::new(Type::Primitive(PrimitiveType::Str)))),
+            ),
+        );
+        m.insert("io.join", io_str_str_fn("mux_io_join", io_result(str_())));
+        m.insert("io.basename", io_str_fn("mux_io_basename", io_result(str_())));
+        m.insert("io.dirname", io_str_fn("mux_io_dirname", io_result(str_())));
         m
     };
+
+    // Math module - single argument float -> float functions
+    // Math module - two argument float -> float functions
+    pub static ref MATH_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        fn make_math_fn(name: &str, params: &'static [Type]) -> StdlibItem {
+            let llvm_name = format!("mux_math_{}", name);
+            StdlibItem::Function {
+                params,
+                ret: Type::Primitive(PrimitiveType::Float),
+                llvm_name: Box::leak(llvm_name.into_boxed_str()),
+            }
+        }
+
+        let mut m = HashMap::new();
+
+        // Single-arg math functions
+        m.insert("math.sqrt", make_math_fn("sqrt", FLOAT_PARAM));
+        m.insert("math.sin", make_math_fn("sin", FLOAT_PARAM));
+        m.insert("math.cos", make_math_fn("cos", FLOAT_PARAM));
+        m.insert("math.tan", make_math_fn("tan", FLOAT_PARAM));
+        m.insert("math.asin", make_math_fn("asin", FLOAT_PARAM));
+        m.insert("math.acos", make_math_fn("acos", FLOAT_PARAM));
+        m.insert("math.atan", make_math_fn("atan", FLOAT_PARAM));
+        m.insert("math.ln", make_math_fn("ln", FLOAT_PARAM));
+        m.insert("math.log2", make_math_fn("log2", FLOAT_PARAM));
+        m.insert("math.log10", make_math_fn("log10", FLOAT_PARAM));
+        m.insert("math.exp", make_math_fn("exp", FLOAT_PARAM));
+        m.insert("math.abs", make_math_fn("abs", FLOAT_PARAM));
+        m.insert("math.floor", make_math_fn("floor", FLOAT_PARAM));
+        m.insert("math.ceil", make_math_fn("ceil", FLOAT_PARAM));
+        m.insert("math.round", make_math_fn("round", FLOAT_PARAM));
+
+        // Two-arg math functions
+        m.insert("math.atan2", make_math_fn("atan2", FLOAT_FLOAT_PARAMS));
+        m.insert("math.log", make_math_fn("log", FLOAT_FLOAT_PARAMS));
+        m.insert("math.min", make_math_fn("min", FLOAT_FLOAT_PARAMS));
+        m.insert("math.max", make_math_fn("max", FLOAT_FLOAT_PARAMS));
+        m.insert("math.hypot", make_math_fn("hypot", FLOAT_FLOAT_PARAMS));
+        m.insert("math.pow", make_math_fn("pow", FLOAT_FLOAT_PARAMS));
+
+        m
+    };
+
+    pub static ref DATETIME_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        m.insert("datetime.now", datetime_fn("mux_datetime_now", EMPTY_PARAMS, io_result(int())));
+        m.insert("datetime.now_millis", datetime_fn("mux_datetime_now_millis", EMPTY_PARAMS, io_result(int())));
+        m.insert("datetime.year", datetime_fn("mux_datetime_year", INT_PARAM, io_result(int())));
+        m.insert("datetime.month", datetime_fn("mux_datetime_month", INT_PARAM, io_result(int())));
+        m.insert("datetime.day", datetime_fn("mux_datetime_day", INT_PARAM, io_result(int())));
+        m.insert("datetime.hour", datetime_fn("mux_datetime_hour", INT_PARAM, io_result(int())));
+        m.insert("datetime.minute", datetime_fn("mux_datetime_minute", INT_PARAM, io_result(int())));
+        m.insert("datetime.second", datetime_fn("mux_datetime_second", INT_PARAM, io_result(int())));
+        m.insert("datetime.weekday", datetime_fn("mux_datetime_weekday", INT_PARAM, io_result(int())));
+        m.insert("datetime.format", datetime_fn("mux_datetime_format", INT_STR_PARAMS, io_result(str_())));
+        m.insert("datetime.format_local", datetime_fn("mux_datetime_format_local", INT_STR_PARAMS, io_result(str_())));
+        m.insert("datetime.sleep", datetime_fn("mux_datetime_sleep", INT_PARAM, io_result(Type::Void)));
+        m.insert("datetime.sleep_millis", datetime_fn("mux_datetime_sleep_millis", INT_PARAM, io_result(Type::Void)));
+        m
+    };
+
+    pub static ref ASSERT_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        fn make_item(name: &'static str, params: Vec<Type>) -> StdlibItem {
+            StdlibItem::Function {
+                params: Box::leak(params.into_boxed_slice()),
+                ret: Type::Void,
+                llvm_name: name,
+            }
+        }
+        let t = || Type::Variable("T".to_string());
+        let e = || Type::Variable("E".to_string());
+        let mut m = HashMap::new();
+        m.insert("assert.assert", make_item("mux_assert_assert", vec![bool_(), str_()]));
+        m.insert("assert.assert_eq", make_item("mux_assert_eq", vec![t(), t()]));
+        m.insert("assert.assert_ne", make_item("mux_assert_ne", vec![t(), t()]));
+        m.insert("assert.assert_true", make_item("mux_assert_true", vec![bool_()]));
+        m.insert("assert.assert_false", make_item("mux_assert_false", vec![bool_()]));
+        m.insert("assert.assert_some", make_item("mux_assert_some", vec![Type::Optional(Box::new(t()))]));
+        m.insert("assert.assert_none", make_item("mux_assert_none", vec![Type::Optional(Box::new(t()))]));
+        m.insert("assert.assert_ok", make_item("mux_assert_ok", vec![Type::Result(Box::new(t()), Box::new(e()))]));
+        m.insert("assert.assert_err", make_item("mux_assert_err", vec![Type::Result(Box::new(t()), Box::new(e()))]));
+        m
+    };
+
+    pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
+        let mut m = HashMap::new();
+
+        // int functions
+        m.insert("int_to_string", sig(vec![int()], str_()));
+        m.insert("int_to_float", sig(vec![int()], float()));
+        register_batch(&mut m, &["int_add", "int_sub", "int_mul", "int_div", "int_rem"], sig(vec![int(), int()], int()));
+        register_batch(&mut m, &["int_eq", "int_lt"], sig(vec![int(), int()], bool_()));
+
+        // float functions
+        m.insert("float_to_string", sig(vec![float()], str_()));
+        m.insert("float_to_int", sig(vec![float()], int()));
+        m.insert("float_add", sig(vec![float(), float()], float()));
+
+        // string functions
+        m.insert("string_to_int", sig(vec![str_()], int()));
+        m.insert("string_to_float", sig(vec![str_()], float()));
+        m.insert("string_concat", sig(vec![str_(), str_()], str_()));
+        m.insert("string_length", sig(vec![str_()], int()));
+
+        // bool functions
+        m.insert("bool_to_string", sig(vec![bool_()], str_()));
+        m.insert("bool_to_int", sig(vec![bool_()], int()));
+
+        // io functions
+        m.insert("print", sig(vec![str_()], Type::Void));
+        m.insert("read_line", sig(vec![], str_()));
+
+        // std functions
+        m.insert("range", sig(
+            vec![int(), int()],
+            Type::List(Box::new(int())),
+        ));
+        m.insert("Some", sig(
+            vec![Type::Variable("T".to_string())],
+            Type::Optional(Box::new(Type::Variable("T".to_string()))),
+        ));
+        m.insert("None", sig(
+            vec![],
+            Type::Optional(Box::new(Type::Void)),
+        ));
+        m
+    };
+}
+
+pub fn all_stdlib_items() -> impl Iterator<Item = (&'static str, &'static StdlibItem)> {
+    STDLIB_ITEMS
+        .entries()
+        .map(|(key, item)| (*key, item))
+        .chain(IO_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
+        .chain(MATH_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
+        .chain(DATETIME_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
+        .chain(ASSERT_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
 }
 
 #[derive(Debug)]

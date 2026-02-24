@@ -10,6 +10,8 @@
 //! - Index access
 //! - Match expressions
 
+#![allow(clippy::collapsible_if, clippy::let_and_return)]
+
 use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
@@ -22,7 +24,63 @@ use crate::semantics::{GenericContext, SymbolKind, Type};
 
 use super::CodeGenerator;
 
+/// Stdlib module prefixes that map to runtime functions via the "mux_" prefix.
+/// Adding a new stdlib module only requires adding its prefix here and
+/// declaring the corresponding LLVM functions in codegen/mod.rs.
 impl<'a> CodeGenerator<'a> {
+    fn build_import_call_args(
+        &mut self,
+        args: &[ExpressionNode],
+        func_type: Option<&Type>,
+    ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
+        let param_types = match func_type {
+            Some(Type::Function { params, .. }) => Some(params.as_slice()),
+            _ => None,
+        };
+
+        let mut call_args = Vec::with_capacity(args.len());
+        for (idx, arg) in args.iter().enumerate() {
+            let arg_val = self.generate_expression(arg)?;
+            if let Some(params) = param_types
+                && let Some(param_type) = params.get(idx)
+            {
+                let coerced = self.coerce_import_arg(arg_val, param_type)?;
+                call_args.push(coerced.into());
+                continue;
+            }
+            call_args.push(arg_val.into());
+        }
+        Ok(call_args)
+    }
+
+    /// Coerce arguments for FFI/calling convention compatibility.
+    /// This is NOT type coercion (types are already verified by semantic analysis).
+    /// Instead, this converts from Mux representation to C/FFI representation:
+    /// - Strings: extract raw *mut c_char from boxed Mux string
+    /// - Complex types (Variable, Optional, Named): box the value
+    ///
+    /// This is necessary infrastructure for calling external/runtime functions.
+    fn coerce_import_arg(
+        &mut self,
+        arg_val: BasicValueEnum<'a>,
+        param_type: &Type,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match param_type {
+            Type::Primitive(PrimitiveType::Str) => {
+                if !arg_val.is_pointer_value() {
+                    return Err("String arguments must be boxed values".to_string());
+                }
+                let cstr = self.extract_c_string_from_value(arg_val.into_pointer_value())?;
+                Ok(cstr.into())
+            }
+            Type::Variable(_) | Type::Optional(_) | Type::Named(..) => {
+                let boxed = self.box_value(arg_val);
+                Ok(boxed.into())
+            }
+            _ => Ok(arg_val),
+        }
+    }
+
     /// Helper function to resolve the class/struct name from any expression
     /// Uses the semantic analyzer to get the expression type
     fn resolve_expression_class_name(&mut self, expr: &ExpressionNode) -> Option<String> {
@@ -38,6 +96,52 @@ impl<'a> CodeGenerator<'a> {
             }
             _ => None,
         }
+    }
+
+    /// Helper to generate a call to the mux_print runtime function.
+    /// Used for both direct print() calls and std.print() static method calls.
+    pub(super) fn generate_print_call(
+        &mut self,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if args.len() != 1 {
+            return Err("print takes 1 argument".to_string());
+        }
+        let arg_val = self.generate_expression(&args[0])?;
+        let func_print = self
+            .module
+            .get_function("mux_print")
+            .ok_or("mux_print not found")?;
+        self.builder
+            .build_call(func_print, &[arg_val.into()], "print_call")
+            .map_err(|e| e.to_string())?;
+        // Return void, but since BasicValueEnum is required, return a dummy
+        Ok(self.context.i32_type().const_int(0, false).into())
+    }
+
+    /// Helper to generate a call to the mux_read_line runtime function.
+    /// Used for both direct read_line() calls and std.read_line() static method calls.
+    pub(super) fn generate_read_line_call(
+        &mut self,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if !args.is_empty() {
+            return Err("read_line takes 0 arguments".to_string());
+        }
+        let func_read_line = self
+            .module
+            .get_function("mux_read_line")
+            .ok_or("mux_read_line not found")?;
+        let call = self
+            .builder
+            .build_call(func_read_line, &[], "read_line_call")
+            .map_err(|e| e.to_string())?;
+        let cstr_ptr = call
+            .try_as_basic_value()
+            .left()
+            .ok_or("mux_read_line returned no value")?
+            .into_pointer_value();
+        self.box_string_value(cstr_ptr)
     }
 
     fn generate_if_expression(
@@ -272,14 +376,13 @@ impl<'a> CodeGenerator<'a> {
         }
 
         // if void return, add return void if not already terminated
-        if return_type_opt.is_none() {
-            if let Some(block) = self.builder.get_insert_block() {
-                if block.get_terminator().is_none() {
-                    // Generate RC cleanup before void return
-                    self.generate_all_scopes_cleanup()?;
-                    self.builder.build_return(None).map_err(|e| e.to_string())?;
-                }
-            }
+        if return_type_opt.is_none()
+            && let Some(block) = self.builder.get_insert_block()
+            && block.get_terminator().is_none()
+        {
+            // Generate RC cleanup before void return
+            self.generate_all_scopes_cleanup()?;
+            self.builder.build_return(None).map_err(|e| e.to_string())?;
         }
 
         // Pop the lambda's RC scope and restore the parent's stack
@@ -534,6 +637,19 @@ impl<'a> CodeGenerator<'a> {
                     .or_else(|| self.global_variables.get(name))
                 {
                     match type_node {
+                        Type::Optional(_) | Type::Result(_, _) => {
+                            // Optional/Result: load pointer to boxed value
+                            let ptr_to_boxed = self
+                                .builder
+                                .build_load(
+                                    self.context.ptr_type(AddressSpace::default()),
+                                    *ptr,
+                                    &format!("load_{}", name),
+                                )
+                                .map_err(|e| e.to_string())?
+                                .into_pointer_value();
+                            Ok(ptr_to_boxed.into())
+                        }
                         Type::Named(type_name, _) => {
                             if type_name == "Optional" || type_name == "Result" {
                                 // optional/Result: load pointer to boxed value
@@ -1542,6 +1658,81 @@ impl<'a> CodeGenerator<'a> {
 
                     // handle method calls - prioritize variable resolution over class lookup
                     match &expr.kind {
+                        // Handle nested module access: module.submodule.function() where expr is FieldAccess
+                        ExpressionKind::FieldAccess {
+                            expr: inner_expr,
+                            field: submodule_name,
+                        } => {
+                            // Check if inner_expr is an Identifier that is an Import
+                            if let ExpressionKind::Identifier(module_name) = &inner_expr.kind {
+                                if let Some(symbol) =
+                                    self.analyzer.symbol_table().lookup(module_name)
+                                {
+                                    if symbol.kind == crate::semantics::SymbolKind::Import {
+                                        // Check if submodule_name is in the module's imported_symbols
+                                        if let Some(_submodule) = self
+                                            .analyzer
+                                            .imported_symbols()
+                                            .get(module_name)
+                                            .and_then(|module_syms| module_syms.get(submodule_name))
+                                        {
+                                            // submodule is an Import, check if field is a function in submodule
+                                            if let Some(function_symbol) = self
+                                                .analyzer
+                                                .imported_symbols()
+                                                .get(submodule_name)
+                                                .and_then(|submodule_syms| {
+                                                    submodule_syms.get(field)
+                                                })
+                                            {
+                                                let func_type = function_symbol.type_.clone();
+                                                let llvm_function_name = function_symbol
+                                                    .llvm_name
+                                                    .clone()
+                                                    .unwrap_or_else(|| field.to_string());
+
+                                                // Handle std library functions that need special codegen
+                                                match llvm_function_name.as_str() {
+                                                    "mux_print" => {
+                                                        return self.generate_print_call(args);
+                                                    }
+                                                    "mux_read_line" => {
+                                                        return self.generate_read_line_call(args);
+                                                    }
+                                                    _ => {}
+                                                }
+
+                                                if let Some(func) =
+                                                    self.module.get_function(&llvm_function_name)
+                                                {
+                                                    let call_args = self.build_import_call_args(
+                                                        args,
+                                                        func_type.as_ref(),
+                                                    )?;
+                                                    let call = self
+                                                        .builder
+                                                        .build_call(
+                                                            func,
+                                                            &call_args,
+                                                            &format!("{}_call", field),
+                                                        )
+                                                        .map_err(|e| e.to_string())?;
+                                                    return match call.try_as_basic_value().left() {
+                                                        Some(val) => Ok(val),
+                                                        None => Ok(self
+                                                            .context
+                                                            .i32_type()
+                                                            .const_int(0, false)
+                                                            .into()),
+                                                    };
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // Not a nested module access - continue to normal handling
+                        }
                         ExpressionKind::Identifier(name) => {
                             // first check if this is a variable in current scope
                             if let Some((_, _, var_type)) = self
@@ -1569,6 +1760,8 @@ impl<'a> CodeGenerator<'a> {
                                             .imported_symbols()
                                             .get(name)
                                             .and_then(|module_syms| module_syms.get(field));
+                                        let func_type =
+                                            function_symbol.and_then(|s| s.type_.clone());
 
                                         let llvm_function_name =
                                             if let Some(func_sym) = function_symbol {
@@ -1580,14 +1773,22 @@ impl<'a> CodeGenerator<'a> {
                                                 field.to_string()
                                             };
 
+                                        // Handle std library functions that need special codegen
+                                        match llvm_function_name.as_str() {
+                                            "mux_print" => {
+                                                return self.generate_print_call(args);
+                                            }
+                                            "mux_read_line" => {
+                                                return self.generate_read_line_call(args);
+                                            }
+                                            _ => {}
+                                        }
+
                                         if let Some(func) =
                                             self.module.get_function(&llvm_function_name)
                                         {
-                                            let mut call_args = vec![];
-                                            for arg in args {
-                                                call_args
-                                                    .push(self.generate_expression(arg)?.into());
-                                            }
+                                            let call_args = self
+                                                .build_import_call_args(args, func_type.as_ref())?;
                                             let call = self
                                                 .builder
                                                 .build_call(
@@ -1820,40 +2021,8 @@ impl<'a> CodeGenerator<'a> {
                 } else if let ExpressionKind::Identifier(name) = &func.kind {
                     // handle regular function calls (non-methods)
                     match name.as_str() {
-                        "print" => {
-                            if args.len() != 1 {
-                                return Err("print takes 1 argument".to_string());
-                            }
-                            let arg_val = self.generate_expression(&args[0])?;
-                            let func_print = self
-                                .module
-                                .get_function("mux_print")
-                                .ok_or("mux_print not found")?;
-                            self.builder
-                                .build_call(func_print, &[arg_val.into()], "print_call")
-                                .map_err(|e| e.to_string())?;
-                            // return void, but since BasicValueEnum, return a dummy
-                            Ok(self.context.i32_type().const_int(0, false).into())
-                        }
-                        "read_line" => {
-                            if !args.is_empty() {
-                                return Err("read_line takes 0 arguments".to_string());
-                            }
-                            let func_read_line = self
-                                .module
-                                .get_function("mux_read_line")
-                                .ok_or("mux_read_line not found")?;
-                            let call = self
-                                .builder
-                                .build_call(func_read_line, &[], "read_line_call")
-                                .map_err(|e| e.to_string())?;
-                            let cstr_ptr = call
-                                .try_as_basic_value()
-                                .left()
-                                .ok_or("mux_read_line returned no value")?
-                                .into_pointer_value();
-                            self.box_string_value(cstr_ptr)
-                        }
+                        "print" => self.generate_print_call(args),
+                        "read_line" => self.generate_read_line_call(args),
                         "Err" => {
                             if args.len() != 1 {
                                 return Err("Err takes 1 argument".to_string());
@@ -1904,7 +2073,7 @@ impl<'a> CodeGenerator<'a> {
                                     .expect("result constructor should return a basic value");
                                 Ok(result_ptr)
                             } else {
-                                return Err("Err argument must be a string literal".to_string());
+                                Err("Err argument must be a string literal".to_string())
                             }
                         }
                         "Ok" => {
@@ -1994,7 +2163,7 @@ impl<'a> CodeGenerator<'a> {
                             Ok(result_ptr)
                         }
                         "None" => {
-                            if args.is_empty() {
+                            if !args.is_empty() {
                                 return Err("None takes 0 arguments".to_string());
                             }
                             let func = self
@@ -2013,7 +2182,7 @@ impl<'a> CodeGenerator<'a> {
                             Ok(result_ptr)
                         }
                         _ => {
-                            // first check if this is a function pointer variable
+                            // check if this is a function pointer variable
                             if let Some((ptr, _, var_type)) = self
                                 .variables
                                 .get(name)
@@ -2199,7 +2368,7 @@ impl<'a> CodeGenerator<'a> {
 
                                     // Merge block with phi
                                     self.builder.position_at_end(merge_bb);
-                                    return match (result_with, result_without) {
+                                    match (result_with, result_without) {
                                         (Some(r1), Some(r2)) => {
                                             let phi = self
                                                 .builder
@@ -2215,7 +2384,7 @@ impl<'a> CodeGenerator<'a> {
                                             // Void return
                                             Ok(self.context.i32_type().const_int(0, false).into())
                                         }
-                                    };
+                                    }
                                 } else {
                                     // not a function pointer, try global function lookup
                                     if let Some(func) = self.module.get_function(name) {
@@ -2998,6 +3167,53 @@ impl<'a> CodeGenerator<'a> {
                 body,
             } => Ok(self.generate_lambda_expression(expr, params, return_type, body)?),
             ExpressionKind::FieldAccess { expr, field } => {
+                // Check if this is accessing a stdlib module constant (e.g., math.pi)
+                if let ExpressionKind::Identifier(module_name) = &expr.kind {
+                    if let Some(symbol) = self.analyzer.symbol_table().lookup(module_name) {
+                        if symbol.kind == crate::semantics::SymbolKind::Import {
+                            // Check if this is a constant in the module
+                            if let Some(module_syms) =
+                                self.analyzer.imported_symbols().get(module_name)
+                            {
+                                if let Some(field_sym) = module_syms.get(field) {
+                                    if field_sym.kind == crate::semantics::SymbolKind::Constant {
+                                        // Generate constant value directly
+                                        use crate::semantics::symbol_table::{
+                                            ConstantValue, STDLIB_ITEMS,
+                                        };
+                                        let full_name = format!("{}.{}", module_name, field);
+                                        if let Some(
+                                            crate::semantics::symbol_table::StdlibItem::Constant {
+                                                value,
+                                                ..
+                                            },
+                                        ) = STDLIB_ITEMS.get(&full_name)
+                                        {
+                                            return match value {
+                                                ConstantValue::Float(f) => Ok(self
+                                                    .context
+                                                    .f64_type()
+                                                    .const_float(*f)
+                                                    .into()),
+                                                ConstantValue::Int(i) => Ok(self
+                                                    .context
+                                                    .i64_type()
+                                                    .const_int(*i as u64, false)
+                                                    .into()),
+                                                ConstantValue::Bool(b) => Ok(self
+                                                    .context
+                                                    .bool_type()
+                                                    .const_int(*b as u64, false)
+                                                    .into()),
+                                            };
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Check if this is a tuple type - handle .left and .right specially
                 let expr_type = self
                     .analyzer
@@ -4053,7 +4269,7 @@ impl<'a> CodeGenerator<'a> {
     /// For base[i1][i2]...[iN] = value:
     /// 1. If N == 1: base[i1] = value (base case, direct assignment)
     /// 2. If N > 1:
-    ///    a. Get base[i1] → temp (copy)
+    ///    a. Get base[i1] -> temp (copy)
     ///    b. Recursively: temp[i2]...[iN] = value
     ///    c. Write temp back: base[i1] = temp
     fn generate_nested_collection_assignment(
@@ -4113,7 +4329,7 @@ impl<'a> CodeGenerator<'a> {
         } else {
             // RECURSIVE CASE: base[i1][i2]...[iN] = value where N > 1
             // Strategy:
-            // 1. Get base[i1] → temp (copy)
+            // 1. Get base[i1] -> temp (copy)
             // 2. Recursively handle temp[i2]...[iN] = value
             // 3. Write temp back to base[i1]
 
@@ -4323,6 +4539,7 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .expect("mux_new_string_from_cstr should always return a value");
                 self.generate_runtime_call("mux_print", &[error_str.into()]);
+                self.generate_runtime_call("mux_flush_stdout", &[]);
                 self.generate_runtime_call(
                     "exit",
                     &[self.context.i32_type().const_int(1, false).into()],

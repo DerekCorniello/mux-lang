@@ -1,0 +1,130 @@
+import std.datetime
+
+const int EPOCH_TS = 0
+
+match datetime.year(EPOCH_TS) {
+    Ok(v) {
+        if v == 1970 {
+            print("PASS: year")
+        } else {
+            print("FAIL: year")
+        }
+    }
+    Err(_) { print("FAIL: year") }
+}
+
+match datetime.month(EPOCH_TS) {
+    Ok(v) {
+        if v == 1 {
+            print("PASS: month")
+        } else {
+            print("FAIL: month")
+        }
+    }
+    Err(_) { print("FAIL: month") }
+}
+
+match datetime.day(EPOCH_TS) {
+    Ok(v) {
+        if v == 1 {
+            print("PASS: day")
+        } else {
+            print("FAIL: day")
+        }
+    }
+    Err(_) { print("FAIL: day") }
+}
+
+match datetime.hour(EPOCH_TS) {
+    Ok(v) {
+        if v == 0 {
+            print("PASS: hour")
+        } else {
+            print("FAIL: hour")
+        }
+    }
+    Err(_) { print("FAIL: hour") }
+}
+
+match datetime.minute(EPOCH_TS) {
+    Ok(v) {
+        if v == 0 {
+            print("PASS: minute")
+        } else {
+            print("FAIL: minute")
+        }
+    }
+    Err(_) { print("FAIL: minute") }
+}
+
+match datetime.second(EPOCH_TS) {
+    Ok(v) {
+        if v == 0 {
+            print("PASS: second")
+        } else {
+            print("FAIL: second")
+        }
+    }
+    Err(_) { print("FAIL: second") }
+}
+
+match datetime.weekday(EPOCH_TS) {
+    Ok(v) {
+        if v == 4 {
+            print("PASS: weekday")
+        } else {
+            print("FAIL: weekday")
+        }
+    }
+    Err(_) { print("FAIL: weekday") }
+}
+
+match datetime.format(EPOCH_TS, "%A, %B %d, %Y %H:%M:%S UTC") {
+    Ok(v) {
+        if v == "Thursday, January 01, 1970 00:00:00 UTC" {
+            print("PASS: format utc")
+        } else {
+            print("FAIL: format utc")
+        }
+    }
+    Err(_) { print("FAIL: format utc") }
+}
+
+match datetime.format_local(EPOCH_TS, "%Y-%m-%d %H:%M:%S %Z") {
+    Ok(_) { print("PASS: format local") }
+    Err(_) { print("FAIL: format local") }
+}
+
+match datetime.now() {
+    Ok(_) { print("PASS: now") }
+    Err(_) { print("FAIL: now") }
+}
+
+match datetime.now_millis() {
+    Ok(_) { print("PASS: now_millis") }
+    Err(_) { print("FAIL: now_millis") }
+}
+
+print("Sleep order marker: before")
+match datetime.sleep_millis(5) {
+    Ok(_) { print("PASS: sleep_millis") }
+    Err(_) { print("FAIL: sleep_millis") }
+}
+print("Sleep order marker: after")
+
+match datetime.format(-9999999999999, "%A") {
+    Ok(_) { print("FAIL: invalid format timestamp") }
+    Err(_) { print("PASS: invalid format timestamp") }
+}
+
+match datetime.format_local(-9999999999999, "%B") {
+    Ok(_) { print("FAIL: invalid local format timestamp") }
+    Err(_) { print("PASS: invalid local format timestamp") }
+}
+
+match datetime.year(-9999999999999) {
+    Ok(_) { print("FAIL: invalid year timestamp") }
+    Err(_) { print("PASS: invalid year timestamp") }
+}
+
+print("All datetime tests passed!")

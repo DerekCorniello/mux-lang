@@ -1,0 +1,22 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+PASS: year
+PASS: month
+PASS: day
+PASS: hour
+PASS: minute
+PASS: second
+PASS: weekday
+PASS: format utc
+PASS: format local
+PASS: now
+PASS: now_millis
+Sleep order marker: before
+PASS: sleep_millis
+Sleep order marker: after
+PASS: invalid format timestamp
+PASS: invalid local format timestamp
+PASS: invalid year timestamp
+All datetime tests passed!

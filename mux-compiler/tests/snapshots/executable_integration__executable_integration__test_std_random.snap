@@ -1,0 +1,20 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+Testing random module...
+Random int 1: 1804289383
+Random int 2: 846930886
+Random int 3: 1681692777
+Random 1-10 (1): 4
+Random 1-10 (2): 5
+Random 1-10 (3): 1
+Random float 1: 0.3352227555587888
+Random float 2: 0.7682295944541693
+Random bool 1: false
+Random bool 2: false
+Random bool 3: true
+Testing seed...
+Seeded random 1: 1350490027
+Seeded random 2: 783368690
+Random module tests complete!

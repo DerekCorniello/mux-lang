@@ -53,10 +53,10 @@ impl<'a> CodeGenerator<'a> {
             }
             Type::Primitive(PrimitiveType::Auto) => Err("Auto type should be resolved".to_string()),
             Type::Named(name, args) => {
-                if args.is_empty() {
-                    if let Some(concrete) = self.resolve_generic_param(name) {
-                        return self.llvm_type_from_resolved_type(&concrete.clone());
-                    }
+                if args.is_empty()
+                    && let Some(concrete) = self.resolve_generic_param(name)
+                {
+                    return self.llvm_type_from_resolved_type(&concrete.clone());
                 }
                 if self.classes.contains_key(name) {
                     Ok(self.ptr_type())
@@ -70,6 +70,7 @@ impl<'a> CodeGenerator<'a> {
             | Type::Set(_)
             | Type::Tuple(_, _)
             | Type::Optional(_)
+            | Type::Result(_, _)
             | Type::Reference(_)
             | Type::EmptyList
             | Type::EmptyMap
@@ -186,6 +187,10 @@ impl<'a> CodeGenerator<'a> {
             Type::Optional(inner) => {
                 TypeKind::Named("Optional".to_string(), vec![self.type_to_type_node(inner)])
             }
+            Type::Result(ok, err) => TypeKind::Named(
+                "Result".to_string(),
+                vec![self.type_to_type_node(ok), self.type_to_type_node(err)],
+            ),
             Type::Reference(inner) => TypeKind::Reference(Box::new(self.type_to_type_node(inner))),
             Type::Void => TypeKind::Primitive(PrimitiveType::Void),
             Type::EmptyList => TypeKind::List(Box::new(auto_node())),
@@ -305,6 +310,10 @@ impl<'a> CodeGenerator<'a> {
             )),
 
             Type::Optional(inner) => Ok(Type::Optional(Box::new(self.resolve_type(inner)?))),
+            Type::Result(ok, err) => Ok(Type::Result(
+                Box::new(self.resolve_type(ok)?),
+                Box::new(self.resolve_type(err)?),
+            )),
             Type::Reference(inner) => Ok(Type::Reference(Box::new(self.resolve_type(inner)?))),
             Type::Function {
                 params,

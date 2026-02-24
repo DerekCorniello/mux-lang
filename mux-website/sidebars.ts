@@ -61,6 +61,18 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Standard Library',
+      collapsed: false,
+      items: [
+        'stdlib/index',
+        'stdlib/math',
+        'stdlib/io',
+        'stdlib/random',
+        'stdlib/datetime',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Design Notes',
       collapsed: true,
       items: [

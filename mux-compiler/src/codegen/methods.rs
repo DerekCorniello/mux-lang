@@ -14,6 +14,46 @@ use crate::semantics::Type;
 use super::CodeGenerator;
 
 impl<'a> CodeGenerator<'a> {
+    fn call_cstr_to_mux_string(
+        &self,
+        cstr_ptr: BasicValueEnum<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let new_string = self
+            .module
+            .get_function("mux_new_string_from_cstr")
+            .ok_or("mux_new_string_from_cstr not found")?;
+        let call = self
+            .builder
+            .build_call(new_string, &[cstr_ptr.into()], "new_string")
+            .map_err(|e| e.to_string())?;
+        Ok(call
+            .try_as_basic_value()
+            .left()
+            .expect("mux_new_string_from_cstr should return a basic value"))
+    }
+
+    fn call_runtime_function(
+        &self,
+        func_name: &str,
+        args: &[BasicValueEnum<'a>],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let func = self
+            .module
+            .get_function(func_name)
+            .ok_or(format!("Function '{}' not found", func_name))?;
+        let call = self
+            .builder
+            .build_call(
+                func,
+                &args.iter().map(|v| (*v).into()).collect::<Vec<_>>(),
+                "call",
+            )
+            .map_err(|e| e.to_string())?;
+        call.try_as_basic_value()
+            .left()
+            .ok_or_else(|| format!("{} should return a basic value", func_name))
+    }
+
     fn call_runtime_to_string(
         &self,
         value: BasicValueEnum<'a>,
@@ -31,18 +71,7 @@ impl<'a> CodeGenerator<'a> {
             .try_as_basic_value()
             .left()
             .ok_or(format!("{} should return a basic value", func_name))?;
-        let new_string = self
-            .module
-            .get_function("mux_new_string_from_cstr")
-            .ok_or("mux_new_string_from_cstr not found")?;
-        let call2 = self
-            .builder
-            .build_call(new_string, &[cstr.into()], "new_string")
-            .map_err(|e| e.to_string())?;
-        Ok(call2
-            .try_as_basic_value()
-            .left()
-            .expect("mux_new_string_from_cstr should return a basic value"))
+        self.call_cstr_to_mux_string(cstr)
     }
 
     fn call_runtime_to_string_from_call(
@@ -53,18 +82,96 @@ impl<'a> CodeGenerator<'a> {
             .try_as_basic_value()
             .left()
             .ok_or_else(|| "Function should return a basic value".to_string())?;
-        let new_string = self
+        self.call_cstr_to_mux_string(cstr)
+    }
+
+    fn generate_to_string_call(
+        &self,
+        obj_value: BasicValueEnum<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let func = self
             .module
-            .get_function("mux_new_string_from_cstr")
-            .ok_or("mux_new_string_from_cstr not found".to_string())?;
-        let call2 = self
+            .get_function("mux_value_to_string")
+            .ok_or("mux_value_to_string not found")?;
+        let call = self
             .builder
-            .build_call(new_string, &[cstr.into()], "new_string")
+            .build_call(func, &[obj_value.into()], "val_to_str")
             .map_err(|e| e.to_string())?;
-        Ok(call2
+        let cstr = call
             .try_as_basic_value()
             .left()
-            .expect("mux_new_string_from_cstr should return a basic value"))
+            .expect("mux_value_to_string should return a basic value");
+        self.call_cstr_to_mux_string(cstr)
+    }
+
+    fn extract_raw_pointer(
+        &self,
+        obj_value: BasicValueEnum<'a>,
+        getter_func: &str,
+        extract_name: &str,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let raw = self
+            .builder
+            .build_call(
+                self.module
+                    .get_function(getter_func)
+                    .ok_or(format!("{} not found", getter_func))?,
+                &[obj_value.into()],
+                extract_name,
+            )
+            .map_err(|e| e.to_string())?;
+        raw.try_as_basic_value()
+            .left()
+            .ok_or_else(|| format!("{} should return a basic value", getter_func))
+    }
+
+    fn call_string_conversion_func(
+        &self,
+        obj_value: BasicValueEnum<'a>,
+        conversion_func: &str,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let func_to_cstr = self
+            .module
+            .get_function("mux_value_to_string")
+            .ok_or("mux_value_to_string not found")?;
+        let cstr = self
+            .builder
+            .build_call(func_to_cstr, &[obj_value.into()], "str_to_cstr")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .expect("mux_value_to_string should return a basic value");
+        let func = self
+            .module
+            .get_function(conversion_func)
+            .ok_or(format!("{} not found", conversion_func))?;
+        let call = self
+            .builder
+            .build_call(func, &[cstr.into()], "str_conv")
+            .map_err(|e| e.to_string())?;
+        Ok(call
+            .try_as_basic_value()
+            .left()
+            .unwrap_or_else(|| panic!("{} should return a basic value", conversion_func)))
+    }
+
+    fn call_unary_predicate(
+        &self,
+        obj_value: BasicValueEnum<'a>,
+        func_name: &str,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let func = self
+            .module
+            .get_function(func_name)
+            .ok_or(format!("{} not found", func_name))?;
+        let call = self
+            .builder
+            .build_call(func, &[obj_value.into()], "predicate_call")
+            .map_err(|e| e.to_string())?;
+        Ok(call
+            .try_as_basic_value()
+            .left()
+            .unwrap_or_else(|| panic!("{} should return a basic value", func_name)))
     }
 
     pub(super) fn generate_method_call(
@@ -157,6 +264,7 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             Type::Optional(_) => self.generate_optional_method_call(obj_value, method_name, args),
+            Type::Result(_, _) => self.generate_result_method_call(obj_value, method_name, args),
             _ => Err(format!(
                 "Method {} not implemented for type {:?}",
                 method_name, resolved_obj_type
@@ -206,76 +314,9 @@ impl<'a> CodeGenerator<'a> {
             },
             PrimitiveType::Str => match method_name {
                 "to_string" => self.call_runtime_to_string(obj_value, "mux_value_to_string"),
-                "to_int" => {
-                    // str.to_int() - call mux_string_to_int which returns Result<int, str>
-                    // First convert the boxed string to a C string
-                    let func_to_cstr = self
-                        .module
-                        .get_function("mux_value_to_string")
-                        .ok_or("mux_value_to_string not found")?;
-                    let cstr = self
-                        .builder
-                        .build_call(func_to_cstr, &[obj_value.into()], "str_to_cstr")
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_value_to_string should return a basic value");
-                    // Now call mux_string_to_int with the C string
-                    let func = self
-                        .module
-                        .get_function("mux_string_to_int")
-                        .ok_or("mux_string_to_int not found")?;
-                    let call = self
-                        .builder
-                        .build_call(func, &[cstr.into()], "str_to_int")
-                        .map_err(|e| e.to_string())?;
-                    Ok(call
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_string_to_int should return a basic value"))
-                }
-                "to_float" => {
-                    // str.to_float() - call mux_string_to_float which returns Result<float, str>
-                    // First convert the boxed string to a C string
-                    let func_to_cstr = self
-                        .module
-                        .get_function("mux_value_to_string")
-                        .ok_or("mux_value_to_string not found")?;
-                    let cstr = self
-                        .builder
-                        .build_call(func_to_cstr, &[obj_value.into()], "str_to_cstr")
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_value_to_string should return a basic value");
-                    // Now call mux_string_to_float with the C string
-                    let func = self
-                        .module
-                        .get_function("mux_string_to_float")
-                        .ok_or("mux_string_to_float not found")?;
-                    let call = self
-                        .builder
-                        .build_call(func, &[cstr.into()], "str_to_float")
-                        .map_err(|e| e.to_string())?;
-                    Ok(call
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_string_to_float should return a basic value"))
-                }
-                "length" => {
-                    let func = self
-                        .module
-                        .get_function("mux_string_length")
-                        .ok_or("mux_string_length not found")?;
-                    let call = self
-                        .builder
-                        .build_call(func, &[obj_value.into()], "str_len")
-                        .map_err(|e| e.to_string())?;
-                    Ok(call
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_string_length should return a basic value"))
-                }
+                "to_int" => self.call_string_conversion_func(obj_value, "mux_string_to_int"),
+                "to_float" => self.call_string_conversion_func(obj_value, "mux_string_to_float"),
+                "length" => self.call_runtime_function("mux_string_length", &[obj_value]),
                 _ => Err(format!("Method {} not implemented for string", method_name)),
             },
             PrimitiveType::Bool => match method_name {
@@ -335,22 +376,7 @@ impl<'a> CodeGenerator<'a> {
             },
             PrimitiveType::Char => match method_name {
                 "to_string" => self.call_runtime_to_string(obj_value, "mux_char_to_string"),
-                "to_int" => {
-                    // char.to_int() - call mux_char_to_int which returns Result<int, str>
-                    // Only works for '0'-'9', returns error for other chars
-                    let func = self
-                        .module
-                        .get_function("mux_char_to_int")
-                        .ok_or("mux_char_to_int not found")?;
-                    let call = self
-                        .builder
-                        .build_call(func, &[obj_value.into()], "char_to_int")
-                        .map_err(|e| e.to_string())?;
-                    Ok(call
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_char_to_int should return a basic value"))
-                }
+                "to_int" => self.call_runtime_function("mux_char_to_int", &[obj_value]),
                 _ => Err(format!("Method {} not implemented for char", method_name)),
             },
             _ => Err(format!(
@@ -373,17 +399,8 @@ impl<'a> CodeGenerator<'a> {
                 }
                 let index_val = self.generate_expression(&args[0])?;
 
-                // extract raw List pointer from Value (same as direct access)
-                let raw_list = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_list")
-                            .expect("mux_value_get_list must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_list",
-                    )
-                    .map_err(|e| e.to_string())?;
+                let raw_list =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
 
                 let call = self
                     .builder
@@ -391,18 +408,10 @@ impl<'a> CodeGenerator<'a> {
                         self.module
                             .get_function("mux_list_get")
                             .expect("mux_list_get must be declared in runtime"),
-                        &[
-                            raw_list
-                                .try_as_basic_value()
-                                .left()
-                                .expect("mux_value_get_list should return a basic value")
-                                .into(),
-                            index_val.into(),
-                        ],
+                        &[raw_list.into(), index_val.into()],
                         "list_get",
                     )
                     .map_err(|e| e.to_string())?;
-                // box the Optional as a Value
                 let boxed_call = self
                     .builder
                     .build_call(
@@ -433,27 +442,13 @@ impl<'a> CodeGenerator<'a> {
                     "mux_list_push_back_value",
                     &[obj_value.into(), elem_ptr.into()],
                 );
-                Ok(self.context.i32_type().const_int(0, false).into()) // return dummy value
+                Ok(self.context.i32_type().const_int(0, false).into())
             }
             "pop_back" => {
                 if !args.is_empty() {
                     return Err("pop_back() method takes no arguments".to_string());
                 }
-
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_list_pop_back_value")
-                            .expect("mux_list_pop_back_value must be declared in runtime"),
-                        &[obj_value.into()],
-                        "list_pop_back",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_list_pop_back_value should return a basic value"))
+                self.call_runtime_function("mux_list_pop_back_value", &[obj_value])
             }
             "push" => {
                 if args.len() != 1 {
@@ -466,150 +461,38 @@ impl<'a> CodeGenerator<'a> {
                     "mux_list_push_value",
                     &[obj_value.into(), elem_ptr.into()],
                 );
-                Ok(self.context.i32_type().const_int(0, false).into()) // return dummy value
+                Ok(self.context.i32_type().const_int(0, false).into())
             }
             "pop" => {
                 if !args.is_empty() {
                     return Err("pop() method takes no arguments".to_string());
                 }
-
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_list_pop_value")
-                            .expect("mux_list_pop_value must be declared in runtime"),
-                        &[obj_value.into()],
-                        "list_pop",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_list_pop_value should return a basic value"))
+                self.call_runtime_function("mux_list_pop_value", &[obj_value])
             }
             "is_empty" => {
                 if !args.is_empty() {
                     return Err("is_empty() method takes no arguments".to_string());
                 }
-
-                // extract raw List pointer from Value
-                let raw_list = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_list")
-                            .expect("mux_value_get_list must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_list",
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_list_is_empty")
-                            .expect("mux_list_is_empty must be declared in runtime"),
-                        &[raw_list
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_value_get_list should return a basic value")
-                            .into()],
-                        "list_is_empty",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_list_is_empty should return a basic value"))
+                let raw_list =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
+                self.call_runtime_function("mux_list_is_empty", &[raw_list])
             }
             "size" => {
                 if !args.is_empty() {
                     return Err("size() method takes no arguments".to_string());
                 }
-
-                // extract raw List pointer from Value
-                let raw_list = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_list")
-                            .expect("mux_value_get_list must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_list",
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_list_length")
-                            .expect("mux_list_length must be declared in runtime"),
-                        &[raw_list
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_value_get_list should return a basic value")
-                            .into()],
-                        "list_size",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_list_length should return a basic value"))
+                let raw_list =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
+                self.call_runtime_function("mux_list_length", &[raw_list])
             }
             "to_string" => {
                 if !args.is_empty() {
                     return Err("to_string() method takes no arguments".to_string());
                 }
-                // extract raw List pointer from Value
-                let raw_list = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_list")
-                            .expect("mux_value_get_list must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_list",
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_list_to_string")
-                            .expect("mux_list_to_string must be declared in runtime"),
-                        &[raw_list
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_value_get_list should return a basic value")
-                            .into()],
-                        "list_to_str",
-                    )
-                    .map_err(|e| e.to_string())?;
-                let func_new = self
-                    .module
-                    .get_function("mux_new_string_from_cstr")
-                    .ok_or("mux_new_string_from_cstr not found")?;
-                let call2 = self
-                    .builder
-                    .build_call(
-                        func_new,
-                        &[call
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_list_to_string should return a basic value")
-                            .into()],
-                        "new_str",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call2
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_new_string_from_cstr should return a basic value"))
+                let raw_list =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
+                let cstr = self.call_runtime_function("mux_list_to_string", &[raw_list])?;
+                self.call_cstr_to_mux_string(cstr)
             }
             _ => Err(format!("Method {} not implemented for lists", method_name)),
         }
@@ -626,34 +509,7 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("to_string() method takes no arguments".to_string());
                 }
-                let func = self
-                    .module
-                    .get_function("mux_value_to_string")
-                    .ok_or("mux_value_to_string not found")?;
-                let call = self
-                    .builder
-                    .build_call(func, &[obj_value.into()], "val_to_str")
-                    .map_err(|e| e.to_string())?;
-                let func_new = self
-                    .module
-                    .get_function("mux_new_string_from_cstr")
-                    .ok_or("mux_new_string_from_cstr not found")?;
-                let call2 = self
-                    .builder
-                    .build_call(
-                        func_new,
-                        &[call
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_value_to_string should return a basic value")
-                            .into()],
-                        "new_str",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call2
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_new_string_from_cstr should return a basic value"))
+                self.generate_to_string_call(obj_value)
             }
             "put" => {
                 if args.len() != 2 {
@@ -681,19 +537,8 @@ impl<'a> CodeGenerator<'a> {
                     return Err("get() method takes exactly 1 argument".to_string());
                 }
                 let key_val = self.generate_expression(&args[0])?;
-                let extract_map = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_map")
-                            .expect("mux_value_get_map must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_map",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_map should return a basic value");
+                let extract_map =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
                 let map_get_result = self
                     .builder
                     .build_call(
@@ -726,116 +571,33 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("get_keys() method takes no arguments".to_string());
                 }
-                let extract_map = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_map")
-                            .expect("mux_value_get_map must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_map",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_map should return a basic value");
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_map_keys")
-                            .expect("mux_map_keys must be declared in runtime"),
-                        &[extract_map.into()],
-                        "map_keys",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_map_keys should return a basic value"))
+                let extract_map =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
+                self.call_runtime_function("mux_map_keys", &[extract_map])
             }
             "get_values" => {
                 if !args.is_empty() {
                     return Err("get_values() method takes no arguments".to_string());
                 }
-                let extract_map = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_map")
-                            .expect("mux_value_get_map must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_map",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_map should return a basic value");
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_map_values")
-                            .expect("mux_map_values must be declared in runtime"),
-                        &[extract_map.into()],
-                        "map_values",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_map_values should return a basic value"))
+                let extract_map =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
+                self.call_runtime_function("mux_map_values", &[extract_map])
             }
             "get_pairs" => {
                 if !args.is_empty() {
                     return Err("get_pairs() method takes no arguments".to_string());
                 }
-                let extract_map = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_map")
-                            .expect("mux_value_get_map must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_map",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_map should return a basic value");
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_map_pairs")
-                            .expect("mux_map_pairs must be declared in runtime"),
-                        &[extract_map.into()],
-                        "map_pairs",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_map_pairs should return a basic value"))
+                let extract_map =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
+                self.call_runtime_function("mux_map_pairs", &[extract_map])
             }
             "contains" => {
                 if args.len() != 1 {
                     return Err("contains() method takes exactly 1 argument".to_string());
                 }
                 let key_val = self.generate_expression(&args[0])?;
-                let extract_map = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_map")
-                            .expect("mux_value_get_map must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_map",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_map should return a basic value");
+                let extract_map =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
                 let call = self
                     .builder
                     .build_call(
@@ -855,65 +617,17 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("size() method takes no arguments".to_string());
                 }
-                let extract_map = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_map")
-                            .expect("mux_value_get_map must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_map",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_map should return a basic value");
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_map_size")
-                            .expect("mux_map_size must be declared in runtime"),
-                        &[extract_map.into()],
-                        "map_size",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_map_size should return a basic value"))
+                let extract_map =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
+                self.call_runtime_function("mux_map_size", &[extract_map])
             }
             "is_empty" => {
                 if !args.is_empty() {
                     return Err("is_empty() method takes no arguments".to_string());
                 }
-                let extract_map = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_map")
-                            .expect("mux_value_get_map must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_map",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_map should return a basic value");
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_map_is_empty")
-                            .expect("mux_map_is_empty must be declared in runtime"),
-                        &[extract_map.into()],
-                        "map_is_empty",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_map_is_empty should return a basic value"))
+                let extract_map =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
+                self.call_runtime_function("mux_map_is_empty", &[extract_map])
             }
             "remove" => {
                 if args.len() != 1 {
@@ -959,34 +673,7 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("to_string() method takes no arguments".to_string());
                 }
-                let func = self
-                    .module
-                    .get_function("mux_value_to_string")
-                    .ok_or("mux_value_to_string not found")?;
-                let call = self
-                    .builder
-                    .build_call(func, &[obj_value.into()], "val_to_str")
-                    .map_err(|e| e.to_string())?;
-                let func_new = self
-                    .module
-                    .get_function("mux_new_string_from_cstr")
-                    .ok_or("mux_new_string_from_cstr not found")?;
-                let call2 = self
-                    .builder
-                    .build_call(
-                        func_new,
-                        &[call
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_value_to_string should return a basic value")
-                            .into()],
-                        "new_str",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call2
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_new_string_from_cstr should return a basic value"))
+                self.generate_to_string_call(obj_value)
             }
             "add" => {
                 if args.len() != 1 {
@@ -1008,22 +695,7 @@ impl<'a> CodeGenerator<'a> {
                 }
                 let elem_val = self.generate_expression(&args[0])?;
                 let elem_ptr = self.box_value(elem_val);
-
-                // Use mux_set_remove_value which modifies the boxed Value directly
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_set_remove_value")
-                            .expect("mux_set_remove_value must be declared in runtime"),
-                        &[obj_value.into(), elem_ptr.into()],
-                        "set_remove_value",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_set_remove_value should return a basic value"))
+                self.call_runtime_function("mux_set_remove_value", &[obj_value, elem_ptr.into()])
             }
             "contains" => {
                 if args.len() != 1 {
@@ -1031,97 +703,25 @@ impl<'a> CodeGenerator<'a> {
                 }
                 let elem_val = self.generate_expression(&args[0])?;
                 let elem_ptr = self.box_value(elem_val);
-                let extract_set = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_set")
-                            .expect("mux_value_get_set must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_set",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_set should return a basic value");
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_set_contains")
-                            .expect("mux_set_contains must be declared in runtime"),
-                        &[extract_set.into(), elem_ptr.into()],
-                        "set_contains",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_set_contains should return a basic value"))
+                let extract_set =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_set", "extract_set")?;
+                self.call_runtime_function("mux_set_contains", &[extract_set, elem_ptr.into()])
             }
             "size" => {
                 if !args.is_empty() {
                     return Err("size() method takes no arguments".to_string());
                 }
-                let extract_set = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_set")
-                            .expect("mux_value_get_set must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_set",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_set should return a basic value");
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_set_size")
-                            .expect("mux_set_size must be declared in runtime"),
-                        &[extract_set.into()],
-                        "set_size",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_set_size should return a basic value"))
+                let extract_set =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_set", "extract_set")?;
+                self.call_runtime_function("mux_set_size", &[extract_set])
             }
             "is_empty" => {
                 if !args.is_empty() {
                     return Err("is_empty() method takes no arguments".to_string());
                 }
-                let extract_set = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_value_get_set")
-                            .expect("mux_value_get_set must be declared in runtime"),
-                        &[obj_value.into()],
-                        "extract_set",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_value_get_set should return a basic value");
-                let call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_set_is_empty")
-                            .expect("mux_set_is_empty must be declared in runtime"),
-                        &[extract_set.into()],
-                        "set_is_empty",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_set_is_empty should return a basic value"))
+                let extract_set =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_set", "extract_set")?;
+                self.call_runtime_function("mux_set_is_empty", &[extract_set])
             }
             _ => Err(format!("Method {} not implemented for sets", method_name)),
         }
@@ -1138,38 +738,54 @@ impl<'a> CodeGenerator<'a> {
                 if !args.is_empty() {
                     return Err("to_string() method takes no arguments".to_string());
                 }
-                // use the standard mux_value_to_string function which handles Optional case
-                let func = self
-                    .module
-                    .get_function("mux_value_to_string")
-                    .ok_or("mux_value_to_string not found")?;
-                let call = self
-                    .builder
-                    .build_call(func, &[obj_value.into()], "val_to_str")
-                    .map_err(|e| e.to_string())?;
-                let func_new = self
-                    .module
-                    .get_function("mux_new_string_from_cstr")
-                    .ok_or("mux_new_string_from_cstr not found")?;
-                let call2 = self
-                    .builder
-                    .build_call(
-                        func_new,
-                        &[call
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_value_to_string should return a basic value")
-                            .into()],
-                        "new_str",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call2
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_new_string_from_cstr should return a basic value"))
+                self.generate_to_string_call(obj_value)
+            }
+            "is_some" => {
+                if !args.is_empty() {
+                    return Err("is_some() method takes no arguments".to_string());
+                }
+                self.call_unary_predicate(obj_value, "mux_optional_is_some")
+            }
+            "is_none" => {
+                if !args.is_empty() {
+                    return Err("is_none() method takes no arguments".to_string());
+                }
+                self.call_unary_predicate(obj_value, "mux_optional_is_none")
             }
             _ => Err(format!(
                 "Method {} not implemented for Optionals",
+                method_name
+            )),
+        }
+    }
+
+    fn generate_result_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "to_string" => {
+                if !args.is_empty() {
+                    return Err("to_string() method takes no arguments".to_string());
+                }
+                self.generate_to_string_call(obj_value)
+            }
+            "is_ok" => {
+                if !args.is_empty() {
+                    return Err("is_ok() method takes no arguments".to_string());
+                }
+                self.call_unary_predicate(obj_value, "mux_result_is_ok")
+            }
+            "is_err" => {
+                if !args.is_empty() {
+                    return Err("is_err() method takes no arguments".to_string());
+                }
+                self.call_unary_predicate(obj_value, "mux_result_is_err")
+            }
+            _ => Err(format!(
+                "Method {} not implemented for Results",
                 method_name
             )),
         }
@@ -1187,48 +803,14 @@ impl<'a> CodeGenerator<'a> {
                     return Err("to_string() method takes no arguments".to_string());
                 }
                 let tuple_ptr = if obj_value.is_pointer_value() {
-                    let get_tuple_fn = self
-                        .module
-                        .get_function("mux_value_get_tuple")
-                        .ok_or("mux_value_get_tuple not found")?;
-                    self.builder
-                        .build_call(get_tuple_fn, &[obj_value.into()], "get_tuple")
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .ok_or("mux_value_get_tuple should return a value")?
+                    self.extract_raw_pointer(obj_value, "mux_value_get_tuple", "get_tuple")?
                         .into_pointer_value()
                 } else {
                     return Err("Tuple method receiver must be a pointer value".to_string());
                 };
-                let func = self
-                    .module
-                    .get_function("mux_tuple_to_string")
-                    .ok_or("mux_tuple_to_string not found")?;
-                let call = self
-                    .builder
-                    .build_call(func, &[tuple_ptr.into()], "tuple_to_str")
-                    .map_err(|e| e.to_string())?;
-                let func_new = self
-                    .module
-                    .get_function("mux_new_string_from_cstr")
-                    .ok_or("mux_new_string_from_cstr not found")?;
-                let call2 = self
-                    .builder
-                    .build_call(
-                        func_new,
-                        &[call
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_tuple_to_string should return a basic value")
-                            .into()],
-                        "new_str",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(call2
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_new_string_from_cstr should return a basic value"))
+                let cstr =
+                    self.call_runtime_function("mux_tuple_to_string", &[tuple_ptr.into()])?;
+                self.call_cstr_to_mux_string(cstr)
             }
             _ => Err(format!("Method {} not implemented for tuples", method_name)),
         }

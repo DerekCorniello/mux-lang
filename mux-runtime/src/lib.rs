@@ -9,8 +9,6 @@ use ::std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type TypeId = u32;
 
-/// Internal data that needs cleanup when all ObjectRefs are dropped.
-/// Shared across clones via Rc.
 struct ObjectData {
     ptr: *mut c_void,
     type_id: TypeId,
@@ -20,8 +18,6 @@ struct ObjectData {
 
 impl Drop for ObjectData {
     fn drop(&mut self) {
-        // When the Arc holding this ObjectData is dropped (all ObjectRefs gone),
-        // free the underlying object memory
         if !self.ptr.is_null() && self.size > 0 {
             let layout =
                 ::std::alloc::Layout::from_size_align(self.size, ::std::mem::align_of::<u8>())
@@ -38,7 +34,6 @@ pub struct ObjectRef {
     data: Rc<ObjectData>,
 }
 
-// Manual Debug to show ref_count from atomic
 impl ::std::fmt::Debug for ObjectData {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         f.debug_struct("ObjectData")
@@ -90,6 +85,7 @@ impl fmt::Display for Tuple {
 
 #[derive(Clone, Debug)]
 pub enum Value {
+    Unit,
     Bool(bool),
     Int(i64),
     Float(ordered_float::OrderedFloat<f64>),
@@ -106,6 +102,7 @@ pub enum Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Value::Unit, Value::Unit) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Float(a), Value::Float(b)) => a == b,
@@ -130,6 +127,7 @@ impl hash::Hash for Value {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         mem::discriminant(self).hash(state);
         match self {
+            Value::Unit => {}
             Value::Bool(b) => b.hash(state),
             Value::Int(i) => i.hash(state),
             Value::Float(f) => f.hash(state),
@@ -164,20 +162,20 @@ impl PartialOrd for Value {
 }
 
 impl Value {
-    /// Stable ordering index for cross-variant comparisons.
     fn variant_order(&self) -> u8 {
         match self {
-            Value::Bool(_) => 0,
-            Value::Int(_) => 1,
-            Value::Float(_) => 2,
-            Value::String(_) => 3,
-            Value::List(_) => 4,
-            Value::Map(_) => 5,
-            Value::Set(_) => 6,
-            Value::Tuple(_) => 7,
-            Value::Optional(_) => 8,
-            Value::Result(_) => 9,
-            Value::Object(_) => 10,
+            Value::Unit => 0,
+            Value::Bool(_) => 1,
+            Value::Int(_) => 2,
+            Value::Float(_) => 3,
+            Value::String(_) => 4,
+            Value::List(_) => 5,
+            Value::Map(_) => 6,
+            Value::Set(_) => 7,
+            Value::Tuple(_) => 8,
+            Value::Optional(_) => 9,
+            Value::Result(_) => 10,
+            Value::Object(_) => 11,
         }
     }
 }
@@ -185,6 +183,7 @@ impl Value {
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         match (self, other) {
+            (Value::Unit, Value::Unit) => cmp::Ordering::Equal,
             (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
             (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(cmp::Ordering::Equal),
@@ -206,6 +205,7 @@ impl Ord for Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Value::Unit => write!(f, "()"),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Int(i) => write!(f, "{}", i),
             Value::Float(fl) => write!(f, "{}", fl),
@@ -256,8 +256,10 @@ impl fmt::Display for Value {
     }
 }
 
+pub mod assert;
 pub mod bool;
 pub mod boxing;
+pub mod datetime;
 pub mod float;
 pub mod int;
 pub mod io;
@@ -266,6 +268,7 @@ pub mod map;
 pub mod math;
 pub mod object;
 pub mod optional;
+pub mod random;
 pub mod refcount;
 pub mod result;
 pub mod set;
@@ -273,7 +276,6 @@ pub mod std;
 pub mod string;
 pub mod tuple;
 
-// Re-export extern "C" functions for C linkage
 pub use std::{mux_value_list_get_value, mux_value_list_length, mux_value_list_slice};
 
 #[unsafe(no_mangle)]

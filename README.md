@@ -557,9 +557,9 @@ cfg.current_retry = 1  // OK - mutable field
 ```
 
 **Const Enforcement:**
-- Cannot reassign: `const_var = new_value` → ERROR
-- Cannot use compound assignment: `const_var += 1` → ERROR
-- Cannot increment/decrement: `const_var++` or `const_var--` → ERROR
+- Cannot reassign: `const_var = new_value` -> ERROR
+- Cannot use compound assignment: `const_var += 1` -> ERROR
+- Cannot increment/decrement: `const_var++` or `const_var--` -> ERROR
 - Applies to both identifiers and class fields
 - Use `const` when you want a value that won't change after initialization
 
@@ -1478,6 +1478,24 @@ match result {
 }
 ```
 
+#### Result Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.is_ok()` | `bool` | Returns `true` if the Result is an Ok variant |
+| `.is_err()` | `bool` | Returns `true` if the Result is an Err variant |
+| `.to_string()` | `string` | String representation |
+
+```mux
+Result<int, string> res1 = Ok(42)
+Result<int, string> res2 = Err("error")
+
+print(res1.is_ok().to_string())   // true
+print(res1.is_err().to_string())  // false
+print(res2.is_ok().to_string())   // false
+print(res2.is_err().to_string())  // true
+```
+
 ### 12.2 `Optional<T>`
 
 ```
@@ -1514,6 +1532,24 @@ match maybeEven {
         print("Got nothing")
     }
 }
+```
+
+#### Optional Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.is_some()` | `bool` | Returns `true` if the Optional contains a value |
+| `.is_none()` | `bool` | Returns `true` if the Optional is empty |
+| `.to_string()` | `string` | String representation |
+
+```mux
+Optional<int> opt1 = Some(42)
+Optional<int> opt2 = None
+
+print(opt1.is_some().to_string())  // true
+print(opt1.is_none().to_string())  // false
+print(opt2.is_some().to_string())  // false
+print(opt2.is_none().to_string())  // true
 ```
 
 Use `match` to unpack results and optionals. Use `_` to ignore unused values in patterns.
@@ -1597,9 +1633,9 @@ When `mux_rc_dec` returns `true`, the refcount reached zero and memory is freed 
 
 The compiler generates cleanup code using a **scope stack**:
 
-1. **Enter scope** → `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
-2. **Track variable** → `track_rc_variable(name, alloca)` for each RC-allocated variable
-3. **Exit scope** → `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
+1. **Enter scope** -> `push_rc_scope()` (function entry, if-block, loop-body, match-arm)
+2. **Track variable** -> `track_rc_variable(name, alloca)` for each RC-allocated variable
+3. **Exit scope** -> `generate_all_scopes_cleanup()` iterates through all scopes in reverse order
 
 This ensures proper cleanup order and handles early returns.
 
@@ -1654,10 +1690,12 @@ print("val after update: " + x.to_string())  // 21
 
 ```
 import math
+import std.math
 import shapes.circle as circle
 
 // Usage with inference
 float pi = math.PI         // type inferred from math module
+float root = math.sqrt(9.0)
 auto c = circle.new(5.0)  // type inferred from constructor
 
 // Import with unused alias for completeness
@@ -1668,6 +1706,7 @@ import utils.logger as _  // imported but not directly used in this scope
 - Module paths map directly to file paths
 - Imported symbols can be used with type inference
 - Use `_` alias when importing for side effects only
+- Standard library modules are imported as `import std.<module>` and used as `<module>.<item>`
 
 ### 15.1 Technical Design: Module System
 
@@ -1678,11 +1717,13 @@ Mux uses Python-style module imports with compile-time resolution.
 ```mux
 import math          // math.mux in same directory
 import shapes.circle // shapes/circle.mux
+import std.math      // stdlib math module
 ```
 
 File paths map to module paths:
-- `import foo` → `foo.mux`
-- `import shapes.circle` → `shapes/circle.mux`
+- `import foo` -> `foo.mux`
+- `import shapes.circle` -> `shapes/circle.mux`
+- `import std.math` -> stdlib `math` module namespace (`math.*`)
 
 #### Name Mangling for Imported Functions
 
@@ -1846,6 +1887,89 @@ func main() returns void {
     }
 }
 ```
+
+---
+
+## 17. Standard Library
+
+The Mux standard library includes `assert`, `math`, `io`, `random`, and `datetime`.
+
+Import styles:
+
+```mux
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime
+import std.assert              // use assert.*
+import std.math               // use math.*
+import std.io                 // use io.*
+import std.random             // use random.*
+import std.datetime           // use datetime.*
+import std.(math, random as r)
+import std.*                  // flat import of stdlib items
+```
+
+### 17.1 assert
+
+`assert` provides test assertions that panic immediately on failure with descriptive error messages.
+
+- `assert.assert_true(bool condition) -> void` - Panics if false
+- `assert.assert_false(bool condition) -> void` - Panics if true
+- `assert.assert(bool condition, string message) -> void` - Panics with custom message if false
+- `assert.assert_eq(T actual, T expected) -> void` - Panics if values differ (generic)
+- `assert.assert_ne(T actual, T expected) -> void` - Panics if values equal (generic)
+- `assert.assert_some(Optional<T> value) -> void` - Panics if None
+- `assert.assert_none(Optional<T> value) -> void` - Panics if Some
+- `assert.assert_ok(Result<T, E> value) -> void` - Panics if Err
+- `assert.assert_err(Result<T, E> value) -> void` - Panics if Ok
+
+### 17.2 math
+
+`math` provides floating-point constants and functions.
+
+- Constants: `math.pi`, `math.e`
+- Unary functions: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log2`, `log10`, `exp`, `abs`, `floor`, `ceil`, `round`
+- Binary functions: `atan2`, `log`, `min`, `max`, `hypot`, `pow`
+
+### 17.3 io
+
+`io` provides filesystem and path operations with explicit error handling via `Result<T, string>`.
+
+- File operations: `read_file`, `write_file`, `exists`, `remove`, `mkdir`, `listdir`
+- Path operations: `is_file`, `is_dir`, `join`, `basename`, `dirname`
+
+### 17.4 random
+
+`random` provides pseudorandom generation:
+
+- `random.seed(int seed) -> void`
+- `random.next_int() -> int`
+- `random.next_range(int min, int max) -> int`
+- `random.next_float() -> float`
+- `random.next_bool() -> bool`
+
+### 17.5 datetime
+
+`datetime` provides Unix-timestamp based date and time helpers.
+
+- `datetime.now() -> Result<int, string>` (seconds since Unix epoch, UTC)
+- `datetime.now_millis() -> Result<int, string>` (milliseconds since Unix epoch, UTC)
+- `datetime.year(int ts) -> Result<int, string>`
+- `datetime.month(int ts) -> Result<int, string>`
+- `datetime.day(int ts) -> Result<int, string>`
+- `datetime.hour(int ts) -> Result<int, string>`
+- `datetime.minute(int ts) -> Result<int, string>`
+- `datetime.second(int ts) -> Result<int, string>`
+- `datetime.weekday(int ts) -> Result<int, string>` where `0=Sun ... 6=Sat`
+- `datetime.format(int ts, string pattern) -> Result<string, string>` (UTC)
+- `datetime.format_local(int ts, string pattern) -> Result<string, string>` (local timezone)
+- `datetime.sleep(int seconds) -> Result<void, string>` (blocking at call site)
+- `datetime.sleep_millis(int milliseconds) -> Result<void, string>` (blocking at call site)
+
+Format patterns use chrono `strftime` tokens, for example:
+- `%A` full weekday name
+- `%a` abbreviated weekday name
+- `%B` full month name
+- `%b` abbreviated month name
+- `%Y-%m-%d %H:%M:%S`
 
 ---
 
