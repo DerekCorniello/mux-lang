@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
       - name: Install LLVM 17
         run: sudo apt-get update && sudo apt-get install -y llvm-17-dev clang-17 libpolly-17-dev
       - name: Cache Cargo registry and build
