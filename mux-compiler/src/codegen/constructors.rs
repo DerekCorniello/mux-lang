@@ -510,10 +510,11 @@ impl<'a> CodeGenerator<'a> {
         type_args: &[Type],
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
-        if class_name == "tuple" && type_args.len() == 2 {
-            if let [left_type, right_type] = type_args {
-                return self.generate_tuple_constructor(left_type, right_type);
-            }
+        if class_name == "tuple"
+            && type_args.len() == 2
+            && let [left_type, right_type] = type_args
+        {
+            return self.generate_tuple_constructor(left_type, right_type);
         }
         // create generic context for this instantiation
         let context = GenericContext {
@@ -727,15 +728,14 @@ impl<'a> CodeGenerator<'a> {
         let method_func_name = format!("{}.{}", class_name, method_name);
 
         // check if method is static
-        if let Some(class) = self.analyzer.symbol_table().lookup(class_name) {
-            if let Some(method) = class.methods.get(method_name) {
-                if method.is_static {
-                    return Err(format!(
-                        "Cannot call static method {} with self",
-                        method_name
-                    ));
-                }
-            }
+        if let Some(class) = self.analyzer.symbol_table().lookup(class_name)
+            && let Some(method) = class.methods.get(method_name)
+            && method.is_static
+        {
+            return Err(format!(
+                "Cannot call static method {} with self",
+                method_name
+            ));
         }
 
         // get the function

@@ -83,6 +83,7 @@ pub struct EnumVariant {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub struct ConstDeclNode {
     pub name: String,
     pub type_: TypeNode,

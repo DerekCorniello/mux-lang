@@ -10,6 +10,8 @@
 //! - Index access
 //! - Match expressions
 
+#![allow(clippy::collapsible_if, clippy::let_and_return)]
+
 use inkwell::AddressSpace;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
@@ -39,12 +41,12 @@ impl<'a> CodeGenerator<'a> {
         let mut call_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
             let arg_val = self.generate_expression(arg)?;
-            if let Some(params) = param_types {
-                if let Some(param_type) = params.get(idx) {
-                    let coerced = self.coerce_import_arg(arg_val, param_type)?;
-                    call_args.push(coerced.into());
-                    continue;
-                }
+            if let Some(params) = param_types
+                && let Some(param_type) = params.get(idx)
+            {
+                let coerced = self.coerce_import_arg(arg_val, param_type)?;
+                call_args.push(coerced.into());
+                continue;
             }
             call_args.push(arg_val.into());
         }
@@ -367,14 +369,13 @@ impl<'a> CodeGenerator<'a> {
         }
 
         // if void return, add return void if not already terminated
-        if return_type_opt.is_none() {
-            if let Some(block) = self.builder.get_insert_block() {
-                if block.get_terminator().is_none() {
-                    // Generate RC cleanup before void return
-                    self.generate_all_scopes_cleanup()?;
-                    self.builder.build_return(None).map_err(|e| e.to_string())?;
-                }
-            }
+        if return_type_opt.is_none()
+            && let Some(block) = self.builder.get_insert_block()
+            && block.get_terminator().is_none()
+        {
+            // Generate RC cleanup before void return
+            self.generate_all_scopes_cleanup()?;
+            self.builder.build_return(None).map_err(|e| e.to_string())?;
         }
 
         // Pop the lambda's RC scope and restore the parent's stack
@@ -2065,7 +2066,7 @@ impl<'a> CodeGenerator<'a> {
                                     .expect("result constructor should return a basic value");
                                 Ok(result_ptr)
                             } else {
-                                return Err("Err argument must be a string literal".to_string());
+                                Err("Err argument must be a string literal".to_string())
                             }
                         }
                         "Ok" => {
@@ -2360,7 +2361,7 @@ impl<'a> CodeGenerator<'a> {
 
                                     // Merge block with phi
                                     self.builder.position_at_end(merge_bb);
-                                    return match (result_with, result_without) {
+                                    match (result_with, result_without) {
                                         (Some(r1), Some(r2)) => {
                                             let phi = self
                                                 .builder
@@ -2376,7 +2377,7 @@ impl<'a> CodeGenerator<'a> {
                                             // Void return
                                             Ok(self.context.i32_type().const_int(0, false).into())
                                         }
-                                    };
+                                    }
                                 } else {
                                     // not a function pointer, try global function lookup
                                     if let Some(func) = self.module.get_function(name) {

@@ -68,10 +68,10 @@ impl ModuleResolver {
             .map_err(|e| format!("Cannot resolve module path {}: {}", module_path, e))?;
 
         // Check cache by canonical path
-        if let Some(cached_module_path) = self.canonical_cache.get(&canonical_path) {
-            if let Some(nodes) = self.compiled_modules.get(cached_module_path) {
-                return Ok(nodes.clone());
-            }
+        if let Some(cached_module_path) = self.canonical_cache.get(&canonical_path)
+            && let Some(nodes) = self.compiled_modules.get(cached_module_path)
+        {
+            return Ok(nodes.clone());
         }
 
         // Check circular imports
@@ -139,10 +139,11 @@ impl ModuleResolver {
         if let Ok(entries) = std::fs::read_dir(&dir_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() && path.extension().is_some_and(|ext| ext == "mux") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        submodules.push(stem.to_string());
-                    }
+                if path.is_file()
+                    && path.extension().is_some_and(|ext| ext == "mux")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    submodules.push(stem.to_string());
                 }
             }
         }

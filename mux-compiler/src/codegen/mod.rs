@@ -977,10 +977,10 @@ impl<'a> CodeGenerator<'a> {
         name: &str,
     ) -> Result<PointerValue<'a>, String> {
         // try to get the current function from the builder's insert block
-        if let Some(block) = self.builder.get_insert_block() {
-            if let Some(function) = block.get_parent() {
-                return self.create_entry_block_alloca(function, ty, name);
-            }
+        if let Some(block) = self.builder.get_insert_block()
+            && let Some(function) = block.get_parent()
+        {
+            return self.create_entry_block_alloca(function, ty, name);
         }
 
         // fallback: create alloca at current position (shouldn't happen in normal code)
@@ -1114,10 +1114,10 @@ impl<'a> CodeGenerator<'a> {
 
         let mut user_functions = vec![];
         for node in main_module_nodes {
-            if let AstNode::Function(func) = node {
-                if func.type_params.is_empty() {
-                    user_functions.push(func.clone());
-                }
+            if let AstNode::Function(func) = node
+                && func.type_params.is_empty()
+            {
+                user_functions.push(func.clone());
             }
         }
 

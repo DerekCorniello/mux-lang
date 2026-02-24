@@ -64,11 +64,11 @@ impl CodeGenerator<'_> {
         } else {
             let mut found_name = None;
             for module_syms in self.analyzer.imported_symbols().values() {
-                if let Some(func_symbol) = module_syms.get(&func.name) {
-                    if let Some(mangled) = &func_symbol.llvm_name {
-                        found_name = Some(mangled.clone());
-                        break;
-                    }
+                if let Some(func_symbol) = module_syms.get(&func.name)
+                    && let Some(mangled) = &func_symbol.llvm_name
+                {
+                    found_name = Some(mangled.clone());
+                    break;
                 }
             }
             found_name.unwrap_or_else(|| func.name.clone())
@@ -400,14 +400,12 @@ impl CodeGenerator<'_> {
         if matches!(
             func.return_type.kind,
             TypeKind::Primitive(PrimitiveType::Void)
-        ) {
-            if let Some(block) = self.builder.get_insert_block() {
-                if block.get_terminator().is_none() {
-                    // Generate cleanup for all RC variables before returning
-                    self.generate_all_scopes_cleanup()?;
-                    self.builder.build_return(None).map_err(|e| e.to_string())?;
-                }
-            }
+        ) && let Some(block) = self.builder.get_insert_block()
+            && block.get_terminator().is_none()
+        {
+            // Generate cleanup for all RC variables before returning
+            self.generate_all_scopes_cleanup()?;
+            self.builder.build_return(None).map_err(|e| e.to_string())?;
         }
 
         // Pop the function's RC scope (no cleanup needed here since we already

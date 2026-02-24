@@ -19,10 +19,10 @@ impl Unifier {
         match (a, b) {
             (Type::Variable(var), t) | (t, Type::Variable(var)) => {
                 // If t is the same type variable, they're compatible
-                if let Type::Variable(tvar) = t {
-                    if tvar == var {
-                        return Ok(());
-                    }
+                if let Type::Variable(tvar) = t
+                    && tvar == var
+                {
+                    return Ok(());
                 }
                 if let Some(existing) = self.substitutions.get(var).cloned() {
                     self.unify(&existing, t, span)?;

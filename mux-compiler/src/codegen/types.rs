@@ -53,10 +53,10 @@ impl<'a> CodeGenerator<'a> {
             }
             Type::Primitive(PrimitiveType::Auto) => Err("Auto type should be resolved".to_string()),
             Type::Named(name, args) => {
-                if args.is_empty() {
-                    if let Some(concrete) = self.resolve_generic_param(name) {
-                        return self.llvm_type_from_resolved_type(&concrete.clone());
-                    }
+                if args.is_empty()
+                    && let Some(concrete) = self.resolve_generic_param(name)
+                {
+                    return self.llvm_type_from_resolved_type(&concrete.clone());
                 }
                 if self.classes.contains_key(name) {
                     Ok(self.ptr_type())

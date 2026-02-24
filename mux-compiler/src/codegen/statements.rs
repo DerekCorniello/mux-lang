@@ -6,8 +6,8 @@
 //! - If statements with proper block handling
 //! - While and for loops
 //! - Expression statements
-//! - Match statements for pattern matching
-//! - RC scope management for statements
+
+#![allow(clippy::collapsible_if)]
 
 use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
@@ -149,22 +149,21 @@ impl<'a> CodeGenerator<'a> {
             }
             StatementKind::Return(Some(expr)) => {
                 // special handling for boolean literals in boolean functions
-                if let ExpressionKind::Literal(LiteralNode::Boolean(b)) = &expr.kind {
-                    if let Some(ResolvedType::Primitive(PrimitiveType::Bool)) =
+                if let ExpressionKind::Literal(LiteralNode::Boolean(b)) = &expr.kind
+                    && let Some(ResolvedType::Primitive(PrimitiveType::Bool)) =
                         &self.current_function_return_type
-                    {
-                        // Generate cleanup before returning bool literal
-                        self.generate_all_scopes_cleanup()?;
-                        // return boolean literal directly as i1
-                        let bool_val = self
-                            .context
-                            .bool_type()
-                            .const_int(if *b { 1 } else { 0 }, false);
-                        self.builder
-                            .build_return(Some(&bool_val))
-                            .map_err(|e| e.to_string())?;
-                        return Ok(());
-                    }
+                {
+                    // Generate cleanup before returning bool literal
+                    self.generate_all_scopes_cleanup()?;
+                    // return boolean literal directly as i1
+                    let bool_val = self
+                        .context
+                        .bool_type()
+                        .const_int(if *b { 1 } else { 0 }, false);
+                    self.builder
+                        .build_return(Some(&bool_val))
+                        .map_err(|e| e.to_string())?;
+                    return Ok(());
                 }
                 let value = self.generate_expression(expr)?;
                 // check if we need to return raw primitive or boxed value

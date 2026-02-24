@@ -2,6 +2,8 @@
 //!
 //! This module contains the parser which converts a stream of tokens into an AST.
 
+#![allow(clippy::collapsible_if)]
+
 mod error;
 
 pub use error::{ParserError, ParserResult};
@@ -126,11 +128,9 @@ impl<'a> Parser<'a> {
                         )
                     );
 
-                    if should_check_termination {
-                        if let Err(e) = self.check_statement_termination() {
-                            self.errors.push(e);
-                            self.synchronize();
-                        }
+                    if should_check_termination && let Err(e) = self.check_statement_termination() {
+                        self.errors.push(e);
+                        self.synchronize();
                     }
 
                     let _ = self.skip_newlines();
@@ -751,7 +751,7 @@ impl<'a> Parser<'a> {
                 Some(
                     module_path
                         .split('.')
-                        .last()
+                        .next_back()
                         .unwrap_or(&module_path)
                         .to_string(),
                 )
@@ -1973,7 +1973,7 @@ impl<'a> Parser<'a> {
                 },
                 span: left_span.combine(&right_span),
             };
-            value = Box::new(new_value);
+            *value = new_value;
         }
 
         Ok(*value)

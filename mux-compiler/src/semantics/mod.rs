@@ -1,4 +1,6 @@
 // Module declarations
+#![allow(clippy::collapsible_if)]
+
 pub mod error;
 pub mod format;
 pub mod symbol_table;
@@ -4794,7 +4796,7 @@ impl SemanticAnalyzer {
 
         let module_name = module_path
             .split('.')
-            .last()
+            .next_back()
             .expect("module path should have at least one component");
 
         match spec {
