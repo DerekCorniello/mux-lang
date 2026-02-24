@@ -4746,7 +4746,7 @@ impl SemanticAnalyzer {
             ImportSpec::Wildcard => {
                 for (key, item) in all_stdlib_items() {
                     if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
-                        self.register_stdlib_item(item_name, item, span)?;
+                        self.register_stdlib_item(item_name, &item, span)?;
                     }
                 }
             }
@@ -4850,7 +4850,7 @@ impl SemanticAnalyzer {
             if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
                 module_symbols.insert(
                     item_name.to_string(),
-                    Self::stdlib_item_to_symbol(item, span),
+                    Self::stdlib_item_to_symbol(&item, span),
                 );
             }
         }

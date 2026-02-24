@@ -901,7 +901,7 @@ impl<'a> CodeGenerator<'a> {
 
         module.add_function(
             "mux_assert_assert",
-            void_type.fn_type(&[context.bool_type().into(), i8_ptr.into()], false),
+            void_type.fn_type(&[context.i32_type().into(), i8_ptr.into()], false),
             None,
         );
         module.add_function(
@@ -916,12 +916,12 @@ impl<'a> CodeGenerator<'a> {
         );
         module.add_function(
             "mux_assert_true",
-            void_type.fn_type(&[context.bool_type().into()], false),
+            void_type.fn_type(&[context.i32_type().into()], false),
             None,
         );
         module.add_function(
             "mux_assert_false",
-            void_type.fn_type(&[context.bool_type().into()], false),
+            void_type.fn_type(&[context.i32_type().into()], false),
             None,
         );
         module.add_function(
