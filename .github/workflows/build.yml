@@ -16,7 +16,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Install LLVM 17
-        run: sudo apt-get update && sudo apt-get install -y llvm-17-dev clang-17
+        run: sudo apt-get update && sudo apt-get install -y llvm-17-dev clang-17 libpolly-17-dev
       - name: Cache Cargo registry and build
         uses: actions/cache@v4
         with:
