@@ -1086,7 +1086,8 @@ impl<'a> CodeGenerator<'a> {
             // bind variables for enum variants
             if let PatternNode::EnumVariant { name, args } = &arm.pattern {
                 if let Some(expr_ptr) = expr_ptr_opt
-                    && (*name == "Some" || *name == "Ok" || *name == "Err") && !args.is_empty()
+                    && (*name == "Some" || *name == "Ok" || *name == "Err")
+                    && !args.is_empty()
                     && let PatternNode::Identifier(var) = &args[0]
                 {
                     let data_func = if enum_name == "Optional" {
