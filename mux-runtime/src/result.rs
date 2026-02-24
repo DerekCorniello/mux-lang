@@ -97,6 +97,24 @@ pub extern "C" fn mux_result_discriminant(res: *mut MuxResult) -> i32 {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
+pub extern "C" fn mux_result_is_ok(res: *mut MuxResult) -> bool {
+    if res.is_null() {
+        return false;
+    }
+    unsafe { matches!(&*res, MuxResult::Ok(_)) }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_is_err(res: *mut MuxResult) -> bool {
+    if res.is_null() {
+        return false;
+    }
+    unsafe { matches!(&*res, MuxResult::Err(_)) }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
 pub extern "C" fn mux_result_data(res: *mut MuxResult) -> *mut Value {
     if res.is_null() {
         return std::ptr::null_mut();

@@ -1249,6 +1249,40 @@ impl<'a> CodeGenerator<'a> {
                     .left()
                     .expect("mux_new_string_from_cstr should return a basic value"))
             }
+            "is_ok" => {
+                if !args.is_empty() {
+                    return Err("is_ok() method takes no arguments".to_string());
+                }
+                let is_ok_fn = self
+                    .module
+                    .get_function("mux_result_is_ok")
+                    .ok_or("mux_result_is_ok not found")?;
+                let call = self
+                    .builder
+                    .build_call(is_ok_fn, &[obj_value.into()], "is_ok")
+                    .map_err(|e| e.to_string())?;
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_result_is_ok should return a basic value"))
+            }
+            "is_err" => {
+                if !args.is_empty() {
+                    return Err("is_err() method takes no arguments".to_string());
+                }
+                let is_err_fn = self
+                    .module
+                    .get_function("mux_result_is_err")
+                    .ok_or("mux_result_is_err not found")?;
+                let call = self
+                    .builder
+                    .build_call(is_err_fn, &[obj_value.into()], "is_err")
+                    .map_err(|e| e.to_string())?;
+                Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_result_is_err should return a basic value"))
+            }
             _ => Err(format!(
                 "Method {} not implemented for Results",
                 method_name

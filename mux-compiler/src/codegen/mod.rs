@@ -671,6 +671,18 @@ impl<'a> CodeGenerator<'a> {
             "mux_result_discriminant",
             context.i32_type().into(),
         );
+        Self::add_typed_getter(
+            &module,
+            i8_ptr,
+            "mux_result_is_ok",
+            context.bool_type().into(),
+        );
+        Self::add_typed_getter(
+            &module,
+            i8_ptr,
+            "mux_result_is_err",
+            context.bool_type().into(),
+        );
 
         module.add_function(
             "mux_int_pow",

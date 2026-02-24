@@ -2054,6 +2054,16 @@ impl SemanticAnalyzer {
                     return_type: Type::Primitive(PrimitiveType::Str),
                     is_static: false,
                 }),
+                "is_ok" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "is_err" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
                 _ => None,
             },
             Type::Tuple(_, _) => match method_name {
