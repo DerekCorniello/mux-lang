@@ -5,13 +5,13 @@ expression: output_to_snapshot
 error: 2 errors found
 
 error: Expected newline after statement
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_extra_token.mux:2:12
+--> test_scripts/error_cases/parser_extra_token.mux:2:12
    |
  2 | auto x = 5 }
    |            ^
 
 error: Expected expression, found '}'
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_extra_token.mux:2:12
+--> test_scripts/error_cases/parser_extra_token.mux:2:12
    |
  2 | auto x = 5 }
    |            ^

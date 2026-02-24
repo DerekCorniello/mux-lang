@@ -5,7 +5,7 @@ expression: output_to_snapshot
 error: 2 errors found
 
 error: Const fields must have a default value
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux:3:13
+--> test_scripts/error_cases/semantic_const_field.mux:3:13
    |
  3 |   const int f
    |             ^
@@ -13,7 +13,7 @@ error: Const fields must have a default value
 = help: Add a default value to the const field. Example: const int MAX_SIZE = 100
 
 error: Expected expression, found '}'
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_const_field.mux:4:1
+--> test_scripts/error_cases/semantic_const_field.mux:4:1
    |
  4 | }
    | ^

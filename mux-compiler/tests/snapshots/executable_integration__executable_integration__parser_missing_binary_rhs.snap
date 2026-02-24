@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Expected expression, found newline
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_binary_rhs.mux:2:13
+--> test_scripts/error_cases/parser_missing_binary_rhs.mux:2:13
    |
  2 | auto z = 1 +
    |             ^

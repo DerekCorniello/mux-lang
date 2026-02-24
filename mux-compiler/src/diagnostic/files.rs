@@ -30,7 +30,17 @@ impl Files {
 
     /// Add a file to the registry and return its ID.
     pub fn add(&mut self, path: impl AsRef<Path>, source: String) -> FileId {
-        let path = path.as_ref().to_path_buf();
+        let path = path.as_ref();
+
+        // Store path relative to current working directory for consistent
+        // error output across different environments (local vs CI)
+        let path = if path.is_absolute() {
+            path.strip_prefix(std::env::current_dir().unwrap_or_else(|_| path.to_path_buf()))
+                .unwrap_or(path)
+                .to_path_buf()
+        } else {
+            path.to_path_buf()
+        };
 
         // Check if file already exists
         if let Some(&id) = self.path_to_id.get(&path) {

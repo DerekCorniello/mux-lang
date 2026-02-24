@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Cannot iterate over type int
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_iterate_non_list.mux:2:14
+--> test_scripts/error_cases/semantic_iterate_non_list.mux:2:14
    |
  2 | for int i in 5 {
    |              ^

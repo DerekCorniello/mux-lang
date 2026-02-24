@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Expected expression, found '}'
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_match_pattern.mux:4:1
+--> test_scripts/error_cases/parser_missing_match_pattern.mux:4:1
    |
  4 | }
    | ^

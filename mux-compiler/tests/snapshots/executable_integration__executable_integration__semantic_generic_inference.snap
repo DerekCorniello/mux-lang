@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Cannot infer type for empty list literal
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_generic_inference.mux:2:14
+--> test_scripts/error_cases/semantic_generic_inference.mux:2:14
    |
  2 | auto empty = []
    |              ^

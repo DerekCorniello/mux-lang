@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Field 'foo' not found on type 'C'
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_call_undefined_method.mux:6:1
+--> test_scripts/error_cases/semantic_call_undefined_method.mux:6:1
    |
  6 | c.foo()
    | ^

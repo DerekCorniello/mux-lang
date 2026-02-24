@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Unknown escape sequence: \z
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unknown_escape.mux:2:12
+--> test_scripts/error_cases/lexer_unknown_escape.mux:2:12
    |
  2 | auto = "hi\z"
    |            ^

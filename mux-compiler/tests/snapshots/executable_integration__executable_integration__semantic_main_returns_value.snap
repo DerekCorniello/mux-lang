@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Function 'main' must return void, not 'int'
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_main_returns_value.mux:2:21
+--> test_scripts/error_cases/semantic_main_returns_value.mux:2:21
    |
  2 | func main() returns int {
    |                     ^^^

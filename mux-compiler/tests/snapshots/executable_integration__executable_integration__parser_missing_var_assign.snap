@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Expected expression, found end of input
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_missing_var_assign.mux:2:7
+--> test_scripts/error_cases/parser_missing_var_assign.mux:2:7
    |
  2 | int x =
    |       ^

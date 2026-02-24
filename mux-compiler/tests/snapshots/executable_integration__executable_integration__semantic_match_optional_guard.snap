@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Non-exhaustive match: missing pattern for Optional: Some
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_match_optional_guard.mux:4:11
+--> test_scripts/error_cases/semantic_match_optional_guard.mux:4:11
    |
  4 |     match x {
    |           ^

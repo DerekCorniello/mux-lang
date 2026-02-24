@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Cannot use 'break' outside of a loop
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/parser_break_outside_loop.mux:2:6
+--> test_scripts/error_cases/parser_break_outside_loop.mux:2:6
    |
  2 | break
    |      ^

@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Unexpected character: 'é'
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/lexer_unicode_identifier.mux:2:9
+--> test_scripts/error_cases/lexer_unicode_identifier.mux:2:9
    |
  2 | auto café = 5
    |         ^

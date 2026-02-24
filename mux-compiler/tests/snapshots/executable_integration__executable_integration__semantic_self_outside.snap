@@ -3,7 +3,7 @@ source: mux-compiler/tests/executable_integration.rs
 expression: output_to_snapshot
 ---
 error: Cannot use 'self' outside of a method
---> /home/derekcorn/code/mux-lang/test_scripts/error_cases/semantic_self_outside.mux:2:10
+--> test_scripts/error_cases/semantic_self_outside.mux:2:10
    |
  2 | auto s = self
    |          ^^^^
