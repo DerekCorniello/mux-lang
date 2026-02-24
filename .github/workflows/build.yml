@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
+      MUX_RUNTIME_SRC: ${{ github.workspace }}/mux-runtime
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
