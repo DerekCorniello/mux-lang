@@ -157,6 +157,7 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             Type::Optional(_) => self.generate_optional_method_call(obj_value, method_name, args),
+            Type::Result(_, _) => self.generate_result_method_call(obj_value, method_name, args),
             _ => Err(format!(
                 "Method {} not implemented for type {:?}",
                 method_name, resolved_obj_type
@@ -1203,6 +1204,53 @@ impl<'a> CodeGenerator<'a> {
             }
             _ => Err(format!(
                 "Method {} not implemented for Optionals",
+                method_name
+            )),
+        }
+    }
+
+    fn generate_result_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "to_string" => {
+                if !args.is_empty() {
+                    return Err("to_string() method takes no arguments".to_string());
+                }
+                let func = self
+                    .module
+                    .get_function("mux_value_to_string")
+                    .ok_or("mux_value_to_string not found")?;
+                let call = self
+                    .builder
+                    .build_call(func, &[obj_value.into()], "val_to_str")
+                    .map_err(|e| e.to_string())?;
+                let func_new = self
+                    .module
+                    .get_function("mux_new_string_from_cstr")
+                    .ok_or("mux_new_string_from_cstr not found")?;
+                let call2 = self
+                    .builder
+                    .build_call(
+                        func_new,
+                        &[call
+                            .try_as_basic_value()
+                            .left()
+                            .expect("mux_value_to_string should return a basic value")
+                            .into()],
+                        "new_str",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(call2
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_new_string_from_cstr should return a basic value"))
+            }
+            _ => Err(format!(
+                "Method {} not implemented for Results",
                 method_name
             )),
         }

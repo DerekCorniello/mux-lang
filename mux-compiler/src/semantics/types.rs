@@ -38,6 +38,7 @@ pub enum Type {
     Tuple(Box<Type>, Box<Type>),
 
     Optional(Box<Type>),
+    Result(Box<Type>, Box<Type>),
     Reference(Box<Type>),
     Void,
     Never,

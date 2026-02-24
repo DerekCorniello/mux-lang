@@ -629,6 +629,19 @@ impl<'a> CodeGenerator<'a> {
                     .or_else(|| self.global_variables.get(name))
                 {
                     match type_node {
+                        Type::Optional(_) | Type::Result(_, _) => {
+                            // Optional/Result: load pointer to boxed value
+                            let ptr_to_boxed = self
+                                .builder
+                                .build_load(
+                                    self.context.ptr_type(AddressSpace::default()),
+                                    *ptr,
+                                    &format!("load_{}", name),
+                                )
+                                .map_err(|e| e.to_string())?
+                                .into_pointer_value();
+                            Ok(ptr_to_boxed.into())
+                        }
                         Type::Named(type_name, _) => {
                             if type_name == "Optional" || type_name == "Result" {
                                 // optional/Result: load pointer to boxed value

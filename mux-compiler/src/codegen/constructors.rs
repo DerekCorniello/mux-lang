@@ -461,6 +461,13 @@ impl<'a> CodeGenerator<'a> {
                     .expect("mux_optional_none should always return a value");
                 Ok(optional_ptr.into_pointer_value())
             }
+            Type::Result(ok_type, _) => {
+                let ok_value = self.create_default_value_ptr(&ok_type)?;
+                let result_ptr = self
+                    .generate_runtime_call("mux_result_ok_value", &[ok_value.into()])
+                    .expect("mux_result_ok_value should always return a value");
+                Ok(result_ptr.into_pointer_value())
+            }
             Type::Named(name, type_args) => {
                 if name == "Optional" {
                     let optional_ptr = self
@@ -561,6 +568,11 @@ impl<'a> CodeGenerator<'a> {
             Type::Set(inner) => format!("set_{}", self.sanitize_type_name(inner)),
 
             Type::Optional(inner) => format!("optional_{}", self.sanitize_type_name(inner)),
+            Type::Result(ok, err) => format!(
+                "result_{}_{}",
+                self.sanitize_type_name(ok),
+                self.sanitize_type_name(err)
+            ),
             Type::Instantiated(name, type_args) => {
                 let args_str = type_args
                     .iter()

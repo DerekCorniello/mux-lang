@@ -100,7 +100,7 @@ fn io_str_str_fn(name: &'static str, ret: Type) -> StdlibItem {
 }
 
 fn io_result(ok: Type) -> Type {
-    Type::Named("Result".to_string(), vec![ok, str_()])
+    Type::Result(Box::new(ok), Box::new(str_()))
 }
 
 fn datetime_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
@@ -328,8 +328,8 @@ lazy_static! {
         m.insert("assert.assert_false", make_item("mux_assert_false", vec![bool_()]));
         m.insert("assert.assert_some", make_item("mux_assert_some", vec![Type::Optional(Box::new(t()))]));
         m.insert("assert.assert_none", make_item("mux_assert_none", vec![Type::Optional(Box::new(t()))]));
-        m.insert("assert.assert_ok", make_item("mux_assert_ok", vec![Type::Named("Result".to_string(), vec![t(), e()])]));
-        m.insert("assert.assert_err", make_item("mux_assert_err", vec![Type::Named("Result".to_string(), vec![t(), e()])]));
+        m.insert("assert.assert_ok", make_item("mux_assert_ok", vec![Type::Result(Box::new(t()), Box::new(e()))]));
+        m.insert("assert.assert_err", make_item("mux_assert_err", vec![Type::Result(Box::new(t()), Box::new(e()))]));
         m
     };
 

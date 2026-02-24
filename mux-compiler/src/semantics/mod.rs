@@ -342,23 +342,17 @@ impl SemanticAnalyzer {
             (
                 "Ok",
                 vec![Type::Variable("T".to_string())],
-                Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::Variable("T".to_string()),
-                        Type::Variable("E".to_string()),
-                    ],
+                Type::Result(
+                    Box::new(Type::Variable("T".to_string())),
+                    Box::new(Type::Variable("E".to_string())),
                 ),
             ),
             (
                 "Err",
                 vec![Type::Variable("E".to_string())],
-                Type::Named(
-                    "Result".to_string(),
-                    vec![
-                        Type::Variable("T".to_string()),
-                        Type::Variable("E".to_string()),
-                    ],
+                Type::Result(
+                    Box::new(Type::Variable("T".to_string())),
+                    Box::new(Type::Variable("E".to_string())),
                 ),
             ),
         ];
@@ -420,10 +414,7 @@ impl SemanticAnalyzer {
                 } else if name == "Result" && type_args.len() == 2 {
                     let resolved_ok = self.resolve_type(&type_args[0])?;
                     let resolved_err = self.resolve_type(&type_args[1])?;
-                    return Ok(Type::Named(
-                        "Result".to_string(),
-                        vec![resolved_ok, resolved_err],
-                    ));
+                    return Ok(Type::Result(Box::new(resolved_ok), Box::new(resolved_err)));
                 }
 
                 // named types are assumed to be classes, enums, or interfaces
@@ -2057,6 +2048,14 @@ impl SemanticAnalyzer {
                 }),
                 _ => None,
             },
+            Type::Result(_, _) => match method_name {
+                "to_string" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
+                _ => None,
+            },
             Type::Tuple(_, _) => match method_name {
                 "to_string" => Some(MethodSig {
                     params: vec![],
@@ -3358,7 +3357,7 @@ impl SemanticAnalyzer {
         expr_span: Span,
     ) -> Result<(), SemanticError> {
         match expr_type {
-            Type::Named(type_name, _) if type_name == "Result" => {
+            Type::Result(_, _) => {
                 let has_ok = arms.iter().any(|arm| {
                     arm.guard.is_none()
                         && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Ok")
@@ -3592,11 +3591,7 @@ impl SemanticAnalyzer {
                             ));
                         }
                     }
-                    Type::Named(type_name, type_args)
-                        if type_name == "Result" && type_args.len() == 2 =>
-                    {
-                        let ok_type = &type_args[0];
-                        let err_type = &type_args[1];
+                    Type::Result(ok_type, err_type) => {
                         if name == "Ok" && args.len() == 1 {
                             self.set_pattern_types(&args[0], ok_type, span)?;
                         } else if name == "Err" && args.len() == 1 {

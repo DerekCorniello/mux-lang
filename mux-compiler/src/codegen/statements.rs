@@ -854,7 +854,7 @@ impl<'a> CodeGenerator<'a> {
     /// Determines if a type should use enum-based (discriminant) matching.
     fn is_enum_match_type(&self, match_type: &Type) -> bool {
         match match_type {
-            Type::Optional(_) => true,
+            Type::Optional(_) | Type::Result(_, _) => true,
             Type::Named(name, _) => {
                 // Check if it's an enum in the enum_variants map or symbol table
                 if self.enum_variants.contains_key(name) {
@@ -885,6 +885,7 @@ impl<'a> CodeGenerator<'a> {
                         match var_type {
                             Type::Named(n, _) => n.clone(),
                             Type::Optional(_) => "Optional".to_string(),
+                            Type::Result(_, _) => "Result".to_string(),
                             _ => {
                                 return Err(format!(
                                     "Match expression must be an enum type, got {:?}",
@@ -899,6 +900,7 @@ impl<'a> CodeGenerator<'a> {
                     match var_type {
                         Type::Named(n, _) => n.clone(),
                         Type::Optional(_) => "Optional".to_string(),
+                        Type::Result(_, _) => "Result".to_string(),
                         _ => {
                             return Err("Match expression must be an enum type".to_string());
                         }
@@ -908,6 +910,7 @@ impl<'a> CodeGenerator<'a> {
                         match symbol_type {
                             Type::Named(n, _) => n.clone(),
                             Type::Optional(_) => "Optional".to_string(),
+                            Type::Result(_, _) => "Result".to_string(),
                             _ => {
                                 return Err("Match expression must be an enum type".to_string());
                             }
@@ -1127,18 +1130,9 @@ impl<'a> CodeGenerator<'a> {
                                     ));
                                 }
                             } else if enum_name == "Result" {
-                                if let Type::Named(_, generics) = match_expr_type {
-                                    if generics.len() != 2 {
-                                        return Err(format!(
-                                            "Result must have 2 type parameters, got {}",
-                                            generics.len()
-                                        ));
-                                    }
-                                    let target_type = if *name == "Ok" {
-                                        &generics[0]
-                                    } else {
-                                        &generics[1]
-                                    };
+                                if let Type::Result(ok_type, err_type) = match_expr_type {
+                                    let target_type =
+                                        if *name == "Ok" { ok_type } else { err_type };
                                     let variant_name = if *name == "Ok" { "Ok" } else { "Err" };
                                     self.extract_value_from_ptr(
                                         data_ptr,

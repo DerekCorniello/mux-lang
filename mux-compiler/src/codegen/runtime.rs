@@ -297,6 +297,7 @@ impl<'a> CodeGenerator<'a> {
             | Type::Tuple(_, _)
             | Type::Named(_, _)
             | Type::Optional(_)
+            | Type::Result(_, _)
             | Type::Instantiated(_, _) => {
                 // These are already *mut Value pointers, no extraction needed
                 Ok((data_ptr.into(), wrapped_type.clone()))
