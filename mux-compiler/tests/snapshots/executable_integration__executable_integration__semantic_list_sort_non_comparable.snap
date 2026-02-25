@@ -1,0 +1,11 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+error: list.sort() requires comparable elements, found Box
+--> test_scripts/error_cases/semantic_list_sort_non_comparable.mux:11:1
+   |
+11 | items.sort()
+   | ^^^^^^^^^^
+   |
+= help: Use list.sort() only with int, float, string, char, or types implementing Comparable.

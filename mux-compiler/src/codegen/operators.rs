@@ -377,6 +377,42 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             BinaryOp::Subtract => {
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+                if matches!(left_type, Type::Set(_)) {
+                    let left_set = self.extract_set_from_value(left.into_pointer_value())?;
+                    let right_set = self.extract_set_from_value(right.into_pointer_value())?;
+
+                    let diff_fn = self
+                        .module
+                        .get_function("mux_set_difference")
+                        .ok_or("mux_set_difference not found")?;
+                    let result_set = self
+                        .builder
+                        .build_call(diff_fn, &[left_set.into(), right_set.into()], "set_diff")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("Call returned no value")?
+                        .into_pointer_value();
+
+                    let set_value_fn = self
+                        .module
+                        .get_function("mux_set_value")
+                        .ok_or("mux_set_value not found")?;
+                    let result = self
+                        .builder
+                        .build_call(set_value_fn, &[result_set.into()], "set_value")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("Call returned no value")?;
+
+                    return Ok(result);
+                }
+
                 // try to get raw int values first
                 if let (Ok(left_int), Ok(right_int)) =
                     (self.get_raw_int_value(left), self.get_raw_int_value(right))
@@ -420,6 +456,46 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
             BinaryOp::Divide => {
+                let left_type = self
+                    .analyzer
+                    .get_expression_type(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+                if matches!(left_type, Type::Set(_)) {
+                    let left_set = self.extract_set_from_value(left.into_pointer_value())?;
+                    let right_set = self.extract_set_from_value(right.into_pointer_value())?;
+
+                    let inter_fn = self
+                        .module
+                        .get_function("mux_set_intersection")
+                        .ok_or("mux_set_intersection not found")?;
+                    let result_set = self
+                        .builder
+                        .build_call(
+                            inter_fn,
+                            &[left_set.into(), right_set.into()],
+                            "set_intersection",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("Call returned no value")?
+                        .into_pointer_value();
+
+                    let set_value_fn = self
+                        .module
+                        .get_function("mux_set_value")
+                        .ok_or("mux_set_value not found")?;
+                    let result = self
+                        .builder
+                        .build_call(set_value_fn, &[result_set.into()], "set_value")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("Call returned no value")?;
+
+                    return Ok(result);
+                }
+
                 // try to get raw int values first
                 if let (Ok(left_int), Ok(right_int)) =
                     (self.get_raw_int_value(left), self.get_raw_int_value(right))

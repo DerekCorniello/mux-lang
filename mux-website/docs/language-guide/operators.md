@@ -225,6 +225,8 @@ The `+` operator is overloaded for collection types:
 | `list<T> + list<T>` | Concatenation | Combined list |
 | `map<K,V> + map<K,V>` | Merge | Combined map (latter overwrites on collision) |
 | `set<T> + set<T>` | Union | Set with all unique elements |
+| `set<T> - set<T>` | Difference | Elements in left set but not right set |
+| `set<T> / set<T>` | Intersection | Elements present in both sets |
 | `string + string` | Concatenation | Combined string |
 
 ### Examples
@@ -244,6 +246,8 @@ auto merged = map1 + map2        // {"a": 1, "b": 3, "c": 4}
 auto set1 = {1, 2, 3}
 auto set2 = {3, 4, 5}
 auto unioned = set1 + set2       // {1, 2, 3, 4, 5}
+auto diff = set1 - set2          // {1, 2}
+auto common = set1 / set2        // {3}
 
 // String concatenation
 auto greeting = "Hello, " + "World"  // "Hello, World"

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 impl<'a> CodeGenerator<'a> {
     /// Create a new empty collection and wrap it as a Value pointer.
     /// `new_fn` creates the raw collection, `value_fn` wraps it as `*mut Value`.
-    fn create_empty_collection_value(
+    pub(super) fn create_empty_collection_value(
         &mut self,
         new_fn: &str,
         value_fn: &str,

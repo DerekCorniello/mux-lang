@@ -152,6 +152,15 @@ impl SemanticAnalyzer {
 
     /// Generate helpful context for binary operator type mismatches.
     fn binary_op_help(left: &Type, right: &Type, op: &crate::ast::BinaryOp) -> String {
+        if matches!(
+            op,
+            crate::ast::BinaryOp::Subtract | crate::ast::BinaryOp::Divide
+        ) && matches!(left, Type::Set(_))
+            && matches!(right, Type::Set(_))
+        {
+            return "Set operators supported: '+' union, '-' difference, '/' intersection."
+                .to_string();
+        }
         match (left, right) {
             (Type::Primitive(crate::ast::PrimitiveType::Str), Type::Primitive(crate::ast::PrimitiveType::Int))
             | (Type::Primitive(crate::ast::PrimitiveType::Int), Type::Primitive(crate::ast::PrimitiveType::Str)) => {
@@ -176,6 +185,18 @@ impl SemanticAnalyzer {
                 )
             }
         }
+    }
+
+    fn type_supports_list_sort(&self, type_: &Type) -> bool {
+        matches!(
+            type_,
+            Type::Primitive(
+                PrimitiveType::Int
+                    | PrimitiveType::Float
+                    | PrimitiveType::Str
+                    | PrimitiveType::Char
+            )
+        ) || self.type_implements_interface(type_, "Comparable")
     }
 
     /// Build an "undefined symbol" error with a "did you mean?" suggestion if a similar
@@ -846,6 +867,27 @@ impl SemanticAnalyzer {
                         default_count,
                         ..
                     } => {
+                        if let ExpressionKind::FieldAccess {
+                            expr: receiver,
+                            field,
+                        } = &func.kind
+                            && field == "sort"
+                        {
+                            let receiver_type = self.get_expression_type(receiver)?;
+                            if let Type::List(elem_type) = receiver_type
+                                && !self.type_supports_list_sort(elem_type.as_ref())
+                            {
+                                return Err(SemanticError::with_help(
+                                    format!(
+                                        "list.sort() requires comparable elements, found {}",
+                                        format_type(elem_type.as_ref())
+                                    ),
+                                    expr.span,
+                                    "Use list.sort() only with int, float, string, char, or types implementing Comparable.",
+                                ));
+                            }
+                        }
+
                         // For named functions, verify the symbol's default_count matches
                         let actual_default_count = match &func.kind {
                             ExpressionKind::Identifier(name) => {
@@ -1883,6 +1925,65 @@ impl SemanticAnalyzer {
                     return_type: Type::Primitive(PrimitiveType::Bool),
                     is_static: false,
                 }),
+                "sort" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Void,
+                    is_static: false,
+                }),
+                "reverse" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Void,
+                    is_static: false,
+                }),
+                "contains" => Some(MethodSig {
+                    params: vec![*elem_type.clone()],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "filter" => Some(MethodSig {
+                    params: vec![Type::Function {
+                        params: vec![*elem_type.clone()],
+                        returns: Box::new(Type::Primitive(PrimitiveType::Bool)),
+                        default_count: 0,
+                    }],
+                    return_type: Type::List(elem_type.clone()),
+                    is_static: false,
+                }),
+                "map" => Some(MethodSig {
+                    params: vec![Type::Function {
+                        params: vec![*elem_type.clone()],
+                        returns: Box::new(Type::Variable("U".to_string())),
+                        default_count: 0,
+                    }],
+                    return_type: Type::List(Box::new(Type::Variable("U".to_string()))),
+                    is_static: false,
+                }),
+                "reduce" => Some(MethodSig {
+                    params: vec![
+                        Type::Variable("U".to_string()),
+                        Type::Function {
+                            params: vec![Type::Variable("U".to_string()), *elem_type.clone()],
+                            returns: Box::new(Type::Variable("U".to_string())),
+                            default_count: 0,
+                        },
+                    ],
+                    return_type: Type::Variable("U".to_string()),
+                    is_static: false,
+                }),
+                "find" => Some(MethodSig {
+                    params: vec![Type::Function {
+                        params: vec![*elem_type.clone()],
+                        returns: Box::new(Type::Primitive(PrimitiveType::Bool)),
+                        default_count: 0,
+                    }],
+                    return_type: Type::Optional(elem_type.clone()),
+                    is_static: false,
+                }),
+                "index_of" => Some(MethodSig {
+                    params: vec![*elem_type.clone()],
+                    return_type: Type::Optional(Box::new(Type::Primitive(PrimitiveType::Int))),
+                    is_static: false,
+                }),
                 "size" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Int),
@@ -1929,6 +2030,15 @@ impl SemanticAnalyzer {
                     return_type: Type::Primitive(PrimitiveType::Bool),
                     is_static: false,
                 }),
+                "filter" => Some(MethodSig {
+                    params: vec![Type::Function {
+                        params: vec![*key_type.clone(), *value_type.clone()],
+                        returns: Box::new(Type::Primitive(PrimitiveType::Bool)),
+                        default_count: 0,
+                    }],
+                    return_type: Type::Map(key_type.clone(), value_type.clone()),
+                    is_static: false,
+                }),
                 "remove" => Some(MethodSig {
                     params: vec![*key_type.clone()],
                     return_type: Type::Optional(value_type.clone()),
@@ -1959,7 +2069,7 @@ impl SemanticAnalyzer {
                 }),
                 "remove" => Some(MethodSig {
                     params: vec![*elem_type.clone()],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    return_type: Type::Optional(elem_type.clone()),
                     is_static: false,
                 }),
                 "contains" => Some(MethodSig {
@@ -2138,6 +2248,11 @@ impl SemanticAnalyzer {
                 | BinaryOp::Divide
                 | BinaryOp::Modulo
                 | BinaryOp::Exponent => {
+                    if matches!(op, BinaryOp::Subtract | BinaryOp::Divide)
+                        && matches!(left_type, Type::Set(_))
+                    {
+                        return Some(left_type.clone());
+                    }
                     // built-in support for numeric primitives
                     if matches!(
                         left_type,

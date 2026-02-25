@@ -138,12 +138,12 @@ print("After add(6): " + unique_nums.to_string())
 // remove() method
 print("\nremove() method:")
 auto removed = unique_nums.remove(3)
-print("remove(3) returned: " + removed.to_string())
+print("remove(3): " + removed.to_string())
 print("After remove(3): " + unique_nums.to_string())
 
 // Try to remove something that doesn't exist
 auto removed_missing = unique_nums.remove(99)
-print("remove(99) (not in set) returned: " + removed_missing.to_string())
+print("remove(99): " + removed_missing.to_string())
 print("Set still: " + unique_nums.to_string())
 
 // add() and contains() for strings
@@ -190,6 +190,51 @@ print("After wrap_list[-1] = 999: " + wrap_list.to_string())
 
 wrap_list[-2] = 888
 print("After wrap_list[-2] = 888: " + wrap_list.to_string())
+
+print("\n========================================")
+print("COLLECTION ENHANCEMENTS")
+print("========================================")
+
+auto nums2 = [5, 1, 4, 2, 3]
+print("nums2 initial: " + nums2.to_string())
+nums2.sort()
+print("nums2 after sort(): " + nums2.to_string())
+nums2.reverse()
+print("nums2 after reverse(): " + nums2.to_string())
+print("nums2.contains(4): " + nums2.contains(4).to_string())
+print("nums2.contains(99): " + nums2.contains(99).to_string())
+print("nums2.index_of(4): " + nums2.index_of(4).to_string())
+print("nums2.index_of(99): " + nums2.index_of(99).to_string())
+
+auto evens = nums2.filter(func(int x) returns bool {
+    return x % 2 == 0
+})
+print("nums2.filter(even): " + evens.to_string())
+
+auto doubled = nums2.map(func(int x) returns int {
+    return x * 2
+})
+print("nums2.map(*2): " + doubled.to_string())
+
+auto total = nums2.reduce(0, func(int acc, int x) returns int {
+    return acc + x
+})
+print("nums2.reduce(sum): " + total.to_string())
+
+auto first_large = nums2.find(func(int x) returns bool {
+    return x > 3
+})
+print("nums2.find(>3): " + first_large.to_string())
+
+auto filtered_scores = scores.filter(func(string name, int score) returns bool {
+    return score >= 92
+})
+print("scores.filter(score>=92): " + filtered_scores.to_string())
+
+auto set_diff = set_a - set_b
+auto set_intersection = set_a / set_b
+print("Set difference: {1,2,3} - {3,4,5} = " + set_diff.to_string())
+print("Set intersection: {1,2,3} / {3,4,5} = " + set_intersection.to_string())
 
 print("\n========================================")
 print("ALL TESTS COMPLETED SUCCESSFULLY!")

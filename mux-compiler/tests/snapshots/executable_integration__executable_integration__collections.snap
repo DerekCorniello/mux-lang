@@ -88,9 +88,9 @@ add() method:
 After add(6): {1, 2, 3, 4, 5, 6}
 
 remove() method:
-remove(3) returned: true
+remove(3): Some(3)
 After remove(3): {1, 2, 4, 5, 6}
-remove(99) (not in set) returned: false
+remove(99): None
 Set still: {1, 2, 4, 5, 6}
 
 String set:
@@ -118,6 +118,24 @@ NEGATIVE INDEX WRITE (wraparound)
 Initial: [1, 2, 3, 4, 5]
 After wrap_list[-1] = 999: [1, 2, 3, 4, 999]
 After wrap_list[-2] = 888: [1, 2, 3, 888, 999]
+
+========================================
+COLLECTION ENHANCEMENTS
+========================================
+nums2 initial: [5, 1, 4, 2, 3]
+nums2 after sort(): [1, 2, 3, 4, 5]
+nums2 after reverse(): [5, 4, 3, 2, 1]
+nums2.contains(4): true
+nums2.contains(99): false
+nums2.index_of(4): Some(1)
+nums2.index_of(99): None
+nums2.filter(even): [4, 2]
+nums2.map(*2): [10, 8, 6, 4, 2]
+nums2.reduce(sum): 15
+nums2.find(>3): Some(5)
+scores.filter(score>=92): {Alice: 95, Charlie: 95, Eve: 92}
+Set difference: {1,2,3} - {3,4,5} = {1, 2}
+Set intersection: {1,2,3} / {3,4,5} = {3}
 
 ========================================
 ALL TESTS COMPLETED SUCCESSFULLY!

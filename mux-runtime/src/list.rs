@@ -296,3 +296,52 @@ pub extern "C" fn mux_list_concat(a: *const List, b: *const List) -> *mut List {
 pub extern "C" fn mux_list_contains(list: *const List, val: *const Value) -> bool {
     unsafe { (*list).0.iter().any(|item| item == &*val) }
 }
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_sort_value(list_val: *mut Value) {
+    if list_val.is_null() {
+        return;
+    }
+    unsafe {
+        if let Value::List(list_data) = &*list_val {
+            let mut new_list = list_data.clone();
+            new_list.sort();
+            *list_val = Value::List(new_list);
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_reverse_value(list_val: *mut Value) {
+    if list_val.is_null() {
+        return;
+    }
+    unsafe {
+        if let Value::List(list_data) = &*list_val {
+            let mut new_list = list_data.clone();
+            new_list.reverse();
+            *list_val = Value::List(new_list);
+        }
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_list_index_of(
+    list: *const List,
+    val: *const Value,
+) -> *mut crate::optional::Optional {
+    if list.is_null() || val.is_null() {
+        return Box::into_raw(Box::new(crate::optional::Optional::none()));
+    }
+
+    let idx_opt = unsafe { (*list).0.iter().position(|item| item == &*val) };
+    match idx_opt {
+        Some(idx) => Box::into_raw(Box::new(crate::optional::Optional::some(Value::Int(
+            idx as i64,
+        )))),
+        None => Box::into_raw(Box::new(crate::optional::Optional::none())),
+    }
+}

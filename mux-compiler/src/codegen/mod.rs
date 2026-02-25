@@ -490,6 +490,24 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_list_sort_value",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_reverse_value",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_index_of",
+            i8_ptr.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_value_list_length",
             i64_type.fn_type(&[i8_ptr.into()], false),
             None,
@@ -615,17 +633,13 @@ impl<'a> CodeGenerator<'a> {
 
         module.add_function(
             "mux_set_remove",
-            context
-                .bool_type()
-                .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            i8_ptr.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
             None,
         );
 
         module.add_function(
             "mux_set_remove_value",
-            context
-                .bool_type()
-                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
             None,
         );
 
@@ -638,6 +652,18 @@ impl<'a> CodeGenerator<'a> {
         module.add_function(
             "mux_set_is_empty",
             context.bool_type().fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_difference",
+            set_ptr.fn_type(&[set_ptr.into(), set_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_intersection",
+            set_ptr.fn_type(&[set_ptr.into(), set_ptr.into()], false),
             None,
         );
 

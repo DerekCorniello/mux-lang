@@ -6,7 +6,9 @@
 //! - Collection method calls (list, map, set)
 //! - Optional method calls
 
-use inkwell::values::BasicValueEnum;
+use inkwell::AddressSpace;
+use inkwell::types::{BasicMetadataTypeEnum, BasicType};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum};
 
 use crate::ast::{ExpressionNode, PrimitiveType};
 use crate::semantics::Type;
@@ -174,6 +176,163 @@ impl<'a> CodeGenerator<'a> {
             .unwrap_or_else(|| panic!("{} should return a basic value", func_name)))
     }
 
+    fn unbox_value_for_type(
+        &mut self,
+        value_ptr: BasicValueEnum<'a>,
+        expected_type: &Type,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match expected_type {
+            Type::Primitive(PrimitiveType::Int) => Ok(self.get_raw_int_value(value_ptr)?.into()),
+            Type::Primitive(PrimitiveType::Float) => {
+                Ok(self.get_raw_float_value(value_ptr)?.into())
+            }
+            Type::Primitive(PrimitiveType::Bool) => Ok(self.get_raw_bool_value(value_ptr)?.into()),
+            Type::Primitive(PrimitiveType::Char) => Ok(self.get_raw_int_value(value_ptr)?.into()),
+            _ => Ok(value_ptr),
+        }
+    }
+
+    fn call_function_value(
+        &mut self,
+        func_value: BasicValueEnum<'a>,
+        func_type: &Type,
+        args: &[BasicValueEnum<'a>],
+    ) -> Result<Option<BasicValueEnum<'a>>, String> {
+        let (params, returns) = match func_type {
+            Type::Function {
+                params, returns, ..
+            } => (params, returns),
+            _ => return Err("Expected function type for callable value".to_string()),
+        };
+
+        let closure_ptr = func_value.into_pointer_value();
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let closure_struct_type = self
+            .context
+            .struct_type(&[ptr_type.into(), ptr_type.into()], false);
+
+        let fn_ptr_field = self
+            .builder
+            .build_struct_gep(closure_struct_type, closure_ptr, 0, "fn_ptr_field")
+            .map_err(|e| e.to_string())?;
+        let func_ptr = self
+            .builder
+            .build_load(ptr_type, fn_ptr_field, "fn_ptr")
+            .map_err(|e| e.to_string())?
+            .into_pointer_value();
+
+        let captures_field = self
+            .builder
+            .build_struct_gep(closure_struct_type, closure_ptr, 1, "captures_field")
+            .map_err(|e| e.to_string())?;
+        let captures_ptr = self
+            .builder
+            .build_load(ptr_type, captures_field, "captures_ptr")
+            .map_err(|e| e.to_string())?
+            .into_pointer_value();
+
+        let is_null = self
+            .builder
+            .build_is_null(captures_ptr, "captures_is_null")
+            .map_err(|e| e.to_string())?;
+
+        let mut param_types_without: Vec<BasicMetadataTypeEnum> = Vec::new();
+        for param in params {
+            let type_node = self.type_to_type_node(param);
+            param_types_without.push(self.llvm_type_from_mux_type(&type_node)?.into());
+        }
+
+        let mut param_types_with: Vec<BasicMetadataTypeEnum> = vec![ptr_type.into()];
+        param_types_with.extend(param_types_without.clone());
+
+        let fn_type_with = if matches!(returns.as_ref(), Type::Void) {
+            self.context.void_type().fn_type(&param_types_with, false)
+        } else {
+            let return_type_node = self.type_to_type_node(returns);
+            let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
+            return_type.fn_type(&param_types_with, false)
+        };
+
+        let fn_type_without = if matches!(returns.as_ref(), Type::Void) {
+            self.context
+                .void_type()
+                .fn_type(&param_types_without, false)
+        } else {
+            let return_type_node = self.type_to_type_node(returns);
+            let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
+            return_type.fn_type(&param_types_without, false)
+        };
+
+        let user_args: Vec<BasicMetadataValueEnum> = args.iter().map(|v| (*v).into()).collect();
+        let current_fn = self
+            .builder
+            .get_insert_block()
+            .and_then(|b| b.get_parent())
+            .ok_or("No current function")?;
+        let with_captures_bb = self.context.append_basic_block(current_fn, "with_captures");
+        let without_captures_bb = self
+            .context
+            .append_basic_block(current_fn, "without_captures");
+        let merge_bb = self.context.append_basic_block(current_fn, "call_merge");
+
+        self.builder
+            .build_conditional_branch(is_null, without_captures_bb, with_captures_bb)
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(with_captures_bb);
+        let mut args_with_captures: Vec<BasicMetadataValueEnum> = vec![captures_ptr.into()];
+        args_with_captures.extend(user_args.clone());
+        let call_with = self
+            .builder
+            .build_indirect_call(
+                fn_type_with,
+                func_ptr,
+                &args_with_captures,
+                "call_with_captures",
+            )
+            .map_err(|e| e.to_string())?;
+        let result_with = call_with.try_as_basic_value().left();
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| e.to_string())?;
+        let with_end_bb = self
+            .builder
+            .get_insert_block()
+            .ok_or("Missing insertion block after capture call")?;
+
+        self.builder.position_at_end(without_captures_bb);
+        let call_without = self
+            .builder
+            .build_indirect_call(
+                fn_type_without,
+                func_ptr,
+                &user_args,
+                "call_without_captures",
+            )
+            .map_err(|e| e.to_string())?;
+        let result_without = call_without.try_as_basic_value().left();
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| e.to_string())?;
+        let without_end_bb = self
+            .builder
+            .get_insert_block()
+            .ok_or("Missing insertion block after non-capture call")?;
+
+        self.builder.position_at_end(merge_bb);
+        match (result_with, result_without) {
+            (Some(r1), Some(r2)) => {
+                let phi = self
+                    .builder
+                    .build_phi(r1.get_type(), "call_result")
+                    .map_err(|e| e.to_string())?;
+                phi.add_incoming(&[(&r1, with_end_bb), (&r2, without_end_bb)]);
+                Ok(Some(phi.as_basic_value()))
+            }
+            _ => Ok(None),
+        }
+    }
+
     pub(super) fn generate_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
@@ -192,8 +351,12 @@ impl<'a> CodeGenerator<'a> {
             Type::Primitive(prim) => {
                 self.generate_primitive_method_call(obj_value, prim, method_name)
             }
-            Type::List(_) => self.generate_list_method_call(obj_value, method_name, args),
-            Type::Map(_, _) => self.generate_map_method_call(obj_value, method_name, args),
+            Type::List(_) => {
+                self.generate_list_method_call(obj_value, &resolved_obj_type, method_name, args)
+            }
+            Type::Map(_, _) => {
+                self.generate_map_method_call(obj_value, &resolved_obj_type, method_name, args)
+            }
             Type::Set(_) => self.generate_set_method_call(obj_value, method_name, args),
             Type::Tuple(_, _) => self.generate_tuple_method_call(obj_value, method_name, args),
             Type::Named(name, type_args) => {
@@ -390,9 +553,14 @@ impl<'a> CodeGenerator<'a> {
     fn generate_list_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
+        obj_type: &Type,
         method_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
+        let elem_type = match obj_type {
+            Type::List(inner) => Some(inner.as_ref().clone()),
+            _ => None,
+        };
         match method_name {
             "get" => {
                 if args.len() != 1 {
@@ -478,6 +646,466 @@ impl<'a> CodeGenerator<'a> {
                     self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
                 self.call_runtime_function("mux_list_is_empty", &[raw_list])
             }
+            "sort" => {
+                if !args.is_empty() {
+                    return Err("sort() method takes no arguments".to_string());
+                }
+                self.generate_runtime_call("mux_list_sort_value", &[obj_value.into()]);
+                Ok(self.context.i32_type().const_int(0, false).into())
+            }
+            "reverse" => {
+                if !args.is_empty() {
+                    return Err("reverse() method takes no arguments".to_string());
+                }
+                self.generate_runtime_call("mux_list_reverse_value", &[obj_value.into()]);
+                Ok(self.context.i32_type().const_int(0, false).into())
+            }
+            "contains" => {
+                if args.len() != 1 {
+                    return Err("contains() method takes exactly 1 argument".to_string());
+                }
+                let elem_val = self.generate_expression(&args[0])?;
+                let elem_ptr = self.box_value(elem_val);
+                let raw_list =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
+                self.call_runtime_function("mux_list_contains", &[raw_list, elem_ptr.into()])
+            }
+            "index_of" => {
+                if args.len() != 1 {
+                    return Err("index_of() method takes exactly 1 argument".to_string());
+                }
+                let elem_val = self.generate_expression(&args[0])?;
+                let elem_ptr = self.box_value(elem_val);
+                let raw_list =
+                    self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
+                let call =
+                    self.call_runtime_function("mux_list_index_of", &[raw_list, elem_ptr.into()])?;
+                let boxed_call = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_optional_into_value")
+                            .expect("mux_optional_into_value must be declared in runtime"),
+                        &[call.into()],
+                        "optional_as_value",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(boxed_call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_optional_into_value should return a basic value"))
+            }
+            "filter" => {
+                if args.len() != 1 {
+                    return Err("filter() method takes exactly 1 argument".to_string());
+                }
+                let list_elem_type = elem_type
+                    .clone()
+                    .ok_or("list element type missing for filter")?;
+                let predicate_val = self.generate_expression(&args[0])?;
+                let predicate_type = self
+                    .analyzer
+                    .get_expression_type(&args[0])
+                    .map_err(|e| e.message)?;
+
+                let result_list =
+                    self.create_empty_collection_value("mux_new_list", "mux_list_value");
+                let len = self
+                    .call_runtime_function("mux_value_list_length", &[obj_value])?
+                    .into_int_value();
+                let i64_type = self.context.i64_type();
+                let idx_alloca = self
+                    .builder
+                    .build_alloca(i64_type, "filter_idx")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, i64_type.const_zero())
+                    .map_err(|e| e.to_string())?;
+
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .and_then(|b| b.get_parent())
+                    .ok_or("No current function")?;
+                let header_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_filter_header");
+                let body_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_filter_body");
+                let add_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_filter_add");
+                let skip_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_filter_skip");
+                let exit_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_filter_exit");
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(header_bb);
+                let idx = self
+                    .builder
+                    .build_load(i64_type, idx_alloca, "filter_idx_val")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+                let cond = self
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SLT, idx, len, "filter_cond")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_conditional_branch(cond, body_bb, exit_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(body_bb);
+                let elem_ptr = self
+                    .call_runtime_function("mux_value_list_get_value", &[obj_value, idx.into()])?;
+                let typed_elem = self.unbox_value_for_type(elem_ptr, &list_elem_type)?;
+                let predicate_result = self
+                    .call_function_value(predicate_val, &predicate_type, &[typed_elem])?
+                    .ok_or("filter predicate should return a value")?;
+                let pred_bool = self.get_raw_bool_value(predicate_result)?;
+                self.builder
+                    .build_conditional_branch(pred_bool, add_bb, skip_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(add_bb);
+                self.generate_runtime_call(
+                    "mux_list_push_back_value",
+                    &[result_list.into(), elem_ptr.into()],
+                );
+                self.builder
+                    .build_unconditional_branch(skip_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(skip_bb);
+                let next = self
+                    .builder
+                    .build_int_add(idx, i64_type.const_int(1, false), "filter_next")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, next)
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(exit_bb);
+                Ok(result_list)
+            }
+            "map" => {
+                if args.len() != 1 {
+                    return Err("map() method takes exactly 1 argument".to_string());
+                }
+                let list_elem_type = elem_type
+                    .clone()
+                    .ok_or("list element type missing for map")?;
+                let transform_val = self.generate_expression(&args[0])?;
+                let transform_type = self
+                    .analyzer
+                    .get_expression_type(&args[0])
+                    .map_err(|e| e.message)?;
+
+                let result_list =
+                    self.create_empty_collection_value("mux_new_list", "mux_list_value");
+                let len = self
+                    .call_runtime_function("mux_value_list_length", &[obj_value])?
+                    .into_int_value();
+                let i64_type = self.context.i64_type();
+                let idx_alloca = self
+                    .builder
+                    .build_alloca(i64_type, "map_idx")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, i64_type.const_zero())
+                    .map_err(|e| e.to_string())?;
+
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .and_then(|b| b.get_parent())
+                    .ok_or("No current function")?;
+                let header_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_map_header");
+                let body_bb = self.context.append_basic_block(current_fn, "list_map_body");
+                let exit_bb = self.context.append_basic_block(current_fn, "list_map_exit");
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(header_bb);
+                let idx = self
+                    .builder
+                    .build_load(i64_type, idx_alloca, "map_idx_val")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+                let cond = self
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SLT, idx, len, "map_cond")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_conditional_branch(cond, body_bb, exit_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(body_bb);
+                let elem_ptr = self
+                    .call_runtime_function("mux_value_list_get_value", &[obj_value, idx.into()])?;
+                let typed_elem = self.unbox_value_for_type(elem_ptr, &list_elem_type)?;
+                let mapped = self
+                    .call_function_value(transform_val, &transform_type, &[typed_elem])?
+                    .ok_or("map transform should return a value")?;
+                let mapped_ptr = self.box_value(mapped);
+                self.generate_runtime_call(
+                    "mux_list_push_back_value",
+                    &[result_list.into(), mapped_ptr.into()],
+                );
+
+                let next = self
+                    .builder
+                    .build_int_add(idx, i64_type.const_int(1, false), "map_next")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, next)
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(exit_bb);
+                Ok(result_list)
+            }
+            "reduce" => {
+                if args.len() != 2 {
+                    return Err("reduce() method takes exactly 2 arguments".to_string());
+                }
+                let list_elem_type = elem_type
+                    .clone()
+                    .ok_or("list element type missing for reduce")?;
+                let init_val = self.generate_expression(&args[0])?;
+                let op_val = self.generate_expression(&args[1])?;
+                let op_type = self
+                    .analyzer
+                    .get_expression_type(&args[1])
+                    .map_err(|e| e.message)?;
+
+                let len = self
+                    .call_runtime_function("mux_value_list_length", &[obj_value])?
+                    .into_int_value();
+                let i64_type = self.context.i64_type();
+                let idx_alloca = self
+                    .builder
+                    .build_alloca(i64_type, "reduce_idx")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, i64_type.const_zero())
+                    .map_err(|e| e.to_string())?;
+
+                let acc_alloca = self
+                    .builder
+                    .build_alloca(init_val.get_type(), "reduce_acc")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(acc_alloca, init_val)
+                    .map_err(|e| e.to_string())?;
+
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .and_then(|b| b.get_parent())
+                    .ok_or("No current function")?;
+                let header_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_reduce_header");
+                let body_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_reduce_body");
+                let exit_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_reduce_exit");
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(header_bb);
+                let idx = self
+                    .builder
+                    .build_load(i64_type, idx_alloca, "reduce_idx_val")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+                let cond = self
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SLT, idx, len, "reduce_cond")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_conditional_branch(cond, body_bb, exit_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(body_bb);
+                let elem_ptr = self
+                    .call_runtime_function("mux_value_list_get_value", &[obj_value, idx.into()])?;
+                let typed_elem = self.unbox_value_for_type(elem_ptr, &list_elem_type)?;
+                let acc_cur = self
+                    .builder
+                    .build_load(init_val.get_type(), acc_alloca, "reduce_acc_cur")
+                    .map_err(|e| e.to_string())?;
+                let next_acc = self
+                    .call_function_value(op_val, &op_type, &[acc_cur, typed_elem])?
+                    .ok_or("reduce operation should return a value")?;
+                self.builder
+                    .build_store(acc_alloca, next_acc)
+                    .map_err(|e| e.to_string())?;
+
+                let next = self
+                    .builder
+                    .build_int_add(idx, i64_type.const_int(1, false), "reduce_next")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, next)
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(exit_bb);
+                self.builder
+                    .build_load(init_val.get_type(), acc_alloca, "reduce_result")
+                    .map_err(|e| e.to_string())
+            }
+            "find" => {
+                if args.len() != 1 {
+                    return Err("find() method takes exactly 1 argument".to_string());
+                }
+                let list_elem_type = elem_type
+                    .clone()
+                    .ok_or("list element type missing for find")?;
+                let predicate_val = self.generate_expression(&args[0])?;
+                let predicate_type = self
+                    .analyzer
+                    .get_expression_type(&args[0])
+                    .map_err(|e| e.message)?;
+
+                let len = self
+                    .call_runtime_function("mux_value_list_length", &[obj_value])?
+                    .into_int_value();
+                let i64_type = self.context.i64_type();
+                let idx_alloca = self
+                    .builder
+                    .build_alloca(i64_type, "find_idx")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, i64_type.const_zero())
+                    .map_err(|e| e.to_string())?;
+                let result_ptr_alloca = self
+                    .builder
+                    .build_alloca(self.context.ptr_type(AddressSpace::default()), "find_ptr")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(
+                        result_ptr_alloca,
+                        self.context.ptr_type(AddressSpace::default()).const_null(),
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .and_then(|b| b.get_parent())
+                    .ok_or("No current function")?;
+                let header_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_find_header");
+                let body_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_find_body");
+                let found_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_find_found");
+                let next_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_find_next");
+                let exit_bb = self
+                    .context
+                    .append_basic_block(current_fn, "list_find_exit");
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(header_bb);
+                let idx = self
+                    .builder
+                    .build_load(i64_type, idx_alloca, "find_idx_val")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+                let cond = self
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SLT, idx, len, "find_cond")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_conditional_branch(cond, body_bb, exit_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(body_bb);
+                let elem_ptr = self
+                    .call_runtime_function("mux_value_list_get_value", &[obj_value, idx.into()])?;
+                let typed_elem = self.unbox_value_for_type(elem_ptr, &list_elem_type)?;
+                let predicate_result = self
+                    .call_function_value(predicate_val, &predicate_type, &[typed_elem])?
+                    .ok_or("find predicate should return a value")?;
+                let pred_bool = self.get_raw_bool_value(predicate_result)?;
+                self.builder
+                    .build_conditional_branch(pred_bool, found_bb, next_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(found_bb);
+                self.builder
+                    .build_store(result_ptr_alloca, elem_ptr.into_pointer_value())
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_unconditional_branch(exit_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(next_bb);
+                let next = self
+                    .builder
+                    .build_int_add(idx, i64_type.const_int(1, false), "find_next")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, next)
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(exit_bb);
+                let result_ptr = self
+                    .builder
+                    .build_load(
+                        self.context.ptr_type(AddressSpace::default()),
+                        result_ptr_alloca,
+                        "find_result_ptr",
+                    )
+                    .map_err(|e| e.to_string())?;
+                let opt_ptr =
+                    self.call_runtime_function("mux_optional_some_value", &[result_ptr])?;
+                let boxed_call = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_optional_into_value")
+                            .expect("mux_optional_into_value must be declared in runtime"),
+                        &[opt_ptr.into()],
+                        "optional_as_value",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(boxed_call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_optional_into_value should return a basic value"))
+            }
             "size" => {
                 if !args.is_empty() {
                     return Err("size() method takes no arguments".to_string());
@@ -502,9 +1130,14 @@ impl<'a> CodeGenerator<'a> {
     fn generate_map_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
+        obj_type: &Type,
         method_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
+        let (map_key_type, map_value_type) = match obj_type {
+            Type::Map(k, v) => (Some(k.as_ref().clone()), Some(v.as_ref().clone())),
+            _ => (None, None),
+        };
         match method_name {
             "to_string" => {
                 if !args.is_empty() {
@@ -614,6 +1247,119 @@ impl<'a> CodeGenerator<'a> {
                     .left()
                     .expect("mux_map_contains should return a basic value"))
             }
+            "filter" => {
+                if args.len() != 1 {
+                    return Err("filter() method takes exactly 1 argument".to_string());
+                }
+                let key_type = map_key_type
+                    .clone()
+                    .ok_or("map key type missing for filter")?;
+                let value_type = map_value_type
+                    .clone()
+                    .ok_or("map value type missing for filter")?;
+                let predicate_val = self.generate_expression(&args[0])?;
+                let predicate_type = self
+                    .analyzer
+                    .get_expression_type(&args[0])
+                    .map_err(|e| e.message)?;
+
+                let result_map = self.create_empty_collection_value("mux_new_map", "mux_map_value");
+                let pairs = self.call_runtime_function(
+                    "mux_map_pairs",
+                    &[self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?],
+                )?;
+                let len = self
+                    .call_runtime_function("mux_value_list_length", &[pairs])?
+                    .into_int_value();
+                let i64_type = self.context.i64_type();
+                let idx_alloca = self
+                    .builder
+                    .build_alloca(i64_type, "map_filter_idx")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, i64_type.const_zero())
+                    .map_err(|e| e.to_string())?;
+
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .and_then(|b| b.get_parent())
+                    .ok_or("No current function")?;
+                let header_bb = self
+                    .context
+                    .append_basic_block(current_fn, "map_filter_header");
+                let body_bb = self
+                    .context
+                    .append_basic_block(current_fn, "map_filter_body");
+                let add_bb = self
+                    .context
+                    .append_basic_block(current_fn, "map_filter_add");
+                let skip_bb = self
+                    .context
+                    .append_basic_block(current_fn, "map_filter_skip");
+                let exit_bb = self
+                    .context
+                    .append_basic_block(current_fn, "map_filter_exit");
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(header_bb);
+                let idx = self
+                    .builder
+                    .build_load(i64_type, idx_alloca, "map_filter_idx_val")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+                let cond = self
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SLT, idx, len, "map_filter_cond")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_conditional_branch(cond, body_bb, exit_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(body_bb);
+                let pair_val =
+                    self.call_runtime_function("mux_value_list_get_value", &[pairs, idx.into()])?;
+                let pair_ptr = self
+                    .call_runtime_function("mux_value_get_tuple", &[pair_val])?
+                    .into_pointer_value();
+                let key_val = self.call_runtime_function("mux_tuple_left", &[pair_ptr.into()])?;
+                let val_val = self.call_runtime_function("mux_tuple_right", &[pair_ptr.into()])?;
+                let typed_key = self.unbox_value_for_type(key_val, &key_type)?;
+                let typed_val = self.unbox_value_for_type(val_val, &value_type)?;
+                let predicate_result = self
+                    .call_function_value(predicate_val, &predicate_type, &[typed_key, typed_val])?
+                    .ok_or("map.filter predicate should return a value")?;
+                let pred_bool = self.get_raw_bool_value(predicate_result)?;
+                self.builder
+                    .build_conditional_branch(pred_bool, add_bb, skip_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(add_bb);
+                self.generate_runtime_call(
+                    "mux_map_put_value",
+                    &[result_map.into(), key_val.into(), val_val.into()],
+                );
+                self.builder
+                    .build_unconditional_branch(skip_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(skip_bb);
+                let next = self
+                    .builder
+                    .build_int_add(idx, i64_type.const_int(1, false), "map_filter_next")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(idx_alloca, next)
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_unconditional_branch(header_bb)
+                    .map_err(|e| e.to_string())?;
+
+                self.builder.position_at_end(exit_bb);
+                Ok(result_map)
+            }
             "size" => {
                 if !args.is_empty() {
                     return Err("size() method takes no arguments".to_string());
@@ -696,7 +1442,22 @@ impl<'a> CodeGenerator<'a> {
                 }
                 let elem_val = self.generate_expression(&args[0])?;
                 let elem_ptr = self.box_value(elem_val);
-                self.call_runtime_function("mux_set_remove_value", &[obj_value, elem_ptr.into()])
+                let optional_ptr = self
+                    .call_runtime_function("mux_set_remove_value", &[obj_value, elem_ptr.into()])?;
+                let optional_value = self
+                    .builder
+                    .build_call(
+                        self.module
+                            .get_function("mux_optional_into_value")
+                            .expect("mux_optional_into_value must be declared in runtime"),
+                        &[optional_ptr.into()],
+                        "optional_value",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_optional_into_value should return a basic value");
+                Ok(optional_value)
             }
             "contains" => {
                 if args.len() != 1 {

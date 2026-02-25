@@ -753,9 +753,9 @@ Operators are built-in for primitive types and collections.
 | Operator | Types |
 |----------|-------|
 | `+` | int, float, string, list, map, set |
-| `-` | int, float |
+| `-` | int, float, set (difference) |
 | `*` | int, float |
-| `/` | int, float |
+| `/` | int, float, set (intersection) |
 | `%` | int, float |
 | `**` | int, float |
 | `==` | all types |
@@ -802,10 +802,12 @@ auto map1 = {"a": 1, "b": 2}
 auto map2 = {"b": 3, "c": 4}     // Note: key "b" exists in both
 auto merged = map1 + map2        // {"a": 1, "b": 3, "c": 4}
 
-// Set union
+// Set operators
 auto set1 = {1, 2, 3}
 auto set2 = {3, 4, 5}
 auto unioned = set1 + set2       // {1, 2, 3, 4, 5}
+auto diff = set1 - set2          // {1, 2}
+auto common = set1 / set2        // {3}
 
 // String concatenation
 auto greeting = "Hello, " + "World"  // "Hello, World"
@@ -1303,6 +1305,14 @@ All collections provide a consistent API for access, mutation, and inspection.
 | `.push_back(T item)` | `void` | Appends item to the end of the list |
 | `.pop()` | `optional<T>` | Removes and returns last item, or `none` if empty (alias for pop_back) |
 | `.pop_back()` | `optional<T>` | Removes and returns last item, or `none` if empty |
+| `.sort()` | `void` | Sorts the list in place (requires comparable `T`) |
+| `.reverse()` | `void` | Reverses the list in place |
+| `.contains(T item)` | `bool` | Returns `true` if item exists in the list |
+| `.index_of(T item)` | `optional<int>` | Returns index of first match, or `none` |
+| `.find(func(T) returns bool)` | `optional<T>` | Returns first element matching predicate, or `none` |
+| `.filter(func(T) returns bool)` | `list<T>` | Returns elements that satisfy predicate |
+| `.map(func(T) returns U)` | `list<U>` | Transforms each element into a new list |
+| `.reduce(U init, func(U, T) returns U)` | `U` | Folds list into one value |
 | `.to_string()` | `string` | Returns a string representation of the list |
 
 ```mux
@@ -1340,6 +1350,9 @@ print(nums.is_empty().to_string())   // "false"
 | `.put(K key, V value)` | `void` | Inserts or updates a key-value pair |
 | `.contains(K key)` | `bool` | Returns `true` if key exists in map |
 | `.remove(K key)` | `optional<V>` | Removes key and returns value, or `none` if key not found |
+| `.get_keys()` | `list<K>` | Returns all keys |
+| `.get_values()` | `list<V>` | Returns all values |
+| `.filter(func(K, V) returns bool)` | `map<K, V>` | Returns entries matching predicate |
 | `.to_string()` | `string` | Returns a string representation of the map |
 
 ```mux
@@ -1366,7 +1379,7 @@ scores["Alice"] = 95  // Updates existing key
 | `.is_empty()` | `bool` | Returns `true` if set is empty |
 | `.add(T item)` | `void` | Adds an item to the set |
 | `.contains(T item)` | `bool` | Returns `true` if item exists in set |
-| `.remove(T item)` | `optional<T>` | Removes item and returns it, or `none` if not found |
+| `.remove(T item)` | `bool` | Removes item and returns `true` if it existed |
 | `.to_string()` | `string` | Returns a string representation of the set |
 
 ```mux
@@ -1380,10 +1393,16 @@ if tags.contains("urgent") {
 }
 
 // Remove item
-match tags.remove("review") {
-    some(removed) { print("Removed: " + removed) }
-    none { print("Item not found") }
+if tags.remove("review") {
+    print("Removed review")
 }
+
+// Set operators
+auto set1 = {1, 2, 3}
+auto set2 = {3, 4, 5}
+auto unioned = set1 + set2       // {1, 2, 3, 4, 5}
+auto diff = set1 - set2          // {1, 2}
+auto common = set1 / set2        // {3}
 ```
 
 **Design Note:** Collections use consistent method naming across all types. Safe access via `.get()` returns `optional<T>`, while direct access with `[]` provides unchecked access with runtime bounds checking.

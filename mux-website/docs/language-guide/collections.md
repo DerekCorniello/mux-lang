@@ -38,6 +38,14 @@ auto matrix2 = [[1, 2], [3, 4]]    // inferred
 | `.push_back(T item)` | `void` | Appends item to the end |
 | `.pop()` | `optional<T>` | Removes and returns first item, or `none` if empty |
 | `.pop_back()` | `optional<T>` | Removes and returns last item, or `none` if empty |
+| `.sort()` | `void` | Sorts the list in place (requires comparable `T`) |
+| `.reverse()` | `void` | Reverses the list in place |
+| `.contains(T item)` | `bool` | Returns `true` if item exists in the list |
+| `.index_of(T item)` | `optional<int>` | Returns index of first match, or `none` |
+| `.find(func(T) returns bool)` | `optional<T>` | Returns first element matching predicate, or `none` |
+| `.filter(func(T) returns bool)` | `list<T>` | Returns elements that satisfy predicate |
+| `.map(func(T) returns U)` | `list<U>` | Transforms each element into a new list |
+| `.reduce(U init, func(U, T) returns U)` | `U` | Folds list into one value |
 | `.to_string()` | `string` | String representation of the list |
 
 ### List Operations
@@ -129,6 +137,7 @@ map<string, map<string, int>> data = {
 | `.get_keys()` | `list<K>` | List of keys from the map |
 | `.get_values()` | `list<V>` | List of values from the map |
 | `.get_pairs()` | `list<tuple<K, V>>` | List of key-value pairs |
+| `.filter(func(K, V) returns bool)` | `map<K, V>` | Returns entries matching predicate |
 
 ### Map Operations
 
@@ -191,9 +200,8 @@ auto empty2 = set<int>()
 | `.is_empty()` | `bool` | Returns `true` if set is empty |
 | `.add(T item)` | `void` | Adds an item to the set |
 | `.contains(T item)` | `bool` | Returns `true` if item exists in set |
-| `.remove(T item)` | `optional<T>` | Removes item and returns it, or `none` if not found |
+| `.remove(T item)` | `bool` | Removes item and returns `true` if it existed |
 | `.to_string()` | `string` | String representation of the set |
-| `.to_list()` | `list<T>` | Creates a list from the set |
 
 ### Set Operations
 
@@ -209,15 +217,16 @@ if tags.contains("urgent") {
 }
 
 // Remove item
-match tags.remove("review") {
-    some(removed) { print("Removed: " + removed) }
-    none { print("Item not found") }
+if tags.remove("review") {
+    print("Removed review")
 }
 
-// Union
+// Set operators
 auto set1 = {1, 2, 3}
 auto set2 = {3, 4, 5}
 auto unioned = set1 + set2       // {1, 2, 3, 4, 5}
+auto diff = set1 - set2          // {1, 2}
+auto common = set1 / set2        // {3}
 ```
 
 ## The `in` Operator
