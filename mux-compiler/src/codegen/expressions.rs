@@ -651,7 +651,7 @@ impl<'a> CodeGenerator<'a> {
                             Ok(ptr_to_boxed.into())
                         }
                         Type::Named(type_name, _) => {
-                            if type_name == "Optional" || type_name == "Result" {
+                            if type_name == "optional" || type_name == "result" {
                                 // optional/Result: load pointer to boxed value
                                 let ptr_to_boxed = self
                                     .builder
@@ -2023,7 +2023,7 @@ impl<'a> CodeGenerator<'a> {
                     match name.as_str() {
                         "print" => self.generate_print_call(args),
                         "read_line" => self.generate_read_line_call(args),
-                        "Err" => {
+                        "err" => {
                             if args.len() != 1 {
                                 return Err("Err takes 1 argument".to_string());
                             }
@@ -2043,7 +2043,7 @@ impl<'a> CodeGenerator<'a> {
                                 .expect("result constructor should return a basic value");
                             Ok(result_ptr)
                         }
-                        "Ok" => {
+                        "ok" => {
                             if args.len() != 1 {
                                 return Err("Ok takes 1 argument".to_string());
                             }
@@ -2086,7 +2086,7 @@ impl<'a> CodeGenerator<'a> {
                             // result constructors return Value* pointers directly
                             Ok(result_ptr)
                         }
-                        "Some" => {
+                        "some" => {
                             if args.len() != 1 {
                                 return Err("Some takes 1 argument".to_string());
                             }
@@ -2129,7 +2129,7 @@ impl<'a> CodeGenerator<'a> {
                             // optional constructors return Value* pointers directly
                             Ok(result_ptr)
                         }
-                        "None" => {
+                        "none" => {
                             if !args.is_empty() {
                                 return Err("None takes 0 arguments".to_string());
                             }

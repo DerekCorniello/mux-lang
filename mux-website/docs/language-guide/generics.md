@@ -80,9 +80,9 @@ class Stack<T> {
         self.items.push_back(item)
     }
     
-    func pop() returns Optional<T> {
+    func pop() returns optional<T> {
         if self.items.is_empty() {
-            return None.new()
+            return none.new()
         }
         return self.items.pop_back()
     }
@@ -140,7 +140,7 @@ Mux provides built-in interfaces for common operations:
 | `Equatable` | Types that support `==` and `!=` operators |
 | `Comparable` | Types that support `<`, `<=`, `>`, `>=` operators |
 | `Hashable` | Types that can be used as keys in sets and maps |
-| `Error` | Types that can be used as `Result<T, E>` errors (via `.message()` method) |
+| `Error` | Types that can be used as `result<T, E>` errors (via `.message()` method) |
 
 ### Operator Mapping
 
@@ -158,7 +158,7 @@ Mux provides built-in interfaces for common operations:
 | `bool` | `Stringable`, `Equatable`, `Hashable` |
 | `char` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
 
-`Result<T, E>` requires `E` to implement `Error`.
+`result<T, E>` requires `E` to implement `Error`.
 
 ## Implementing Interfaces for Custom Types
 
@@ -284,20 +284,20 @@ auto numbers = [1, 2, 3]  // list<int> inferred
 Enums can be generic:
 
 ```mux title="generic_enums.mux"
-enum Optional<T> {
-    Some(T)
-    None
+enum optional<T> {
+    some(T)
+    none
 }
 
-enum Result<T, E> {
-    Ok(T)
-    Err(E)
+enum result<T, E> {
+    ok(T)
+    err(E)
 }
 
 // Usage
-auto maybeInt = Some.new(42)              // Optional<int>
-auto success = Ok.new(100)                 // Result<int, E>
-auto failure = Err.new("error message")    // Result<T, string>
+auto maybeInt = some.new(42)              // optional<int>
+auto success = ok.new(100)                 // result<int, E>
+auto failure = err.new("error message")    // result<T, string>
 ```
 
 See [Enums](./enums.md) and [Error Handling](./error-handling.md) for more details.
@@ -342,4 +342,4 @@ Type `T` must implement **all** specified interfaces.
 - [Functions](./functions.md) - Generic functions
 - [Classes](./classes.md) - Generic classes
 - [Enums](./enums.md) - Generic enums
-- [Error Handling](./error-handling.md) - Optional&lt;T&gt; and Result&lt;T, E&gt;
+- [Error Handling](./error-handling.md) - optional&lt;T&gt; and result&lt;T, E&gt;

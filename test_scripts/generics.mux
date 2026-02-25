@@ -17,8 +17,8 @@ func name<T is Stringable>(T s) returns string {
 class Stack<T> {
     list<T> items
     func push(T item) returns void { self.items.push_back(item) }
-    func pop() returns Optional<T> {
-        if self.items.is_empty() { return None }
+    func pop() returns optional<T> {
+        if self.items.is_empty() { return none }
         return self.items.pop_back()
     }
     common func who_am_i() returns string {
@@ -40,8 +40,8 @@ class Stack<T> {
 auto s = Stack<int>.new()
 s.push(42)
 match s.pop() {
-    Some(v) { print("Popped: " + v.to_string()) }
-    None { print("Empty stack") }
+    some(v) { print("Popped: " + v.to_string()) }
+    none { print("Empty stack") }
 }
 print(Stack.who_am_i())
 print("trying to instantiate stack")

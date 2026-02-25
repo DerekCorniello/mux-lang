@@ -28,7 +28,7 @@ func main() returns void {
 - **Static type system** with type inference using `auto`
 - **Pattern matching** with guards for elegant control flow
 - **Generics** with compile-time monomorphization
-- **Error handling** with `Result<T, E>` and `Optional<T>`
+- **Error handling** with `result<T, E>` and `optional<T>`
 - **Memory safety** through reference counting
 - **No semicolons** - clean, readable syntax
 - **Collection literals** for lists, maps, and sets

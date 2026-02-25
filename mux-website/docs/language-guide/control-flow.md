@@ -171,47 +171,47 @@ if value == 1 {
 }
 ```
 
-### Matching Optional
+### Matching optional
 
 ```mux title="matching_optional.mux"
-func findEven(list<int> xs) returns Optional<int> {
+func findEven(list<int> xs) returns optional<int> {
     for x in xs {
         if x % 2 == 0 {
-            return Some(x)
+            return some(x)
         }
     }
-    return None
+    return none
 }
 
 auto maybeEven = findEven([1, 3, 4, 7])
 
 match maybeEven {
-    Some(value) {
+    some(value) {
         print("Found even: " + value.to_string())
     }
-    None {
+    none {
         print("No even number found")
     }
 }
 ```
 
-### Matching Result
+### Matching result
 
 ```mux title="matching_result.mux"
-func divide(int a, int b) returns Result<int, string> {
+func divide(int a, int b) returns result<int, string> {
     if b == 0 {
-        return Err("division by zero")
+        return err("division by zero")
     }
-    return Ok(a / b)
+    return ok(a / b)
 }
 
 auto result = divide(10, 2)
 
 match result {
-    Ok(value) {
-        print("Result: " + value.to_string())
+    ok(value) {
+        print("result: " + value.to_string())
     }
-    Err(error) {
+    err(error) {
         print("Error: " + error)
     }
 }
@@ -223,16 +223,16 @@ Guards add conditional logic to patterns:
 
 ```mux title="pattern_guards.mux"
 match value {
-    Some(v) if v > 10 {
+    some(v) if v > 10 {
         print("large: " + v.to_string())
     }
-    Some(v) if v > 0 {
+    some(v) if v > 0 {
         print("small positive: " + v.to_string())
     }
-    Some(v) {
+    some(v) {
         print("non-positive: " + v.to_string())
     }
-    None {
+    none {
         print("no value")
     }
 }
@@ -245,21 +245,21 @@ Use `_` to ignore parts of patterns you don't need:
 ```mux title="pattern_ignore.mux"
 // Ignore the wrapped value
 match maybeValue {
-    Some(_) {
+    some(_) {
         print("Got a value")  // don't care what it is
     }
-    None {
+    none {
         print("Got nothing")
     }
 }
 
 // Ignore error details
 match result {
-    Ok(value) {
+    ok(value) {
         print("Success: " + value.to_string())
     }
-    Err(_) {
-        print("Some error occurred")  // don't care about details
+    err(_) {
+        print("some error occurred")  // don't care about details
     }
 }
 ```
@@ -436,29 +436,29 @@ match score {
 Exit a function early:
 
 ```mux title="return_statement.mux"
-func findFirst(list<int> items, int target) returns Optional<int> {
+func findFirst(list<int> items, int target) returns optional<int> {
     for i in range(0, items.size()) {
         if items[i] == target {
-            return Some(i)  // early return
+            return some(i)  // early return
         }
     }
-    return None
+    return none
 }
 
-func validate(int value) returns Result<int, string> {
+func validate(int value) returns result<int, string> {
     if value < 0 {
-        return Err("value must be positive")
+        return err("value must be positive")
     }
     if value > 100 {
-        return Err("value too large")
+        return err("value too large")
     }
-    return Ok(value)
+    return ok(value)
 }
 ```
 
 ## Best Practices
 
-1. **Use `match` for Result and Optional** - More expressive than if-else chains
+1. **Use `match` for result and optional** - More expressive than if-else chains
 2. **Prefer pattern matching with guards** - Cleaner than nested if statements
 3. **Use `_` for unused values** - Makes intent explicit
 4. **Early returns for error conditions** - Reduces nesting
@@ -467,7 +467,7 @@ func validate(int value) returns Result<int, string> {
 
 ## See Also
 
-- [Error Handling](./error-handling.md) - Using Result and Optional with match
+- [Error Handling](./error-handling.md) - Using result and optional with match
 - [Enums](./enums.md) - Pattern matching with tagged unions
 - [Functions](./functions.md) - Return statements and early exits
 - [Variables](./variables.md) - Type inference with `auto`

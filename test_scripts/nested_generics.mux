@@ -28,9 +28,9 @@ class Stack<T> {
         self.items.push_back(item)
     }
     
-    func pop() returns Optional<T> {
+    func pop() returns optional<T> {
         if self.items.is_empty() {
-            return None
+            return none
         }
         return self.items.pop_back()
     }
@@ -82,17 +82,17 @@ stack_of_stacks.push(inner_stack2)
 print("Stack of stacks size: " + stack_of_stacks.get_size().to_string())
 
 match stack_of_stacks.pop() {
-    Some(inner) {
+    some(inner) {
         match inner.pop() {
-            Some(val) {
+            some(val) {
                 print("Popped from nested stack: " + val)
             }
-            None {
+            none {
                 print("Inner stack empty")
             }
         }
     }
-    None {
+    none {
         print("Outer stack empty")
     }
 }
@@ -126,10 +126,10 @@ stack_of_pairs.push(pair1)
 stack_of_pairs.push(pair2)
 
 match stack_of_pairs.pop() {
-    Some(p) {
+    some(p) {
         print("Popped pair: " + p.get_first() + " = " + p.get_second().to_string())
     }
-    None {
+    none {
         print("Stack empty")
     }
 }
@@ -172,11 +172,11 @@ auto complex_stack = Stack<Box<Pair<int, string>>>.new()
 complex_stack.push(boxed_pair)
 
 match complex_stack.pop() {
-    Some(box) {
+    some(box) {
         auto pair = box.get()
         print("Triple nested - first: " + pair.get_first().to_string() + ", second: " + pair.get_second())
     }
-    None {
+    none {
         print("Complex stack empty")
     }
 }
@@ -190,10 +190,10 @@ auto list_of_stacks = [stack_with_box]
 print("List of stacks size: " + list_of_stacks.size().to_string())
 
 match list_of_stacks[0].pop() {
-    Some(b) {
+    some(b) {
         print("Value from list->stack->box: " + b.get().to_string())
     }
-    None {
+    none {
         print("Empty")
     }
 }

@@ -137,12 +137,12 @@ Mux prioritizes readability, safety, and developer productivity over absolute ma
 - Elegant error handling
 - Safer than if/else chains
 - Compiler checks exhaustiveness
-- Natural for `Result` and `Optional`
+- Natural for `result` and `optional`
 
 ```mux title="pattern_matching_errors.mux"
 match divide(10, 0) {
-    Ok(result) { print("Success: " + result.to_string()) }
-    Err(error) { print("Error: " + error) }
+    ok(result) { print("Success: " + result.to_string()) }
+    err(error) { print("Error: " + error) }
 }
 ```
 

@@ -69,37 +69,37 @@ let sum = x + y;  // 45.14 (both are 'number' type)
 
 ## Error Handling
 
-### Mux: Result Type
+### Mux: result Type
 
 ```mux title="mux_result.mux"
-func divide(int a, int b) returns Result<int, string> {
+func divide(int a, int b) returns result<int, string> {
     if b == 0 {
-        return Err("division by zero")
+        return err("division by zero")
     }
-    return Ok(a / b)
+    return ok(a / b)
 }
 
 match divide(10, 2) {
-    Ok(result) { print(result.to_string()) }
-    Err(error) { print("Error: " + error) }
+    ok(result) { print(result.to_string()) }
+    err(error) { print("Error: " + error) }
 }
 ```
 
 **Philosophy:** Errors are values. Compiler enforces handling.
 
-### Rust: Result Type
+### Rust: result Type
 
 ```rust title="rust_result.rs"
-fn divide(a: i32, b: i32) -> Result<i32, String> {
+fn divide(a: i32, b: i32) -> result<i32, String> {
     if b == 0 {
-        return Err("division by zero".to_string());
+        return err("division by zero".to_string());
     }
-    Ok(a / b)
+    ok(a / b)
 }
 
 match divide(10, 2) {
-    Ok(result) => println!("{}", result),
-    Err(error) => println!("Error: {}", error),
+    ok(result) => println!("{}", result),
+    err(error) => println!("Error: {}", error),
 }
 ```
 
@@ -311,9 +311,9 @@ let y = identity("hello");
 
 ```mux title="mux_pattern_matching.mux"
 match value {
-    Some(x) if x > 10 { print("Large: " + x.to_string()) }
-    Some(x) { print("Small: " + x.to_string()) }
-    None { print("No value") }
+    some(x) if x > 10 { print("Large: " + x.to_string()) }
+    some(x) { print("Small: " + x.to_string()) }
+    none { print("No value") }
 }
 ```
 
@@ -323,9 +323,9 @@ match value {
 
 ```rust title="rust_pattern_matching.rs"
 match value {
-    Some(x) if x > 10 => println!("Large: {}", x),
-    Some(x) => println!("Small: {}", x),
-    None => println!("No value"),
+    some(x) if x > 10 => println!("Large: {}", x),
+    some(x) => println!("Small: {}", x),
+    none => println!("No value"),
 }
 ```
 
@@ -354,7 +354,7 @@ match value:
         print(f"Large: {x}")
     case x:
         print(f"Small: {x}")
-    case None:
+    case none:
         print("No value")
 ```
 
@@ -384,7 +384,7 @@ if (value !== null && value > 10) {
 |---------|-----|------|----|----|-----------|
 | **Type Safety** | Strong, static | Strong, static | Strong, static | Dynamic | Static (compile-time only) |
 | **Type Conversions** | Explicit | Explicit | Explicit | Implicit | Explicit (erased at runtime) |
-| **Error Handling** | Result type | Result type | Error values | Exceptions | Exceptions (no compile-time checks) |
+| **Error Handling** | result type | result type | Error values | Exceptions | Exceptions (no compile-time checks) |
 | **Memory Management** | Reference counting | Ownership | GC | Ref count + GC | GC (no compile-time safety) |
 | **Generics** | Monomorphization | Monomorphization | Monomorphization/dispatch | Duck typing | Type erasure (no runtime types) |
 | **Pattern Matching** | Yes, with guards | Yes, with guards | Switch only | Yes (3.10+) | No (no runtime types) |

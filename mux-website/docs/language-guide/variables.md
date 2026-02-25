@@ -104,7 +104,7 @@ list<int> empty = []           // explicit type needed
 auto empty = list<int>()       // or explicit constructor
 
 // Uninitialized variables
-Result<int, string> pending    // explicit type needed
+result<int, string> pending    // explicit type needed
 
 // Function parameters (required)
 func process(int data) returns void { }
@@ -128,8 +128,8 @@ for int _ in range(0, 10) { // still need a type annotation
 
 // Unused pattern match values
 match result {
-    Ok(_) { print("Success") }  // don't care about the value
-    Err(_) { print("Error") }   // don't care about the error details
+    ok(_) { print("Success") }  // don't care about the value
+    err(_) { print("Error") }   // don't care about the error details
 }
 ```
 

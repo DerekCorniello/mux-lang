@@ -92,7 +92,7 @@ if condition {
 | Pattern | Meaning | Example |
 |---------|---------|---------|
 | `_` | Wildcard (matches anything) | `_ { print("other") }` |
-| `Variant(value)` | Destructuring enum | `Some(v) { print(v) }` |
+| `Variant(value)` | Destructuring enum | `some(v) { print(v) }` |
 | `Identifier` | Bind to variable | `Point(x, y) { ... }` |
 | `value` | Literal match | `0 { print("zero") }` |
 
@@ -100,18 +100,18 @@ if condition {
 
 ```mux
 enum Option<T> {
-    Some(T)
-    None
+    some(T)
+    none
 }
 
 match maybeValue {
-    Some(v) if v > 10 {
+    some(v) if v > 10 {
         print("large: " + v)
     }
-    Some(v) {
+    some(v) {
         print("small: " + v)
     }
-    None {
+    none {
         print("no value")
     }
     _ {

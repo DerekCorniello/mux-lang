@@ -220,7 +220,7 @@ Both operands must have compatible element types:
 
 The `+` operator is overloaded for collection types:
 
-| Types | Operation | Result |
+| Types | Operation | result |
 |-------|-----------|--------|
 | `list<T> + list<T>` | Concatenation | Combined list |
 | `map<K,V> + map<K,V>` | Merge | Combined map (latter overwrites on collision) |

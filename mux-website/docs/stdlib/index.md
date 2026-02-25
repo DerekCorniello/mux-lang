@@ -32,7 +32,7 @@ import std.*                  // flat import of all stdlib items
 |--------|-------------|--------|
 | [assert](./assert) | Test assertions that panic on failure | Available |
 | [math](./math) | Mathematical functions and constants | Available |
-| [io](./io) | File and path operations with `Result`-based errors | Available |
+| [io](./io) | File and path operations with `result`-based errors | Available |
 | [random](./random) | Pseudorandom number generation | Available |
 | [datetime](./datetime) | Time retrieval, formatting, and sleep helpers | Available |
 

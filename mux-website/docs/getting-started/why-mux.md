@@ -26,7 +26,7 @@ Rust sets the bar for memory safety, using an innovative ownership model, while 
 
 Go excels at simplicity, fast compilation, and building reliable network services.
 
-**Mux's Approach:** Inspired by Go's minimalism but pushes further with modern language features like generics with monomorphization, pattern matching with guards, and Result/Optional types for expressive error handling.
+**Mux's Approach:** Inspired by Go's minimalism but pushes further with modern language features like generics with monomorphization, pattern matching with guards, and result/optional types for expressive error handling.
 
 ## Design Goals
 
@@ -113,7 +113,7 @@ You will love: No borrow checker, simpler lifetime management<br/>
 You will appreciate: Reference counting with predictable performance<br/>
 
 ### From JavaScript/TypeScript
-You will love: No more `undefined` surprises, Result/Optional instead of null<br/>
+You will love: No more `undefined` surprises, result/optional instead of null<br/>
 You will appreciate: A stricter type system that catches bugs at compile time<br/>
 
 ## What's Next?

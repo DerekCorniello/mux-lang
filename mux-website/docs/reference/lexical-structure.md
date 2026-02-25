@@ -87,8 +87,8 @@ func process(int data, int _) returns void {
 
 // Pattern matching wildcard
 match result {
-    Ok(value) { print(value) }
-    Err(_) { print("error") }  // Ignore error details
+    ok(value) { print(value) }
+    err(_) { print("error") }  // Ignore error details
 }
 
 // Loop when index is not needed
@@ -146,10 +146,10 @@ The following words are reserved keywords and cannot be used as identifiers:
 | `in` | Membership test |
 | `true` | Boolean true literal |
 | `false` | Boolean false literal |
-| `None` | Optional none literal |
-| `Some` | Optional some literal |
-| `Ok` | Result ok literal |
-| `Err` | Result error literal |
+| `none` | optional none literal |
+| `some` | optional some literal |
+| `ok` | result ok literal |
+| `err` | result error literal |
 
 ### Special Keywords
 
@@ -212,10 +212,10 @@ auto yes = true
 bool no = false
 ```
 
-### None Literal
+### none Literal
 
 ```mux
-auto absent = None
+auto absent = none
 ```
 
 ## Operators and Punctuation

@@ -406,7 +406,7 @@ func power(int base, int exp) returns int {
 ```mux title="format_module.mux"
 // utils/format.mux
 func format_result(int value) returns string {
-    return "Result: " + value.to_string()
+    return "result: " + value.to_string()
 }
 ```
 

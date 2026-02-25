@@ -1,17 +1,17 @@
-// Test Optional is_some() and is_none() methods
+// Test optional is_some() and is_none() methods
 
-print("=== Testing Optional is_some() and is_none() ===")
+print("=== Testing optional is_some() and is_none() ===")
 
-// Test 1: is_some() with Some value
-Optional<int> opt1 = Some(42)
-print("opt1 = Some(42)")
+// Test 1: is_some() with some value
+optional<int> opt1 = some(42)
+print("opt1 = some(42)")
 print("opt1.is_some() = " + opt1.is_some().to_string())
 print("opt1.is_none() = " + opt1.is_none().to_string())
 
-// Test 2: is_some() with None
-Optional<int> opt2 = None
+// Test 2: is_some() with none
+optional<int> opt2 = none
 print("")
-print("opt2 = None")
+print("opt2 = none")
 print("opt2.is_some() = " + opt2.is_some().to_string())
 print("opt2.is_none() = " + opt2.is_none().to_string())
 
@@ -27,10 +27,10 @@ if opt2.is_none() {
     print("✓ opt2.is_none() returned true")
 }
 
-// Test 4: Optional<string>
-Optional<string> opt3 = Some("hello")
+// Test 4: optional<string>
+optional<string> opt3 = some("hello")
 print("")
-print("opt3 = Some(\"hello\")")
+print("opt3 = some(\"hello\")")
 print("opt3.is_some() = " + opt3.is_some().to_string())
 print("opt3.is_none() = " + opt3.is_none().to_string())
 

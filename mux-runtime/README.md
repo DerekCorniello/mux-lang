@@ -66,7 +66,7 @@ Mux (fully "MuxLang") is a statically-typed, reference-counted language that com
 - **Rust-style pattern-matching with guards**
 - **Curly-brace syntax** and **no semicolons**
 - **Minimal trait/Class model** (use `is` instead of `implements` like Java)
-- **Built-in `Result<T,E>` and `Optional<T>` for error handling**
+- **Built-in `result<T,E>` and `optional<T>` for error handling**
 
 ---
 
@@ -80,7 +80,7 @@ Mux (fully "MuxLang") is a statically-typed, reference-counted language that com
 - **Statement termination**: by end-of-line only (no semicolons)
 - **Underscore placeholder**: `_` can be used for unused parameters, variables, or pattern matching wildcards
 - **Keywords**:
-  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `as`, `in`, `true`, `false`, `common`, `None`, `Optional`, `Result`, `Ok`, `Err`
+  `func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `as`, `in`, `true`, `false`, `common`, `none`, `optional`, `result`, `ok`, `err`
 
 ---
 
@@ -135,17 +135,17 @@ auto val = (42).to_float()      // Valid
 
 #### 3.2.2 String Parsing (Fallible Conversions)
 
-String and char parsing methods return `Result<T, string>` because they can fail:
+String and char parsing methods return `result<T, string>` because they can fail:
 
 ```mux
-// String to number (returns Result)
+// String to number (returns result)
 auto num_str = "42"
 auto result = num_str.to_int()
 match result {
-    Ok(value) {
+    ok(value) {
         print("Parsed: " + value.to_string())  // "Parsed: 42"
     }
-    Err(error) {
+    err(error) {
         print("Parse error: " + error)
     }
 }
@@ -154,23 +154,23 @@ match result {
 auto float_str = "3.14159"
 auto float_result = float_str.to_float()
 match float_result {
-    Ok(value) { print(value.to_string()) }
-    Err(msg) { print("Error: " + msg) }
+    ok(value) { print(value.to_string()) }
+    err(msg) { print("Error: " + msg) }
 }
 
 // Char to digit (only works for '0'-'9')
 auto digit_char = '5'
 auto digit_result = digit_char.to_int()
 match digit_result {
-    Ok(digit) { print(digit.to_string()) }  // "5"
-    Err(msg) { print(msg) }
+    ok(digit) { print(digit.to_string()) }  // "5"
+    err(msg) { print(msg) }
 }
 
 auto letter = 'A'
 auto letter_result = letter.to_int()
 match letter_result {
-    Ok(_) { print("Unexpected success") }
-    Err(msg) { print(msg) }  // "Character is not a digit (0-9)"
+    ok(_) { print("Unexpected success") }
+    err(msg) { print(msg) }  // "Character is not a digit (0-9)"
 }
 ```
 
@@ -212,10 +212,10 @@ auto good4 = (true).to_int() + (false).to_int()  // OK: 1
 | `bool` | `.to_int()` | `int` | Returns 1 or 0 |
 | `bool` | `.to_float()` | `float` | Returns 1.0 or 0.0 |
 | `char` | `.to_string()` | `string` | Converts char to string |
-| `char` | `.to_int()` | `Result<int, string>` | Digit value for '0'-'9' only |
+| `char` | `.to_int()` | `result<int, string>` | Digit value for '0'-'9' only |
 | `string` | `.to_string()` | `str` | Identity function |
-| `string` | `.to_int()` | `Result<int, string>` | Parses string as integer |
-| `string` | `.to_float()` | `Result<float, string>` | Parses string as float |
+| `string` | `.to_int()` | `result<int, string>` | Parses string as integer |
+| `string` | `.to_float()` | `result<float, string>` | Parses string as float |
 
 ### 3.2.5 Technical Design: Uniform Value Representation
 
@@ -233,8 +233,8 @@ pub enum Value {
     Map(BTreeMap<Value, Value>),
     Set(BTreeSet<Value>),
     Tuple(Box<Tuple>),
-    Optional(Option<Box<Value>>),
-    Result(Result<Box<Value>, String>),
+    optional(Option<Box<Value>>),
+    result(result<Box<Value>, String>),
     Object(ObjectRef),
 }
 ```
@@ -301,8 +301,8 @@ print("Hello, " + name)
 ### 3.4 Composite Types
 
 ```
-Optional<T>
-Result<T, E>
+optional<T>
+result<T, E>
 list<T>
 map<K,V>
 set<T>
@@ -358,8 +358,8 @@ class Stack<T> {
         self.items.push_back(item)
     }
     
-    func pop() returns Optional<T> {
-        if self.items.is_empty() { return None }
+    func pop() returns optional<T> {
+        if self.items.is_empty() { return none }
         return self.items.pop_back()
     }
 }
@@ -416,7 +416,7 @@ Mux provides built-in interfaces (traits) for common operations:
 | `Equatable` | (none) | Enables `==` and `!=` operators |
 | `Comparable` | (none) | Enables `<`, `>`, `<=`, `>=` operators |
 | `Hashable` | (none) | Types that can be used as set/map keys |
-| `Error` | `.message()` | Types that can be used as `Result<T, E>` error values |
+| `Error` | `.message()` | Types that can be used as `result<T, E>` error values |
 
 **Note:** For `Equatable` and `Comparable`, the methods are marker interfaces - you cannot call `.eq()` or `.cmp()` on built-in types. Use the operators directly (`==`, `<`, etc.) instead.
 
@@ -427,7 +427,7 @@ Mux provides built-in interfaces (traits) for common operations:
 - `bool`: Implements `Stringable`, `Equatable`, `Hashable`
 - `char`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`
 
-`Result<T, E>` requires `E` to implement `Error`.
+`result<T, E>` requires `E` to implement `Error`.
 
 **Example: Custom Type Implementing Interface**
 ```mux
@@ -683,7 +683,7 @@ const int MAX = 100
 
 The `&&` and `||` operators use **LLVM control flow** for short-circuit evaluation, not simple boolean operations.
 
-#### Phi Nodes for Result Merging
+#### Phi Nodes for result Merging
 
 Phi nodes select a value based on which predecessor block executed:
 
@@ -749,7 +749,7 @@ auto hasZ = 'z' in msg              // false
 
 The `+` operator is overloaded for collection types with type-specific semantics:
 
-| Types | Operation | Result |
+| Types | Operation | result |
 |-------|-----------|--------|
 | `list<T> + list<T>` | Concatenation | Combined list |
 | `map<K,V> + map<K,V>` | Merge | Combined map (latter overwrites former on key collision) |
@@ -788,7 +788,7 @@ let left_type = analyzer.get_expression_type(left_expr)?;
 let right_type = analyzer.get_expression_type(right_expr)?;
 
 if !type_supports_addition(&left_type) {
-    return Err(format!("Type {} does not support +", left_type));
+    return err(format!("Type {} does not support +", left_type));
 }
 ```
 
@@ -874,7 +874,7 @@ auto filter = func(list<int> nums, func(int) returns bool cond) returns list<int
 - All lambdas use block syntax with `func(params) { ... }`
 - Lambda parameters can use `auto` when type can be inferred from context
 - Use `_` for unused lambda parameters
-- Optional capture list in `[…]` form [needs more clarification]
+- optional capture list in `[…]` form [needs more clarification]
 
 ---
 
@@ -899,14 +899,14 @@ auto message = if x > 0 { "positive" } else { "non-positive" }
 
 ```
 match (value) {
-    Some(v) if v > 10 {
+    some(v) if v > 10 {
         auto msg = "large: " + v  // local inference
         print(msg)
     }
-    Some(v) {
+    some(v) {
         print("small: " + v)
     }
-    None {
+    none {
         print("no value")
     }
     _ {
@@ -1084,12 +1084,12 @@ class Stack<T> {
         items.push_back(item)
     }
 
-    func pop() returns Optional<T> {
+    func pop() returns optional<T> {
         if items.isEmpty() {
-            return None
+            return none
         }
         auto item = items.pop_back()
-        return Some(item)
+        return some(item)
     }
 }
 
@@ -1317,21 +1317,21 @@ All collections provide a consistent API for access, mutation, and inspection.
 |--------|---------|-------------|
 | `.size()` | `int` | Returns the number of elements in the list |
 | `.is_empty()` | `bool` | Returns `true` if list has no elements |
-| `.get(int index)` | `Optional<T>` | Safe access; returns `Some(value)` or `None` if out of bounds |
+| `.get(int index)` | `optional<T>` | Safe access; returns `some(value)` or `none` if out of bounds |
 | `[int index]` | `T` | Direct access; runtime error if out of bounds |
 | `.push(T item)` | `void` | Appends item to the end of the list (alias for push_back) |
 | `.push_back(T item)` | `void` | Appends item to the end of the list |
-| `.pop()` | `Optional<T>` | Removes and returns last item, or `None` if empty (alias for pop_back) |
-| `.pop_back()` | `Optional<T>` | Removes and returns last item, or `None` if empty |
+| `.pop()` | `optional<T>` | Removes and returns last item, or `none` if empty (alias for pop_back) |
+| `.pop_back()` | `optional<T>` | Removes and returns last item, or `none` if empty |
 | `.to_string()` | `string` | Returns a string representation of the list |
 
 ```mux
 auto nums = [1, 2, 3]
 
-// Safe access with Optional
+// Safe access with optional
 match nums.get(0) {
-    Some(first) { print(first.to_string()) }  // "1"
-    None { print("Index out of bounds") }
+    some(first) { print(first.to_string()) }  // "1"
+    none { print("Index out of bounds") }
 }
 
 // Direct access (runtime error if index invalid)
@@ -1340,8 +1340,8 @@ auto second = nums[1]  // 2
 // Mutation
 nums.push_back(4)      // [1, 2, 3, 4]
 match nums.pop_back() {
-    Some(last) { print(last.to_string()) }  // "4"
-    None { }
+    some(last) { print(last.to_string()) }  // "4"
+    none { }
 }
 
 // Inspection
@@ -1355,11 +1355,11 @@ print(nums.is_empty().to_string())   // "false"
 |--------|---------|-------------|
 | `.size()` | `int` | Returns the number of key-value pairs |
 | `.is_empty()` | `bool` | Returns `true` if map has no entries |
-| `.get(K key)` | `Optional<V>` | Safe lookup; returns `Some(value)` or `None` if key not found |
+| `.get(K key)` | `optional<V>` | Safe lookup; returns `some(value)` or `none` if key not found |
 | `[K key]` | `V` | Direct access; runtime error if key not found |
 | `.put(K key, V value)` | `void` | Inserts or updates a key-value pair |
 | `.contains(K key)` | `bool` | Returns `true` if key exists in map |
-| `.remove(K key)` | `Optional<V>` | Removes key and returns value, or `None` if key not found |
+| `.remove(K key)` | `optional<V>` | Removes key and returns value, or `none` if key not found |
 | `.to_string()` | `string` | Returns a string representation of the map |
 
 ```mux
@@ -1367,8 +1367,8 @@ auto scores = {"Alice": 90, "Bob": 85}
 
 // Safe access
 match scores.get("Alice") {
-    Some(score) { print(score.to_string()) }  // "90"
-    None { print("Student not found") }
+    some(score) { print(score.to_string()) }  // "90"
+    none { print("Student not found") }
 }
 
 // Direct access
@@ -1386,7 +1386,7 @@ scores["Alice"] = 95  // Updates existing key
 | `.is_empty()` | `bool` | Returns `true` if set is empty |
 | `.add(T item)` | `void` | Adds an item to the set |
 | `.contains(T item)` | `bool` | Returns `true` if item exists in set |
-| `.remove(T item)` | `Optional<T>` | Removes item and returns it, or `None` if not found |
+| `.remove(T item)` | `optional<T>` | Removes item and returns it, or `none` if not found |
 | `.to_string()` | `string` | Returns a string representation of the set |
 
 ```mux
@@ -1401,12 +1401,12 @@ if tags.contains("urgent") {
 
 // Remove item
 match tags.remove("review") {
-    Some(removed) { print("Removed: " + removed) }
-    None { print("Item not found") }
+    some(removed) { print("Removed: " + removed) }
+    none { print("Item not found") }
 }
 ```
 
-**Design Note:** Collections use consistent method naming across all types. Safe access via `.get()` returns `Optional<T>`, while direct access with `[]` provides unchecked access with runtime bounds checking.
+**Design Note:** Collections use consistent method naming across all types. Safe access via `.get()` returns `optional<T>`, while direct access with `[]` provides unchecked access with runtime bounds checking.
 
 ### 11.1 Technical Design: Nested Collections
 
@@ -1454,24 +1454,24 @@ Collections are RC-allocated and contain RC-allocated values. When freed:
 
 ## 12. Error Handling
 
-### 12.1 `Result<T, E>`
+### 12.1 `result<T, E>`
 
 ```
-func divide(int a, int b) returns Result<int, string> {
+func divide(int a, int b) returns result<int, string> {
     if b == 0 {
-        return Err("division by zero")
+        return err("division by zero")
     }
-    return Ok(a / b)
+    return ok(a / b)
 }
 
 // Usage with inference
-auto result = divide(10, 2)  // inferred as Result<int, string>
+auto result = divide(10, 2)  // inferred as result<int, string>
 match result {
-    Ok(value) {
-        auto message = "Result: " + value  // local inference
+    ok(value) {
+        auto message = "result: " + value  // local inference
         print(message)
     }
-    Err(error) {
+    err(error) {
         print("Error: " + error)
     }
     _ {
@@ -1481,26 +1481,26 @@ match result {
 
 // Ignoring error details when not needed
 match result {
-    Ok(value) {
+    ok(value) {
         print("Success: " + value)
     }
-    Err(_) {
-        print("Some error occurred")  // error details ignored
+    err(_) {
+        print("some error occurred")  // error details ignored
     }
 }
 ```
 
-#### Result Methods
+#### result Methods
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `.is_ok()` | `bool` | Returns `true` if the Result is an Ok variant |
-| `.is_err()` | `bool` | Returns `true` if the Result is an Err variant |
+| `.is_ok()` | `bool` | Returns `true` if the result is an ok variant |
+| `.is_err()` | `bool` | Returns `true` if the result is an err variant |
 | `.to_string()` | `string` | String representation |
 
 ```mux
-Result<int, string> res1 = Ok(42)
-Result<int, string> res2 = Err("error")
+result<int, string> res1 = ok(42)
+result<int, string> res2 = err("error")
 
 print(res1.is_ok().to_string())   // true
 print(res1.is_err().to_string())  // false
@@ -1508,26 +1508,26 @@ print(res2.is_ok().to_string())   // false
 print(res2.is_err().to_string())  // true
 ```
 
-### 12.2 `Optional<T>`
+### 12.2 `optional<T>`
 
 ```
-func findEven(list<int> xs) returns Optional<int> {
+func findEven(list<int> xs) returns optional<int> {
     for x in xs {
         if x % 2 == 0 {
-            return Some(x)
+            return some(x)
         }
     }
-    return None
+    return none
 }
 
 // Usage with inference
-Optional<int> maybeEven = findEven([1, 3, 4, 7])  // inferred as Optional<int>
+optional<int> maybeEven = findEven([1, 3, 4, 7])  // inferred as optional<int>
 
 match maybeEven {
-    Some(value) {
+    some(value) {
         print("Found even: " + value)
     }
-    None {
+    none {
         print("No even number found")
     }
     _ {
@@ -1537,26 +1537,26 @@ match maybeEven {
 
 // Ignoring the wrapped value when you just care about presence
 match maybeEven {
-    Some(_) {
+    some(_) {
         print("Got a value")  // don't care what the value is
     }
-    None {
+    none {
         print("Got nothing")
     }
 }
 ```
 
-#### Optional Methods
+#### optional Methods
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `.is_some()` | `bool` | Returns `true` if the Optional contains a value |
-| `.is_none()` | `bool` | Returns `true` if the Optional is empty |
+| `.is_some()` | `bool` | Returns `true` if the optional contains a value |
+| `.is_none()` | `bool` | Returns `true` if the optional is empty |
 | `.to_string()` | `string` | String representation |
 
 ```mux
-Optional<int> opt1 = Some(42)
-Optional<int> opt2 = None
+optional<int> opt1 = some(42)
+optional<int> opt2 = none
 
 print(opt1.is_some().to_string())  // true
 print(opt1.is_none().to_string())  // false
@@ -1566,20 +1566,20 @@ print(opt2.is_none().to_string())  // true
 
 Use `match` to unpack results and optionals. Use `_` to ignore unused values in patterns.
 
-### 12.3 Technical Design: Result and Optional
+### 12.3 Technical Design: result and optional
 
-Both `Result<T, E>` and `Optional<T>` use a uniform runtime representation.
+Both `result<T, E>` and `optional<T>` use a uniform runtime representation.
 
 #### Memory Layout
 
 ```rust
-pub struct Result<T, E> {
-    discriminant: i32,    // 0 = Ok, 1 = Err
+pub struct result<T, E> {
+    discriminant: i32,    // 0 = ok, 1 = err
     data: *mut T,        // pointer to value
 }
 
-pub struct Optional<T> {
-    discriminant: i32,    // 0 = None, 1 = Some
+pub struct optional<T> {
+    discriminant: i32,    // 0 = none, 1 = some
     data: *mut T,        // pointer to value
 }
 ```
@@ -1592,8 +1592,8 @@ Same layout enables generic code to work with either type.
 **Data pointer**: Points to the contained value (boxed like all other values)
 
 ```mux
-auto opt = Some(42)      // discriminant=1, data=box(42)
-auto res = Ok("error")   // discriminant=0, data=box("error")
+auto opt = some(42)      // discriminant=1, data=box(42)
+auto res = ok("error")   // discriminant=0, data=box("error")
 ```
 
 #### Why This Design?
@@ -1601,7 +1601,7 @@ auto res = Ok("error")   // discriminant=0, data=box("error")
 - **Single runtime representation**: Collections can store either
 - **No enum overhead**: No runtime enum tag beyond discriminant
 - **Error propagation**: Easy to implement with match statements
-- **Interop**: Optional and Result can wrap the same types
+- **Interop**: optional and result can wrap the same types
 
 ---
 
@@ -1806,7 +1806,7 @@ The compiler:
 list<int> empty = []           // empty collection needs explicit type
 auto empty = list<int>()       // or explicit constructor
 
-Result<int, string> pending    // uninitialized variables need explicit type
+result<int, string> pending    // uninitialized variables need explicit type
 
 // Generic instantiation may need explicit types
 Stack[int] stack = Stack[int]()      // explicit generic parameter
@@ -1819,7 +1819,7 @@ auto pairs = zip<int, string>(numbers, names)  // when inference is ambiguous
 // Good uses of underscore
 func process(int data, string _) { }  // ignore second parameter
 for _ in range(0, 10) { }            // ignore loop counter
-match result { Ok(_) { } }           // ignore success value
+match result { ok(_) { } }           // ignore success value
 
 // Avoid overusing underscore when names would help readability
 // Less clear:
@@ -1839,8 +1839,8 @@ import math
 const float PI = 3.14159  // inferred as float
 
 enum MaybeValue<T> { 
-    Some(T) 
-    None 
+    some(T) 
+    none 
 }
 
 interface Shape {
@@ -1874,9 +1874,9 @@ func main() returns void {
     }
     
     // Working with Results and inference
-    auto results = list<Result<float, string>>()
+    auto results = list<result<float, string>>()
     for shape in shapes {
-        auto areaResult = Ok(shape.area())  // inferred as Result<float, string>
+        auto areaResult = ok(shape.area())  // inferred as result<float, string>
         results.push_back(areaResult)
     }
     
@@ -1892,10 +1892,10 @@ func main() returns void {
     // Pattern matching with underscore
     for result in results {
         match result {
-            Ok(value) {
+            ok(value) {
                 print("Success: " + value)
             }
-            Err(_) {
+            err(_) {
                 print("Error occurred")  // don't care about error details
             }
         }
@@ -1931,10 +1931,10 @@ import std.*                  // flat import of stdlib items
 - `assert.assert(bool condition, string message) -> void` - Panics with custom message if false
 - `assert.assert_eq(T actual, T expected) -> void` - Panics if values differ (generic)
 - `assert.assert_ne(T actual, T expected) -> void` - Panics if values equal (generic)
-- `assert.assert_some(Optional<T> value) -> void` - Panics if None
-- `assert.assert_none(Optional<T> value) -> void` - Panics if Some
-- `assert.assert_ok(Result<T, E> value) -> void` - Panics if Err
-- `assert.assert_err(Result<T, E> value) -> void` - Panics if Ok
+- `assert.assert_some(optional<T> value) -> void` - Panics if none
+- `assert.assert_none(optional<T> value) -> void` - Panics if some
+- `assert.assert_ok(result<T, E> value) -> void` - Panics if err
+- `assert.assert_err(result<T, E> value) -> void` - Panics if ok
 
 ### 17.2 math
 
@@ -1946,7 +1946,7 @@ import std.*                  // flat import of stdlib items
 
 ### 17.3 io
 
-`io` provides filesystem and path operations with explicit error handling via `Result<T, string>`.
+`io` provides filesystem and path operations with explicit error handling via `result<T, string>`.
 
 - File operations: `read_file`, `write_file`, `exists`, `remove`, `mkdir`, `listdir`
 - Path operations: `is_file`, `is_dir`, `join`, `basename`, `dirname`
@@ -1965,19 +1965,19 @@ import std.*                  // flat import of stdlib items
 
 `datetime` provides Unix-timestamp based date and time helpers.
 
-- `datetime.now() -> Result<int, string>` (seconds since Unix epoch, UTC)
-- `datetime.now_millis() -> Result<int, string>` (milliseconds since Unix epoch, UTC)
-- `datetime.year(int ts) -> Result<int, string>`
-- `datetime.month(int ts) -> Result<int, string>`
-- `datetime.day(int ts) -> Result<int, string>`
-- `datetime.hour(int ts) -> Result<int, string>`
-- `datetime.minute(int ts) -> Result<int, string>`
-- `datetime.second(int ts) -> Result<int, string>`
-- `datetime.weekday(int ts) -> Result<int, string>` where `0=Sun ... 6=Sat`
-- `datetime.format(int ts, string pattern) -> Result<string, string>` (UTC)
-- `datetime.format_local(int ts, string pattern) -> Result<string, string>` (local timezone)
-- `datetime.sleep(int seconds) -> Result<void, string>` (blocking at call site)
-- `datetime.sleep_millis(int milliseconds) -> Result<void, string>` (blocking at call site)
+- `datetime.now() -> result<int, string>` (seconds since Unix epoch, UTC)
+- `datetime.now_millis() -> result<int, string>` (milliseconds since Unix epoch, UTC)
+- `datetime.year(int ts) -> result<int, string>`
+- `datetime.month(int ts) -> result<int, string>`
+- `datetime.day(int ts) -> result<int, string>`
+- `datetime.hour(int ts) -> result<int, string>`
+- `datetime.minute(int ts) -> result<int, string>`
+- `datetime.second(int ts) -> result<int, string>`
+- `datetime.weekday(int ts) -> result<int, string>` where `0=Sun ... 6=Sat`
+- `datetime.format(int ts, string pattern) -> result<string, string>` (UTC)
+- `datetime.format_local(int ts, string pattern) -> result<string, string>` (local timezone)
+- `datetime.sleep(int seconds) -> result<void, string>` (blocking at call site)
+- `datetime.sleep_millis(int milliseconds) -> result<void, string>` (blocking at call site)
 
 Format patterns use chrono `strftime` tokens, for example:
 - `%A` full weekday name

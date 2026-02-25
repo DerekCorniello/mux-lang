@@ -11,7 +11,7 @@ Mux (fully "MuxLang") is designed with the following principles:
 - **Rust-style pattern matching with guards**
 - **Curly-brace syntax** and **no semicolons**
 - **Minimal trait/class model** using `is` instead of `implements`
-- **Built-in `Result<T,E>` and `Optional<T>` for error handling**
+- **Built-in `result<T,E>` and `optional<T>` for error handling**
 
 ## Key Features
 
@@ -45,13 +45,13 @@ Rust-style pattern matching with guards:
 
 ```mux title="pattern_matching.mux"
 match value {
-    Some(v) if v > 10 {
+    some(v) if v > 10 {
         print("Large value: " + v.to_string())
     }
-    Some(v) {
+    some(v) {
         print("Small value: " + v.to_string())
     }
-    None {
+    none {
         print("No value")
     }
 }
@@ -73,7 +73,7 @@ Explore the detailed language documentation:
 - [Enums](./enums.md) - Tagged unions and pattern matching
 - [Generics](./generics.md) - Generic functions and classes
 - [Collections](./collections.md) - Lists, maps, sets, and collection methods
-- [Error Handling](./error-handling.md) - Result and Optional types
+- [Error Handling](./error-handling.md) - result and optional types
 - [Memory](./memory.md) - Reference counting and memory model
 - [Modules](./modules.md) - Import system and code organization
 
@@ -89,7 +89,7 @@ Explore the detailed language documentation:
 
 ### Keywords
 
-`func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `as`, `in`, `true`, `false`, `common`, `None`, `Some`, `Result`, `Optional`, `Ok`, `Err`
+`func`, `returns`, `const`, `auto`, `class`, `interface`, `enum`, `match`, `if`, `else`, `for`, `while`, `break`, `continue`, `return`, `import`, `is`, `as`, `in`, `true`, `false`, `common`, `none`, `some`, `result`, `optional`, `ok`, `err`
 
 ## Type System Principles
 

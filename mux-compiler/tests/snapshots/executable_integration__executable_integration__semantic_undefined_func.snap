@@ -7,3 +7,5 @@ error: Undefined function 'foo'
    |
  2 | foo()
    | ^^^
+   |
+= help: Did you mean 'ok'?

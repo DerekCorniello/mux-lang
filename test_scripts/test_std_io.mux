@@ -4,24 +4,24 @@ import std.io
 func main() returns void {
     // Test path operations
     match io.basename("/home/user/file.txt") {
-        Ok(name) { print("basename: " + name) }
-        Err(e) { print("Error: " + e) }
+        ok(name) { print("basename: " + name) }
+        err(e) { print("Error: " + e) }
     }
     
     match io.dirname("/home/user/file.txt") {
-        Ok(dir) { print("dirname: " + dir) }
-        Err(e) { print("Error: " + e) }
+        ok(dir) { print("dirname: " + dir) }
+        err(e) { print("Error: " + e) }
     }
     
     match io.join("/home/user", "file.txt") {
-        Ok(path) { print("join: " + path) }
-        Err(e) { print("Error: " + e) }
+        ok(path) { print("join: " + path) }
+        err(e) { print("Error: " + e) }
     }
     
     // Test file existence
     match io.exists("test_scripts/functions.mux") {
-        Ok(exists) { print("exists: " + exists.to_string()) }
-        Err(e) { print("Error: " + e) }
+        ok(exists) { print("exists: " + exists.to_string()) }
+        err(e) { print("Error: " + e) }
     }
     
     print("IO tests completed!")

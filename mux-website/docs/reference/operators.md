@@ -162,7 +162,7 @@ auto hasO = 'o' in msg              // true
 
 ### Concatenation with `+`
 
-| Types | Operation | Result |
+| Types | Operation | result |
 |-------|-----------|--------|
 | `list<T> + list<T>` | Concatenation | Combined list |
 | `map<K,V> + map<K,V>` | Merge | Combined map |

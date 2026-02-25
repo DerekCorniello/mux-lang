@@ -32,12 +32,12 @@ auto matrix2 = [[1, 2], [3, 4]]    // inferred
 |--------|---------|-------------|
 | `.size()` | `int` | Number of elements in the list |
 | `.is_empty()` | `bool` | Returns `true` if list has no elements |
-| `.get(int index)` | `Optional<T>` | Safe access; returns `Some(value)` or `None` if out of bounds |
+| `.get(int index)` | `optional<T>` | Safe access; returns `some(value)` or `none` if out of bounds |
 | `[int index]` | `T` | Direct access; runtime error if out of bounds |
 | `.push(T item)` | `void` | Appends item to the front |
 | `.push_back(T item)` | `void` | Appends item to the end |
-| `.pop()` | `Optional<T>` | Removes and returns first item, or `None` if empty |
-| `.pop_back()` | `Optional<T>` | Removes and returns last item, or `None` if empty |
+| `.pop()` | `optional<T>` | Removes and returns first item, or `none` if empty |
+| `.pop_back()` | `optional<T>` | Removes and returns last item, or `none` if empty |
 | `.to_string()` | `string` | String representation of the list |
 
 ### List Operations
@@ -45,10 +45,10 @@ auto matrix2 = [[1, 2], [3, 4]]    // inferred
 ```mux title="list_operations.mux"
 auto nums = [1, 2, 3]
 
-// Safe access with Optional
+// Safe access with optional
 match nums.get(0) {
-    Some(first) { print(first.to_string()) }  // "1"
-    None { print("Index out of bounds") }
+    some(first) { print(first.to_string()) }  // "1"
+    none { print("Index out of bounds") }
 }
 
 // Direct access (runtime error if index invalid)
@@ -59,8 +59,8 @@ nums.push_back(4)      // [1, 2, 3, 4]
 nums.push(5)           // [5, 1, 2, 3, 4]
 
 match nums.pop_back() {
-    Some(last) { print(last.to_string()) }  // "5"
-    None { }
+    some(last) { print(last.to_string()) }  // "5"
+    none { }
 }
 
 // Inspection
@@ -120,11 +120,11 @@ map<string, map<string, int>> data = {
 |--------|---------|-------------|
 | `.size()` | `int` | Number of key-value pairs |
 | `.is_empty()` | `bool` | Returns `true` if map has no entries |
-| `.get(K key)` | `Optional<V>` | Safe lookup; returns `Some(value)` or `None` if key not found |
+| `.get(K key)` | `optional<V>` | Safe lookup; returns `some(value)` or `none` if key not found |
 | `[K key]` | `V` | Direct access; runtime error if key not found |
 | `.put(K key, V value)` | `void` | Inserts or updates a key-value pair |
 | `.contains(K key)` | `bool` | Returns `true` if key exists in map |
-| `.remove(K key)` | `Optional<V>` | Removes key and returns value, or `None` if key not found |
+| `.remove(K key)` | `optional<V>` | Removes key and returns value, or `none` if key not found |
 | `.to_string()` | `string` | String representation of the map |
 | `.get_keys()` | `list<K>` | List of keys from the map |
 | `.get_values()` | `list<V>` | List of values from the map |
@@ -137,8 +137,8 @@ auto scores = {"Alice": 90, "Bob": 85}
 
 // Safe access
 match scores.get("Alice") {
-    Some(score) { print(score.to_string()) }  // "90"
-    None { print("Student not found") }
+    some(score) { print(score.to_string()) }  // "90"
+    none { print("Student not found") }
 }
 
 // Direct access
@@ -155,8 +155,8 @@ if scores.contains("Alice") {
 
 // Remove
 match scores.remove("Bob") {
-    Some(value) { print("Removed Bob with score: " + value.to_string()) }
-    None { print("Bob not found") }
+    some(value) { print("Removed Bob with score: " + value.to_string()) }
+    none { print("Bob not found") }
 }
 
 // Merge (latter wins on key collision)
@@ -191,7 +191,7 @@ auto empty2 = set<int>()
 | `.is_empty()` | `bool` | Returns `true` if set is empty |
 | `.add(T item)` | `void` | Adds an item to the set |
 | `.contains(T item)` | `bool` | Returns `true` if item exists in set |
-| `.remove(T item)` | `Optional<T>` | Removes item and returns it, or `None` if not found |
+| `.remove(T item)` | `optional<T>` | Removes item and returns it, or `none` if not found |
 | `.to_string()` | `string` | String representation of the set |
 | `.to_list()` | `list<T>` | Creates a list from the set |
 
@@ -210,8 +210,8 @@ if tags.contains("urgent") {
 
 // Remove item
 match tags.remove("review") {
-    Some(removed) { print("Removed: " + removed) }
-    None { print("Item not found") }
+    some(removed) { print("Removed: " + removed) }
+    none { print("Item not found") }
 }
 
 // Union
@@ -294,14 +294,14 @@ auto combined = ints_as_floats + floats  // list<float>
 Collections work seamlessly with generics:
 
 ```mux title="generic_collections.mux"
-func first<T>(list<T> items) returns Optional<T> {
+func first<T>(list<T> items) returns optional<T> {
     if items.is_empty() {
-        return None.new()
+        return none.new()
     }
-    return Some.new(items[0])
+    return some.new(items[0])
 }
 
-func lookup<K, V>(map<K, V> data, K key) returns Optional<V> {
+func lookup<K, V>(map<K, V> data, K key) returns optional<V> {
     return data.get(key)
 }
 
@@ -334,7 +334,7 @@ set<string> tags = {}
 
 ## Best Practices
 
-1. **Use safe access methods** - `.get()` returns `Optional<T>` to avoid runtime errors
+1. **Use safe access methods** - `.get()` returns `optional<T>` to avoid runtime errors
 2. **Explicit types for empty collections** - Prevents ambiguity
 3. **Leverage type inference** - Use `auto` when types are obvious from literals
 4. **Use the `in` operator** - Cleaner than calling `.contains()`
@@ -343,11 +343,11 @@ set<string> tags = {}
    - **List**: Ordered, indexed access, duplicates allowed
    - **Map**: Key-value pairs, unique keys
    - **Set**: Unique elements, membership testing
-7. **Match on fallible operations** - Handle `None` cases explicitly
+7. **Match on fallible operations** - Handle `none` cases explicitly
 
 ## See Also
 
 - [Types](./types.md) - Type system and conversions
 - [Generics](./generics.md) - Generic functions with collections
-- [Error Handling](./error-handling.md) - Optional&lt;T&gt; for safe access
+- [Error Handling](./error-handling.md) - optional&lt;T&gt; for safe access
 - [Memory](./memory.md) - Reference counting for collections

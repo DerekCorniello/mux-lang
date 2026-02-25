@@ -47,17 +47,17 @@ auto val = (42).to_float()      // Valid
 
 ### String Parsing (Fallible Conversions)
 
-String and char parsing methods return `Result<T, string>` because they can fail:
+String and char parsing methods return `result<T, string>` because they can fail:
 
 ```mux title="string_parsing.mux"
-// String to number (returns Result)
+// String to number (returns result)
 auto num_str = "42"
 auto result = num_str.to_int()
 match result {
-    Ok(value) {
+    ok(value) {
         print("Parsed: " + value.to_string())  // "Parsed: 42"
     }
-    Err(error) {
+    err(error) {
         print("Parse error: " + error)
     }
 }
@@ -66,16 +66,16 @@ match result {
 auto float_str = "3.14159"
 auto float_result = float_str.to_float()
 match float_result {
-    Ok(value) { print(value.to_string()) }
-    Err(msg) { print("Error: " + msg) }
+    ok(value) { print(value.to_string()) }
+    err(msg) { print("Error: " + msg) }
 }
 
 // Char to digit (only works for '0'-'9')
 auto digit_char = '5'
 auto digit_result = digit_char.to_int()
 match digit_result {
-    Ok(digit) { print(digit.to_string()) }  // "5"
-    Err(msg) { print(msg) }
+    ok(digit) { print(digit.to_string()) }  // "5"
+    err(msg) { print(msg) }
 }
 ```
 
@@ -113,16 +113,16 @@ auto good3 = 1.to_float() < 1.0           // OK: true
 | `bool` | `.to_int()` | `int` | Returns 1 or 0 |
 | `bool` | `.to_float()` | `float` | Returns 1.0 or 0.0 |
 | `char` | `.to_string()` | `string` | Converts char to string |
-| `char` | `.to_int()` | `Result<int, string>` | Digit value for '0'-'9' only |
+| `char` | `.to_int()` | `result<int, string>` | Digit value for '0'-'9' only |
 | `string` | `.to_string()` | `string` | Identity function |
-| `string` | `.to_int()` | `Result<int, string>` | Parses string as integer |
-| `string` | `.to_float()` | `Result<float, string>` | Parses string as float |
+| `string` | `.to_int()` | `result<int, string>` | Parses string as integer |
+| `string` | `.to_float()` | `result<float, string>` | Parses string as float |
 
 ## Composite Types
 
 ```mux title="composite_types.mux"
-Optional<T>        // Represents a value that may or may not exist
-Result<T, E>       // Represents success (T) or error (E)
+optional<T>        // Represents a value that may or may not exist
+result<T, E>       // Represents success (T) or error (E)
 list<T>            // Ordered collection
 map<K, V>          // Key-value pairs
 set<T>             // Unique elements
@@ -184,4 +184,4 @@ print("val after update: " + x.to_string())  // 21
 
 - [Variables](./variables.md) - Variable declarations and constants
 - [Collections](./collections.md) - Lists, maps, and sets
-- [Error Handling](./error-handling.md) - Using Result and Optional
+- [Error Handling](./error-handling.md) - Using result and optional

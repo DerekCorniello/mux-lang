@@ -383,7 +383,7 @@ impl<'a> Lexer<'a> {
                     "in" => TokenType::In,
                     "break" => TokenType::Break,
                     "continue" => TokenType::Continue,
-                    "None" => TokenType::None,
+                    "none" => TokenType::None,
                     "true" => TokenType::Bool(true),
                     "false" => TokenType::Bool(false),
                     "common" => TokenType::Common,
@@ -1118,7 +1118,7 @@ world"
             _ => panic!("Expected Str token, got {:?}", tokens[0]),
         }
 
-        // test that Some, None, Ok, Err are treated as identifiers
+        // test that uppercase legacy forms are treated as identifiers
         let input = "Some None Ok Err";
         let mut source = Source::from_test_str(input);
         let mut lexer = Lexer::new(&mut source);
@@ -1128,7 +1128,7 @@ world"
             tokens.into_iter().map(|t| t.token_type).collect::<Vec<_>>(),
             vec![
                 TokenType::Id("Some".to_string()),
-                TokenType::None,
+                TokenType::Id("None".to_string()),
                 TokenType::Id("Ok".to_string()),
                 TokenType::Id("Err".to_string()),
             ]
@@ -1155,7 +1155,7 @@ world"
             tokens.into_iter().map(|t| t.token_type).collect::<Vec<_>>(),
             vec![
                 TokenType::Id("some".to_string()),
-                TokenType::Id("none".to_string()),
+                TokenType::None,
                 TokenType::Id("ok".to_string()),
                 TokenType::Id("err".to_string()),
             ]
@@ -1177,7 +1177,7 @@ world"
 
     #[test]
     fn test_keywords_and_identifiers() {
-        let input = "auto x = 42 if else for while match const class interface enum is as in range list map Optional Result Some None Ok Err true false common";
+        let input = "auto x = 42 if else for while match const class interface enum is as in range list map optional result some none ok err true false common";
         let mut source = Source::from_test_str(input);
         let mut lexer = Lexer::new(&mut source);
         let tokens: Vec<_> = lexer.lex_all().unwrap().into_iter().collect();
@@ -1219,12 +1219,12 @@ world"
                 assert_eq!(range, "range");
                 assert_eq!(list, "list");
                 assert_eq!(map, "map");
-                assert_eq!(opt, "Optional");
-                assert_eq!(res, "Result");
-                assert_eq!(some, "Some");
+                assert_eq!(opt, "optional");
+                assert_eq!(res, "result");
+                assert_eq!(some, "some");
                 // none is TokenType::None, not Id
-                assert_eq!(ok, "Ok");
-                assert_eq!(err, "Err");
+                assert_eq!(ok, "ok");
+                assert_eq!(err, "err");
             }
             _ => panic!("Unexpected token sequence: {:?}", token_types),
         }

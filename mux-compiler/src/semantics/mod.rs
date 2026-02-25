@@ -335,13 +335,13 @@ impl SemanticAnalyzer {
                 Type::List(Box::new(Type::Primitive(PrimitiveType::Int))),
             ),
             (
-                "Some",
+                "some",
                 vec![Type::Variable("T".to_string())],
                 Type::Optional(Box::new(Type::Variable("T".to_string()))),
             ),
-            ("None", vec![], Type::Optional(Box::new(Type::Void))),
+            ("none", vec![], Type::Optional(Box::new(Type::Void))),
             (
-                "Ok",
+                "ok",
                 vec![Type::Variable("T".to_string())],
                 Type::Result(
                     Box::new(Type::Variable("T".to_string())),
@@ -349,7 +349,7 @@ impl SemanticAnalyzer {
                 ),
             ),
             (
-                "Err",
+                "err",
                 vec![Type::Variable("E".to_string())],
                 Type::Result(
                     Box::new(Type::Variable("T".to_string())),
@@ -408,10 +408,10 @@ impl SemanticAnalyzer {
                 }
 
                 // Handle built-in generic types
-                if name == "Optional" && type_args.len() == 1 {
+                if name == "optional" && type_args.len() == 1 {
                     let resolved_arg = self.resolve_type(&type_args[0])?;
                     return Ok(Type::Optional(Box::new(resolved_arg)));
-                } else if name == "Result" && type_args.len() == 2 {
+                } else if name == "result" && type_args.len() == 2 {
                     let resolved_ok = self.resolve_type(&type_args[0])?;
                     let resolved_err = self.resolve_type(&type_args[1])?;
                     if !self.type_implements_interface(&resolved_err, "Error") {
@@ -1746,7 +1746,7 @@ impl SemanticAnalyzer {
                         "to_int" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Named(
-                                "Result".to_string(),
+                                "result".to_string(),
                                 vec![
                                     Type::Primitive(PrimitiveType::Int),
                                     Type::Primitive(PrimitiveType::Str),
@@ -1757,7 +1757,7 @@ impl SemanticAnalyzer {
                         "to_float" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Named(
-                                "Result".to_string(),
+                                "result".to_string(),
                                 vec![
                                     Type::Primitive(PrimitiveType::Float),
                                     Type::Primitive(PrimitiveType::Str),
@@ -1820,7 +1820,7 @@ impl SemanticAnalyzer {
                         "to_int" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Named(
-                                "Result".to_string(),
+                                "result".to_string(),
                                 vec![
                                     Type::Primitive(PrimitiveType::Int),
                                     Type::Primitive(PrimitiveType::Str),
@@ -3221,10 +3221,10 @@ impl SemanticAnalyzer {
                         || !name.starts_with("print")
                             && !name.starts_with("read_line")
                             && !name.starts_with("range")
-                            && !name.starts_with("Some")
-                            && !name.starts_with("None")
-                            && !name.starts_with("Ok")
-                            && !name.starts_with("Err")
+                            && !name.starts_with("some")
+                            && !name.starts_with("none")
+                            && !name.starts_with("ok")
+                            && !name.starts_with("err")
                     {
                         // Add symbol to main symbol table if it doesn't already exist
                         if !self.symbol_table.all_symbols.contains_key(name) {
@@ -3321,11 +3321,11 @@ impl SemanticAnalyzer {
             Type::Result(_, _) => {
                 let has_ok = arms.iter().any(|arm| {
                     arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Ok")
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "ok")
                 });
                 let has_err = arms.iter().any(|arm| {
                     arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Err")
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "err")
                 });
                 let has_wildcard = arms
                     .iter()
@@ -3335,10 +3335,10 @@ impl SemanticAnalyzer {
                 } else {
                     let mut missing = Vec::new();
                     if !has_ok {
-                        missing.push("Ok");
+                        missing.push("ok");
                     }
                     if !has_err {
-                        missing.push("Err");
+                        missing.push("err");
                     }
                     Err(SemanticError::with_help(
                         format!(
@@ -3425,11 +3425,11 @@ impl SemanticAnalyzer {
             Type::Optional(_) => {
                 let has_some = arms.iter().any(|arm| {
                     arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Some")
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "some")
                 });
                 let has_none = arms.iter().any(|arm| {
                     arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "None")
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "none")
                 });
                 let has_wildcard = arms
                     .iter()
@@ -3439,10 +3439,10 @@ impl SemanticAnalyzer {
                 } else {
                     let mut missing = Vec::new();
                     if !has_some {
-                        missing.push("Some");
+                        missing.push("some");
                     }
                     if !has_none {
-                        missing.push("None");
+                        missing.push("none");
                     }
                     Err(SemanticError::with_help(
                         format!(
@@ -3536,9 +3536,9 @@ impl SemanticAnalyzer {
             PatternNode::EnumVariant { name, args } => {
                 match expected_type {
                     Type::Optional(inner) => {
-                        if name == "Some" && args.len() == 1 {
+                        if name == "some" && args.len() == 1 {
                             self.set_pattern_types(&args[0], inner, span)?;
-                        } else if name == "None" && args.is_empty() {
+                        } else if name == "none" && args.is_empty() {
                             // no vars
                         } else {
                             return Err(SemanticError::with_help(
@@ -3553,9 +3553,9 @@ impl SemanticAnalyzer {
                         }
                     }
                     Type::Result(ok_type, err_type) => {
-                        if name == "Ok" && args.len() == 1 {
+                        if name == "ok" && args.len() == 1 {
                             self.set_pattern_types(&args[0], ok_type, span)?;
-                        } else if name == "Err" && args.len() == 1 {
+                        } else if name == "err" && args.len() == 1 {
                             self.set_pattern_types(&args[0], err_type, span)?;
                         } else {
                             return Err(SemanticError::with_help(
@@ -3854,7 +3854,7 @@ impl SemanticAnalyzer {
                 }
                 // Special check for Some
                 if let ExpressionKind::Identifier(name) = &func.kind
-                    && name == "Some"
+                    && name == "some"
                 {
                     if args.len() != 1 {
                         return Err(SemanticError::with_help(
@@ -4750,7 +4750,7 @@ impl SemanticAnalyzer {
                 let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or(module_name);
                 if let Some(sig) = self.get_builtin_sig(symbol_name).cloned() {
                     self.register_builtin_function(symbol_name, &sig, span);
-                } else if symbol_name == "None" {
+                } else if symbol_name == "none" {
                     self.symbol_table.add_symbol(
                         symbol_name,
                         Self::make_symbol(
