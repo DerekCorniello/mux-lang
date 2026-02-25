@@ -138,6 +138,11 @@ static INT_STR_PARAMS: &[Type] = &[
     Type::Primitive(PrimitiveType::Int),
     Type::Primitive(PrimitiveType::Str),
 ];
+static BOOL_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Bool)];
+static BOOL_STR_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Bool),
+    Type::Primitive(PrimitiveType::Str),
+];
 static STR_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Str)];
 static STR_STR_PARAMS: &[Type] = &[
     Type::Primitive(PrimitiveType::Str),
@@ -147,11 +152,6 @@ static EMPTY_PARAMS: &[Type] = &[];
 
 // Lazy static arrays for ASSERT functions (to avoid Box::leak)
 lazy_static::lazy_static! {
-    static ref BOOL_PARAM: Vec<Type> = vec![Type::Primitive(PrimitiveType::Bool)];
-    static ref BOOL_STR_PARAMS: Vec<Type> = vec![
-        Type::Primitive(PrimitiveType::Bool),
-        Type::Primitive(PrimitiveType::Str),
-    ];
     static ref T_PARAM: Vec<Type> = vec![Type::Variable("T".to_string())];
     static ref T_T_PARAMS: Vec<Type> = vec![
         Type::Variable("T".to_string()),
@@ -324,11 +324,11 @@ lazy_static! {
             }
         }
         let mut m = HashMap::new();
-        m.insert("assert.assert", make_item("mux_assert_assert", &BOOL_STR_PARAMS));
+        m.insert("assert.assert", make_item("mux_assert_assert", BOOL_STR_PARAMS));
         m.insert("assert.assert_eq", make_item("mux_assert_eq", &T_T_PARAMS));
         m.insert("assert.assert_ne", make_item("mux_assert_ne", &T_T_PARAMS));
-        m.insert("assert.assert_true", make_item("mux_assert_true", &BOOL_PARAM));
-        m.insert("assert.assert_false", make_item("mux_assert_false", &BOOL_PARAM));
+        m.insert("assert.assert_true", make_item("mux_assert_true", BOOL_PARAM));
+        m.insert("assert.assert_false", make_item("mux_assert_false", BOOL_PARAM));
         m.insert("assert.assert_some", make_item("mux_assert_some", &OPTIONAL_T_PARAM));
         m.insert("assert.assert_none", make_item("mux_assert_none", &OPTIONAL_T_PARAM));
         m.insert("assert.assert_ok", make_item("mux_assert_ok", &RESULT_T_E_PARAMS));
