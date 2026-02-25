@@ -200,7 +200,7 @@ auto empty2 = set<int>()
 | `.is_empty()` | `bool` | Returns `true` if set is empty |
 | `.add(T item)` | `void` | Adds an item to the set |
 | `.contains(T item)` | `bool` | Returns `true` if item exists in set |
-| `.remove(T item)` | `bool` | Removes item and returns `true` if it existed |
+| `.remove(T item)` | `optional<T>` | Removes item and returns `some(item)` if it existed, or `none` |
 | `.to_string()` | `string` | String representation of the set |
 
 ### Set Operations
@@ -217,8 +217,9 @@ if tags.contains("urgent") {
 }
 
 // Remove item
-if tags.remove("review") {
-    print("Removed review")
+match tags.remove("review") {
+    some(removed) { print("Removed: " + removed) }
+    none { print("Item not found") }
 }
 
 // Set operators
