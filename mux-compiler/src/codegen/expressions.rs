@@ -2027,54 +2027,21 @@ impl<'a> CodeGenerator<'a> {
                             if args.len() != 1 {
                                 return Err("Err takes 1 argument".to_string());
                             }
-                            if let ExpressionKind::Literal(LiteralNode::String(s)) = &args[0].kind {
-                                // generate null-terminated string pointer
-                                let name = format!("str_{}", self.string_counter);
-                                self.string_counter += 1;
-                                let bytes = s.as_bytes();
-                                let mut values = vec![];
-                                for &b in bytes {
-                                    values.push(self.context.i8_type().const_int(b as u64, false));
-                                }
-                                values.push(self.context.i8_type().const_int(0, false));
-                                let array_type =
-                                    self.context.i8_type().array_type(values.len() as u32);
-                                let const_array = self.context.i8_type().const_array(&values);
-                                let global = self.module.add_global(
-                                    array_type,
-                                    Some(AddressSpace::default()),
-                                    &name,
-                                );
-                                global.set_linkage(inkwell::module::Linkage::External);
-                                global.set_initializer(&const_array);
-                                let ptr = unsafe {
-                                    self.builder.build_in_bounds_gep(
-                                        array_type,
-                                        global.as_pointer_value(),
-                                        &[
-                                            self.context.i32_type().const_int(0, false),
-                                            self.context.i32_type().const_int(0, false),
-                                        ],
-                                        &name,
-                                    )
-                                }
+                            let arg_val = self.generate_expression(&args[0])?;
+                            let boxed_arg = self.box_value(arg_val);
+                            let func = self
+                                .module
+                                .get_function("mux_result_err_value")
+                                .ok_or("mux_result_err_value not found")?;
+                            let call = self
+                                .builder
+                                .build_call(func, &[boxed_arg.into()], "err_call")
                                 .map_err(|e| e.to_string())?;
-                                let func = self
-                                    .module
-                                    .get_function("mux_result_err_str")
-                                    .ok_or("mux_result_err_str not found")?;
-                                let call = self
-                                    .builder
-                                    .build_call(func, &[ptr.into()], "err_call")
-                                    .map_err(|e| e.to_string())?;
-                                let result_ptr = call
-                                    .try_as_basic_value()
-                                    .left()
-                                    .expect("result constructor should return a basic value");
-                                Ok(result_ptr)
-                            } else {
-                                Err("Err argument must be a string literal".to_string())
-                            }
+                            let result_ptr = call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("result constructor should return a basic value");
+                            Ok(result_ptr)
                         }
                         "Ok" => {
                             if args.len() != 1 {

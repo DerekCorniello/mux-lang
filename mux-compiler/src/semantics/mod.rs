@@ -414,6 +414,16 @@ impl SemanticAnalyzer {
                 } else if name == "Result" && type_args.len() == 2 {
                     let resolved_ok = self.resolve_type(&type_args[0])?;
                     let resolved_err = self.resolve_type(&type_args[1])?;
+                    if !self.type_implements_interface(&resolved_err, "Error") {
+                        return Err(SemanticError::with_help(
+                            format!(
+                                "Result error type must implement Error, but found {}",
+                                format_type(&resolved_err)
+                            ),
+                            type_node.span,
+                            "Use an error type that implements Error (message() -> string), or use string",
+                        ));
+                    }
                     return Ok(Type::Result(Box::new(resolved_ok), Box::new(resolved_err)));
                 }
 
@@ -1537,6 +1547,7 @@ impl SemanticAnalyzer {
                         || interface_name == "Equatable"
                         || interface_name == "Comparable"
                         || interface_name == "Hashable"
+                        || interface_name == "Error"
                 }
                 PrimitiveType::Int => {
                     matches!(
@@ -1606,6 +1617,14 @@ impl SemanticAnalyzer {
                 "hash" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Error" => match method_name {
+                "message" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
                     is_static: false,
                 }),
                 _ => None,
@@ -1710,6 +1729,11 @@ impl SemanticAnalyzer {
                     },
                     PrimitiveType::Str => match method_name {
                         "to_string" => Some(MethodSig {
+                            params: vec![],
+                            return_type: Type::Primitive(PrimitiveType::Str),
+                            is_static: false,
+                        }),
+                        "message" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Primitive(PrimitiveType::Str),
                             is_static: false,

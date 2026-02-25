@@ -6,6 +6,16 @@ Mux uses explicit error handling through the `Result&lt;T, E&gt;` and `Optional&
 
 The `Result` type represents operations that can succeed with a value of type `T` or fail with an error of type `E`.
 
+`E` must implement the `Error` interface:
+
+```mux title="error_interface.mux"
+interface Error {
+    func message() returns string
+}
+```
+
+`string` implements `Error`, so existing `Result<T, string>` code continues to work.
+
 ### Basic Usage
 
 ```mux title="result_basic.mux"
@@ -46,7 +56,6 @@ auto success2 = Ok("completed")          // Result<string, E>
 
 // Failure
 auto failure = Err("something went wrong")  // Result<T, string>
-auto failure2 = Err(404)                    // Result<T, int>
 
 // Explicit typing when needed
 Result<int, string> result = Ok(100)

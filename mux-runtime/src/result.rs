@@ -6,7 +6,7 @@ use std::fmt;
 #[derive(Clone, Debug)]
 pub enum MuxResult {
     Ok(Box<Value>),
-    Err(String),
+    Err(Box<Value>),
 }
 
 impl MuxResult {
@@ -14,8 +14,8 @@ impl MuxResult {
         MuxResult::Ok(Box::new(val))
     }
 
-    pub fn err(msg: String) -> MuxResult {
-        MuxResult::Err(msg)
+    pub fn err<V: Into<Value>>(val: V) -> MuxResult {
+        MuxResult::Err(Box::new(val.into()))
     }
 }
 
@@ -69,7 +69,23 @@ pub extern "C" fn mux_result_ok_value(val: *mut Value) -> *mut MuxResult {
 pub unsafe extern "C" fn mux_result_err_str(msg: *const std::os::raw::c_char) -> *mut MuxResult {
     let c_str = unsafe { CStr::from_ptr(msg) };
     let msg_str = c_str.to_string_lossy().into_owned();
-    Box::into_raw(Box::new(MuxResult::err(msg_str)))
+    Box::into_raw(Box::new(MuxResult::err(Value::String(msg_str))))
+}
+
+/// # Safety
+/// Takes ownership of `val` - caller must NOT free after this.
+/// Clones the inner value if present.
+/// Returns ownership of a new `MuxResult*` - caller is responsible for its lifecycle.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_err_value(val: *mut Value) -> *mut MuxResult {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        let value = (*val).clone();
+        Box::into_raw(Box::new(MuxResult::err(value)))
+    }
 }
 
 impl fmt::Display for MuxResult {
@@ -122,7 +138,7 @@ pub extern "C" fn mux_result_data(res: *mut MuxResult) -> *mut Value {
     unsafe {
         match &*res {
             MuxResult::Ok(v) => mux_rc_alloc(*v.clone()),
-            MuxResult::Err(e) => mux_rc_alloc(Value::String(e.clone())),
+            MuxResult::Err(e) => mux_rc_alloc(*e.clone()),
         }
     }
 }

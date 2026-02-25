@@ -95,7 +95,7 @@ pub enum Value {
     Set(BTreeSet<Value>),
     Tuple(Box<Tuple>),
     Optional(Option<Box<Value>>),
-    Result(Result<Box<Value>, String>),
+    Result(Result<Box<Value>, Box<Value>>),
     Object(ObjectRef),
 }
 
@@ -253,6 +253,12 @@ impl fmt::Display for Value {
                 write!(f, "<Object at {:p} type_id={}>", obj.ptr(), obj.type_id())
             }
         }
+    }
+}
+
+impl From<String> for Value {
+    fn from(value: String) -> Self {
+        Value::String(value)
     }
 }
 

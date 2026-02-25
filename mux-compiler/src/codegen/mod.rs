@@ -707,6 +707,7 @@ impl<'a> CodeGenerator<'a> {
             "mux_result_ok_string",
             "mux_result_ok_value",
             "mux_result_err_str",
+            "mux_result_err_value",
             "mux_optional_data",
             "mux_optional_get_value",
             "mux_result_data",

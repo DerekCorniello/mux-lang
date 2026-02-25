@@ -416,15 +416,18 @@ Mux provides built-in interfaces (traits) for common operations:
 | `Equatable` | (none) | Enables `==` and `!=` operators |
 | `Comparable` | (none) | Enables `<`, `>`, `<=`, `>=` operators |
 | `Hashable` | (none) | Types that can be used as set/map keys |
+| `Error` | `.message()` | Types that can be used as `Result<T, E>` error values |
 
 **Note:** For `Equatable` and `Comparable`, the methods are marker interfaces - you cannot call `.eq()` or `.cmp()` on built-in types. Use the operators directly (`==`, `<`, etc.) instead.
 
 **Primitives and Interfaces:**
 - `int`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`
 - `float`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`
-- `string`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`
+- `string`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`, `Error`
 - `bool`: Implements `Stringable`, `Equatable`, `Hashable`
 - `char`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`
+
+`Result<T, E>` requires `E` to implement `Error`.
 
 **Example: Custom Type Implementing Interface**
 ```mux

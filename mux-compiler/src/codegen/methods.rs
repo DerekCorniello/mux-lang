@@ -314,6 +314,7 @@ impl<'a> CodeGenerator<'a> {
             },
             PrimitiveType::Str => match method_name {
                 "to_string" => self.call_runtime_to_string(obj_value, "mux_value_to_string"),
+                "message" => Ok(obj_value),
                 "to_int" => self.call_string_conversion_func(obj_value, "mux_string_to_int"),
                 "to_float" => self.call_string_conversion_func(obj_value, "mux_string_to_float"),
                 "length" => self.call_runtime_function("mux_string_length", &[obj_value]),

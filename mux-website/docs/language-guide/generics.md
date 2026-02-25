@@ -140,6 +140,7 @@ Mux provides built-in interfaces for common operations:
 | `Equatable` | Types that support `==` and `!=` operators |
 | `Comparable` | Types that support `<`, `<=`, `>`, `>=` operators |
 | `Hashable` | Types that can be used as keys in sets and maps |
+| `Error` | Types that can be used as `Result<T, E>` errors (via `.message()` method) |
 
 ### Operator Mapping
 
@@ -153,9 +154,11 @@ Mux provides built-in interfaces for common operations:
 |------|-----------|
 | `int` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
 | `float` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
-| `string` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
+| `string` | `Stringable`, `Equatable`, `Comparable`, `Hashable`, `Error` |
 | `bool` | `Stringable`, `Equatable`, `Hashable` |
 | `char` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
+
+`Result<T, E>` requires `E` to implement `Error`.
 
 ## Implementing Interfaces for Custom Types
 
