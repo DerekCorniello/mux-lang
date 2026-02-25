@@ -345,10 +345,8 @@ func greet<T is Stringable>(T value) returns string {
     return "Hello, " + value.to_string()
 }
 
-// Generic function with Add bound for + operator
-func add<T is Add>(T a, T b) returns T {
-    return a.add(b)
-}
+// Arithmetic operators are builtin for primitive numeric types.
+// Use explicit methods or domain-specific APIs for generic composition.
 
 // Generic class
 class Stack<T> {
@@ -445,16 +443,9 @@ class Point is Equatable {
     }
 }
 
-func sum_points<T is Add>(list<T> points) returns T {
-    auto result = points[0]
-    for i in range(1, points.size()) {
-        result = result.add(points[i])
-    }
-    return result
-}
-
-auto points = [Point.new(1, 2), Point.new(3, 4), Point.new(5, 6)]
-auto total = sum_points(points)  // Point(9, 12)
+auto p1 = Point.new(1, 2)
+auto p2 = Point.new(1, 2)
+auto same = p1 == p2  // true
 ```
 
 ### 3.7 Generic Type Constraints
@@ -468,8 +459,11 @@ func process<T is Stringable>(list<T> items) returns void {
 }
 
 // Multiple bounds (AND semantics - type must implement all)
-func combine<T is Add & Stringable>(T a, T b) returns string {
-    return (a.add(b)).to_string()
+func combine<T is Comparable & Stringable>(T a, T b) returns string {
+    if a < b {
+        return a.to_string() + " < " + b.to_string()
+    }
+    return a.to_string() + " >= " + b.to_string()
 }
 
 // Type parameters must be explicitly specified
@@ -800,11 +794,8 @@ For primitive types, direct LLVM operations:
 %result = add i64 %a, %b
 ```
 
-For interface types, method call:
-
-```llvm
-%result = call i8* @Add.add(i8* %a_ptr, i8* %b_ptr)
-```
+Arithmetic operators are not dispatched through `Add`/`Sub`/`Mul`/`Div` interfaces.
+They are validated semantically and lowered to builtin operations for supported types.
 
 **Type Constraints:**
 - Both operands must be the exact same collection type

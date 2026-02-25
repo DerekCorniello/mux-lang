@@ -37,6 +37,7 @@ Higher precedence operators are evaluated first.
 - No implicit type conversion between `int` and `float`
 - Division by zero is a runtime error for `int`, returns `inf` for `float`
 - Modulo with negative numbers follows C semantics
+- Arithmetic operators are builtin-only for primitive numeric types (not interface-dispatched)
 
 ### Exponentiation Details
 

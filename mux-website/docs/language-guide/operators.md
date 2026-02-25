@@ -318,7 +318,9 @@ auto result6 = 2 * (3 ** 2)     // 18
 
 ## Operator Overloading
 
-Operators are built-in for primitive types. Custom types can implement interfaces for equality and comparison:
+Arithmetic operators (`+`, `-`, `*`, `/`, `%`, `**`) are builtin-only for primitive numeric types.
+They are not dispatched through `Add`/`Sub`/`Mul`/`Div` interfaces.
+Custom types can implement interfaces for equality and comparison:
 
 | Operator | Interface |
 |----------|-----------|
@@ -380,7 +382,7 @@ count++            // Or use postfix ++
 3. **Short-circuit for efficiency** - Use `&&` and `||` wisely
 4. **Use `in` for membership** - Cleaner than calling methods
 5. **Prefer `++`/`--` on separate lines** - Clearer than expression-embedded
-6. **Leverage operator overloading** - Implement interfaces for custom types
+6. **Use interface-based comparison thoughtfully** - Implement `Equatable`/`Comparable` only when needed
 7. **Understand right-associativity of `**`** - Use parentheses if unsure
 
 ## See Also
