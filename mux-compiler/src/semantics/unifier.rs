@@ -118,8 +118,8 @@ impl Unifier {
             Type::Reference(inner)
             | Type::List(inner)
             | Type::Set(inner)
-            | Type::Optional(inner)
-            | Type::Result(inner, _) => self.occurs(var, inner),
+            | Type::Optional(inner) => self.occurs(var, inner),
+            Type::Result(ok, err) => self.occurs(var, ok) || self.occurs(var, err),
             Type::Map(k, v) => self.occurs(var, k) || self.occurs(var, v),
             Type::Tuple(l, r) => self.occurs(var, l) || self.occurs(var, r),
 

@@ -27,7 +27,7 @@ All non-primitive values are heap-allocated
 | `map<K,V>` | Heap-allocated BTreeMap | Reference counted |
 | `tuple<K,V>` | Heap-allocated object | Reference counted |
 | `set<T>` | Heap-allocated BTreeSet | Reference counted |
-| `Optional<T>`, `Result<T,E>` | Boxed enum | Reference counted |
+| `optional<T>`, `result<T,E>` | Boxed enum | Reference counted |
 | Class instances | Heap-allocated object | Reference counted |
 | References (`&T`) | Pointer | Not RC'd (borrowed) |
 
@@ -174,7 +174,7 @@ auto r = &x       // r: &int, points to x
 - References are non-nullable
 - No reference arithmetic
 - References do not affect reference counts
-- Optional references: `Optional<&T>`
+- optional references: `optional<&T>`
 
 ```mux
 func update(&int ref) returns void {
@@ -192,7 +192,7 @@ Memory is only freed when all references are gone:
 auto obj = create()
 auto ref = obj
 // ...
-obj = None  // ref still valid
+obj = none  // ref still valid
 // ...
 use(ref)    // Safe: refcount > 0
 ```

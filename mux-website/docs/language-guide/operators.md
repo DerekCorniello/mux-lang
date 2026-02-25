@@ -220,7 +220,7 @@ Both operands must have compatible element types:
 
 The `+` operator is overloaded for collection types:
 
-| Types | Operation | Result |
+| Types | Operation | result |
 |-------|-----------|--------|
 | `list<T> + list<T>` | Concatenation | Combined list |
 | `map<K,V> + map<K,V>` | Merge | Combined map (latter overwrites on collision) |
@@ -318,46 +318,41 @@ auto result6 = 2 * (3 ** 2)     // 18
 
 ## Operator Overloading
 
-Operators map to interface methods:
+Arithmetic operators (`+`, `-`, `*`, `/`, `%`, `**`) are builtin-only for primitive numeric types.
+They are not dispatched through `Add`/`Sub`/`Mul`/`Div` interfaces.
+Custom types can implement interfaces for equality and comparison:
 
-| Operator | Interface | Method |
-|----------|-----------|--------|
-| `+` | `Add` | `add(Self) -> Self` |
-| `-` | `Sub` | `sub(Self) -> Self` |
-| `*` | `Mul` | `mul(Self) -> Self` |
-| `/` | `Div` | `div(Self) -> Self` |
-| `==` | `Equatable` | `eq(Self) -> bool` |
-| `<` | `Comparable` | `cmp(Self) -> int` |
+| Operator | Interface |
+|----------|-----------|
+| `==`, `!=` | `Equatable` |
+| `<`, `>`, `<=`, `>=` | `Comparable` |
 
 ### Custom Type Example
 
 ```mux title="operator_overloading.mux"
-interface Add {
-    func add(Self) returns Self
+interface Equatable {
+    func eq(Self) returns bool
 }
 
-class Point {
+class Point is Equatable {
     int x
     int y
     
-    func add(Point other) returns Point {
-        auto result = Point.new()
-        result.x = self.x + other.x
-        result.y = self.y + other.y
-        return result
+    func eq(Point other) returns bool {
+        return self.x == other.x && self.y == other.y
     }
 }
 
-// Now + works with Point
+// Now == works with Point
 auto p1 = Point.new()
 p1.x = 1
 p1.y = 2
 
 auto p2 = Point.new()
-p2.x = 3
-p2.y = 4
+p2.x = 1
+p2.y = 2
 
-auto p3 = p1.add(p2)  // Can use .add() directly
+auto same = p1.eq(p2)  // true
 ```
 
 ## Assignment Operators
@@ -387,7 +382,7 @@ count++            // Or use postfix ++
 3. **Short-circuit for efficiency** - Use `&&` and `||` wisely
 4. **Use `in` for membership** - Cleaner than calling methods
 5. **Prefer `++`/`--` on separate lines** - Clearer than expression-embedded
-6. **Leverage operator overloading** - Implement interfaces for custom types
+6. **Use interface-based comparison thoughtfully** - Implement `Equatable`/`Comparable` only when needed
 7. **Understand right-associativity of `**`** - Use parentheses if unsure
 
 ## See Also

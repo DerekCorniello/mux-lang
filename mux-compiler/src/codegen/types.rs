@@ -140,7 +140,7 @@ impl<'a> CodeGenerator<'a> {
                     return self.llvm_type_from_resolved_type(&concrete.clone());
                 }
                 if self.enum_variants.contains_key(name) {
-                    if name == "Optional" || name == "Result" {
+                    if name == "optional" || name == "result" {
                         Ok(self.ptr_type())
                     } else {
                         let struct_type = self
@@ -185,10 +185,10 @@ impl<'a> CodeGenerator<'a> {
                 Box::new(self.type_to_type_node(r)),
             ),
             Type::Optional(inner) => {
-                TypeKind::Named("Optional".to_string(), vec![self.type_to_type_node(inner)])
+                TypeKind::Named("optional".to_string(), vec![self.type_to_type_node(inner)])
             }
             Type::Result(ok, err) => TypeKind::Named(
-                "Result".to_string(),
+                "result".to_string(),
                 vec![self.type_to_type_node(ok), self.type_to_type_node(err)],
             ),
             Type::Reference(inner) => TypeKind::Reference(Box::new(self.type_to_type_node(inner))),

@@ -1350,9 +1350,9 @@ impl<'a> Parser<'a> {
     fn parse_pattern(&mut self) -> ParserResult<PatternNode> {
         match &self.peek().token_type {
             TokenType::None => {
-                self.current += 1; // consume None
+                self.current += 1; // consume none
                 Ok(PatternNode::EnumVariant {
-                    name: "None".to_string(),
+                    name: "none".to_string(),
                     args: vec![],
                 })
             }
@@ -2704,7 +2704,7 @@ impl<'a> Parser<'a> {
             TokenType::Is => "'is' keyword".to_string(),
             TokenType::As => "'as' keyword".to_string(),
             TokenType::Common => "'common' keyword".to_string(),
-            TokenType::None => "'None' keyword".to_string(),
+            TokenType::None => "'none' keyword".to_string(),
             TokenType::OpenBrace => "'{'".to_string(),
             TokenType::CloseBrace => "'}'".to_string(),
             TokenType::OpenParen => "'('".to_string(),

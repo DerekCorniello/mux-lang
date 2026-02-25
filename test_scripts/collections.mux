@@ -23,7 +23,7 @@ print("nums[4] (last) = " + nums[4].to_string())
 // Safe access with get()
 print("\nSafe access with get():")
 print("nums.get(0) = " + nums.get(0).to_string())
-print("nums.get(100) = " + nums.get(100).to_string())  // Should be None
+print("nums.get(100) = " + nums.get(100).to_string())  // Should be none
 
 // Index assignment (write)
 print("\nIndex assignment:")

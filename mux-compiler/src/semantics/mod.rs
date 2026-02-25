@@ -335,13 +335,13 @@ impl SemanticAnalyzer {
                 Type::List(Box::new(Type::Primitive(PrimitiveType::Int))),
             ),
             (
-                "Some",
+                "some",
                 vec![Type::Variable("T".to_string())],
                 Type::Optional(Box::new(Type::Variable("T".to_string()))),
             ),
-            ("None", vec![], Type::Optional(Box::new(Type::Void))),
+            ("none", vec![], Type::Optional(Box::new(Type::Void))),
             (
-                "Ok",
+                "ok",
                 vec![Type::Variable("T".to_string())],
                 Type::Result(
                     Box::new(Type::Variable("T".to_string())),
@@ -349,7 +349,7 @@ impl SemanticAnalyzer {
                 ),
             ),
             (
-                "Err",
+                "err",
                 vec![Type::Variable("E".to_string())],
                 Type::Result(
                     Box::new(Type::Variable("T".to_string())),
@@ -408,12 +408,22 @@ impl SemanticAnalyzer {
                 }
 
                 // Handle built-in generic types
-                if name == "Optional" && type_args.len() == 1 {
+                if name == "optional" && type_args.len() == 1 {
                     let resolved_arg = self.resolve_type(&type_args[0])?;
                     return Ok(Type::Optional(Box::new(resolved_arg)));
-                } else if name == "Result" && type_args.len() == 2 {
+                } else if name == "result" && type_args.len() == 2 {
                     let resolved_ok = self.resolve_type(&type_args[0])?;
                     let resolved_err = self.resolve_type(&type_args[1])?;
+                    if !self.type_implements_interface(&resolved_err, "Error") {
+                        return Err(SemanticError::with_help(
+                            format!(
+                                "Result error type must implement Error, but found {}",
+                                format_type(&resolved_err)
+                            ),
+                            type_node.span,
+                            "Use an error type that implements Error (requires message() -> string).",
+                        ));
+                    }
                     return Ok(Type::Result(Box::new(resolved_ok), Box::new(resolved_err)));
                 }
 
@@ -1533,39 +1543,32 @@ impl SemanticAnalyzer {
             }
             Type::Primitive(prim) => match prim {
                 PrimitiveType::Str => {
-                    interface_name == "Add"
-                        || interface_name == "Stringable"
+                    interface_name == "Stringable"
                         || interface_name == "Equatable"
                         || interface_name == "Comparable"
+                        || interface_name == "Hashable"
+                        || interface_name == "Error"
                 }
                 PrimitiveType::Int => {
                     matches!(
                         interface_name,
-                        "Add"
-                            | "Sub"
-                            | "Mul"
-                            | "Div"
-                            | "Arithmetic"
-                            | "Stringable"
-                            | "Equatable"
-                            | "Comparable"
+                        "Stringable" | "Equatable" | "Comparable" | "Hashable"
                     )
                 }
                 PrimitiveType::Float => {
                     matches!(
                         interface_name,
-                        "Add"
-                            | "Sub"
-                            | "Mul"
-                            | "Div"
-                            | "Arithmetic"
-                            | "Stringable"
-                            | "Equatable"
-                            | "Comparable"
+                        "Stringable" | "Equatable" | "Comparable" | "Hashable"
                     )
                 }
                 PrimitiveType::Bool => {
-                    matches!(interface_name, "Stringable" | "Equatable")
+                    matches!(interface_name, "Stringable" | "Equatable" | "Hashable")
+                }
+                PrimitiveType::Char => {
+                    matches!(
+                        interface_name,
+                        "Stringable" | "Equatable" | "Comparable" | "Hashable"
+                    )
                 }
                 _ => false,
             },
@@ -1594,46 +1597,6 @@ impl SemanticAnalyzer {
                 }),
                 _ => None,
             },
-            "Add" => match method_name {
-                "add" => Some(MethodSig {
-                    params: vec![Type::Generic("Self".to_string())],
-                    return_type: Type::Generic("Self".to_string()),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            "Sub" => match method_name {
-                "sub" => Some(MethodSig {
-                    params: vec![Type::Generic("Self".to_string())],
-                    return_type: Type::Generic("Self".to_string()),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            "Mul" => match method_name {
-                "mul" => Some(MethodSig {
-                    params: vec![Type::Generic("Self".to_string())],
-                    return_type: Type::Generic("Self".to_string()),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            "Div" => match method_name {
-                "div" => Some(MethodSig {
-                    params: vec![Type::Generic("Self".to_string())],
-                    return_type: Type::Generic("Self".to_string()),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            "Arithmetic" => match method_name {
-                "add" | "sub" | "mul" | "div" => Some(MethodSig {
-                    params: vec![Type::Generic("Self".to_string())],
-                    return_type: Type::Generic("Self".to_string()),
-                    is_static: false,
-                }),
-                _ => None,
-            },
             "Equatable" => match method_name {
                 "eq" => Some(MethodSig {
                     params: vec![Type::Generic("Self".to_string())],
@@ -1646,6 +1609,22 @@ impl SemanticAnalyzer {
                 "cmp" => Some(MethodSig {
                     params: vec![Type::Generic("Self".to_string())],
                     return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Hashable" => match method_name {
+                "hash" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            "Error" => match method_name {
+                "message" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
                     is_static: false,
                 }),
                 _ => None,
@@ -1696,30 +1675,6 @@ impl SemanticAnalyzer {
                             },
                             is_static: false,
                         }),
-                        // Add interface
-                        "add" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Int)],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        // Sub interface
-                        "sub" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Int)],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        // Mul interface
-                        "mul" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Int)],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        // Div interface
-                        "div" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Int)],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
                         // Equatable interface
                         "eq" => Some(MethodSig {
                             params: vec![Type::Primitive(PrimitiveType::Int)],
@@ -1729,6 +1684,12 @@ impl SemanticAnalyzer {
                         // Comparable interface
                         "cmp" => Some(MethodSig {
                             params: vec![Type::Primitive(PrimitiveType::Int)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
+                        // Hashable interface
+                        "hash" => Some(MethodSig {
+                            params: vec![],
                             return_type: Type::Primitive(PrimitiveType::Int),
                             is_static: false,
                         }),
@@ -1746,30 +1707,6 @@ impl SemanticAnalyzer {
                             },
                             is_static: false,
                         }),
-                        // Add interface
-                        "add" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Float)],
-                            return_type: Type::Primitive(PrimitiveType::Float),
-                            is_static: false,
-                        }),
-                        // Sub interface
-                        "sub" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Float)],
-                            return_type: Type::Primitive(PrimitiveType::Float),
-                            is_static: false,
-                        }),
-                        // Mul interface
-                        "mul" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Float)],
-                            return_type: Type::Primitive(PrimitiveType::Float),
-                            is_static: false,
-                        }),
-                        // Div interface
-                        "div" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Float)],
-                            return_type: Type::Primitive(PrimitiveType::Float),
-                            is_static: false,
-                        }),
                         // Equatable interface
                         "eq" => Some(MethodSig {
                             params: vec![Type::Primitive(PrimitiveType::Float)],
@@ -1782,10 +1719,21 @@ impl SemanticAnalyzer {
                             return_type: Type::Primitive(PrimitiveType::Int),
                             is_static: false,
                         }),
+                        // Hashable interface
+                        "hash" => Some(MethodSig {
+                            params: vec![],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
                         _ => None,
                     },
                     PrimitiveType::Str => match method_name {
                         "to_string" => Some(MethodSig {
+                            params: vec![],
+                            return_type: Type::Primitive(PrimitiveType::Str),
+                            is_static: false,
+                        }),
+                        "message" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Primitive(PrimitiveType::Str),
                             is_static: false,
@@ -1798,7 +1746,7 @@ impl SemanticAnalyzer {
                         "to_int" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Named(
-                                "Result".to_string(),
+                                "result".to_string(),
                                 vec![
                                     Type::Primitive(PrimitiveType::Int),
                                     Type::Primitive(PrimitiveType::Str),
@@ -1809,18 +1757,12 @@ impl SemanticAnalyzer {
                         "to_float" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Named(
-                                "Result".to_string(),
+                                "result".to_string(),
                                 vec![
                                     Type::Primitive(PrimitiveType::Float),
                                     Type::Primitive(PrimitiveType::Str),
                                 ],
                             ),
-                            is_static: false,
-                        }),
-                        // Add interface (string concatenation)
-                        "add" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Str)],
-                            return_type: Type::Primitive(PrimitiveType::Str),
                             is_static: false,
                         }),
                         // Equatable interface
@@ -1832,6 +1774,12 @@ impl SemanticAnalyzer {
                         // Comparable interface (lexicographic comparison)
                         "cmp" => Some(MethodSig {
                             params: vec![Type::Primitive(PrimitiveType::Str)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
+                        // Hashable interface
+                        "hash" => Some(MethodSig {
+                            params: vec![],
                             return_type: Type::Primitive(PrimitiveType::Int),
                             is_static: false,
                         }),
@@ -1855,6 +1803,12 @@ impl SemanticAnalyzer {
                             return_type: Type::Primitive(PrimitiveType::Bool),
                             is_static: false,
                         }),
+                        // Hashable interface
+                        "hash" => Some(MethodSig {
+                            params: vec![],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
                         _ => None,
                     },
                     PrimitiveType::Char => match method_name {
@@ -1866,7 +1820,7 @@ impl SemanticAnalyzer {
                         "to_int" => Some(MethodSig {
                             params: vec![],
                             return_type: Type::Named(
-                                "Result".to_string(),
+                                "result".to_string(),
                                 vec![
                                     Type::Primitive(PrimitiveType::Int),
                                     Type::Primitive(PrimitiveType::Str),
@@ -1883,6 +1837,12 @@ impl SemanticAnalyzer {
                         // Comparable interface
                         "cmp" => Some(MethodSig {
                             params: vec![Type::Primitive(PrimitiveType::Char)],
+                            return_type: Type::Primitive(PrimitiveType::Int),
+                            is_static: false,
+                        }),
+                        // Hashable interface
+                        "hash" => Some(MethodSig {
+                            params: vec![],
                             return_type: Type::Primitive(PrimitiveType::Int),
                             is_static: false,
                         }),
@@ -2159,7 +2119,7 @@ impl SemanticAnalyzer {
 
             match op {
                 BinaryOp::Add => {
-                    // built-in support for primitives and collections, or interface support for custom types
+                    // built-in support for primitives and collections
                     if matches!(
                         left_type,
                         Type::Primitive(
@@ -2167,8 +2127,7 @@ impl SemanticAnalyzer {
                         ) | Type::List(_)
                             | Type::Map(_, _)
                             | Type::Set(_)
-                    ) || self.type_implements_interface(left_type, "Add")
-                    {
+                    ) {
                         Some(left_type.clone())
                     } else {
                         None
@@ -2179,12 +2138,11 @@ impl SemanticAnalyzer {
                 | BinaryOp::Divide
                 | BinaryOp::Modulo
                 | BinaryOp::Exponent => {
-                    // built-in support for numeric primitives, or interface support for custom types
+                    // built-in support for numeric primitives
                     if matches!(
                         left_type,
                         Type::Primitive(PrimitiveType::Int | PrimitiveType::Float)
-                    ) || self.type_implements_interface(left_type, "Arithmetic")
-                    {
+                    ) {
                         Some(left_type.clone())
                     } else {
                         None
@@ -3263,10 +3221,10 @@ impl SemanticAnalyzer {
                         || !name.starts_with("print")
                             && !name.starts_with("read_line")
                             && !name.starts_with("range")
-                            && !name.starts_with("Some")
-                            && !name.starts_with("None")
-                            && !name.starts_with("Ok")
-                            && !name.starts_with("Err")
+                            && !name.starts_with("some")
+                            && !name.starts_with("none")
+                            && !name.starts_with("ok")
+                            && !name.starts_with("err")
                     {
                         // Add symbol to main symbol table if it doesn't already exist
                         if !self.symbol_table.all_symbols.contains_key(name) {
@@ -3363,11 +3321,11 @@ impl SemanticAnalyzer {
             Type::Result(_, _) => {
                 let has_ok = arms.iter().any(|arm| {
                     arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Ok")
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "ok")
                 });
                 let has_err = arms.iter().any(|arm| {
                     arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Err")
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "err")
                 });
                 let has_wildcard = arms
                     .iter()
@@ -3377,10 +3335,10 @@ impl SemanticAnalyzer {
                 } else {
                     let mut missing = Vec::new();
                     if !has_ok {
-                        missing.push("Ok");
+                        missing.push("ok");
                     }
                     if !has_err {
-                        missing.push("Err");
+                        missing.push("err");
                     }
                     Err(SemanticError::with_help(
                         format!(
@@ -3467,11 +3425,11 @@ impl SemanticAnalyzer {
             Type::Optional(_) => {
                 let has_some = arms.iter().any(|arm| {
                     arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "Some")
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "some")
                 });
                 let has_none = arms.iter().any(|arm| {
                     arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "None")
+                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "none")
                 });
                 let has_wildcard = arms
                     .iter()
@@ -3481,10 +3439,10 @@ impl SemanticAnalyzer {
                 } else {
                     let mut missing = Vec::new();
                     if !has_some {
-                        missing.push("Some");
+                        missing.push("some");
                     }
                     if !has_none {
-                        missing.push("None");
+                        missing.push("none");
                     }
                     Err(SemanticError::with_help(
                         format!(
@@ -3578,9 +3536,9 @@ impl SemanticAnalyzer {
             PatternNode::EnumVariant { name, args } => {
                 match expected_type {
                     Type::Optional(inner) => {
-                        if name == "Some" && args.len() == 1 {
+                        if name == "some" && args.len() == 1 {
                             self.set_pattern_types(&args[0], inner, span)?;
-                        } else if name == "None" && args.is_empty() {
+                        } else if name == "none" && args.is_empty() {
                             // no vars
                         } else {
                             return Err(SemanticError::with_help(
@@ -3595,9 +3553,9 @@ impl SemanticAnalyzer {
                         }
                     }
                     Type::Result(ok_type, err_type) => {
-                        if name == "Ok" && args.len() == 1 {
+                        if name == "ok" && args.len() == 1 {
                             self.set_pattern_types(&args[0], ok_type, span)?;
-                        } else if name == "Err" && args.len() == 1 {
+                        } else if name == "err" && args.len() == 1 {
                             self.set_pattern_types(&args[0], err_type, span)?;
                         } else {
                             return Err(SemanticError::with_help(
@@ -3896,7 +3854,7 @@ impl SemanticAnalyzer {
                 }
                 // Special check for Some
                 if let ExpressionKind::Identifier(name) = &func.kind
-                    && name == "Some"
+                    && name == "some"
                 {
                     if args.len() != 1 {
                         return Err(SemanticError::with_help(
@@ -4746,7 +4704,7 @@ impl SemanticAnalyzer {
             ImportSpec::Wildcard => {
                 for (key, item) in all_stdlib_items() {
                     if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
-                        self.register_stdlib_item(item_name, item, span)?;
+                        self.register_stdlib_item(item_name, &item, span)?;
                     }
                 }
             }
@@ -4792,7 +4750,7 @@ impl SemanticAnalyzer {
                 let symbol_name = alias.as_ref().map(|s| s.as_str()).unwrap_or(module_name);
                 if let Some(sig) = self.get_builtin_sig(symbol_name).cloned() {
                     self.register_builtin_function(symbol_name, &sig, span);
-                } else if symbol_name == "None" {
+                } else if symbol_name == "none" {
                     self.symbol_table.add_symbol(
                         symbol_name,
                         Self::make_symbol(
@@ -4850,7 +4808,7 @@ impl SemanticAnalyzer {
             if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
                 module_symbols.insert(
                     item_name.to_string(),
-                    Self::stdlib_item_to_symbol(item, span),
+                    Self::stdlib_item_to_symbol(&item, span),
                 );
             }
         }

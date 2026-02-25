@@ -2,10 +2,10 @@
 auto x = 5
 if x > 0 { print("Positive") } else { print("Non-positive") }
 
-match Some(15) {
-    Some(v) if v > 10 { print("Large: " + v.to_string()) }
-    Some(v) { print("Small: " + v.to_string()) }
-    None { print("None") }
+match some(15) {
+    some(v) if v > 10 { print("Large: " + v.to_string()) }
+    some(v) { print("Small: " + v.to_string()) }
+    none { print("none") }
 }
 
 for int i in range(0, 3) { print(i.to_string()) }

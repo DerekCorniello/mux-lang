@@ -16,18 +16,18 @@ Mux's memory model provides:
 
 ### No Null Pointers
 
-Mux has no null pointers. Use `Optional<T>` instead:
+Mux has no null pointers. Use `optional<T>` instead:
 
 ```mux title="no_null_pointers.mux"
 // No null
-Optional<Circle> maybeCircle = None
+optional<Circle> maybeCircle = none
 
 // Must explicitly handle absence
 match maybeCircle {
-    Some(circle) {
+    some(circle) {
         print(circle.radius.to_string())
     }
-    None {
+    none {
         print("No circle")
     }
 }
@@ -98,18 +98,18 @@ func example() returns void {
 Cleanup happens even with early returns:
 
 ```mux title="early_return_cleanup.mux"
-func process(int value) returns Result<int, string> {
+func process(int value) returns result<int, string> {
     auto data = [1, 2, 3, 4, 5]  // Allocated
     
     if value < 0 {
-        return Err("negative")    // data cleaned up before return
+        return err("negative")    // data cleaned up before return
     }
     
     if value > 100 {
-        return Err("too large")   // data cleaned up before return
+        return err("too large")   // data cleaned up before return
     }
     
-    return Ok(value)
+    return ok(value)
 }  // data cleaned up at end
 ```
 
@@ -221,14 +221,14 @@ This ensures proper cleanup order and handles early returns.
 // CAREFUL: This could create a cycle
 class Node {
     int value
-    Optional<Node> next
+    optional<Node> next
 }
 
 auto node1 = Node.new()
 auto node2 = Node.new()
 
-node1.next = Some(node2)
-node2.next = Some(node1)  // Circular reference!
+node1.next = some(node2)
+node2.next = some(node1)  // Circular reference!
 
 // These nodes will never be freed automatically
 ```
@@ -337,4 +337,4 @@ Reference counting uses atomic operations for thread safety:
 - [Types](./types.md) - Value types and boxing
 - [Classes](./classes.md) - Object lifecycle
 - [Collections](./collections.md) - Collection memory management
-- [Error Handling](./error-handling.md) - Optional and Result
+- [Error Handling](./error-handling.md) - optional and result

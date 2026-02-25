@@ -46,6 +46,9 @@ pub fn close_file(_file: File) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_from_string(s: *const c_char) -> *mut crate::Value {
+    if s.is_null() {
+        return std::ptr::null_mut();
+    }
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy().to_string();
     let value = crate::Value::String(rust_str);
@@ -55,6 +58,9 @@ pub extern "C" fn mux_value_from_string(s: *const c_char) -> *mut crate::Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_print_cstr(s: *const c_char) {
+    if s.is_null() {
+        return;
+    }
     let s = unsafe { CStr::from_ptr(s).to_string_lossy() };
     print!("{}", s);
     std::io::Write::flush(&mut std::io::stdout()).expect("stdout flush should not fail");
@@ -99,6 +105,9 @@ pub extern "C" fn mux_read_int() -> i64 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_open_file(path: *const c_char) -> *mut MuxFile {
+    if path.is_null() {
+        return std::ptr::null_mut();
+    }
     let c_str = unsafe { CStr::from_ptr(path) };
     let path_str = c_str.to_string_lossy();
     match std::fs::File::open(&*path_str) {
@@ -123,6 +132,9 @@ pub extern "C" fn mux_read_file(file: *mut MuxFile) -> *mut c_char {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_write_file(file: *mut MuxFile, content: *const c_char) -> bool {
+    if content.is_null() {
+        return false;
+    }
     let c_str = unsafe { CStr::from_ptr(content) };
     let content_str = c_str.to_string_lossy();
     unsafe { (*file).0.write_all(content_str.as_bytes()).is_ok() }
@@ -146,6 +158,9 @@ pub extern "C" fn mux_close_file(file: *mut MuxFile) {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_read_file(path: *const c_char) -> *mut MuxResult {
+    if path.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err("path is null".to_string())));
+    }
     let c_str = unsafe { CStr::from_ptr(path) };
     let path_str = c_str.to_string_lossy();
 
@@ -162,6 +177,11 @@ pub extern "C" fn mux_io_read_file(path: *const c_char) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_write_file(path: *const c_char, content: *const c_char) -> *mut MuxResult {
+    if path.is_null() || content.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err(
+            "path or content is null".to_string(),
+        )));
+    }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
     let content_str = unsafe { CStr::from_ptr(content).to_string_lossy() };
 
@@ -178,6 +198,9 @@ pub extern "C" fn mux_io_write_file(path: *const c_char, content: *const c_char)
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_exists(path: *const c_char) -> *mut MuxResult {
+    if path.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err("path is null".to_string())));
+    }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
     Box::into_raw(Box::new(MuxResult::ok(Value::Bool(
         Path::new(&*path_str).exists(),
@@ -188,6 +211,9 @@ pub extern "C" fn mux_io_exists(path: *const c_char) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_remove(path: *const c_char) -> *mut MuxResult {
+    if path.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err("path is null".to_string())));
+    }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
 
     match std::fs::remove_file(&*path_str) {
@@ -203,6 +229,9 @@ pub extern "C" fn mux_io_remove(path: *const c_char) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_is_file(path: *const c_char) -> *mut MuxResult {
+    if path.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err("path is null".to_string())));
+    }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
     Box::into_raw(Box::new(MuxResult::ok(Value::Bool(
         Path::new(&*path_str).is_file(),
@@ -213,6 +242,9 @@ pub extern "C" fn mux_io_is_file(path: *const c_char) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_is_dir(path: *const c_char) -> *mut MuxResult {
+    if path.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err("path is null".to_string())));
+    }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
     Box::into_raw(Box::new(MuxResult::ok(Value::Bool(
         Path::new(&*path_str).is_dir(),
@@ -227,6 +259,9 @@ pub extern "C" fn mux_io_is_dir(path: *const c_char) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_mkdir(path: *const c_char) -> *mut MuxResult {
+    if path.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err("path is null".to_string())));
+    }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
 
     match std::fs::create_dir_all(&*path_str) {
@@ -242,6 +277,9 @@ pub extern "C" fn mux_io_mkdir(path: *const c_char) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_listdir(path: *const c_char) -> *mut MuxResult {
+    if path.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err("path is null".to_string())));
+    }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
 
     match std::fs::read_dir(&*path_str) {
@@ -269,6 +307,11 @@ pub extern "C" fn mux_io_listdir(path: *const c_char) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_join(path1: *const c_char, path2: *const c_char) -> *mut MuxResult {
+    if path1.is_null() || path2.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err(
+            "path1 or path2 is null".to_string(),
+        )));
+    }
     let path1_str = unsafe { CStr::from_ptr(path1).to_string_lossy() };
     let path2_str = unsafe { CStr::from_ptr(path2).to_string_lossy() };
 
@@ -285,6 +328,9 @@ pub extern "C" fn mux_io_join(path1: *const c_char, path2: *const c_char) -> *mu
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_basename(path: *const c_char) -> *mut MuxResult {
+    if path.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err("path is null".to_string())));
+    }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
 
     let basename = Path::new(&*path_str)
@@ -299,6 +345,9 @@ pub extern "C" fn mux_io_basename(path: *const c_char) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_io_dirname(path: *const c_char) -> *mut MuxResult {
+    if path.is_null() {
+        return Box::into_raw(Box::new(MuxResult::err("path is null".to_string())));
+    }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
 
     let dirname = Path::new(&*path_str)

@@ -1,0 +1,12 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+Stringable int: 42
+Stringable float: 3.14
+Stringable bool: true
+max(10, 20): 20
+Can use as key: 42
+Can use as key: hello
+Can use as key: true
+All trait tests passed!

@@ -469,13 +469,13 @@ impl<'a> CodeGenerator<'a> {
                 Ok(result_ptr.into_pointer_value())
             }
             Type::Named(name, type_args) => {
-                if name == "Optional" {
+                if name == "optional" {
                     let optional_ptr = self
                         .generate_runtime_call("mux_optional_none", &[])
                         .expect("mux_optional_none should always return a value");
                     return Ok(optional_ptr.into_pointer_value());
                 }
-                if name == "Result" {
+                if name == "result" {
                     if let Some(ok_type) = type_args.first() {
                         let ok_value = self.create_default_value_ptr(ok_type)?;
                         let result_ptr = self

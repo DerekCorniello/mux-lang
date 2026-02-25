@@ -1,4 +1,4 @@
 // Should fail: Expected pattern (bare expression without pattern)
-match Some(5) {
+match some(5) {
   5
 }

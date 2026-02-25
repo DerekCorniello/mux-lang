@@ -3,6 +3,7 @@ use crate::lexer::Span;
 use crate::semantics::error::SemanticError;
 use crate::semantics::types::{BuiltInSig, Symbol, Type};
 use lazy_static::lazy_static;
+use phf::phf_map;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -47,18 +48,83 @@ pub enum ConstantValue {
 }
 
 /// Types of items in stdlib modules
-/// Uses &'static [Type] instead of Vec<Type> for const compatibility in PHF
+/// Owns its data to avoid Box::leak
 #[derive(Debug, Clone, PartialEq)]
 pub enum StdlibItem {
     Function {
-        params: &'static [Type],
+        params: Vec<Type>,
         ret: Type,
-        llvm_name: &'static str,
+        llvm_name: String,
     },
     Constant {
         ty: Type,
         value: ConstantValue,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeDesc {
+    Float,
+    Int,
+    Bool,
+    Void,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConstDesc {
+    Pi,
+    E,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StdlibItemDesc {
+    Function {
+        params: &'static [TypeDesc],
+        ret: TypeDesc,
+        llvm_name: &'static str,
+    },
+    Constant {
+        ty: TypeDesc,
+        value: ConstDesc,
+    },
+}
+
+const EMPTY_PARAM_DESC: &[TypeDesc] = &[];
+const INT_PARAM_DESC: &[TypeDesc] = &[TypeDesc::Int];
+const INT_INT_PARAM_DESC: &[TypeDesc] = &[TypeDesc::Int, TypeDesc::Int];
+
+fn materialize_type(desc: TypeDesc) -> Type {
+    match desc {
+        TypeDesc::Float => Type::Primitive(PrimitiveType::Float),
+        TypeDesc::Int => Type::Primitive(PrimitiveType::Int),
+        TypeDesc::Bool => Type::Primitive(PrimitiveType::Bool),
+        TypeDesc::Void => Type::Void,
+    }
+}
+
+fn materialize_const(desc: ConstDesc) -> ConstantValue {
+    match desc {
+        ConstDesc::Pi => ConstantValue::Float(std::f64::consts::PI),
+        ConstDesc::E => ConstantValue::Float(std::f64::consts::E),
+    }
+}
+
+fn materialize_stdlib_item(desc: &StdlibItemDesc) -> StdlibItem {
+    match desc {
+        StdlibItemDesc::Function {
+            params,
+            ret,
+            llvm_name,
+        } => StdlibItem::Function {
+            params: params.iter().copied().map(materialize_type).collect(),
+            ret: materialize_type(*ret),
+            llvm_name: (*llvm_name).to_string(),
+        },
+        StdlibItemDesc::Constant { ty, value } => StdlibItem::Constant {
+            ty: materialize_type(*ty),
+            value: materialize_const(*value),
+        },
+    }
 }
 
 // Static arrays for function parameters (required for PHF const compatibility)
@@ -72,9 +138,10 @@ static INT_STR_PARAMS: &[Type] = &[
     Type::Primitive(PrimitiveType::Int),
     Type::Primitive(PrimitiveType::Str),
 ];
-static INT_INT_PARAMS: &[Type] = &[
-    Type::Primitive(PrimitiveType::Int),
-    Type::Primitive(PrimitiveType::Int),
+static BOOL_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Bool)];
+static BOOL_STR_PARAMS: &[Type] = &[
+    Type::Primitive(PrimitiveType::Bool),
+    Type::Primitive(PrimitiveType::Str),
 ];
 static STR_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Str)];
 static STR_STR_PARAMS: &[Type] = &[
@@ -83,11 +150,28 @@ static STR_STR_PARAMS: &[Type] = &[
 ];
 static EMPTY_PARAMS: &[Type] = &[];
 
+// Lazy static arrays for ASSERT functions (to avoid Box::leak)
+lazy_static::lazy_static! {
+    static ref T_PARAM: Vec<Type> = vec![Type::Variable("T".to_string())];
+    static ref T_T_PARAMS: Vec<Type> = vec![
+        Type::Variable("T".to_string()),
+        Type::Variable("T".to_string()),
+    ];
+    static ref OPTIONAL_T_PARAM: Vec<Type> =
+        vec![Type::Optional(Box::new(Type::Variable("T".to_string())))];
+    static ref RESULT_T_E_PARAMS: Vec<Type> = vec![
+        Type::Result(
+            Box::new(Type::Variable("T".to_string())),
+            Box::new(Type::Variable("E".to_string())),
+        ),
+    ];
+}
+
 fn io_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
     StdlibItem::Function {
-        params,
+        params: params.to_vec(),
         ret,
-        llvm_name: name,
+        llvm_name: name.to_string(),
     }
 }
 
@@ -105,49 +189,38 @@ fn io_result(ok: Type) -> Type {
 
 fn datetime_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
     StdlibItem::Function {
-        params,
+        params: params.to_vec(),
         ret,
-        llvm_name: name,
+        llvm_name: name.to_string(),
     }
 }
 
-/// All stdlib items organized by module.function or module.constant
-/// Using PHF for O(1) compile-time perfect hashing - ideal for large stdlibs
-pub static STDLIB_ITEMS: phf::Map<&'static str, StdlibItem> = phf::phf_map! {
-    // Math module - constants (NOT functions!)
-    "math.pi" => StdlibItem::Constant {
-        ty: Type::Primitive(PrimitiveType::Float),
-        value: ConstantValue::Float(std::f64::consts::PI),
-    },
-    "math.e" => StdlibItem::Constant {
-        ty: Type::Primitive(PrimitiveType::Float),
-        value: ConstantValue::Float(std::f64::consts::E),
-    },
-
-    // Random module functions
-    "random.seed" => StdlibItem::Function {
-        params: INT_PARAM,
-        ret: Type::Void,
+static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
+    "math.pi" => StdlibItemDesc::Constant { ty: TypeDesc::Float, value: ConstDesc::Pi },
+    "math.e" => StdlibItemDesc::Constant { ty: TypeDesc::Float, value: ConstDesc::E },
+    "random.seed" => StdlibItemDesc::Function {
+        params: INT_PARAM_DESC,
+        ret: TypeDesc::Void,
         llvm_name: "mux_rand_init",
     },
-    "random.next_int" => StdlibItem::Function {
-        params: EMPTY_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Int),
+    "random.next_int" => StdlibItemDesc::Function {
+        params: EMPTY_PARAM_DESC,
+        ret: TypeDesc::Int,
         llvm_name: "mux_rand_int",
     },
-    "random.next_range" => StdlibItem::Function {
-        params: INT_INT_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Int),
+    "random.next_range" => StdlibItemDesc::Function {
+        params: INT_INT_PARAM_DESC,
+        ret: TypeDesc::Int,
         llvm_name: "mux_rand_range",
     },
-    "random.next_float" => StdlibItem::Function {
-        params: EMPTY_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Float),
+    "random.next_float" => StdlibItemDesc::Function {
+        params: EMPTY_PARAM_DESC,
+        ret: TypeDesc::Float,
         llvm_name: "mux_rand_float",
     },
-    "random.next_bool" => StdlibItem::Function {
-        params: EMPTY_PARAMS,
-        ret: Type::Primitive(PrimitiveType::Bool),
+    "random.next_bool" => StdlibItemDesc::Function {
+        params: EMPTY_PARAM_DESC,
+        ret: TypeDesc::Bool,
         llvm_name: "mux_rand_bool",
     },
 };
@@ -186,41 +259,40 @@ lazy_static! {
     // Math module - single argument float -> float functions
     // Math module - two argument float -> float functions
     pub static ref MATH_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
-        fn make_math_fn(name: &str, params: &'static [Type]) -> StdlibItem {
-            let llvm_name = format!("mux_math_{}", name);
+        fn make_math_fn(llvm_name: &'static str, params: &'static [Type]) -> StdlibItem {
             StdlibItem::Function {
-                params,
+                params: params.to_vec(),
                 ret: Type::Primitive(PrimitiveType::Float),
-                llvm_name: Box::leak(llvm_name.into_boxed_str()),
+                llvm_name: llvm_name.to_string(),
             }
         }
 
         let mut m = HashMap::new();
 
         // Single-arg math functions
-        m.insert("math.sqrt", make_math_fn("sqrt", FLOAT_PARAM));
-        m.insert("math.sin", make_math_fn("sin", FLOAT_PARAM));
-        m.insert("math.cos", make_math_fn("cos", FLOAT_PARAM));
-        m.insert("math.tan", make_math_fn("tan", FLOAT_PARAM));
-        m.insert("math.asin", make_math_fn("asin", FLOAT_PARAM));
-        m.insert("math.acos", make_math_fn("acos", FLOAT_PARAM));
-        m.insert("math.atan", make_math_fn("atan", FLOAT_PARAM));
-        m.insert("math.ln", make_math_fn("ln", FLOAT_PARAM));
-        m.insert("math.log2", make_math_fn("log2", FLOAT_PARAM));
-        m.insert("math.log10", make_math_fn("log10", FLOAT_PARAM));
-        m.insert("math.exp", make_math_fn("exp", FLOAT_PARAM));
-        m.insert("math.abs", make_math_fn("abs", FLOAT_PARAM));
-        m.insert("math.floor", make_math_fn("floor", FLOAT_PARAM));
-        m.insert("math.ceil", make_math_fn("ceil", FLOAT_PARAM));
-        m.insert("math.round", make_math_fn("round", FLOAT_PARAM));
+        m.insert("math.sqrt", make_math_fn("mux_math_sqrt", FLOAT_PARAM));
+        m.insert("math.sin", make_math_fn("mux_math_sin", FLOAT_PARAM));
+        m.insert("math.cos", make_math_fn("mux_math_cos", FLOAT_PARAM));
+        m.insert("math.tan", make_math_fn("mux_math_tan", FLOAT_PARAM));
+        m.insert("math.asin", make_math_fn("mux_math_asin", FLOAT_PARAM));
+        m.insert("math.acos", make_math_fn("mux_math_acos", FLOAT_PARAM));
+        m.insert("math.atan", make_math_fn("mux_math_atan", FLOAT_PARAM));
+        m.insert("math.ln", make_math_fn("mux_math_ln", FLOAT_PARAM));
+        m.insert("math.log2", make_math_fn("mux_math_log2", FLOAT_PARAM));
+        m.insert("math.log10", make_math_fn("mux_math_log10", FLOAT_PARAM));
+        m.insert("math.exp", make_math_fn("mux_math_exp", FLOAT_PARAM));
+        m.insert("math.abs", make_math_fn("mux_math_abs", FLOAT_PARAM));
+        m.insert("math.floor", make_math_fn("mux_math_floor", FLOAT_PARAM));
+        m.insert("math.ceil", make_math_fn("mux_math_ceil", FLOAT_PARAM));
+        m.insert("math.round", make_math_fn("mux_math_round", FLOAT_PARAM));
 
         // Two-arg math functions
-        m.insert("math.atan2", make_math_fn("atan2", FLOAT_FLOAT_PARAMS));
-        m.insert("math.log", make_math_fn("log", FLOAT_FLOAT_PARAMS));
-        m.insert("math.min", make_math_fn("min", FLOAT_FLOAT_PARAMS));
-        m.insert("math.max", make_math_fn("max", FLOAT_FLOAT_PARAMS));
-        m.insert("math.hypot", make_math_fn("hypot", FLOAT_FLOAT_PARAMS));
-        m.insert("math.pow", make_math_fn("pow", FLOAT_FLOAT_PARAMS));
+        m.insert("math.atan2", make_math_fn("mux_math_atan2", FLOAT_FLOAT_PARAMS));
+        m.insert("math.log", make_math_fn("mux_math_log", FLOAT_FLOAT_PARAMS));
+        m.insert("math.min", make_math_fn("mux_math_min", FLOAT_FLOAT_PARAMS));
+        m.insert("math.max", make_math_fn("mux_math_max", FLOAT_FLOAT_PARAMS));
+        m.insert("math.hypot", make_math_fn("mux_math_hypot", FLOAT_FLOAT_PARAMS));
+        m.insert("math.pow", make_math_fn("mux_math_pow", FLOAT_FLOAT_PARAMS));
 
         m
     };
@@ -244,25 +316,23 @@ lazy_static! {
     };
 
     pub static ref ASSERT_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
-        fn make_item(name: &'static str, params: Vec<Type>) -> StdlibItem {
+        fn make_item(llvm_name: &'static str, params: &[Type]) -> StdlibItem {
             StdlibItem::Function {
-                params: Box::leak(params.into_boxed_slice()),
+                params: params.to_vec(),
                 ret: Type::Void,
-                llvm_name: name,
+                llvm_name: llvm_name.to_string(),
             }
         }
-        let t = || Type::Variable("T".to_string());
-        let e = || Type::Variable("E".to_string());
         let mut m = HashMap::new();
-        m.insert("assert.assert", make_item("mux_assert_assert", vec![bool_(), str_()]));
-        m.insert("assert.assert_eq", make_item("mux_assert_eq", vec![t(), t()]));
-        m.insert("assert.assert_ne", make_item("mux_assert_ne", vec![t(), t()]));
-        m.insert("assert.assert_true", make_item("mux_assert_true", vec![bool_()]));
-        m.insert("assert.assert_false", make_item("mux_assert_false", vec![bool_()]));
-        m.insert("assert.assert_some", make_item("mux_assert_some", vec![Type::Optional(Box::new(t()))]));
-        m.insert("assert.assert_none", make_item("mux_assert_none", vec![Type::Optional(Box::new(t()))]));
-        m.insert("assert.assert_ok", make_item("mux_assert_ok", vec![Type::Result(Box::new(t()), Box::new(e()))]));
-        m.insert("assert.assert_err", make_item("mux_assert_err", vec![Type::Result(Box::new(t()), Box::new(e()))]));
+        m.insert("assert.assert", make_item("mux_assert_assert", BOOL_STR_PARAMS));
+        m.insert("assert.assert_eq", make_item("mux_assert_eq", &T_T_PARAMS));
+        m.insert("assert.assert_ne", make_item("mux_assert_ne", &T_T_PARAMS));
+        m.insert("assert.assert_true", make_item("mux_assert_true", BOOL_PARAM));
+        m.insert("assert.assert_false", make_item("mux_assert_false", BOOL_PARAM));
+        m.insert("assert.assert_some", make_item("mux_assert_some", &OPTIONAL_T_PARAM));
+        m.insert("assert.assert_none", make_item("mux_assert_none", &OPTIONAL_T_PARAM));
+        m.insert("assert.assert_ok", make_item("mux_assert_ok", &RESULT_T_E_PARAMS));
+        m.insert("assert.assert_err", make_item("mux_assert_err", &RESULT_T_E_PARAMS));
         m
     };
 
@@ -299,11 +369,11 @@ lazy_static! {
             vec![int(), int()],
             Type::List(Box::new(int())),
         ));
-        m.insert("Some", sig(
+        m.insert("some", sig(
             vec![Type::Variable("T".to_string())],
             Type::Optional(Box::new(Type::Variable("T".to_string()))),
         ));
-        m.insert("None", sig(
+        m.insert("none", sig(
             vec![],
             Type::Optional(Box::new(Type::Void)),
         ));
@@ -311,14 +381,42 @@ lazy_static! {
     };
 }
 
-pub fn all_stdlib_items() -> impl Iterator<Item = (&'static str, &'static StdlibItem)> {
+pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
     STDLIB_ITEMS
         .entries()
-        .map(|(key, item)| (*key, item))
-        .chain(IO_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
-        .chain(MATH_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
-        .chain(DATETIME_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
-        .chain(ASSERT_STDLIB_ITEMS.iter().map(|(key, item)| (*key, item)))
+        .map(|(key, item)| (key.to_string(), materialize_stdlib_item(item)))
+        .chain(
+            IO_STDLIB_ITEMS
+                .iter()
+                .map(|(key, item)| (key.to_string(), item.clone())),
+        )
+        .chain(
+            MATH_STDLIB_ITEMS
+                .iter()
+                .map(|(key, item)| (key.to_string(), item.clone())),
+        )
+        .chain(
+            DATETIME_STDLIB_ITEMS
+                .iter()
+                .map(|(key, item)| (key.to_string(), item.clone())),
+        )
+        .chain(
+            ASSERT_STDLIB_ITEMS
+                .iter()
+                .map(|(key, item)| (key.to_string(), item.clone())),
+        )
+}
+
+pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
+    if let Some(item) = STDLIB_ITEMS.get(name) {
+        return Some(materialize_stdlib_item(item));
+    }
+    IO_STDLIB_ITEMS
+        .get(name)
+        .cloned()
+        .or_else(|| MATH_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| DATETIME_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
 }
 
 #[derive(Debug)]

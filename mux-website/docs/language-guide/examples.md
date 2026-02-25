@@ -182,31 +182,31 @@ func main() returns void {
 ## Error Handling
 
 ```mux title="error-handling.mux"
-func divide(int a, int b) returns Result<int, string> {
+func divide(int a, int b) returns result<int, string> {
     if b == 0 {
-        return Err("division by zero")
+        return err("division by zero")
     }
-    return Ok(a / b)
+    return ok(a / b)
 }
 
-func find_item(list<int> items, int target) returns Optional<int> {
+func find_item(list<int> items, int target) returns optional<int> {
     for item in items {
         if item == target {
-            return Some(item)
+            return some(item)
         }
     }
-    return None
+    return none
 }
 
 func main() returns void {
     match divide(10, 2) {
-        Ok(result) { print("Result: " + result.to_string()) }
-        Err(msg) { print("Error: " + msg) }
+        ok(result) { print("result: " + result.to_string()) }
+        err(msg) { print("Error: " + msg) }
     }
 
     match find_item([1, 2, 3, 4], 3) {
-        Some(val) { print("Found: " + val.to_string()) }
-        None { print("Not found") }
+        some(val) { print("Found: " + val.to_string()) }
+        none { print("Not found") }
     }
 }
 ```
@@ -249,9 +249,9 @@ func main() returns void {
 ```mux title="complete.mux"
 import std
 
-enum Result<T, E> {
-    Ok(T)
-    Err(E)
+enum result<T, E> {
+    ok(T)
+    err(E)
 }
 
 class Stack<T> {
@@ -265,7 +265,7 @@ class Stack<T> {
         self.items.push_back(item)
     }
 
-    func pop() returns Optional<T> {
+    func pop() returns optional<T> {
         return self.items.pop_back()
     }
 
@@ -283,8 +283,8 @@ func main() returns void {
     print("Stack size: " + stack.size().to_string())
 
     match stack.pop() {
-        Some(val) { print("Popped: " + val.to_string()) }
-        None { print("Empty") }
+        some(val) { print("Popped: " + val.to_string()) }
+        none { print("Empty") }
     }
 }
 ```

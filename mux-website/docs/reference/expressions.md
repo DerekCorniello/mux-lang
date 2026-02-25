@@ -10,7 +10,7 @@ Expressions are categorized by their evaluation behavior:
 |----------|-------------|----------|
 | **Value expressions** | Produce a value | Literals, variables, operators |
 | **Place expressions** | Denote storage locations | Variables, array elements, fields |
-| **Void expressions** | Produce no value | Some function calls |
+| **Void expressions** | Produce no value | some function calls |
 
 ## Primary Expressions
 
@@ -23,7 +23,7 @@ Expressions are categorized by their evaluation behavior:
 'a'             // Char literal (type: char, value: 'a')
 true            // Boolean literal (type: bool, value: true)
 false           // Boolean literal (type: bool, value: false)
-None            // None literal (type: Optional<T>.None)
+none            // none literal (type: optional<T>.none)
 ```
 
 ### Identifiers
@@ -142,13 +142,13 @@ auto times10 = func(int x) returns int {
 
 ```mux
 enum Option<T> {
-    Some(T)
-    None
+    some(T)
+    none
 }
 
-auto opt = Option<int>.Some(42)
-auto none = Option<int>.None
-auto inferred = Some(42)  // Type inferred from context
+auto opt = Option<int>.some(42)
+auto none = Option<int>.none
+auto inferred = some(42)  // Type inferred from context
 ```
 
 ## Class Instantiation
@@ -217,10 +217,10 @@ myList[0] = 42                   // Write element
 ### Safe Access with `.get()`
 
 ```mux
-auto first = myList.get(0)       // Optional<int>
+auto first = myList.get(0)       // optional<int>
 match myList.get(0) {
-    Some(value) { print(value) }
-    None { print("out of bounds") }
+    some(value) { print(value) }
+    none { print("out of bounds") }
 }
 ```
 

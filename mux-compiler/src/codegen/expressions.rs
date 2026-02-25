@@ -651,7 +651,7 @@ impl<'a> CodeGenerator<'a> {
                             Ok(ptr_to_boxed.into())
                         }
                         Type::Named(type_name, _) => {
-                            if type_name == "Optional" || type_name == "Result" {
+                            if type_name == "optional" || type_name == "result" {
                                 // optional/Result: load pointer to boxed value
                                 let ptr_to_boxed = self
                                     .builder
@@ -2023,60 +2023,27 @@ impl<'a> CodeGenerator<'a> {
                     match name.as_str() {
                         "print" => self.generate_print_call(args),
                         "read_line" => self.generate_read_line_call(args),
-                        "Err" => {
+                        "err" => {
                             if args.len() != 1 {
                                 return Err("Err takes 1 argument".to_string());
                             }
-                            if let ExpressionKind::Literal(LiteralNode::String(s)) = &args[0].kind {
-                                // generate null-terminated string pointer
-                                let name = format!("str_{}", self.string_counter);
-                                self.string_counter += 1;
-                                let bytes = s.as_bytes();
-                                let mut values = vec![];
-                                for &b in bytes {
-                                    values.push(self.context.i8_type().const_int(b as u64, false));
-                                }
-                                values.push(self.context.i8_type().const_int(0, false));
-                                let array_type =
-                                    self.context.i8_type().array_type(values.len() as u32);
-                                let const_array = self.context.i8_type().const_array(&values);
-                                let global = self.module.add_global(
-                                    array_type,
-                                    Some(AddressSpace::default()),
-                                    &name,
-                                );
-                                global.set_linkage(inkwell::module::Linkage::External);
-                                global.set_initializer(&const_array);
-                                let ptr = unsafe {
-                                    self.builder.build_in_bounds_gep(
-                                        array_type,
-                                        global.as_pointer_value(),
-                                        &[
-                                            self.context.i32_type().const_int(0, false),
-                                            self.context.i32_type().const_int(0, false),
-                                        ],
-                                        &name,
-                                    )
-                                }
+                            let arg_val = self.generate_expression(&args[0])?;
+                            let boxed_arg = self.box_value(arg_val);
+                            let func = self
+                                .module
+                                .get_function("mux_result_err_value")
+                                .ok_or("mux_result_err_value not found")?;
+                            let call = self
+                                .builder
+                                .build_call(func, &[boxed_arg.into()], "err_call")
                                 .map_err(|e| e.to_string())?;
-                                let func = self
-                                    .module
-                                    .get_function("mux_result_err_str")
-                                    .ok_or("mux_result_err_str not found")?;
-                                let call = self
-                                    .builder
-                                    .build_call(func, &[ptr.into()], "err_call")
-                                    .map_err(|e| e.to_string())?;
-                                let result_ptr = call
-                                    .try_as_basic_value()
-                                    .left()
-                                    .expect("result constructor should return a basic value");
-                                Ok(result_ptr)
-                            } else {
-                                Err("Err argument must be a string literal".to_string())
-                            }
+                            let result_ptr = call
+                                .try_as_basic_value()
+                                .left()
+                                .expect("result constructor should return a basic value");
+                            Ok(result_ptr)
                         }
-                        "Ok" => {
+                        "ok" => {
                             if args.len() != 1 {
                                 return Err("Ok takes 1 argument".to_string());
                             }
@@ -2119,7 +2086,7 @@ impl<'a> CodeGenerator<'a> {
                             // result constructors return Value* pointers directly
                             Ok(result_ptr)
                         }
-                        "Some" => {
+                        "some" => {
                             if args.len() != 1 {
                                 return Err("Some takes 1 argument".to_string());
                             }
@@ -2162,7 +2129,7 @@ impl<'a> CodeGenerator<'a> {
                             // optional constructors return Value* pointers directly
                             Ok(result_ptr)
                         }
-                        "None" => {
+                        "none" => {
                             if !args.is_empty() {
                                 return Err("None takes 0 arguments".to_string());
                             }
@@ -3179,7 +3146,7 @@ impl<'a> CodeGenerator<'a> {
                                     if field_sym.kind == crate::semantics::SymbolKind::Constant {
                                         // Generate constant value directly
                                         use crate::semantics::symbol_table::{
-                                            ConstantValue, STDLIB_ITEMS,
+                                            ConstantValue, lookup_stdlib_item,
                                         };
                                         let full_name = format!("{}.{}", module_name, field);
                                         if let Some(
@@ -3187,23 +3154,23 @@ impl<'a> CodeGenerator<'a> {
                                                 value,
                                                 ..
                                             },
-                                        ) = STDLIB_ITEMS.get(&full_name)
+                                        ) = lookup_stdlib_item(&full_name)
                                         {
                                             return match value {
                                                 ConstantValue::Float(f) => Ok(self
                                                     .context
                                                     .f64_type()
-                                                    .const_float(*f)
+                                                    .const_float(f)
                                                     .into()),
                                                 ConstantValue::Int(i) => Ok(self
                                                     .context
                                                     .i64_type()
-                                                    .const_int(*i as u64, false)
+                                                    .const_int(i as u64, false)
                                                     .into()),
                                                 ConstantValue::Bool(b) => Ok(self
                                                     .context
                                                     .bool_type()
-                                                    .const_int(*b as u64, false)
+                                                    .const_int(b as u64, false)
                                                     .into()),
                                             };
                                         }

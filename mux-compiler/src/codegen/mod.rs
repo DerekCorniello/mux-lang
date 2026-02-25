@@ -101,18 +101,18 @@ impl<'a> CodeGenerator<'a> {
         let i32_type = context.i32_type();
         let i8_ptr = context.ptr_type(AddressSpace::default());
         let struct_type = context.struct_type(&[i32_type.into(), i8_ptr.into()], false);
-        type_map.insert("Optional".to_string(), struct_type.into());
-        type_map.insert("Result".to_string(), struct_type.into());
+        type_map.insert("optional".to_string(), struct_type.into());
+        type_map.insert("result".to_string(), struct_type.into());
 
         use std::collections::BTreeMap;
         let mut ordered_variants = BTreeMap::new();
         ordered_variants.insert(
-            "Optional".to_string(),
-            vec!["Some".to_string(), "None".to_string()],
+            "optional".to_string(),
+            vec!["some".to_string(), "none".to_string()],
         );
         ordered_variants.insert(
-            "Result".to_string(),
-            vec!["Ok".to_string(), "Err".to_string()],
+            "result".to_string(),
+            vec!["ok".to_string(), "err".to_string()],
         );
 
         for (enum_name, variants) in ordered_variants {
@@ -707,6 +707,7 @@ impl<'a> CodeGenerator<'a> {
             "mux_result_ok_string",
             "mux_result_ok_value",
             "mux_result_err_str",
+            "mux_result_err_value",
             "mux_optional_data",
             "mux_optional_get_value",
             "mux_result_data",
@@ -901,7 +902,7 @@ impl<'a> CodeGenerator<'a> {
 
         module.add_function(
             "mux_assert_assert",
-            void_type.fn_type(&[context.bool_type().into(), i8_ptr.into()], false),
+            void_type.fn_type(&[context.i32_type().into(), i8_ptr.into()], false),
             None,
         );
         module.add_function(
@@ -916,12 +917,12 @@ impl<'a> CodeGenerator<'a> {
         );
         module.add_function(
             "mux_assert_true",
-            void_type.fn_type(&[context.bool_type().into()], false),
+            void_type.fn_type(&[context.i32_type().into()], false),
             None,
         );
         module.add_function(
             "mux_assert_false",
-            void_type.fn_type(&[context.bool_type().into()], false),
+            void_type.fn_type(&[context.i32_type().into()], false),
             None,
         );
         module.add_function(

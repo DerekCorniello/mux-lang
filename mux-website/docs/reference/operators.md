@@ -37,6 +37,7 @@ Higher precedence operators are evaluated first.
 - No implicit type conversion between `int` and `float`
 - Division by zero is a runtime error for `int`, returns `inf` for `float`
 - Modulo with negative numbers follows C semantics
+- Arithmetic operators are builtin-only for primitive numeric types (not interface-dispatched)
 
 ### Exponentiation Details
 
@@ -162,7 +163,7 @@ auto hasO = 'o' in msg              // true
 
 ### Concatenation with `+`
 
-| Types | Operation | Result |
+| Types | Operation | result |
 |-------|-----------|--------|
 | `list<T> + list<T>` | Concatenation | Combined list |
 | `map<K,V> + map<K,V>` | Merge | Combined map |

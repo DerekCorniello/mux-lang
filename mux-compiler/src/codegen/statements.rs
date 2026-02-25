@@ -873,8 +873,8 @@ impl<'a> CodeGenerator<'a> {
                     if let Some((_, _, var_type)) = self.variables.get(name) {
                         match var_type {
                             Type::Named(n, _) => n.clone(),
-                            Type::Optional(_) => "Optional".to_string(),
-                            Type::Result(_, _) => "Result".to_string(),
+                            Type::Optional(_) => "optional".to_string(),
+                            Type::Result(_, _) => "result".to_string(),
                             _ => {
                                 return Err(format!(
                                     "Match expression must be an enum type, got {:?}",
@@ -888,8 +888,8 @@ impl<'a> CodeGenerator<'a> {
                 } else if let Some((_, _, var_type)) = self.variables.get(name) {
                     match var_type {
                         Type::Named(n, _) => n.clone(),
-                        Type::Optional(_) => "Optional".to_string(),
-                        Type::Result(_, _) => "Result".to_string(),
+                        Type::Optional(_) => "optional".to_string(),
+                        Type::Result(_, _) => "result".to_string(),
                         _ => {
                             return Err("Match expression must be an enum type".to_string());
                         }
@@ -898,8 +898,8 @@ impl<'a> CodeGenerator<'a> {
                     if let Some(symbol_type) = &symbol.type_ {
                         match symbol_type {
                             Type::Named(n, _) => n.clone(),
-                            Type::Optional(_) => "Optional".to_string(),
-                            Type::Result(_, _) => "Result".to_string(),
+                            Type::Optional(_) => "optional".to_string(),
+                            Type::Result(_, _) => "result".to_string(),
                             _ => {
                                 return Err("Match expression must be an enum type".to_string());
                             }
@@ -975,8 +975,8 @@ impl<'a> CodeGenerator<'a> {
             ExpressionKind::Call { func, .. } => {
                 if let ExpressionKind::Identifier(constructor_name) = &func.kind {
                     match constructor_name.as_str() {
-                        "Some" | "None" => "Optional".to_string(),
-                        "Ok" | "Err" => "Result".to_string(),
+                        "some" | "none" => "optional".to_string(),
+                        "ok" | "err" => "result".to_string(),
                         _ => {
                             if let Some(symbol) =
                                 self.analyzer.symbol_table().lookup(constructor_name)
@@ -1005,7 +1005,7 @@ impl<'a> CodeGenerator<'a> {
             }
         };
 
-        let expr_ptr_opt = if enum_name == "Optional" || enum_name == "Result" {
+        let expr_ptr_opt = if enum_name == "optional" || enum_name == "result" {
             if expr_val.is_pointer_value() {
                 Some(expr_val.into_pointer_value())
             } else {
@@ -1086,13 +1086,13 @@ impl<'a> CodeGenerator<'a> {
             // bind variables for enum variants
             if let PatternNode::EnumVariant { name, args } = &arm.pattern {
                 if let Some(expr_ptr) = expr_ptr_opt
-                    && (*name == "Some" || *name == "Ok" || *name == "Err")
+                    && (*name == "some" || *name == "ok" || *name == "err")
                     && !args.is_empty()
                     && let PatternNode::Identifier(var) = &args[0]
                 {
-                    let data_func = if enum_name == "Optional" {
+                    let data_func = if enum_name == "optional" {
                         "mux_optional_data"
-                    } else if enum_name == "Result" {
+                    } else if enum_name == "result" {
                         "mux_result_data"
                     } else {
                         return Err(format!("Unknown enum {}", enum_name));
@@ -1111,19 +1111,19 @@ impl<'a> CodeGenerator<'a> {
                         .expect("data function should return a basic value")
                         .into_pointer_value();
 
-                    let (data_val, resolved_type) = if enum_name == "Optional" {
+                    let (data_val, resolved_type) = if enum_name == "optional" {
                         if let Type::Optional(inner_type) = match_expr_type {
-                            self.extract_value_from_ptr(data_ptr, inner_type, "Some")?
+                            self.extract_value_from_ptr(data_ptr, inner_type, "some")?
                         } else {
                             return Err(format!(
                                 "Type mismatch: expected Optional, got {:?}",
                                 match_expr_type
                             ));
                         }
-                    } else if enum_name == "Result" {
+                    } else if enum_name == "result" {
                         if let Type::Result(ok_type, err_type) = match_expr_type {
-                            let target_type = if *name == "Ok" { ok_type } else { err_type };
-                            let variant_name = if *name == "Ok" { "Ok" } else { "Err" };
+                            let target_type = if *name == "ok" { ok_type } else { err_type };
+                            let variant_name = if *name == "ok" { "ok" } else { "err" };
                             self.extract_value_from_ptr(data_ptr, target_type, variant_name)?
                         } else {
                             return Err(format!(

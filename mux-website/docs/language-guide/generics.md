@@ -35,11 +35,6 @@ func greet<T is Stringable>(T value) returns string {
     return "Hello, " + value.to_string()
 }
 
-// Generic function with Add bound
-func add<T is Add>(T a, T b) returns T {
-    return a.add(b)
-}
-
 // Usage
 auto max_int = max<int>(3, 7)           // T = int
 auto max_float = max<float>(3.14, 2.71) // T = float
@@ -64,13 +59,13 @@ auto result = pair<int, string>(42, "answer")
 Type parameters can have multiple constraints:
 
 ```mux title="multiple_bounds.mux"
-// Type must implement BOTH Add AND Stringable
-func combine<T is Add & Stringable>(T a, T b) returns string {
-    return (a.add(b)).to_string()
+// Type must implement BOTH Stringable AND Hashable
+func print_if_hashable<T is Stringable & Hashable>(T value) returns string {
+    return value.to_string()
 }
 
 // Only types implementing both interfaces can be used
-auto result = combine<int>(5, 3)  // "8"
+auto result = print_if_hashable<int>(42)  // "42"
 ```
 
 ## Generic Classes
@@ -85,9 +80,9 @@ class Stack<T> {
         self.items.push_back(item)
     }
     
-    func pop() returns Optional<T> {
+    func pop() returns optional<T> {
         if self.items.is_empty() {
-            return None.new()
+            return none.new()
         }
         return self.items.pop_back()
     }
@@ -139,58 +134,57 @@ auto reversed = pair.swap()  // Pair<string, int>
 
 Mux provides built-in interfaces for common operations:
 
-| Interface | Methods | Description |
-|-----------|---------|-------------|
-| `Stringable` | `to_string() -> string` | Types that can be converted to string |
-| `Arithmetic` | `add`, `sub`, `mul`, `div` | Types that support all arithmetic operators |
-| `Equatable` | `eq(Self) -> bool` | Types that support `==` and `!=` operators |
-| `Comparable` | `cmp(Self) -> int` | Types that support `<`, `<=`, `>`, `>=` operators |
+| Interface | Description |
+|-----------|-------------|
+| `Stringable` | Types that can be converted to string (via `.to_string()` method) |
+| `Equatable` | Types that support `==` and `!=` operators |
+| `Comparable` | Types that support `<`, `<=`, `>`, `>=` operators |
+| `Hashable` | Types that can be used as keys in sets and maps |
+| `Error` | Types that can be used as `result<T, E>` errors (via `.message()` method) |
 
 ### Operator Mapping
 
-- `a + b` uses `Add.add()` when type doesn't natively support `+`
-- `a > b` uses `Comparable.cmp()` returning -1, 0, or 1
-- `a == b` uses `Equatable.eq()`
+- `a + b` - Works for types with native support (int, float, string, list, map, set)
+- `a > b` - Works for types with native support (int, float, string, char)
+- `a == b` - Works for all types
 
 ### Primitives and Interfaces
 
 | Type | Implements |
 |------|-----------|
-| `int` | `Stringable`, `Add`, `Sub`, `Mul`, `Div`, `Arithmetic`, `Equatable`, `Comparable` |
-| `float` | `Stringable`, `Add`, `Sub`, `Mul`, `Div`, `Arithmetic`, `Equatable`, `Comparable` |
-| `string` | `Stringable`, `Add`, `Equatable`, `Comparable` |
-| `bool` | `Stringable`, `Equatable` |
+| `int` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
+| `float` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
+| `string` | `Stringable`, `Equatable`, `Comparable`, `Hashable`, `Error` |
+| `bool` | `Stringable`, `Equatable`, `Hashable` |
+| `char` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
+
+`result<T, E>` requires `E` to implement `Error`.
 
 ## Implementing Interfaces for Custom Types
 
-```mux title="custom_interfaces.mux"
-interface Add {
-    func add(Self) returns Self
+Custom types can implement interfaces to work with generic functions:
+
+```mux title="custom_equatable.mux"
+interface Equatable {
+    func eq(Self) returns bool
 }
 
-class Point {
+class Point is Equatable {
     int x
     int y
     
-    func add(Point other) returns Point {
-        auto result = Point.new()
-        result.x = self.x + other.x
-        result.y = self.y + other.y
-        return result
+    func eq(Point other) returns bool {
+        return self.x == other.x && self.y == other.y
     }
 }
 
-// Now Point can be used with generic functions requiring Add
-func sum_points<T is Add>(list<T> points) returns T {
-    auto result = points[0]
-    for i in range(1, points.size()) {
-        result = result.add(points[i])
-    }
-    return result
+func compare<T is Equatable>(T a, T b) returns bool {
+    return a.eq(b)
 }
 
-auto points = [Point.new(), Point.new(), Point.new()]
-auto total = sum_points<Point>(points)
+auto p1 = Point.new()
+auto p2 = Point.new()
+auto result = compare(p1, p2)
 ```
 
 ## Generic Functions with Collections
@@ -290,20 +284,20 @@ auto numbers = [1, 2, 3]  // list<int> inferred
 Enums can be generic:
 
 ```mux title="generic_enums.mux"
-enum Optional<T> {
-    Some(T)
-    None
+enum optional<T> {
+    some(T)
+    none
 }
 
-enum Result<T, E> {
-    Ok(T)
-    Err(E)
+enum result<T, E> {
+    ok(T)
+    err(E)
 }
 
 // Usage
-auto maybeInt = Some.new(42)              // Optional<int>
-auto success = Ok.new(100)                 // Result<int, E>
-auto failure = Err.new("error message")    // Result<T, string>
+auto maybeInt = some.new(42)              // optional<int>
+auto success = ok.new(100)                 // result<int, E>
+auto failure = err.new("error message")    // result<T, string>
 ```
 
 See [Enums](./enums.md) and [Error Handling](./error-handling.md) for more details.
@@ -348,4 +342,4 @@ Type `T` must implement **all** specified interfaces.
 - [Functions](./functions.md) - Generic functions
 - [Classes](./classes.md) - Generic classes
 - [Enums](./enums.md) - Generic enums
-- [Error Handling](./error-handling.md) - Optional&lt;T&gt; and Result&lt;T, E&gt;
+- [Error Handling](./error-handling.md) - optional&lt;T&gt; and result&lt;T, E&gt;

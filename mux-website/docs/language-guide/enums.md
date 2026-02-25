@@ -91,23 +91,23 @@ Add conditional logic with guards:
 
 ```mux title="enum_guards.mux"
 enum MaybeValue<T> {
-    Some(T)
-    None
+    some(T)
+    none
 }
 
-auto value = Some.new(42)
+auto value = some.new(42)
 
 match value {
-    Some(v) if v > 10 {
+    some(v) if v > 10 {
         print("Large value: " + v.to_string())
     }
-    Some(v) if v > 0 {
+    some(v) if v > 0 {
         print("Small positive: " + v.to_string())
     }
-    Some(v) {
+    some(v) {
         print("Non-positive: " + v.to_string())
     }
-    None {
+    none {
         print("No value")
     }
 }
@@ -119,83 +119,83 @@ Enums can be generic over type parameters:
 
 ```mux title="enum_generics.mux"
 enum Option<T> {
-    Some(T)
-    None
+    some(T)
+    none
 }
 
-enum Result<T, E> {
-    Ok(T)
-    Err(E)
+enum result<T, E> {
+    ok(T)
+    err(E)
 }
 
 // Usage
-auto maybeInt = Some.new(42)         // Option<int>
-auto maybeStr = Some.new("hello")    // Option<string>
-auto nothing = None.new()             // Option<T> (generic)
+auto maybeInt = some.new(42)         // Option<int>
+auto maybeStr = some.new("hello")    // Option<string>
+auto nothing = none.new()             // Option<T> (generic)
 
-auto success = Ok.new(100)            // Result<int, E>
-auto failure = Err.new("error msg")   // Result<T, string>
+auto success = ok.new(100)            // result<int, E>
+auto failure = err.new("error msg")   // result<T, string>
 ```
 
 ## Common Enum Patterns
 
-### Optional Values
+### optional Values
 
 ```mux title="optional_values.mux"
-enum Optional<T> {
-    Some(T)
-    None
+enum optional<T> {
+    some(T)
+    none
 }
 
-func findFirst(list<int> items, int target) returns Optional<int> {
+func findFirst(list<int> items, int target) returns optional<int> {
     for i in range(0, items.size()) {
         if items[i] == target {
-            return Some.new(i)
+            return some.new(i)
         }
     }
-    return None.new()
+    return none.new()
 }
 
 auto result = findFirst([10, 20, 30], 20)
 
 match result {
-    Some(index) {
+    some(index) {
         print("Found at index: " + index.to_string())
     }
-    None {
+    none {
         print("Not found")
     }
 }
 ```
 
-### Result Types for Error Handling
+### result Types for Error Handling
 
 ```mux title="result_types.mux"
-enum Result<T, E> {
-    Ok(T)
-    Err(E)
+enum result<T, E> {
+    ok(T)
+    err(E)
 }
 
-func divide(int a, int b) returns Result<int, string> {
+func divide(int a, int b) returns result<int, string> {
     if b == 0 {
-        return Err.new("division by zero")
+        return err.new("division by zero")
     }
-    return Ok.new(a / b)
+    return ok.new(a / b)
 }
 
 auto result = divide(10, 2)
 
 match result {
-    Ok(value) {
-        print("Result: " + value.to_string())
+    ok(value) {
+        print("result: " + value.to_string())
     }
-    Err(error) {
+    err(error) {
         print("Error: " + error)
     }
 }
 ```
 
-See [Error Handling](./error-handling.md) for more details on Result and Optional.
+See [Error Handling](./error-handling.md) for more details on result and optional.
 
 ### State Machines
 
@@ -334,13 +334,13 @@ match color {
 2. **Match exhaustively** - Don't overuse wildcard patterns
 3. **Use guards for additional logic** - Cleaner than nested if statements
 4. **Ignore unused data with `_`** - Makes intent explicit
-5. **Prefer Result over exceptions** - Explicit error handling
-6. **Prefer Optional over null** - No null pointer errors
-7. **Use generic enums for reusable patterns** - Option&lt;T&gt;, Result&lt;T, E&gt;
+5. **Prefer result over exceptions** - Explicit error handling
+6. **Prefer optional over null** - No null pointer errors
+7. **Use generic enums for reusable patterns** - Option&lt;T&gt;, result&lt;T, E&gt;
 
 ## See Also
 
-- [Error Handling](./error-handling.md) - Result and Optional types
+- [Error Handling](./error-handling.md) - result and optional types
 - [Control Flow](./control-flow.md) - Pattern matching with match
 - [Generics](./generics.md) - Generic enums
 - [Collections](./collections.md) - Enums in lists and maps

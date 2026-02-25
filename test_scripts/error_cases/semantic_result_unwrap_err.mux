@@ -1,8 +1,8 @@
-// Should fail: Pattern matching on Result without handling Err case
-func get_err() returns Result<int, string> {
-    return Err("error")
+// Should fail: Pattern matching on result without handling err case
+func get_err() returns result<int, string> {
+    return err("error")
 }
 auto res = get_err()
 auto x = match res {
-    Ok(v) { v }
+    ok(v) { v }
 }

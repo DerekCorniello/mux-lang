@@ -1,23 +1,23 @@
 ---
 source: mux-compiler/tests/executable_integration.rs
-expression: full_output
+expression: output_to_snapshot
 ---
-=== Testing Result<int, string> ===
-✓ Result<int, string> Ok: 5
-✓ Result<int, string> Err: Division by zero
+=== Testing result<int, string> ===
+✓ result<int, string> ok: 5
+✓ result<int, string> err: Division by zero
 
-=== Testing Optional<int> ===
-✓ Optional<int> Some: 4
-✓ Optional<int> None
+=== Testing optional<int> ===
+✓ optional<int> some: 4
+✓ optional<int> none
 
-=== Testing Result<string, string> ===
-✓ Result<string, string> Ok: Valid input
-✓ Result<string, string> Err: Empty input
+=== Testing result<string, string> ===
+✓ result<string, string> ok: Valid input
+✓ result<string, string> err: Empty input
 
-=== Testing Optional<list<int>> ===
-✓ Optional<list<int>> Some: list returned
+=== Testing optional<list<int>> ===
+✓ optional<list<int>> some: list returned
 
-=== Testing Result<list<string>, string> ===
-✓ Result<list<string>, string> Ok: list returned
+=== Testing result<list<string>, string> ===
+✓ result<list<string>, string> ok: list returned
 
 === All tests completed ===

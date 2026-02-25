@@ -217,10 +217,10 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<usize, String> {
         // hardcode indices for built-in enums to ensure deterministic behavior
         match (enum_name, variant_name) {
-            ("Optional", "Some") => Ok(0),
-            ("Optional", "None") => Ok(1),
-            ("Result", "Ok") => Ok(0),
-            ("Result", "Err") => Ok(1),
+            ("optional", "some") => Ok(0),
+            ("optional", "none") => Ok(1),
+            ("result", "ok") => Ok(0),
+            ("result", "err") => Ok(1),
             _ => {
                 // for user-defined enums, use HashMap lookup
                 if let Some(variants) = self.enum_variants.get(enum_name) {
@@ -245,9 +245,9 @@ impl<'a> CodeGenerator<'a> {
         enum_value: BasicValueEnum<'a>,
     ) -> Result<IntValue<'a>, String> {
         match enum_name {
-            "Optional" | "Result" => {
+            "optional" | "result" => {
                 // for built-in enums, use runtime functions
-                let discriminant_func = if enum_name == "Optional" {
+                let discriminant_func = if enum_name == "optional" {
                     "mux_optional_discriminant"
                 } else {
                     "mux_result_discriminant"

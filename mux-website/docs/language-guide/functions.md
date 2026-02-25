@@ -66,20 +66,20 @@ func processData() returns map<string, int> {
     return results
 }
 
-// Returns Result for fallible operations
-func divide(int a, int b) returns Result<int, string> {
+// Returns result for fallible operations
+func divide(int a, int b) returns result<int, string> {
     if b == 0 {
-        return Err("division by zero")
+        return err("division by zero")
     }
-    return Ok(a / b)
+    return ok(a / b)
 }
 
-// Returns Optional for nullable values
-func findFirst(list<int> items) returns Optional<int> {
+// Returns optional for nullable values
+func findFirst(list<int> items) returns optional<int> {
     if items.is_empty() {
-        return None
+        return none
     }
-    return Some(items[0])
+    return some(items[0])
 }
 ```
 
@@ -226,14 +226,14 @@ auto doubled = square(add(2, 3))
 
 1. **Explicit types for parameters and return values** - Makes function signatures clear
 2. **Use `auto` for local variables** - Reduces verbosity when types are obvious
-3. **Return `Result<T, E>` for fallible operations** - Better than panicking
-4. **Return `Optional<T>` for nullable values** - Explicit absence handling
+3. **Return `result<T, E>` for fallible operations** - Better than panicking
+4. **Return `optional<T>` for nullable values** - Explicit absence handling
 5. **Use `_` for truly unused parameters** - But prefer descriptive names when helpful
 6. **Keep functions small and focused** - Single responsibility
 
 ## See Also
 
 - [Generics](./generics.md) - Generic functions and type constraints
-- [Error Handling](./error-handling.md) - Using Result and Optional
+- [Error Handling](./error-handling.md) - Using result and optional
 - [Variables](./variables.md) - Type inference with `auto`
 - [Control Flow](./control-flow.md) - If/else, loops, and match
