@@ -3,6 +3,7 @@ use crate::lexer::Span;
 use crate::semantics::error::SemanticError;
 use crate::semantics::types::{BuiltInSig, Symbol, Type};
 use lazy_static::lazy_static;
+use phf::phf_map;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -61,6 +62,71 @@ pub enum StdlibItem {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeDesc {
+    Float,
+    Int,
+    Bool,
+    Void,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConstDesc {
+    Pi,
+    E,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StdlibItemDesc {
+    Function {
+        params: &'static [TypeDesc],
+        ret: TypeDesc,
+        llvm_name: &'static str,
+    },
+    Constant {
+        ty: TypeDesc,
+        value: ConstDesc,
+    },
+}
+
+const EMPTY_PARAM_DESC: &[TypeDesc] = &[];
+const INT_PARAM_DESC: &[TypeDesc] = &[TypeDesc::Int];
+const INT_INT_PARAM_DESC: &[TypeDesc] = &[TypeDesc::Int, TypeDesc::Int];
+
+fn materialize_type(desc: TypeDesc) -> Type {
+    match desc {
+        TypeDesc::Float => Type::Primitive(PrimitiveType::Float),
+        TypeDesc::Int => Type::Primitive(PrimitiveType::Int),
+        TypeDesc::Bool => Type::Primitive(PrimitiveType::Bool),
+        TypeDesc::Void => Type::Void,
+    }
+}
+
+fn materialize_const(desc: ConstDesc) -> ConstantValue {
+    match desc {
+        ConstDesc::Pi => ConstantValue::Float(std::f64::consts::PI),
+        ConstDesc::E => ConstantValue::Float(std::f64::consts::E),
+    }
+}
+
+fn materialize_stdlib_item(desc: &StdlibItemDesc) -> StdlibItem {
+    match desc {
+        StdlibItemDesc::Function {
+            params,
+            ret,
+            llvm_name,
+        } => StdlibItem::Function {
+            params: params.iter().copied().map(materialize_type).collect(),
+            ret: materialize_type(*ret),
+            llvm_name: (*llvm_name).to_string(),
+        },
+        StdlibItemDesc::Constant { ty, value } => StdlibItem::Constant {
+            ty: materialize_type(*ty),
+            value: materialize_const(*value),
+        },
+    }
+}
+
 // Static arrays for function parameters (required for PHF const compatibility)
 static FLOAT_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Float)];
 static FLOAT_FLOAT_PARAMS: &[Type] = &[
@@ -71,10 +137,6 @@ static INT_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Int)];
 static INT_STR_PARAMS: &[Type] = &[
     Type::Primitive(PrimitiveType::Int),
     Type::Primitive(PrimitiveType::Str),
-];
-static INT_INT_PARAMS: &[Type] = &[
-    Type::Primitive(PrimitiveType::Int),
-    Type::Primitive(PrimitiveType::Int),
 ];
 static STR_PARAM: &[Type] = &[Type::Primitive(PrimitiveType::Str)];
 static STR_STR_PARAMS: &[Type] = &[
@@ -133,49 +195,35 @@ fn datetime_fn(name: &'static str, params: &'static [Type], ret: Type) -> Stdlib
     }
 }
 
-// Using lazy_static HashMap to allow owned types (avoiding Box::leak).
-lazy_static::lazy_static! {
-    pub static ref STDLIB_ITEMS: HashMap<String, StdlibItem> = {
-        let mut m = HashMap::new();
-        // Math module - constants (NOT functions!)
-        m.insert("math.pi".to_string(), StdlibItem::Constant {
-            ty: Type::Primitive(PrimitiveType::Float),
-            value: ConstantValue::Float(std::f64::consts::PI),
-        });
-        m.insert("math.e".to_string(), StdlibItem::Constant {
-            ty: Type::Primitive(PrimitiveType::Float),
-            value: ConstantValue::Float(std::f64::consts::E),
-        });
-
-        // Random module functions
-        m.insert("random.seed".to_string(), StdlibItem::Function {
-            params: INT_PARAM.to_vec(),
-            ret: Type::Void,
-            llvm_name: "mux_rand_init".to_string(),
-        });
-        m.insert("random.next_int".to_string(), StdlibItem::Function {
-            params: EMPTY_PARAMS.to_vec(),
-            ret: Type::Primitive(PrimitiveType::Int),
-            llvm_name: "mux_rand_int".to_string(),
-        });
-        m.insert("random.next_range".to_string(), StdlibItem::Function {
-            params: INT_INT_PARAMS.to_vec(),
-            ret: Type::Primitive(PrimitiveType::Int),
-            llvm_name: "mux_rand_range".to_string(),
-        });
-        m.insert("random.next_float".to_string(), StdlibItem::Function {
-            params: EMPTY_PARAMS.to_vec(),
-            ret: Type::Primitive(PrimitiveType::Float),
-            llvm_name: "mux_rand_float".to_string(),
-        });
-        m.insert("random.next_bool".to_string(), StdlibItem::Function {
-            params: EMPTY_PARAMS.to_vec(),
-            ret: Type::Primitive(PrimitiveType::Bool),
-            llvm_name: "mux_rand_bool".to_string(),
-        });
-        m
-    };
-}
+static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
+    "math.pi" => StdlibItemDesc::Constant { ty: TypeDesc::Float, value: ConstDesc::Pi },
+    "math.e" => StdlibItemDesc::Constant { ty: TypeDesc::Float, value: ConstDesc::E },
+    "random.seed" => StdlibItemDesc::Function {
+        params: INT_PARAM_DESC,
+        ret: TypeDesc::Void,
+        llvm_name: "mux_rand_init",
+    },
+    "random.next_int" => StdlibItemDesc::Function {
+        params: EMPTY_PARAM_DESC,
+        ret: TypeDesc::Int,
+        llvm_name: "mux_rand_int",
+    },
+    "random.next_range" => StdlibItemDesc::Function {
+        params: INT_INT_PARAM_DESC,
+        ret: TypeDesc::Int,
+        llvm_name: "mux_rand_range",
+    },
+    "random.next_float" => StdlibItemDesc::Function {
+        params: EMPTY_PARAM_DESC,
+        ret: TypeDesc::Float,
+        llvm_name: "mux_rand_float",
+    },
+    "random.next_bool" => StdlibItemDesc::Function {
+        params: EMPTY_PARAM_DESC,
+        ret: TypeDesc::Bool,
+        llvm_name: "mux_rand_bool",
+    },
+};
 
 /// List of all available stdlib modules for wildcard imports
 pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random"];
@@ -321,11 +369,11 @@ lazy_static! {
             vec![int(), int()],
             Type::List(Box::new(int())),
         ));
-        m.insert("Some", sig(
+        m.insert("some", sig(
             vec![Type::Variable("T".to_string())],
             Type::Optional(Box::new(Type::Variable("T".to_string()))),
         ));
-        m.insert("None", sig(
+        m.insert("none", sig(
             vec![],
             Type::Optional(Box::new(Type::Void)),
         ));
@@ -335,8 +383,8 @@ lazy_static! {
 
 pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
     STDLIB_ITEMS
-        .iter()
-        .map(|(key, item)| (key.clone(), item.clone()))
+        .entries()
+        .map(|(key, item)| (key.to_string(), materialize_stdlib_item(item)))
         .chain(
             IO_STDLIB_ITEMS
                 .iter()
@@ -357,6 +405,18 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
                 .iter()
                 .map(|(key, item)| (key.to_string(), item.clone())),
         )
+}
+
+pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
+    if let Some(item) = STDLIB_ITEMS.get(name) {
+        return Some(materialize_stdlib_item(item));
+    }
+    IO_STDLIB_ITEMS
+        .get(name)
+        .cloned()
+        .or_else(|| MATH_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| DATETIME_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
 }
 
 #[derive(Debug)]

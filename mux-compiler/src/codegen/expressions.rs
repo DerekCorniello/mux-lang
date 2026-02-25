@@ -3146,7 +3146,7 @@ impl<'a> CodeGenerator<'a> {
                                     if field_sym.kind == crate::semantics::SymbolKind::Constant {
                                         // Generate constant value directly
                                         use crate::semantics::symbol_table::{
-                                            ConstantValue, STDLIB_ITEMS,
+                                            ConstantValue, lookup_stdlib_item,
                                         };
                                         let full_name = format!("{}.{}", module_name, field);
                                         if let Some(
@@ -3154,23 +3154,23 @@ impl<'a> CodeGenerator<'a> {
                                                 value,
                                                 ..
                                             },
-                                        ) = STDLIB_ITEMS.get(&full_name)
+                                        ) = lookup_stdlib_item(&full_name)
                                         {
                                             return match value {
                                                 ConstantValue::Float(f) => Ok(self
                                                     .context
                                                     .f64_type()
-                                                    .const_float(*f)
+                                                    .const_float(f)
                                                     .into()),
                                                 ConstantValue::Int(i) => Ok(self
                                                     .context
                                                     .i64_type()
-                                                    .const_int(*i as u64, false)
+                                                    .const_int(i as u64, false)
                                                     .into()),
                                                 ConstantValue::Bool(b) => Ok(self
                                                     .context
                                                     .bool_type()
-                                                    .const_int(*b as u64, false)
+                                                    .const_int(b as u64, false)
                                                     .into()),
                                             };
                                         }
