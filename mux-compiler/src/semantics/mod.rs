@@ -421,7 +421,7 @@ impl SemanticAnalyzer {
                                 format_type(&resolved_err)
                             ),
                             type_node.span,
-                            "Use an error type that implements Error (message() -> string), or use string",
+                            "Use an error type that implements Error (requires message() -> string).",
                         ));
                     }
                     return Ok(Type::Result(Box::new(resolved_ok), Box::new(resolved_err)));
