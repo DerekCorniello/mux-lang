@@ -27,6 +27,14 @@ impl MuxString {
     pub fn length(&self) -> i64 {
         self.0.len() as i64
     }
+
+    pub fn hash(&self) -> i64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        self.0.hash(&mut hasher);
+        hasher.finish() as i64
+    }
 }
 
 impl fmt::Display for MuxString {
@@ -104,6 +112,14 @@ pub extern "C" fn mux_string_length(s: *const c_char) -> i64 {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     MuxString(rust_str.to_string()).length()
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_string_hash(s: *const c_char) -> i64 {
+    let c_str = unsafe { CStr::from_ptr(s) };
+    let rust_str = c_str.to_string_lossy();
+    MuxString(rust_str.to_string()).hash()
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

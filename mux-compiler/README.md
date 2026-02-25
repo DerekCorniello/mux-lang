@@ -408,42 +408,36 @@ The tradeoff is increased code size (one copy per type combination).
 
 ### 3.6 Built-in Interfaces
 
-Mux provides built-in interfaces for common operations on generic types:
+Mux provides built-in interfaces (traits) for common operations:
 
-| Interface | Methods | Description |
-|-----------|---------|-------------|
-| `Stringable` | `to_string() -> string` | Types that can be converted to string |
-| `Add` | `add(Self) -> Self` | Types that support `+` operator |
-| `Sub` | `sub(Self) -> Self` | Types that support `-` operator |
-| `Mul` | `mul(Self) -> Self` | Types that support `*` operator |
-| `Div` | `div(Self) -> Self` | Types that support `/` operator |
-| `Arithmetic` | `add`, `sub`, `mul`, `div` | Types that support all arithmetic operators |
-| `Equatable` | `eq(Self) -> bool` | Types that support `==` and `!=` operators |
-| `Comparable` | `cmp(Self) -> int` | Types that support `<`, `<=`, `>`, `>=` operators |
+| Interface | Callable Method | Description |
+|-----------|----------------|-------------|
+| `Stringable` | `.to_string()` | Types that can be converted to string |
+| `Equatable` | (none) | Enables `==` and `!=` operators |
+| `Comparable` | (none) | Enables `<`, `>`, `<=`, `>=` operators |
+| `Hashable` | (none) | Types that can be used as set/map keys |
 
-**Operator Mapping:**
-- `a + b` uses `Add.add()` when type doesn't natively support `+`
-- `a > b` uses `Comparable.cmp()` returning -1, 0, or 1
-- `a == b` uses `Equatable.eq()`
+**Note:** For `Equatable` and `Comparable`, the methods are marker interfaces - you cannot call `.eq()` or `.cmp()` on built-in types. Use the operators directly (`==`, `<`, etc.) instead.
 
 **Primitives and Interfaces:**
-- `int`: Implements `Stringable`, `Add`, `Sub`, `Mul`, `Div`, `Arithmetic`, `Equatable`, `Comparable`
-- `float`: Implements `Stringable`, `Add`, `Sub`, `Mul`, `Div`, `Arithmetic`, `Equatable`, `Comparable`
-- `string`: Implements `Stringable`, `Add`, `Equatable`, `Comparable`
-- `bool`: Implements `Stringable`, `Equatable`
+- `int`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`
+- `float`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`
+- `string`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`
+- `bool`: Implements `Stringable`, `Equatable`, `Hashable`
+- `char`: Implements `Stringable`, `Equatable`, `Comparable`, `Hashable`
 
-**Example: Custom Type Implementing Interfaces**
+**Example: Custom Type Implementing Interface**
 ```mux
-interface Add {
-    func add(Self) returns Self
+interface Equatable {
+    func eq(Self) returns bool
 }
 
-class Point {
+class Point is Equatable {
     int x
     int y
     
-    func add(Point other) returns Point {
-        return Point.new(self.x + other.x, self.y + other.y)
+    func eq(Point other) returns bool {
+        return self.x == other.x && self.y == other.y
     }
 }
 
@@ -760,18 +754,24 @@ The `+` operator is overloaded for collection types with type-specific semantics
 
 ### 6.5.1 Technical Design: Operator Overloading
 
-Operators map to interface methods, enabling user-defined operator behavior.
+Operators are built-in for primitive types and collections.
 
-#### Operator to Method Mapping
+#### Operator Mapping
 
-| Operator | Interface | Method |
-|----------|-----------|--------|
-| `+` | `Add` | `add(Self) -> Self` |
-| `-` | `Sub` | `sub(Self) -> Self` |
-| `*` | `Mul` | `mul(Self) -> Self` |
-| `/` | `Div` | `div(Self) -> Self` |
-| `==` | `Equatable` | `eq(Self) -> bool` |
-| `<` | `Comparable` | `cmp(Self) -> int` |
+| Operator | Types |
+|----------|-------|
+| `+` | int, float, string, list, map, set |
+| `-` | int, float |
+| `*` | int, float |
+| `/` | int, float |
+| `%` | int, float |
+| `**` | int, float |
+| `==` | all types |
+| `<`, `>`, `<=`, `>=` | int, float, string, char |
+| `*` | (built-in) | Built-in for int, float |
+| `/` | (built-in) | Built-in for int, float |
+| `==` | `Equatable` | Marker interface - use operator directly |
+| `<` | `Comparable` | Marker interface - use operator directly |
 
 #### Semantic Validation
 

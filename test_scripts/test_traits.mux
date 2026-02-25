@@ -1,0 +1,41 @@
+// Test built-in traits
+
+// Test Stringable
+func test_stringable<T is Stringable>(T val) returns string {
+    return val.to_string()
+}
+
+auto int_str = test_stringable(42)
+print("Stringable int: " + int_str)
+
+auto float_str = test_stringable(3.14)
+print("Stringable float: " + float_str)
+
+auto bool_str = test_stringable(true)
+print("Stringable bool: " + bool_str)
+
+// Test Comparable
+func max<T is Comparable>(T a, T b) returns T {
+    if a > b { return a }
+    return b
+}
+
+auto m = max(10, 20)
+print("max(10, 20): " + m.to_string())
+
+// Test Hashable - this just means the type can be used as set/map keys
+// (no explicit test needed, just verifying type checking works)
+func use_as_key<T is Hashable & Stringable>(T key) returns string {
+    return "Can use as key: " + key.to_string()
+}
+
+auto h1 = use_as_key(42)
+print(h1)
+
+auto h2 = use_as_key("hello")
+print(h2)
+
+auto h3 = use_as_key(true)
+print(h3)
+
+print("All trait tests passed!")

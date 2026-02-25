@@ -35,11 +35,6 @@ func greet<T is Stringable>(T value) returns string {
     return "Hello, " + value.to_string()
 }
 
-// Generic function with Add bound
-func add<T is Add>(T a, T b) returns T {
-    return a.add(b)
-}
-
 // Usage
 auto max_int = max<int>(3, 7)           // T = int
 auto max_float = max<float>(3.14, 2.71) // T = float
@@ -64,13 +59,13 @@ auto result = pair<int, string>(42, "answer")
 Type parameters can have multiple constraints:
 
 ```mux title="multiple_bounds.mux"
-// Type must implement BOTH Add AND Stringable
-func combine<T is Add & Stringable>(T a, T b) returns string {
-    return (a.add(b)).to_string()
+// Type must implement BOTH Stringable AND Hashable
+func print_if_hashable<T is Stringable & Hashable>(T value) returns string {
+    return value.to_string()
 }
 
 // Only types implementing both interfaces can be used
-auto result = combine<int>(5, 3)  // "8"
+auto result = print_if_hashable<int>(42)  // "42"
 ```
 
 ## Generic Classes
@@ -139,58 +134,54 @@ auto reversed = pair.swap()  // Pair<string, int>
 
 Mux provides built-in interfaces for common operations:
 
-| Interface | Methods | Description |
-|-----------|---------|-------------|
-| `Stringable` | `to_string() -> string` | Types that can be converted to string |
-| `Arithmetic` | `add`, `sub`, `mul`, `div` | Types that support all arithmetic operators |
-| `Equatable` | `eq(Self) -> bool` | Types that support `==` and `!=` operators |
-| `Comparable` | `cmp(Self) -> int` | Types that support `<`, `<=`, `>`, `>=` operators |
+| Interface | Description |
+|-----------|-------------|
+| `Stringable` | Types that can be converted to string (via `.to_string()` method) |
+| `Equatable` | Types that support `==` and `!=` operators |
+| `Comparable` | Types that support `<`, `<=`, `>`, `>=` operators |
+| `Hashable` | Types that can be used as keys in sets and maps |
 
 ### Operator Mapping
 
-- `a + b` uses `Add.add()` when type doesn't natively support `+`
-- `a > b` uses `Comparable.cmp()` returning -1, 0, or 1
-- `a == b` uses `Equatable.eq()`
+- `a + b` - Works for types with native support (int, float, string, list, map, set)
+- `a > b` - Works for types with native support (int, float, string, char)
+- `a == b` - Works for all types
 
 ### Primitives and Interfaces
 
 | Type | Implements |
 |------|-----------|
-| `int` | `Stringable`, `Add`, `Sub`, `Mul`, `Div`, `Arithmetic`, `Equatable`, `Comparable` |
-| `float` | `Stringable`, `Add`, `Sub`, `Mul`, `Div`, `Arithmetic`, `Equatable`, `Comparable` |
-| `string` | `Stringable`, `Add`, `Equatable`, `Comparable` |
-| `bool` | `Stringable`, `Equatable` |
+| `int` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
+| `float` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
+| `string` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
+| `bool` | `Stringable`, `Equatable`, `Hashable` |
+| `char` | `Stringable`, `Equatable`, `Comparable`, `Hashable` |
 
 ## Implementing Interfaces for Custom Types
 
-```mux title="custom_interfaces.mux"
-interface Add {
-    func add(Self) returns Self
+Custom types can implement interfaces to work with generic functions:
+
+```mux title="custom_equatable.mux"
+interface Equatable {
+    func eq(Self) returns bool
 }
 
-class Point {
+class Point is Equatable {
     int x
     int y
     
-    func add(Point other) returns Point {
-        auto result = Point.new()
-        result.x = self.x + other.x
-        result.y = self.y + other.y
-        return result
+    func eq(Point other) returns bool {
+        return self.x == other.x && self.y == other.y
     }
 }
 
-// Now Point can be used with generic functions requiring Add
-func sum_points<T is Add>(list<T> points) returns T {
-    auto result = points[0]
-    for i in range(1, points.size()) {
-        result = result.add(points[i])
-    }
-    return result
+func compare<T is Equatable>(T a, T b) returns bool {
+    return a.eq(b)
 }
 
-auto points = [Point.new(), Point.new(), Point.new()]
-auto total = sum_points<Point>(points)
+auto p1 = Point.new()
+auto p2 = Point.new()
+auto result = compare(p1, p2)
 ```
 
 ## Generic Functions with Collections

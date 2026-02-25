@@ -318,46 +318,39 @@ auto result6 = 2 * (3 ** 2)     // 18
 
 ## Operator Overloading
 
-Operators map to interface methods:
+Operators are built-in for primitive types. Custom types can implement interfaces for equality and comparison:
 
-| Operator | Interface | Method |
-|----------|-----------|--------|
-| `+` | `Add` | `add(Self) -> Self` |
-| `-` | `Sub` | `sub(Self) -> Self` |
-| `*` | `Mul` | `mul(Self) -> Self` |
-| `/` | `Div` | `div(Self) -> Self` |
-| `==` | `Equatable` | `eq(Self) -> bool` |
-| `<` | `Comparable` | `cmp(Self) -> int` |
+| Operator | Interface |
+|----------|-----------|
+| `==`, `!=` | `Equatable` |
+| `<`, `>`, `<=`, `>=` | `Comparable` |
 
 ### Custom Type Example
 
 ```mux title="operator_overloading.mux"
-interface Add {
-    func add(Self) returns Self
+interface Equatable {
+    func eq(Self) returns bool
 }
 
-class Point {
+class Point is Equatable {
     int x
     int y
     
-    func add(Point other) returns Point {
-        auto result = Point.new()
-        result.x = self.x + other.x
-        result.y = self.y + other.y
-        return result
+    func eq(Point other) returns bool {
+        return self.x == other.x && self.y == other.y
     }
 }
 
-// Now + works with Point
+// Now == works with Point
 auto p1 = Point.new()
 p1.x = 1
 p1.y = 2
 
 auto p2 = Point.new()
-p2.x = 3
-p2.y = 4
+p2.x = 1
+p2.y = 2
 
-auto p3 = p1.add(p2)  // Can use .add() directly
+auto same = p1.eq(p2)  // true
 ```
 
 ## Assignment Operators
