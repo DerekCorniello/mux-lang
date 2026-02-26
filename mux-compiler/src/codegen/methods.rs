@@ -360,6 +360,72 @@ impl<'a> CodeGenerator<'a> {
             Type::Set(_) => self.generate_set_method_call(obj_value, method_name, args),
             Type::Tuple(_, _) => self.generate_tuple_method_call(obj_value, method_name, args),
             Type::Named(name, type_args) => {
+                if name == "Thread" {
+                    if !args.is_empty() {
+                        return Err(format!("{}() takes no arguments", method_name));
+                    }
+                    return match method_name {
+                        "join" => self.call_runtime_function("mux_thread_join", &[obj_value]),
+                        "detach" => self.call_runtime_function("mux_thread_detach", &[obj_value]),
+                        _ => Err(format!("Method {} not implemented for Thread", method_name)),
+                    };
+                }
+                if name == "Mutex" {
+                    if !args.is_empty() {
+                        return Err(format!("{}() takes no arguments", method_name));
+                    }
+                    return match method_name {
+                        "lock" => self.call_runtime_function("mux_mutex_lock", &[obj_value]),
+                        "unlock" => self.call_runtime_function("mux_mutex_unlock", &[obj_value]),
+                        _ => Err(format!("Method {} not implemented for Mutex", method_name)),
+                    };
+                }
+                if name == "RwLock" {
+                    if !args.is_empty() {
+                        return Err(format!("{}() takes no arguments", method_name));
+                    }
+                    return match method_name {
+                        "read_lock" => {
+                            self.call_runtime_function("mux_rwlock_read_lock", &[obj_value])
+                        }
+                        "write_lock" => {
+                            self.call_runtime_function("mux_rwlock_write_lock", &[obj_value])
+                        }
+                        "unlock" => self.call_runtime_function("mux_rwlock_unlock", &[obj_value]),
+                        _ => Err(format!("Method {} not implemented for RwLock", method_name)),
+                    };
+                }
+                if name == "CondVar" {
+                    return match method_name {
+                        "wait" => {
+                            if args.len() != 1 {
+                                return Err("wait() method takes exactly 1 argument".to_string());
+                            }
+                            let mutex_val = self.generate_expression(&args[0])?;
+                            let mutex_boxed = self.box_value(mutex_val);
+                            self.call_runtime_function(
+                                "mux_condvar_wait",
+                                &[obj_value, mutex_boxed.into()],
+                            )
+                        }
+                        "signal" => {
+                            if !args.is_empty() {
+                                return Err("signal() method takes no arguments".to_string());
+                            }
+                            self.call_runtime_function("mux_condvar_signal", &[obj_value])
+                        }
+                        "broadcast" => {
+                            if !args.is_empty() {
+                                return Err("broadcast() method takes no arguments".to_string());
+                            }
+                            self.call_runtime_function("mux_condvar_broadcast", &[obj_value])
+                        }
+                        _ => Err(format!(
+                            "Method {} not implemented for CondVar",
+                            method_name
+                        )),
+                    };
+                }
                 if let Some(class) = self.analyzer.symbol_table().lookup(name) {
                     if let Some(method) = class.methods.get(method_name) {
                         if method.is_static {

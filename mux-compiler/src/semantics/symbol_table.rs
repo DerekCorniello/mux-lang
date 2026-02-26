@@ -226,7 +226,7 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 };
 
 /// List of all available stdlib modules for wildcard imports
-pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random"];
+pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random", "sync"];
 
 lazy_static! {
     // io uses lazy_static rather than PHF because signatures include Type::Named(Result<...>),
@@ -336,6 +336,34 @@ lazy_static! {
         m
     };
 
+    pub static ref SYNC_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        m.insert(
+            "sync.spawn",
+            StdlibItem::Function {
+                params: vec![Type::Function {
+                    params: vec![],
+                    returns: Box::new(Type::Void),
+                    default_count: 0,
+                }],
+                ret: Type::Result(
+                    Box::new(Type::Named("Thread".to_string(), vec![])),
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                ),
+                llvm_name: "mux_sync_spawn".to_string(),
+            },
+        );
+        m.insert(
+            "sync.sleep",
+            StdlibItem::Function {
+                params: vec![Type::Primitive(PrimitiveType::Int)],
+                ret: Type::Void,
+                llvm_name: "mux_sync_sleep".to_string(),
+            },
+        );
+        m
+    };
+
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
 
@@ -405,6 +433,11 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
                 .iter()
                 .map(|(key, item)| (key.to_string(), item.clone())),
         )
+        .chain(
+            SYNC_STDLIB_ITEMS
+                .iter()
+                .map(|(key, item)| (key.to_string(), item.clone())),
+        )
 }
 
 pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
@@ -417,6 +450,7 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| MATH_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| DATETIME_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| SYNC_STDLIB_ITEMS.get(name).cloned())
 }
 
 #[derive(Debug)]

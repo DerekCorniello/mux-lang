@@ -1,0 +1,17 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: output_to_snapshot
+---
+=== std.sync smoke test ===
+worker: finished
+join ok
+mutex lock ok
+mutex unlock ok
+rwlock read_lock ok
+rwlock unlock ok
+condvar signal ok
+notifier mutex unlock ok
+condvar wait ok
+post-wait mutex unlock ok
+notifier join ok
+=== std.sync done ===

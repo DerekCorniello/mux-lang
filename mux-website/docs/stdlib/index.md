@@ -19,9 +19,10 @@ func main() returns void {
 You can import stdlib in multiple forms:
 
 ```mux title="stdlib_import_forms.mux"
-import std                    // namespace import: std.math, std.io, std.random, std.datetime
+import std                    // namespace import: std.math, std.io, std.random, std.datetime, std.sync
 import std.math               // single module namespace
 import std.datetime
+import std.sync
 import std.(math, random as r)
 import std.*                  // flat import of all stdlib items
 ```
@@ -35,6 +36,7 @@ import std.*                  // flat import of all stdlib items
 | [io](./io) | File and path operations with `result`-based errors | Available |
 | [random](./random) | Pseudorandom number generation | Available |
 | [datetime](./datetime) | Time retrieval, formatting, and sleep helpers | Available |
+| [sync](./sync) | Threading, locks, condition variables, and sleep helpers | Available |
 
 ## Module Stability
 

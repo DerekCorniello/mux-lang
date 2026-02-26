@@ -893,6 +893,70 @@ impl<'a> CodeGenerator<'a> {
         }
 
         module.add_function(
+            "mux_sync_spawn",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sync_sleep",
+            void_type.fn_type(&[i64_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_thread_join",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_thread_detach",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function("mux_mutex_new", i8_ptr.fn_type(&[], false), None);
+        module.add_function(
+            "mux_mutex_lock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_mutex_unlock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function("mux_rwlock_new", i8_ptr.fn_type(&[], false), None);
+        module.add_function(
+            "mux_rwlock_read_lock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_rwlock_write_lock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_rwlock_unlock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function("mux_condvar_new", i8_ptr.fn_type(&[], false), None);
+        module.add_function(
+            "mux_condvar_wait",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_condvar_signal",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_condvar_broadcast",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_rc_inc",
             context.void_type().fn_type(&[i8_ptr.into()], false),
             None,

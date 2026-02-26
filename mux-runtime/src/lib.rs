@@ -280,6 +280,7 @@ pub mod result;
 pub mod set;
 pub mod std;
 pub mod string;
+pub mod sync;
 pub mod tuple;
 
 pub use std::{mux_value_list_get_value, mux_value_list_length, mux_value_list_slice};

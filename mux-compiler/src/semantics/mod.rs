@@ -106,6 +106,7 @@ impl SemanticAnalyzer {
             ("std.math", "math"),
             ("std.io", "io"),
             ("std.random", "random"),
+            ("std.sync", "sync"),
         ]
     }
 
@@ -391,6 +392,147 @@ impl SemanticAnalyzer {
                 )
                 .expect("builtin function registration should not fail");
         }
+        self.add_sync_builtin_types();
+    }
+
+    fn add_sync_builtin_types(&mut self) {
+        let span = Span::new(0, 0);
+        let result_void_string = Type::Result(
+            Box::new(Type::Void),
+            Box::new(Type::Primitive(PrimitiveType::Str)),
+        );
+
+        let mut thread_symbol = Self::make_symbol(
+            SymbolKind::Class,
+            span,
+            Some(Type::Named("Thread".to_string(), vec![])),
+        );
+        thread_symbol.methods.insert(
+            "join".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        thread_symbol.methods.insert(
+            "detach".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        let _ = self.symbol_table.add_symbol("Thread", thread_symbol);
+
+        let mut mutex_symbol = Self::make_symbol(
+            SymbolKind::Class,
+            span,
+            Some(Type::Named("Mutex".to_string(), vec![])),
+        );
+        mutex_symbol.methods.insert(
+            "new".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: Type::Named("Mutex".to_string(), vec![]),
+                is_static: true,
+            },
+        );
+        mutex_symbol.methods.insert(
+            "lock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        mutex_symbol.methods.insert(
+            "unlock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        let _ = self.symbol_table.add_symbol("Mutex", mutex_symbol);
+
+        let mut rwlock_symbol = Self::make_symbol(
+            SymbolKind::Class,
+            span,
+            Some(Type::Named("RwLock".to_string(), vec![])),
+        );
+        rwlock_symbol.methods.insert(
+            "new".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: Type::Named("RwLock".to_string(), vec![]),
+                is_static: true,
+            },
+        );
+        rwlock_symbol.methods.insert(
+            "read_lock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        rwlock_symbol.methods.insert(
+            "write_lock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        rwlock_symbol.methods.insert(
+            "unlock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        let _ = self.symbol_table.add_symbol("RwLock", rwlock_symbol);
+
+        let mut condvar_symbol = Self::make_symbol(
+            SymbolKind::Class,
+            span,
+            Some(Type::Named("CondVar".to_string(), vec![])),
+        );
+        condvar_symbol.methods.insert(
+            "new".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: Type::Named("CondVar".to_string(), vec![]),
+                is_static: true,
+            },
+        );
+        condvar_symbol.methods.insert(
+            "wait".to_string(),
+            MethodSig {
+                params: vec![Type::Named("Mutex".to_string(), vec![])],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        condvar_symbol.methods.insert(
+            "signal".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        condvar_symbol.methods.insert(
+            "broadcast".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string,
+                is_static: false,
+            },
+        );
+        let _ = self.symbol_table.add_symbol("CondVar", condvar_symbol);
     }
 
     #[allow(clippy::only_used_in_recursion)]

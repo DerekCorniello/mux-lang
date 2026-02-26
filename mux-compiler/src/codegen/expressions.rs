@@ -1812,6 +1812,38 @@ impl<'a> CodeGenerator<'a> {
                                             ));
                                         }
                                     } else if symbol.kind == crate::semantics::SymbolKind::Class {
+                                        if matches!(name.as_str(), "Mutex" | "RwLock" | "CondVar")
+                                            && field == "new"
+                                        {
+                                            if !args.is_empty() {
+                                                return Err(format!(
+                                                    "{}.new() takes no arguments",
+                                                    name
+                                                ));
+                                            }
+                                            let runtime_fn = match name.as_str() {
+                                                "Mutex" => "mux_mutex_new",
+                                                "RwLock" => "mux_rwlock_new",
+                                                "CondVar" => "mux_condvar_new",
+                                                _ => unreachable!(),
+                                            };
+                                            let created = self
+                                                .builder
+                                                .build_call(
+                                                    self.module.get_function(runtime_fn).ok_or(
+                                                        format!("{} not found", runtime_fn),
+                                                    )?,
+                                                    &[],
+                                                    &format!("{}_new_call", name),
+                                                )
+                                                .map_err(|e| e.to_string())?
+                                                .try_as_basic_value()
+                                                .left()
+                                                .ok_or_else(|| {
+                                                    format!("{} should return a value", runtime_fn)
+                                                })?;
+                                            return Ok(created);
+                                        }
                                         // handle constructor/static method calls
                                         if let Some(method) = symbol.methods.get(field) {
                                             if !method.is_static {
