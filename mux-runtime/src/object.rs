@@ -18,7 +18,7 @@ pub struct ObjectType {
 }
 
 impl ObjectType {
-    pub fn new(name: String, size: usize) -> Self {
+    pub fn new(name: String, size: usize, destructor: Option<fn(*mut c_void)>) -> Self {
         let id = {
             let mut next_id = NEXT_TYPE_ID.lock().expect("mutex lock should not fail");
             let id = *next_id;
@@ -30,19 +30,34 @@ impl ObjectType {
             id,
             name,
             size,
-            destructor: None,
+            destructor,
         }
     }
 }
 
-pub fn register_object_type(name: &str, size: usize) -> TypeId {
-    let obj_type = ObjectType::new(name.to_string(), size);
+pub fn register_object_type(name: &str, size: usize, destructor: Option<fn(*mut c_void)>) -> TypeId {
+    let obj_type = ObjectType::new(name.to_string(), size, destructor);
     let id = obj_type.id;
     TYPE_REGISTRY
         .lock()
         .expect("mutex lock should not fail")
         .insert(id, obj_type);
     id
+}
+
+pub fn call_object_destructor(type_id: TypeId, ptr: *mut c_void) {
+    if ptr.is_null() {
+        return;
+    }
+    let destructor = {
+        let registry = TYPE_REGISTRY.lock().expect("mutex lock should not fail");
+        registry
+            .get(&type_id)
+            .and_then(|obj_type| obj_type.destructor)
+    };
+    if let Some(func) = destructor {
+        func(ptr);
+    }
 }
 
 pub fn alloc_object(type_id: TypeId) -> *mut Value {
@@ -142,7 +157,7 @@ pub unsafe fn copy_object(src: *const Value) -> *mut Value {
 pub extern "C" fn mux_register_object_type(name: *const c_char, size: usize) -> TypeId {
     let c_str = unsafe { CStr::from_ptr(name) };
     let name_str = c_str.to_string_lossy().into_owned();
-    register_object_type(&name_str, size)
+    register_object_type(&name_str, size, None)
 }
 
 #[unsafe(no_mangle)]

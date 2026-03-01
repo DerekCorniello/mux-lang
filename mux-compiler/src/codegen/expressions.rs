@@ -1813,11 +1813,19 @@ impl<'a> CodeGenerator<'a> {
                                         }
                                     } else if symbol.kind == crate::semantics::SymbolKind::Class {
                                         // handle constructor/static method calls
-                                        if let Some(method) = symbol.methods.get(field) {
-                                            if !method.is_static {
-                                                return Err(format!(
-                                                    "Method {} on class {} is not static",
-                                                    field, name
+                                    if let Some(method) = symbol.methods.get(field) {
+                                        if let Some(call) = self.try_generate_net_static_method_call(
+                                            name,
+                                            field,
+                                            args,
+                                        )? {
+                                            return Ok(call);
+                                        }
+
+                                        if !method.is_static {
+                                            return Err(format!(
+                                                "Method {} on class {} is not static",
+                                                field, name
                                                 ));
                                             }
                                             // generate static method call (no self parameter)

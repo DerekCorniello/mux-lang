@@ -1,0 +1,30 @@
+// Basic UDP send/receive test for std.net
+import std.net
+import std.assert
+
+func main() returns void {
+    match net.UdpSocket.bind("127.0.0.1:0") {
+        ok(sock) {
+            match sock.local_addr() {
+                ok(local_addr) {
+                    const list<int> payload = [116, 101, 115, 116]  // "test"
+                    match sock.send_to(payload, local_addr) {
+                        ok(_) {}
+                        err(e) { assert.assert(false, e) }
+                    }
+
+                    match sock.recv_from(32) {
+                        ok(response) {
+                            assert.assert(response.right == local_addr, "sender mismatch")
+                            assert.assert(response.left[0] == payload[0], "payload mismatch")
+                        }
+                        err(e) { assert.assert(false, e) }
+                    }
+                }
+                err(e) { assert.assert(false, e) }
+            }
+            sock.close()
+        }
+        err(e) { assert.assert(false, e) }
+    }
+}

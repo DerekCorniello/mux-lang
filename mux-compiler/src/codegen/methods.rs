@@ -174,6 +174,188 @@ impl<'a> CodeGenerator<'a> {
             .unwrap_or_else(|| panic!("{} should return a basic value", func_name)))
     }
 
+    pub(super) fn build_net_call(
+        &mut self,
+        func_name: &str,
+        args: &[BasicValueEnum<'a>],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let func = self
+            .module
+            .get_function(func_name)
+            .ok_or(format!("{} not found", func_name))?;
+        let metadata_args = args.iter().map(|v| (*v).into()).collect::<Vec<_>>();
+        let call = self
+            .builder
+            .build_call(
+                func,
+                &metadata_args,
+                &format!("{}_call", func_name.replace('.', "_")),
+            )
+            .map_err(|e| e.to_string())?;
+        if let Some(value) = call.try_as_basic_value().left() {
+            Ok(value)
+        } else {
+            Ok(self.context.i32_type().const_int(0, false).into())
+        }
+    }
+
+    pub(super) fn bool_to_i32(
+        &mut self,
+        value: BasicValueEnum<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let int_value = if value.is_int_value() {
+            value.into_int_value()
+        } else if value.is_pointer_value() {
+            self.extract_raw_pointer(value, "mux_value_get_bool", "extract_bool")?
+                .into_int_value()
+        } else {
+            return Err("Expected boolean argument".to_string());
+        };
+        let extended = self
+            .builder
+            .build_int_z_extend(int_value, self.context.i32_type(), "bool_to_i32")
+            .map_err(|e| e.to_string())?;
+        Ok(extended.into())
+    }
+
+    pub(super) fn try_generate_net_static_method_call(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<Option<BasicValueEnum<'a>>, String> {
+        match (class_name, method_name) {
+            ("TcpStream", "connect") => {
+                if args.len() != 1 {
+                    return Err("TcpStream.connect takes exactly 1 argument".to_string());
+                }
+                let addr = self.generate_expression(&args[0])?;
+                let call = self.build_net_call("mux_net_tcp_connect", &[addr])?;
+                Ok(Some(call))
+            }
+            ("UdpSocket", "bind") => {
+                if args.len() != 1 {
+                    return Err("UdpSocket.bind takes exactly 1 argument".to_string());
+                }
+                let addr = self.generate_expression(&args[0])?;
+                let call = self.build_net_call("mux_net_udp_bind", &[addr])?;
+                Ok(Some(call))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    pub(super) fn try_generate_net_instance_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        obj_type: &Type,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<Option<BasicValueEnum<'a>>, String> {
+        let type_name = if let Type::Named(name, _) = obj_type {
+            name
+        } else {
+            return Ok(None);
+        };
+
+        match type_name.as_str() {
+            "TcpStream" => match method_name {
+                "read" => {
+                    if args.len() != 1 {
+                        return Err("TcpStream.read takes exactly 1 argument".to_string());
+                    }
+                    let size = self.generate_expression(&args[0])?;
+                    let call = self.build_net_call("mux_net_tcp_read", &[obj_value.into(), size])?;
+                    Ok(Some(call))
+                }
+                "write" => {
+                    if args.len() != 1 {
+                        return Err("TcpStream.write takes exactly 1 argument".to_string());
+                    }
+                    let data = self.generate_expression(&args[0])?;
+                    let call =
+                        self.build_net_call("mux_net_tcp_write", &[obj_value.into(), data])?;
+                    Ok(Some(call))
+                }
+                "close" => {
+                    if !args.is_empty() {
+                        return Err("TcpStream.close takes no arguments".to_string());
+                    }
+                    let call = self.build_net_call("mux_net_tcp_close", &[obj_value.into()])?;
+                    Ok(Some(call))
+                }
+                "set_nonblocking" => {
+                    if args.len() != 1 {
+                        return Err("TcpStream.set_nonblocking takes 1 argument".to_string());
+                    }
+                    let bool_val = self.generate_expression(&args[0])?;
+                    let converted = self.bool_to_i32(bool_val)?;
+                    let call = self.build_net_call("mux_net_tcp_set_nonblocking", &[obj_value.into(), converted])?;
+                    Ok(Some(call))
+                }
+                "peer_addr" => {
+                    if !args.is_empty() {
+                        return Err("TcpStream.peer_addr takes no arguments".to_string());
+                    }
+                    let call = self.build_net_call("mux_net_tcp_peer_addr", &[obj_value.into()])?;
+                    Ok(Some(call))
+                }
+                "local_addr" => {
+                    if !args.is_empty() {
+                        return Err("TcpStream.local_addr takes no arguments".to_string());
+                    }
+                    let call = self.build_net_call("mux_net_tcp_local_addr", &[obj_value.into()])?;
+                    Ok(Some(call))
+                }
+                _ => Ok(None),
+            },
+            "UdpSocket" => match method_name {
+                "send_to" => {
+                    if args.len() != 2 {
+                        return Err("UdpSocket.send_to takes 2 arguments".to_string());
+                    }
+                    let data = self.generate_expression(&args[0])?;
+                    let addr = self.generate_expression(&args[1])?;
+                    let call = self.build_net_call(
+                        "mux_net_udp_send_to",
+                        &[obj_value.into(), data, addr],
+                    )?;
+                    Ok(Some(call))
+                }
+                "recv_from" => {
+                    if args.len() != 1 {
+                        return Err("UdpSocket.recv_from takes 1 argument".to_string());
+                    }
+                    let size = self.generate_expression(&args[0])?;
+                    let call =
+                        self.build_net_call("mux_net_udp_recv_from", &[obj_value.into(), size])?;
+                    Ok(Some(call))
+                }
+                "close" => {
+                    if !args.is_empty() {
+                        return Err("UdpSocket.close takes no arguments".to_string());
+                    }
+                    let call = self.build_net_call("mux_net_udp_close", &[obj_value.into()])?;
+                    Ok(Some(call))
+                }
+                "set_nonblocking" => {
+                    if args.len() != 1 {
+                        return Err("UdpSocket.set_nonblocking takes 1 argument".to_string());
+                    }
+                    let bool_val = self.generate_expression(&args[0])?;
+                    let converted = self.bool_to_i32(bool_val)?;
+                    let call = self.build_net_call(
+                        "mux_net_udp_set_nonblocking",
+                        &[obj_value.into(), converted],
+                    )?;
+                    Ok(Some(call))
+                }
+                _ => Ok(None),
+            },
+            _ => Ok(None),
+        }
+    }
+
     pub(super) fn generate_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
@@ -187,6 +369,15 @@ impl<'a> CodeGenerator<'a> {
                 method_name, e
             )
         })?;
+
+        if let Some(call) = self.try_generate_net_instance_method_call(
+            obj_value,
+            &resolved_obj_type,
+            method_name,
+            args,
+        )? {
+            return Ok(call);
+        }
 
         match &resolved_obj_type {
             Type::Primitive(prim) => {

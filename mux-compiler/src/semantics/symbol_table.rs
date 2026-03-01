@@ -1,7 +1,7 @@
 use crate::ast::PrimitiveType;
 use crate::lexer::Span;
 use crate::semantics::error::SemanticError;
-use crate::semantics::types::{BuiltInSig, Symbol, Type};
+use crate::semantics::types::{BuiltInSig, MethodSig, Symbol, SymbolKind, Type};
 use lazy_static::lazy_static;
 use phf::phf_map;
 use std::cell::RefCell;
@@ -187,6 +187,160 @@ fn io_result(ok: Type) -> Type {
     Type::Result(Box::new(ok), Box::new(str_()))
 }
 
+fn net_bytes_type() -> Type {
+    Type::List(Box::new(Type::Primitive(PrimitiveType::Int)))
+}
+
+fn net_tuple_bytes_addr_type() -> Type {
+    Type::Tuple(
+        Box::new(net_bytes_type()),
+        Box::new(str_()),
+    )
+}
+
+fn tcp_stream_type() -> Type {
+    Type::Named("TcpStream".to_string(), Vec::new())
+}
+
+fn udp_socket_type() -> Type {
+    Type::Named("UdpSocket".to_string(), Vec::new())
+}
+
+fn make_net_class_symbol(name: &str, methods: HashMap<String, MethodSig>, span: Span) -> Symbol {
+    Symbol {
+        kind: SymbolKind::Class,
+        span,
+        type_: Some(Type::Named(name.to_string(), Vec::new())),
+        interfaces: HashMap::new(),
+        methods,
+        fields: HashMap::new(),
+        type_params: Vec::new(),
+        original_name: None,
+        llvm_name: None,
+        default_param_count: 0,
+        variants: None,
+    }
+}
+
+fn tcp_stream_methods() -> HashMap<String, MethodSig> {
+    let mut methods = HashMap::new();
+    methods.insert(
+        "connect".to_string(),
+        MethodSig {
+            params: vec![str_()],
+            return_type: io_result(tcp_stream_type()),
+            is_static: true,
+        },
+    );
+    methods.insert(
+        "read".to_string(),
+        MethodSig {
+            params: vec![int()],
+            return_type: io_result(net_bytes_type()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "write".to_string(),
+        MethodSig {
+            params: vec![net_bytes_type()],
+            return_type: io_result(int()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "close".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Void,
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "set_nonblocking".to_string(),
+        MethodSig {
+            params: vec![bool_()],
+            return_type: Type::Void,
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "peer_addr".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: str_(),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "local_addr".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: str_(),
+            is_static: false,
+        },
+    );
+    methods
+}
+
+fn udp_socket_methods() -> HashMap<String, MethodSig> {
+    let mut methods = HashMap::new();
+    methods.insert(
+        "bind".to_string(),
+        MethodSig {
+            params: vec![str_()],
+            return_type: io_result(udp_socket_type()),
+            is_static: true,
+        },
+    );
+    methods.insert(
+        "send_to".to_string(),
+        MethodSig {
+            params: vec![net_bytes_type(), str_()],
+            return_type: io_result(int()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "recv_from".to_string(),
+        MethodSig {
+            params: vec![int()],
+            return_type: io_result(net_tuple_bytes_addr_type()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "close".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Void,
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "set_nonblocking".to_string(),
+        MethodSig {
+            params: vec![bool_()],
+            return_type: Type::Void,
+            is_static: false,
+        },
+    );
+    methods
+}
+
+pub(super) fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
+    let mut classes = HashMap::new();
+    classes.insert(
+        "TcpStream".to_string(),
+        make_net_class_symbol("TcpStream", tcp_stream_methods(), span),
+    );
+    classes.insert(
+        "UdpSocket".to_string(),
+        make_net_class_symbol("UdpSocket", udp_socket_methods(), span),
+    );
+    classes
+}
+
 fn datetime_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
     StdlibItem::Function {
         params: params.to_vec(),
@@ -226,7 +380,7 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 };
 
 /// List of all available stdlib modules for wildcard imports
-pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random"];
+pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random", "net"];
 
 lazy_static! {
     // io uses lazy_static rather than PHF because signatures include Type::Named(Result<...>),

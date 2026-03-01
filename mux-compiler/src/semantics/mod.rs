@@ -106,6 +106,7 @@ impl SemanticAnalyzer {
             ("std.math", "math"),
             ("std.io", "io"),
             ("std.random", "random"),
+            ("std.net", "net"),
         ]
     }
 
@@ -4811,6 +4812,9 @@ impl SemanticAnalyzer {
                     Self::stdlib_item_to_symbol(&item, span),
                 );
             }
+        }
+        if module_name == "net" {
+            module_symbols.extend(crate::semantics::symbol_table::net_module_class_symbols(span));
         }
         module_symbols
     }

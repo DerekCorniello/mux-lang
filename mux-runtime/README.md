@@ -1898,17 +1898,18 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `assert`, `math`, `io`, `random`, and `datetime`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, and `net`.
 
 Import styles:
 
 ```mux
-import std                    // use std.assert, std.math, std.io, std.random, std.datetime
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.net
 import std.assert              // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*
 import std.random             // use random.*
 import std.datetime           // use datetime.*
+import std.net                // use net.*
 import std.(math, random as r)
 import std.*                  // flat import of stdlib items
 ```
@@ -1976,6 +1977,16 @@ Format patterns use chrono `strftime` tokens, for example:
 - `%B` full month name
 - `%b` abbreviated month name
 - `%Y-%m-%d %H:%M:%S`
+
+### 17.6 net
+
+The `net` module exposes low-level socket primitives:
+
+- `TcpStream` for connecting to TCP services, performing reads/writes, and querying endpoints.
+- `UdpSocket` for binding to UDP ports, sending datagrams, receiving a `(Bytes, string)` tuple, and closing sockets.
+- A request/response shape described as simple `map` objects with known keys (`method`, `url`, `headers`, `body`, `status`, etc.).
+
+Methods return explicit `result` values so errors are handled deterministically.
 
 ---
 
