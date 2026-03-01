@@ -226,7 +226,7 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 };
 
 /// List of all available stdlib modules for wildcard imports
-pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random"];
+pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "net", "random"];
 
 lazy_static! {
     // io uses lazy_static rather than PHF because signatures include Type::Named(Result<...>),
@@ -336,6 +336,132 @@ lazy_static! {
         m
     };
 
+    // Net module - networking primitives (TcpStream, UdpSocket, HTTP)
+    pub static ref NET_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        fn net_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
+            StdlibItem::Function {
+                params: params.to_vec(),
+                ret,
+                llvm_name: name.to_string(),
+            }
+        }
+
+        fn net_result(ok: Type) -> Type {
+            Type::Result(Box::new(ok), Box::new(str_()))
+        }
+
+        let bytes_list = || Type::List(Box::new(int()));
+        let string_map = || Type::Map(Box::new(str_()), Box::new(str_()));
+        let tcp_stream = || Type::Named("TcpStream".to_string());
+        let udp_socket = || Type::Named("UdpSocket".to_string());
+
+        // HTTP response: (int, (map<string, string>, list<int>))
+        let http_response = || Type::Tuple(vec![
+            int(),
+            Type::Tuple(vec![string_map(), bytes_list()]),
+        ]);
+
+        // UDP recv response: (list<int>, string)
+        let udp_recv_response = || Type::Tuple(vec![bytes_list(), str_()]);
+
+        let mut m = HashMap::new();
+
+        // TcpStream functions
+        m.insert("net.tcp_connect", net_fn(
+            "mux_net_tcp_connect",
+            STR_PARAM,
+            net_result(tcp_stream()),
+        ));
+
+        m.insert("net.tcp_read", net_fn(
+            "mux_net_tcp_read",
+            &[Type::Named("TcpStream".to_string()), int()],
+            net_result(bytes_list()),
+        ));
+
+        m.insert("net.tcp_write", net_fn(
+            "mux_net_tcp_write",
+            &[Type::Named("TcpStream".to_string()), bytes_list()],
+            net_result(int()),
+        ));
+
+        m.insert("net.tcp_close", net_fn(
+            "mux_net_tcp_close",
+            &[Type::Named("TcpStream".to_string())],
+            net_result(Type::Void),
+        ));
+
+        m.insert("net.tcp_set_nonblocking", net_fn(
+            "mux_net_tcp_set_nonblocking",
+            &[Type::Named("TcpStream".to_string()), bool_()],
+            net_result(Type::Void),
+        ));
+
+        m.insert("net.tcp_peer_addr", net_fn(
+            "mux_net_tcp_peer_addr",
+            &[Type::Named("TcpStream".to_string())],
+            net_result(str_()),
+        ));
+
+        m.insert("net.tcp_local_addr", net_fn(
+            "mux_net_tcp_local_addr",
+            &[Type::Named("TcpStream".to_string())],
+            net_result(str_()),
+        ));
+
+        // UdpSocket functions
+        m.insert("net.udp_bind", net_fn(
+            "mux_net_udp_bind",
+            STR_PARAM,
+            net_result(udp_socket()),
+        ));
+
+        m.insert("net.udp_send_to", net_fn(
+            "mux_net_udp_send_to",
+            &[Type::Named("UdpSocket".to_string()), bytes_list(), str_()],
+            net_result(int()),
+        ));
+
+        m.insert("net.udp_recv_from", net_fn(
+            "mux_net_udp_recv_from",
+            &[Type::Named("UdpSocket".to_string()), int()],
+            net_result(udp_recv_response()),
+        ));
+
+        m.insert("net.udp_close", net_fn(
+            "mux_net_udp_close",
+            &[Type::Named("UdpSocket".to_string())],
+            net_result(Type::Void),
+        ));
+
+        m.insert("net.udp_set_nonblocking", net_fn(
+            "mux_net_udp_set_nonblocking",
+            &[Type::Named("UdpSocket".to_string()), bool_()],
+            net_result(Type::Void),
+        ));
+
+        // HTTP functions
+        m.insert("net.http_get", net_fn(
+            "mux_net_http_get",
+            STR_PARAM,
+            net_result(http_response()),
+        ));
+
+        m.insert("net.http_post", net_fn(
+            "mux_net_http_post",
+            STR_STR_PARAMS,
+            net_result(http_response()),
+        ));
+
+        m.insert("net.http_request", net_fn(
+            "mux_net_http_request",
+            &[str_(), str_(), string_map(), bytes_list()],
+            net_result(http_response()),
+        ));
+
+        m
+    };
+
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
 
@@ -405,6 +531,11 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
                 .iter()
                 .map(|(key, item)| (key.to_string(), item.clone())),
         )
+        .chain(
+            NET_STDLIB_ITEMS
+                .iter()
+                .map(|(key, item)| (key.to_string(), item.clone())),
+        )
 }
 
 pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
@@ -417,6 +548,7 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| MATH_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| DATETIME_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| NET_STDLIB_ITEMS.get(name).cloned())
 }
 
 #[derive(Debug)]

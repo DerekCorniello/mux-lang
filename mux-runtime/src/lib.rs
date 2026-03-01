@@ -272,6 +272,7 @@ pub mod io;
 pub mod list;
 pub mod map;
 pub mod math;
+pub mod net;
 pub mod object;
 pub mod optional;
 pub mod random;

@@ -1,0 +1,96 @@
+// Test file for std.net networking module
+
+// Test TCP connection (requires a TCP server to be running)
+// let result = net.tcp_connect("127.0.0.1:8080")
+// match result {
+//     Ok(stream) => {
+//         // Write data
+//         let write_result = net.tcp_write(stream, [72, 101, 108, 108, 111])
+//         match write_result {
+//             Ok(bytes_written) => print("Wrote " + int_to_string(bytes_written) + " bytes\n")
+//             Err(e) => print("Write failed: " + e + "\n")
+//         }
+//         
+//         // Read response
+//         let read_result = net.tcp_read(stream, 1024)
+//         match read_result {
+//             Ok(data) => print("Received " + int_to_string(len(data)) + " bytes\n")
+//             Err(e) => print("Read failed: " + e + "\n")
+//         }
+//         
+//         // Get addresses
+//         match net.tcp_peer_addr(stream) {
+//             Ok(addr) => print("Peer: " + addr + "\n")
+//             Err(e) => print("Failed to get peer addr: " + e + "\n")
+//         }
+//         
+//         match net.tcp_local_addr(stream) {
+//             Ok(addr) => print("Local: " + addr + "\n")
+//             Err(e) => print("Failed to get local addr: " + e + "\n")
+//         }
+//         
+//         // Close connection
+//         net.tcp_close(stream)
+//     }
+//     Err(e) => print("Connection failed: " + e + "\n")
+// }
+
+// Test UDP socket
+// let bind_result = net.udp_bind("0.0.0.0:9000")
+// match bind_result {
+//     Ok(socket) => {
+//         // Send data
+//         let send_result = net.udp_send_to(socket, [72, 105], "127.0.0.1:9001")
+//         match send_result {
+//             Ok(bytes_sent) => print("Sent " + int_to_string(bytes_sent) + " bytes\n")
+//             Err(e) => print("Send failed: " + e + "\n")
+//         }
+//         
+//         // Receive data
+//         let recv_result = net.udp_recv_from(socket, 1024)
+//         match recv_result {
+//             Ok((data, addr)) => {
+//                 print("Received " + int_to_string(len(data)) + " bytes from " + addr + "\n")
+//             }
+//             Err(e) => print("Receive failed: " + e + "\n")
+//         }
+//         
+//         // Close socket
+//         net.udp_close(socket)
+//     }
+//     Err(e) => print("Bind failed: " + e + "\n")
+// }
+
+// Test HTTP GET (requires HTTP server)
+// let http_result = net.http_get("http://httpbin.org/get")
+// match http_result {
+//     Ok((status, (headers, body))) => {
+//         print("Status: " + int_to_string(status) + "\n")
+//         print("Body length: " + int_to_string(len(body)) + "\n")
+//     }
+//     Err(e) => print("HTTP request failed: " + e + "\n")
+// }
+
+// Test HTTP POST
+// let post_body = [72, 101, 108, 108, 111]  // "Hello"
+// let post_result = net.http_post("http://httpbin.org/post", post_body)
+// match post_result {
+//     Ok((status, (headers, body))) => {
+//         print("POST Status: " + int_to_string(status) + "\n")
+//     }
+//     Err(e) => print("POST failed: " + e + "\n")
+// }
+
+// Full HTTP request with custom headers
+// let headers = {"Content-Type": "application/json", "Accept": "application/json"}
+// let body = [123, 34, 116, 101, 115, 116, 34, 58, 32, 49, 125]  // {"test": 1}
+// let req_result = net.http_request("POST", "http://httpbin.org/post", headers, body)
+// match req_result {
+//     Ok((status, (headers, body))) => {
+//         print("Request Status: " + int_to_string(status) + "\n")
+//     }
+//     Err(e) => print("Request failed: " + e + "\n")
+// }
+
+print("Network module test file loaded. Uncomment tests to run.\n")
+print("Note: Tests require network servers to be available.\n")
