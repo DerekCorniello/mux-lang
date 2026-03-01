@@ -350,6 +350,22 @@ impl<'a> CodeGenerator<'a> {
                     )?;
                     Ok(Some(call))
                 }
+                "peer_addr" => {
+                    if !args.is_empty() {
+                        return Err("UdpSocket.peer_addr takes no arguments".to_string());
+                    }
+                    let call =
+                        self.build_net_call("mux_net_udp_peer_addr", &[obj_value.into()])?;
+                    Ok(Some(call))
+                }
+                "local_addr" => {
+                    if !args.is_empty() {
+                        return Err("UdpSocket.local_addr takes no arguments".to_string());
+                    }
+                    let call =
+                        self.build_net_call("mux_net_udp_local_addr", &[obj_value.into()])?;
+                    Ok(Some(call))
+                }
                 _ => Ok(None),
             },
             _ => Ok(None),

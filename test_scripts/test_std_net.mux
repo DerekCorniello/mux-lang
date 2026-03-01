@@ -7,6 +7,10 @@ func main() returns void {
         ok(sock) {
             match sock.local_addr() {
                 ok(local_addr) {
+                    match sock.set_nonblocking(false) {
+                        ok(_) {}
+                        err(e) { assert.assert(false, e) }
+                    }
                     const list<int> payload = [116, 101, 115, 116]  // "test"
                     match sock.send_to(payload, local_addr) {
                         ok(_) {}

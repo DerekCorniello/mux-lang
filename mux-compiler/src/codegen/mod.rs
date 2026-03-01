@@ -969,7 +969,7 @@ impl<'a> CodeGenerator<'a> {
         );
         module.add_function(
             "mux_net_tcp_set_nonblocking",
-            void_type.fn_type(&[i8_ptr.into(), i32_type.into()], false),
+            i8_ptr.fn_type(&[i8_ptr.into(), i32_type.into()], false),
             None,
         );
         module.add_function(
@@ -1005,7 +1005,17 @@ impl<'a> CodeGenerator<'a> {
         );
         module.add_function(
             "mux_net_udp_set_nonblocking",
-            void_type.fn_type(&[i8_ptr.into(), i32_type.into()], false),
+            i8_ptr.fn_type(&[i8_ptr.into(), i32_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_udp_peer_addr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_udp_local_addr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,
         );
     }

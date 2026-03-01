@@ -260,7 +260,7 @@ fn tcp_stream_methods() -> HashMap<String, MethodSig> {
         "set_nonblocking".to_string(),
         MethodSig {
             params: vec![bool_()],
-            return_type: Type::Void,
+            return_type: io_result(Type::Void),
             is_static: false,
         },
     );
@@ -268,7 +268,7 @@ fn tcp_stream_methods() -> HashMap<String, MethodSig> {
         "peer_addr".to_string(),
         MethodSig {
             params: Vec::new(),
-            return_type: str_(),
+            return_type: io_result(str_()),
             is_static: false,
         },
     );
@@ -276,7 +276,7 @@ fn tcp_stream_methods() -> HashMap<String, MethodSig> {
         "local_addr".to_string(),
         MethodSig {
             params: Vec::new(),
-            return_type: str_(),
+            return_type: io_result(str_()),
             is_static: false,
         },
     );
@@ -321,7 +321,23 @@ fn udp_socket_methods() -> HashMap<String, MethodSig> {
         "set_nonblocking".to_string(),
         MethodSig {
             params: vec![bool_()],
-            return_type: Type::Void,
+            return_type: io_result(Type::Void),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "peer_addr".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: io_result(str_()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "local_addr".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: io_result(str_()),
             is_static: false,
         },
     );

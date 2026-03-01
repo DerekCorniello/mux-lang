@@ -1980,11 +1980,12 @@ Format patterns use chrono `strftime` tokens, for example:
 
 `net` exposes raw networking primitives, including:
 
-- `TcpStream` for connecting to TCP services, reading/writing bytes, toggling non-blocking I/O, and querying connection endpoints.
-- `UdpSocket` for binding to a port, sending datagrams, receiving `(Bytes, string)` tuples, and closing sockets.
+- `TcpStream` for connecting to TCP services, reading/writing bytes, toggling `set_nonblocking` (`result<void, string>`), and querying `peer_addr`/`local_addr` (`result<string, string>`) endpoints.
+- `UdpSocket` for binding to a port, sending datagrams, receiving `(Bytes, string)` tuples, toggling `set_nonblocking` (`result<void, string>`), and querying `peer_addr`/`local_addr` results.
 - A protocol-neutral request/response shape described as simple `map` objects with `method`, `url`, `headers`, `body`, `status`, etc., so higher-level protocols can share a common shape.
 
----
+Methods return explicit `result` values so errors are handled deterministically.
+
 
 ## Project File Structure
 

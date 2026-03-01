@@ -1982,8 +1982,8 @@ Format patterns use chrono `strftime` tokens, for example:
 
 The `net` module exposes low-level socket primitives:
 
-- `TcpStream` for connecting to TCP services, performing reads/writes, and querying endpoints.
-- `UdpSocket` for binding to UDP ports, sending datagrams, receiving a `(Bytes, string)` tuple, and closing sockets.
+- `TcpStream` for connecting to TCP services, performing reads/writes, toggling `set_nonblocking` (returns `result<void, string>`), and querying `peer_addr`/`local_addr` (both return `result<string, string>`) to inspect endpoints.
+- `UdpSocket` for binding to UDP ports, sending datagrams, receiving a `(Bytes, string)` tuple, toggling `set_nonblocking` (`result<void, string>`), and querying `peer_addr`/`local_addr` results.
 - A request/response shape described as simple `map` objects with known keys (`method`, `url`, `headers`, `body`, `status`, etc.).
 
 Methods return explicit `result` values so errors are handled deterministically.

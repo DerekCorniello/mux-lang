@@ -16,9 +16,9 @@ Use `TcpStream` to connect to a TCP server and perform simple blocking-IO operat
 | `stream.read(size)` | `int` | `result<list<int>, string>` | Reads up to `size` bytes. The returned bytes are a `list<int>` so you can inspect each byte. |
 | `stream.write(data)` | `list<int>` | `result<int, string>` | Sends the provided byte list and returns the number of bytes written. |
 | `stream.close()` | — | `void` | Releases the socket handle. | 
-| `stream.set_nonblocking(enabled)` | `bool` | `void` | Toggle non-blocking mode; errors are printed to stderr. |
-| `stream.peer_addr()` | — | `string` | Returns the remote address. |
-| `stream.local_addr()` | — | `string` | Returns the local address. |
+| `stream.set_nonblocking(enabled)` | `bool` | `result<void, string>` | Toggle non-blocking mode; errors are returned via the result. |
+| `stream.peer_addr()` | — | `result<string, string>` | Returns the remote address or an error if the connection is closed. |
+| `stream.local_addr()` | — | `result<string, string>` | Returns the local socket address or an error if the socket was closed. |
 
 ## UdpSocket
 
@@ -30,7 +30,9 @@ Use `TcpStream` to connect to a TCP server and perform simple blocking-IO operat
 | `socket.send_to(data, addr)` | `list<int>`, `string` | `result<int, string>` | Sends a datagram to the specified address. |
 | `socket.recv_from(size)` | `int` | `result<tuple<list<int>, string>, string>` | Receives up to `size` bytes and returns the payload plus the sender address. |
 | `socket.close()` | — | `void` | Closes the socket. |
-| `socket.set_nonblocking(enabled)` | `bool` | `void` | Toggle non-blocking mode. |
+| `socket.set_nonblocking(enabled)` | `bool` | `result<void, string>` | Toggle non-blocking mode; errors are returned via the result. |
+| `socket.peer_addr()` | — | `result<string, string>` | Returns the peer address when the socket is connected. |
+| `socket.local_addr()` | — | `result<string, string>` | Returns the local bind address. |
 
 ## Request / Response shapes
 

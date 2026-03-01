@@ -1,5 +1,5 @@
 use crate::object::{alloc_object, get_object_ptr, register_object_type};
-use crate::refcount::{mux_rc_alloc, mux_rc_dec};
+use crate::refcount::mux_rc_dec;
 use crate::result::MuxResult;
 use crate::{Tuple, TypeId, Value};
 use lazy_static::lazy_static;
@@ -10,108 +10,115 @@ use std::net::{TcpStream as StdTcpStream, UdpSocket as StdUdpSocket};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
-type TcpEntry = Arc<Mutex<StdTcpStream>>;
-type UdpEntry = Arc<Mutex<StdUdpSocket>>;
+type SocketMap<T> = Mutex<HashMap<i64, Arc<Mutex<T>>>>;
 
 static NEXT_HANDLE: AtomicI64 = AtomicI64::new(1);
 
 lazy_static! {
-    static ref TCP_STREAMS: Mutex<HashMap<i64, TcpEntry>> = Mutex::new(HashMap::new());
-    static ref UDP_SOCKETS: Mutex<HashMap<i64, UdpEntry>> = Mutex::new(HashMap::new());
-}
-
-fn tcp_stream_destructor(ptr: *mut c_void) {
-    if ptr.is_null() {
-        return;
-    }
-    let handle = unsafe { *(ptr as *mut i64) };
-    if handle == 0 {
-        return;
-    }
-    let mut streams = TCP_STREAMS.lock().expect("mutex lock should not fail");
-    streams.remove(&handle);
-}
-
-fn udp_socket_destructor(ptr: *mut c_void) {
-    if ptr.is_null() {
-        return;
-    }
-    let handle = unsafe { *(ptr as *mut i64) };
-    if handle == 0 {
-        return;
-    }
-    let mut sockets = UDP_SOCKETS.lock().expect("mutex lock should not fail");
-    sockets.remove(&handle);
+    static ref TCP_STREAMS: SocketMap<StdTcpStream> = Mutex::new(HashMap::new());
+    static ref UDP_SOCKETS: SocketMap<StdUdpSocket> = Mutex::new(HashMap::new());
 }
 
 lazy_static! {
     static ref TCP_STREAM_TYPE_ID: TypeId = register_object_type(
         "TcpStream",
         std::mem::size_of::<i64>(),
-        Some(tcp_stream_destructor),
+        Some(|ptr| drop_socket_handle(&TCP_STREAMS, ptr)),
     );
     static ref UDP_SOCKET_TYPE_ID: TypeId = register_object_type(
         "UdpSocket",
         std::mem::size_of::<i64>(),
-        Some(udp_socket_destructor),
+        Some(|ptr| drop_socket_handle(&UDP_SOCKETS, ptr)),
     );
+}
+
+fn lock_map<'a, T>(map: &'a SocketMap<T>) -> std::sync::MutexGuard<'a, HashMap<i64, Arc<Mutex<T>>>> {
+    map.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn next_handle() -> i64 {
     NEXT_HANDLE.fetch_add(1, Ordering::SeqCst)
 }
 
-fn store_tcp_stream(stream: StdTcpStream) -> i64 {
+fn insert_socket<T>(map: &SocketMap<T>, socket: T) -> i64 {
     let handle = next_handle();
-    let entry = Arc::new(Mutex::new(stream));
-    TCP_STREAMS
-        .lock()
-        .expect("mutex lock should not fail")
-        .insert(handle, entry);
+    lock_map(map).insert(handle, Arc::new(Mutex::new(socket)));
     handle
+}
+
+fn remove_socket<T>(map: &SocketMap<T>, handle: i64) {
+    lock_map(map).remove(&handle);
+}
+
+fn get_socket_entry<T>(map: &SocketMap<T>, handle: i64) -> Option<Arc<Mutex<T>>> {
+    lock_map(map).get(&handle).cloned()
+}
+
+fn drop_socket_handle<T>(map: &SocketMap<T>, ptr: *mut c_void) {
+    if ptr.is_null() {
+        return;
+    }
+    let handle = unsafe { *(ptr as *mut i64) };
+    if handle == 0 {
+        return;
+    }
+    remove_socket(map, handle);
+}
+
+fn socket_entry_or_err<T>(
+    map: &SocketMap<T>,
+    handle: i64,
+    label: &str,
+) -> Result<Arc<Mutex<T>>, String> {
+    get_socket_entry(map, handle)
+        .ok_or_else(|| format!("invalid {} handle", label))
+}
+
+fn with_socket<T, R, F>(
+    map: &SocketMap<T>,
+    handle: i64,
+    label: &str,
+    op: F,
+) -> Result<R, String>
+where
+    F: FnOnce(&mut T) -> Result<R, String>,
+{
+    let entry = socket_entry_or_err(map, handle, label)?;
+    let mut guard = entry.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    op(&mut guard)
+}
+
+fn with_tcp_stream<R, F>(handle: i64, op: F) -> Result<R, String>
+where
+    F: FnOnce(&mut StdTcpStream) -> Result<R, String>,
+{
+    with_socket(&TCP_STREAMS, handle, "tcp stream", op)
+}
+
+fn with_udp_socket<R, F>(handle: i64, op: F) -> Result<R, String>
+where
+    F: FnOnce(&mut StdUdpSocket) -> Result<R, String>,
+{
+    with_socket(&UDP_SOCKETS, handle, "udp socket", op)
+}
+
+fn store_tcp_stream(stream: StdTcpStream) -> i64 {
+    insert_socket(&TCP_STREAMS, stream)
 }
 
 fn store_udp_socket(socket: StdUdpSocket) -> i64 {
-    let handle = next_handle();
-    let entry = Arc::new(Mutex::new(socket));
-    UDP_SOCKETS
-        .lock()
-        .expect("mutex lock should not fail")
-        .insert(handle, entry);
-    handle
+    insert_socket(&UDP_SOCKETS, socket)
 }
 
 fn remove_tcp_stream(handle: i64) {
-    TCP_STREAMS
-        .lock()
-        .expect("mutex lock should not fail")
-        .remove(&handle);
+    remove_socket(&TCP_STREAMS, handle)
 }
 
 fn remove_udp_socket(handle: i64) {
-    UDP_SOCKETS
-        .lock()
-        .expect("mutex lock should not fail")
-        .remove(&handle);
+    remove_socket(&UDP_SOCKETS, handle)
 }
 
-fn get_tcp_entry(handle: i64) -> Option<TcpEntry> {
-    TCP_STREAMS
-        .lock()
-        .expect("mutex lock should not fail")
-        .get(&handle)
-        .cloned()
-}
-
-fn get_udp_entry(handle: i64) -> Option<UdpEntry> {
-    UDP_SOCKETS
-        .lock()
-        .expect("mutex lock should not fail")
-        .get(&handle)
-        .cloned()
-}
-
-fn tcp_handle(value: *const Value) -> Option<i64> {
+fn socket_handle(value: *const Value) -> Option<i64> {
     if value.is_null() {
         return None;
     }
@@ -122,15 +129,18 @@ fn tcp_handle(value: *const Value) -> Option<i64> {
     Some(unsafe { *(ptr as *const i64) })
 }
 
-fn udp_handle(value: *const Value) -> Option<i64> {
-    if value.is_null() {
-        return None;
-    }
-    let ptr = unsafe { get_object_ptr(value) };
-    if ptr.is_null() {
-        return None;
-    }
-    Some(unsafe { *(ptr as *const i64) })
+fn require_handle(value: *const Value, label: &str) -> Result<i64, String> {
+    socket_handle(value)
+        .filter(|&handle| handle != 0)
+        .ok_or_else(|| format!("invalid {}", label))
+}
+
+fn tcp_handle(value: *const Value) -> Result<i64, String> {
+    require_handle(value, "tcp stream")
+}
+
+fn udp_handle(value: *const Value) -> Result<i64, String> {
+    require_handle(value, "udp socket")
 }
 
 fn write_handle(value: *mut Value, handle: i64) {
@@ -144,19 +154,8 @@ fn write_handle(value: *mut Value, handle: i64) {
     unsafe { *(ptr as *mut i64) = handle };
 }
 
-fn create_tcp_value(handle: i64) -> Value {
-    let obj_ptr = alloc_object(*TCP_STREAM_TYPE_ID);
-    let data_ptr = unsafe { get_object_ptr(obj_ptr) };
-    if !data_ptr.is_null() {
-        unsafe { *(data_ptr as *mut i64) = handle };
-    }
-    let value = unsafe { (*obj_ptr).clone() };
-    unsafe { mux_rc_dec(obj_ptr) };
-    value
-}
-
-fn create_udp_value(handle: i64) -> Value {
-    let obj_ptr = alloc_object(*UDP_SOCKET_TYPE_ID);
+fn create_socket_value(handle: i64, type_id: TypeId) -> Value {
+    let obj_ptr = alloc_object(type_id);
     let data_ptr = unsafe { get_object_ptr(obj_ptr) };
     if !data_ptr.is_null() {
         unsafe { *(data_ptr as *mut i64) = handle };
@@ -202,7 +201,7 @@ fn value_to_bytes(list: *mut Value) -> Result<Vec<u8>, String> {
 }
 
 fn tuple_from_bytes_and_addr(bytes: Vec<u8>, addr: String) -> Value {
-    let byte_list = bytes.iter().map(|b| Value::Int(*b as i64)).collect();
+    let byte_list = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
     let tuple = Tuple(Value::List(byte_list), Value::String(addr));
     Value::Tuple(Box::new(tuple))
 }
@@ -215,51 +214,58 @@ fn net_result_err(msg: String) -> *mut MuxResult {
     Box::into_raw(Box::new(MuxResult::err(Value::String(msg))))
 }
 
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_connect(addr: *mut Value) -> *mut MuxResult {
-    match value_to_string(addr) {
-        Ok(address) => match StdTcpStream::connect(address) {
-            Ok(socket) => {
-                let handle = store_tcp_stream(socket);
-                net_result_ok(create_tcp_value(handle))
-            }
-            Err(e) => net_result_err(format!("failed to connect: {}", e)),
-        },
-        Err(e) => net_result_err(e),
+fn net_result_unit(result: Result<(), String>) -> *mut MuxResult {
+    match result {
+        Ok(()) => net_result_ok(Value::Unit),
+        Err(err) => net_result_err(err),
     }
 }
 
-fn stream_guard(handle: i64) -> Result<TcpEntry, String> {
-    get_tcp_entry(handle).ok_or_else(|| "invalid tcp stream".to_string())
+fn net_result_string(result: Result<String, String>) -> *mut MuxResult {
+    match result {
+        Ok(value) => net_result_ok(Value::String(value)),
+        Err(err) => net_result_err(err),
+    }
 }
 
-fn socket_guard(handle: i64) -> Result<UdpEntry, String> {
-    get_udp_entry(handle).ok_or_else(|| "invalid udp socket".to_string())
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_net_tcp_connect(addr: *mut Value) -> *mut MuxResult {
+    match value_to_string(addr).and_then(|address| {
+        StdTcpStream::connect(address).map_err(|e| format!("failed to connect: {}", e))
+    }) {
+        Ok(stream) => {
+            let handle = store_tcp_stream(stream);
+            net_result_ok(create_socket_value(handle, *TCP_STREAM_TYPE_ID))
+        }
+        Err(err) => net_result_err(err),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_read(stream: *mut Value, size: i64) -> *mut MuxResult {
-    let handle = match tcp_handle(stream) {
-        Some(h) if h != 0 => h,
-        _ => return net_result_err("invalid tcp stream".to_string()),
-    };
-    let guard = match stream_guard(handle) {
-        Ok(entry) => entry,
-        Err(err) => return net_result_err(err),
-    };
-    let mut socket = guard.lock().expect("mutex lock should not fail");
     if size <= 0 {
         return net_result_ok(Value::List(Vec::new()));
     }
-    let mut buf = vec![0u8; size as usize];
-    match socket.read(&mut buf) {
-        Ok(n) => {
-            buf.truncate(n);
-            net_result_ok(Value::List(buf.into_iter().map(|b| Value::Int(b as i64)).collect()))
+    let handle = match tcp_handle(stream) {
+        Ok(handle) => handle,
+        Err(err) => return net_result_err(err),
+    };
+    let result = with_tcp_stream(handle, |socket| {
+        let mut buf = vec![0u8; size as usize];
+        let count = socket
+            .read(&mut buf)
+            .map_err(|e| format!("tcp read failed: {}", e))?;
+        buf.truncate(count);
+        Ok(buf)
+    });
+    match result {
+        Ok(bytes) => {
+            let values = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+            net_result_ok(Value::List(values))
         }
-        Err(e) => net_result_err(format!("tcp read failed: {}", e)),
+        Err(err) => net_result_err(err),
     }
 }
 
@@ -267,28 +273,28 @@ pub extern "C" fn mux_net_tcp_read(stream: *mut Value, size: i64) -> *mut MuxRes
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_write(stream: *mut Value, data: *mut Value) -> *mut MuxResult {
     let handle = match tcp_handle(stream) {
-        Some(h) if h != 0 => h,
-        _ => return net_result_err("invalid tcp stream".to_string()),
-    };
-    let guard = match stream_guard(handle) {
-        Ok(entry) => entry,
+        Ok(handle) => handle,
         Err(err) => return net_result_err(err),
     };
-    let bytes = match value_to_bytes(data) {
-        Ok(b) => b,
+    let payload = match value_to_bytes(data) {
+        Ok(bytes) => bytes,
         Err(err) => return net_result_err(err),
     };
-    let mut socket = guard.lock().expect("mutex lock should not fail");
-    match socket.write(&bytes) {
-        Ok(n) => net_result_ok(Value::Int(n as i64)),
-        Err(e) => net_result_err(format!("tcp write failed: {}", e)),
+    let result = with_tcp_stream(handle, |socket| {
+        socket
+            .write(&payload)
+            .map_err(|e| format!("tcp write failed: {}", e))
+    });
+    match result {
+        Ok(written) => net_result_ok(Value::Int(written as i64)),
+        Err(err) => net_result_err(err),
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_close(stream: *mut Value) {
-    if let Some(handle) = tcp_handle(stream) {
+    if let Ok(handle) = tcp_handle(stream) {
         remove_tcp_stream(handle);
         write_handle(stream, 0);
     }
@@ -296,129 +302,113 @@ pub extern "C" fn mux_net_tcp_close(stream: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_set_nonblocking(stream: *mut Value, enabled: i32) {
-    if let Some(handle) = tcp_handle(stream) {
-        if let Ok(entry) = stream_guard(handle) {
-            let mut socket = entry.lock().expect("mutex lock should not fail");
-            if let Err(e) = socket.set_nonblocking(enabled != 0) {
-                eprintln!("failed to set non-blocking: {}", e);
-            }
-        }
-    }
+pub extern "C" fn mux_net_tcp_set_nonblocking(stream: *mut Value, enabled: i32) -> *mut MuxResult {
+    let handle = match tcp_handle(stream) {
+        Ok(handle) => handle,
+        Err(err) => return net_result_err(err),
+    };
+    net_result_unit(with_tcp_stream(handle, |socket| {
+        socket
+            .set_nonblocking(enabled != 0)
+            .map_err(|e| format!("tcp set_nonblocking failed: {}", e))
+    }))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_peer_addr(stream: *mut Value) -> *mut Value {
-    let handle = tcp_handle(stream).unwrap_or(0);
-    if handle == 0 {
-        return mux_rc_alloc(Value::String("".to_string()));
-    }
-    match stream_guard(handle) {
-        Ok(entry) => {
-            let socket = entry.lock().expect("mutex lock should not fail");
-            match socket.peer_addr() {
-                Ok(addr) => mux_rc_alloc(Value::String(addr.to_string())),
-                Err(e) => mux_rc_alloc(Value::String(e.to_string())),
-            }
-        }
-        Err(_) => mux_rc_alloc(Value::String("".to_string())),
-    }
+pub extern "C" fn mux_net_tcp_peer_addr(stream: *mut Value) -> *mut MuxResult {
+    let result = tcp_handle(stream).and_then(|handle|
+        with_tcp_stream(handle, |socket| {
+            socket
+                .peer_addr()
+                .map(|addr| addr.to_string())
+                .map_err(|e| format!("tcp peer_addr failed: {}", e))
+        })
+    );
+    net_result_string(result)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_local_addr(stream: *mut Value) -> *mut Value {
-    let handle = tcp_handle(stream).unwrap_or(0);
-    if handle == 0 {
-        return mux_rc_alloc(Value::String("".to_string()));
-    }
-    match stream_guard(handle) {
-        Ok(entry) => {
-            let socket = entry.lock().expect("mutex lock should not fail");
-            match socket.local_addr() {
-                Ok(addr) => mux_rc_alloc(Value::String(addr.to_string())),
-                Err(e) => mux_rc_alloc(Value::String(e.to_string())),
-            }
-        }
-        Err(_) => mux_rc_alloc(Value::String("".to_string())),
-    }
+pub extern "C" fn mux_net_tcp_local_addr(stream: *mut Value) -> *mut MuxResult {
+    let result = tcp_handle(stream).and_then(|handle|
+        with_tcp_stream(handle, |socket| {
+            socket
+                .local_addr()
+                .map(|addr| addr.to_string())
+                .map_err(|e| format!("tcp local_addr failed: {}", e))
+        })
+    );
+    net_result_string(result)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_udp_bind(addr: *mut Value) -> *mut MuxResult {
-    match value_to_string(addr) {
-        Ok(address) => match StdUdpSocket::bind(address) {
-            Ok(socket) => {
-                let handle = store_udp_socket(socket);
-                net_result_ok(create_udp_value(handle))
-            }
-            Err(e) => net_result_err(format!("udp bind failed: {}", e)),
-        },
+    match value_to_string(addr).and_then(|address| {
+        StdUdpSocket::bind(address).map_err(|e| format!("udp bind failed: {}", e))
+    }) {
+        Ok(socket) => {
+            let handle = store_udp_socket(socket);
+            net_result_ok(create_socket_value(handle, *UDP_SOCKET_TYPE_ID))
+        }
         Err(err) => net_result_err(err),
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_udp_send_to(socket: *mut Value, data: *mut Value, addr: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_udp_send_to(
+    socket: *mut Value,
+    data: *mut Value,
+    addr: *mut Value,
+) -> *mut MuxResult {
     let handle = match udp_handle(socket) {
-        Some(h) if h != 0 => h,
-        _ => return net_result_err("invalid udp socket".to_string()),
-    };
-    let guard = match socket_guard(handle) {
-        Ok(entry) => entry,
+        Ok(handle) => handle,
         Err(err) => return net_result_err(err),
     };
     let payload = match value_to_bytes(data) {
-        Ok(b) => b,
+        Ok(bytes) => bytes,
         Err(err) => return net_result_err(err),
     };
     let destination = match value_to_string(addr) {
-        Ok(a) => a,
+        Ok(addr) => addr,
         Err(err) => return net_result_err(err),
     };
-    let mut socket = guard.lock().expect("mutex lock should not fail");
-    match socket.send_to(&payload, destination) {
-        Ok(n) => net_result_ok(Value::Int(n as i64)),
-        Err(e) => net_result_err(format!("udp send failed: {}", e)),
+    match with_udp_socket(handle, |sock| {
+        sock.send_to(&payload, destination.clone())
+            .map_err(|e| format!("udp send failed: {}", e))
+    }) {
+        Ok(written) => net_result_ok(Value::Int(written as i64)),
+        Err(err) => net_result_err(err),
     }
-}
-
-fn tuple_result(data: Vec<u8>, addr: String) -> Value {
-    tuple_from_bytes_and_addr(data, addr)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_udp_recv_from(socket: *mut Value, size: i64) -> *mut MuxResult {
-    let handle = match udp_handle(socket) {
-        Some(h) if h != 0 => h,
-        _ => return net_result_err("invalid udp socket".to_string()),
-    };
-    let guard = match socket_guard(handle) {
-        Ok(entry) => entry,
-        Err(err) => return net_result_err(err),
-    };
     if size <= 0 {
         return net_result_err("invalid buffer size".to_string());
     }
-    let mut buf = vec![0u8; size as usize];
-    let mut socket = guard.lock().expect("mutex lock should not fail");
-    match socket.recv_from(&mut buf) {
-        Ok((n, addr)) => {
-            buf.truncate(n);
-            net_result_ok(tuple_result(buf, addr.to_string()))
-        }
-        Err(e) => net_result_err(format!("udp recv failed: {}", e)),
+    let handle = match udp_handle(socket) {
+        Ok(handle) => handle,
+        Err(err) => return net_result_err(err),
+    };
+    match with_udp_socket(handle, |sock| {
+        let mut buf = vec![0u8; size as usize];
+        let result = sock.recv_from(&mut buf).map_err(|e| format!("udp recv failed: {}", e))?;
+        buf.truncate(result.0);
+        Ok(tuple_from_bytes_and_addr(buf, result.1.to_string()))
+    }) {
+        Ok(value) => net_result_ok(value),
+        Err(err) => net_result_err(err),
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_udp_close(socket: *mut Value) {
-    if let Some(handle) = udp_handle(socket) {
+    if let Ok(handle) = udp_handle(socket) {
         remove_udp_socket(handle);
         write_handle(socket, 0);
     }
@@ -426,13 +416,41 @@ pub extern "C" fn mux_net_udp_close(socket: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_udp_set_nonblocking(socket: *mut Value, enabled: i32) {
-    if let Some(handle) = udp_handle(socket) {
-        if let Ok(entry) = socket_guard(handle) {
-            let mut sock = entry.lock().expect("mutex lock should not fail");
-            if let Err(e) = sock.set_nonblocking(enabled != 0) {
-                eprintln!("failed to set udp non-blocking: {}", e);
-            }
-        }
-    }
+pub extern "C" fn mux_net_udp_set_nonblocking(socket: *mut Value, enabled: i32) -> *mut MuxResult {
+    let handle = match udp_handle(socket) {
+        Ok(handle) => handle,
+        Err(err) => return net_result_err(err),
+    };
+    net_result_unit(with_udp_socket(handle, |sock| {
+        sock.set_nonblocking(enabled != 0)
+            .map_err(|e| format!("udp set_nonblocking failed: {}", e))
+    }))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_net_udp_peer_addr(socket: *mut Value) -> *mut MuxResult {
+    let result = udp_handle(socket).and_then(|handle|
+        with_udp_socket(handle, |sock| {
+            sock
+                .peer_addr()
+                .map(|addr| addr.to_string())
+                .map_err(|e| format!("udp peer_addr failed: {}", e))
+        })
+    );
+    net_result_string(result)
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_net_udp_local_addr(socket: *mut Value) -> *mut MuxResult {
+    let result = udp_handle(socket).and_then(|handle|
+        with_udp_socket(handle, |sock| {
+            sock
+                .local_addr()
+                .map(|addr| addr.to_string())
+                .map_err(|e| format!("udp local_addr failed: {}", e))
+        })
+    );
+    net_result_string(result)
 }
