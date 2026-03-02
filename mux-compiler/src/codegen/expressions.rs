@@ -3253,12 +3253,12 @@ impl<'a> CodeGenerator<'a> {
                                 if let Some(field_sym) = module_syms.get(field) {
                                     if field_sym.kind == crate::semantics::SymbolKind::Constant {
                                         // Generate constant value directly
-                                        use crate::semantics::symbol_table::{
+                                        use crate::semantics::stdlib::{
                                             ConstantValue, lookup_stdlib_item,
                                         };
                                         let full_name = format!("{}.{}", module_name, field);
                                         if let Some(
-                                            crate::semantics::symbol_table::StdlibItem::Constant {
+                                            crate::semantics::stdlib::StdlibItem::Constant {
                                                 value,
                                                 ..
                                             },

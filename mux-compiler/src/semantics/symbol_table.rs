@@ -1,16 +1,11 @@
 use crate::lexer::Span;
 use crate::semantics::error::SemanticError;
-pub use crate::semantics::stdlib::{
-    BUILT_IN_FUNCTIONS, ConstantValue, STDLIB_MODULES, StdlibItem, all_stdlib_items,
-    lookup_stdlib_item, net_module_class_symbols, sync_module_class_symbols,
-};
 use crate::semantics::types::Symbol;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-// Re-export stdlib items and helpers from dedicated module
-// (stdlib.rs contains the canonical declarations for stdlib functions and items)
+// The canonical stdlib items live in `crate::semantics::stdlib`.
 
 #[derive(Debug)]
 pub struct SymbolTable {
@@ -143,7 +138,12 @@ impl SymbolTable {
         best = Self::find_best_match(name, threshold, self.all_symbols.keys(), best);
 
         // Check built-in functions
-        best = Self::find_best_match(name, threshold, BUILT_IN_FUNCTIONS.keys().copied(), best);
+        best = Self::find_best_match(
+            name,
+            threshold,
+            crate::semantics::stdlib::BUILT_IN_FUNCTIONS.keys().copied(),
+            best,
+        );
 
         best.map(|(name, _)| name)
     }

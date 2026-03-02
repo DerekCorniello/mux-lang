@@ -1,3 +1,29 @@
+//! Canonical stdlib registry
+//!
+//! This module centralizes the standard library (stdlib) description used by the
+//! semantic analyzer and codegen. It provides:
+//! - `StdlibItem` — canonical representation for stdlib functions and constants
+//! - `lookup_stdlib_item` / `all_stdlib_items` — accessors for items
+//! - `BUILT_IN_FUNCTIONS` — built-in function signatures used for name resolution
+//! - `*_STDLIB_ITEMS` tables for per-module items (IO, MATH, DATETIME, ASSERT, SYNC)
+//! - `net_module_class_symbols` / `sync_module_class_symbols` — class symbol builders
+//! - `stdlib_item_to_symbol` / `register_stdlib_item_into` — helpers to convert and
+//!   register stdlib items into the compiler's `SymbolTable`.
+//!
+//! Contributing
+//! - Add new stdlib items by updating the appropriate table (`MATH_STDLIB_ITEMS`,
+//!   `IO_STDLIB_ITEMS`, or `STDLIB_ITEMS` for PHF-backed descriptors).
+//! - Prefer adding entries to the module-specific HashMaps rather than spreading
+//!   duplicates across the codebase — these are the single source of truth.
+//! - For class types (e.g., `net` / `sync`), update the corresponding `*_methods`
+//!   helper and the `*_module_class_symbols` function so the analyzer can import
+//!   class symbols.
+//!
+//! Rationale
+//! - The previous code duplicated stdlib declarations in multiple places (symbol
+//!   table, semantic analyzer). Consolidating them here prevents drift and keeps
+//!   a clear mapping between stdlib names and their runtime/LLVM counterparts.
+
 use crate::ast::PrimitiveType;
 use crate::lexer::Span;
 use crate::semantics::types::{BuiltInSig, MethodSig, Symbol, SymbolKind, Type};
@@ -801,4 +827,56 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| DATETIME_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| SYNC_STDLIB_ITEMS.get(name).cloned())
+}
+
+/// Convert a canonical `StdlibItem` into a `Symbol` suitable for registration in a SymbolTable.
+pub fn stdlib_item_to_symbol(item: &StdlibItem, span: Span) -> Symbol {
+    match item {
+        StdlibItem::Function {
+            params,
+            ret,
+            llvm_name,
+        } => Symbol {
+            kind: SymbolKind::Function,
+            span,
+            type_: Some(Type::Function {
+                params: params.to_vec(),
+                returns: Box::new(ret.clone()),
+                default_count: 0,
+            }),
+            interfaces: std::collections::HashMap::new(),
+            methods: std::collections::HashMap::new(),
+            fields: std::collections::HashMap::new(),
+            type_params: Vec::new(),
+            original_name: None,
+            llvm_name: Some(llvm_name.to_string()),
+            default_param_count: 0,
+            variants: None,
+        },
+        StdlibItem::Constant { ty, .. } => Symbol {
+            kind: SymbolKind::Constant,
+            span,
+            type_: Some(ty.clone()),
+            interfaces: std::collections::HashMap::new(),
+            methods: std::collections::HashMap::new(),
+            fields: std::collections::HashMap::new(),
+            type_params: Vec::new(),
+            original_name: None,
+            llvm_name: None,
+            default_param_count: 0,
+            variants: None,
+        },
+    }
+}
+
+/// Register a single stdlib item into the provided symbol table (used for flat imports).
+pub fn register_stdlib_item_into(
+    table: &mut crate::semantics::symbol_table::SymbolTable,
+    name: &str,
+    item: &StdlibItem,
+    span: Span,
+) -> Result<(), crate::semantics::error::SemanticError> {
+    let symbol = stdlib_item_to_symbol(item, span);
+    table.add_symbol(name, symbol)?;
+    Ok(())
 }

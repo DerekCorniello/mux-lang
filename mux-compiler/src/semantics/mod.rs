@@ -10,7 +10,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::SymbolTable;
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -320,7 +320,8 @@ impl SemanticAnalyzer {
     }
 
     fn get_builtin_sig(&self, name: &str) -> Option<&BuiltInSig> {
-        BUILT_IN_FUNCTIONS.get(name)
+        // Use the canonical BUILT_IN_FUNCTIONS from the stdlib module
+        crate::semantics::stdlib::BUILT_IN_FUNCTIONS.get(name)
     }
 
     pub fn analyze(&mut self, ast: &[AstNode], files: Option<&mut Files>) -> Vec<SemanticError> {
@@ -335,7 +336,7 @@ impl SemanticAnalyzer {
     fn add_builtin_functions(&mut self) {
         // Register built-in functions from the canonical stdlib table.
         let span = Span::new(0, 0);
-        for (name, sig) in BUILT_IN_FUNCTIONS.iter() {
+        for (name, sig) in crate::semantics::stdlib::BUILT_IN_FUNCTIONS.iter() {
             self.register_builtin_function(name, sig, span);
         }
 
@@ -346,7 +347,7 @@ impl SemanticAnalyzer {
     fn add_sync_builtin_types(&mut self) {
         let span = Span::new(0, 0);
         // Use canonical class symbols from the stdlib module and register them.
-        let classes = crate::semantics::symbol_table::sync_module_class_symbols(span);
+        let classes = crate::semantics::stdlib::sync_module_class_symbols(span);
         for (name, sym) in classes {
             let _ = self.symbol_table.add_symbol(&name, sym);
         }
@@ -4722,7 +4723,7 @@ impl SemanticAnalyzer {
 
     /// Register all built-in functions whose names start with the given prefix.
     fn register_builtin_functions_with_prefix(&mut self, prefix: &str, span: Span) {
-        let matching: Vec<_> = BUILT_IN_FUNCTIONS
+        let matching: Vec<_> = crate::semantics::stdlib::BUILT_IN_FUNCTIONS
             .iter()
             .filter(|(k, _)| k.starts_with(prefix))
             .map(|(k, v)| (k.to_string(), v.clone()))
@@ -4758,7 +4759,7 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
-        use crate::semantics::symbol_table::{STDLIB_MODULES, all_stdlib_items};
+        use crate::semantics::stdlib::{STDLIB_MODULES, all_stdlib_items};
 
         match spec {
             ImportSpec::Module { alias } => {
@@ -4782,7 +4783,12 @@ impl SemanticAnalyzer {
             ImportSpec::Wildcard => {
                 for (key, item) in all_stdlib_items() {
                     if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
-                        self.register_stdlib_item(item_name, &item, span)?;
+                        crate::semantics::stdlib::register_stdlib_item_into(
+                            &mut self.symbol_table,
+                            item_name,
+                            &item,
+                            span,
+                        )?;
                     }
                 }
             }
@@ -4879,25 +4885,21 @@ impl SemanticAnalyzer {
         module_name: &str,
         span: Span,
     ) -> std::collections::HashMap<String, Symbol> {
-        use crate::semantics::symbol_table::all_stdlib_items;
+        use crate::semantics::stdlib::all_stdlib_items;
 
         let mut module_symbols = std::collections::HashMap::new();
         for (key, item) in all_stdlib_items() {
             if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
                 module_symbols.insert(
                     item_name.to_string(),
-                    Self::stdlib_item_to_symbol(&item, span),
+                    crate::semantics::stdlib::stdlib_item_to_symbol(&item, span),
                 );
             }
         }
         if module_name == "net" {
-            module_symbols.extend(crate::semantics::symbol_table::net_module_class_symbols(
-                span,
-            ));
+            module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span));
         } else if module_name == "sync" {
-            module_symbols.extend(crate::semantics::symbol_table::sync_module_class_symbols(
-                span,
-            ));
+            module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span));
         }
         module_symbols
     }
@@ -4956,62 +4958,7 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn stdlib_item_to_symbol(
-        item: &crate::semantics::symbol_table::StdlibItem,
-        span: Span,
-    ) -> Symbol {
-        use crate::semantics::symbol_table::StdlibItem;
-
-        match item {
-            StdlibItem::Function {
-                params,
-                ret,
-                llvm_name,
-            } => Symbol {
-                kind: SymbolKind::Function,
-                span,
-                type_: Some(Type::Function {
-                    params: params.to_vec(),
-                    returns: Box::new(ret.clone()),
-                    default_count: 0,
-                }),
-                interfaces: std::collections::HashMap::new(),
-                methods: std::collections::HashMap::new(),
-                fields: std::collections::HashMap::new(),
-                type_params: Vec::new(),
-                original_name: None,
-                llvm_name: Some(llvm_name.to_string()),
-                default_param_count: 0,
-                variants: None,
-            },
-            StdlibItem::Constant { ty, .. } => Symbol {
-                kind: SymbolKind::Constant,
-                span,
-                type_: Some(ty.clone()),
-                interfaces: std::collections::HashMap::new(),
-                methods: std::collections::HashMap::new(),
-                fields: std::collections::HashMap::new(),
-                type_params: Vec::new(),
-                original_name: None,
-                llvm_name: None,
-                default_param_count: 0,
-                variants: None,
-            },
-        }
-    }
-
-    /// Register a single stdlib item to the symbol table (for flat imports)
-    fn register_stdlib_item(
-        &mut self,
-        name: &str,
-        item: &crate::semantics::symbol_table::StdlibItem,
-        span: Span,
-    ) -> Result<(), SemanticError> {
-        let symbol = Self::stdlib_item_to_symbol(item, span);
-
-        self.symbol_table.add_symbol(name, symbol)?;
-        Ok(())
-    }
+    // stdlib item conversion/registration delegated to `crate::semantics::stdlib`.
 
     // Helper to find free variables in a block of statements
     // Returns variables that are used but not declared in the local scope
