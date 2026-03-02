@@ -66,36 +66,26 @@ pub extern "C" fn mux_set_contains(set: *const Set, val: *const Value) -> bool {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_set_remove(set: *mut Set, val: *mut Value) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_set_remove(set: *mut Set, val: *mut Value) -> bool {
     let set = unsafe { &mut *set };
     let val = unsafe { (*val).clone() };
-    if set.remove(&val) {
-        Box::into_raw(Box::new(crate::optional::Optional::some(val)))
-    } else {
-        Box::into_raw(Box::new(crate::optional::Optional::none()))
-    }
+    set.remove(&val)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[allow(clippy::mutable_key_type)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_set_remove_value(
-    set_val: *mut Value,
-    val: *mut Value,
-) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_set_remove_value(set_val: *mut Value, val: *mut Value) -> bool {
     let value = unsafe { (*val).clone() };
     unsafe {
         if let Value::Set(set_data) = &*set_val {
             let mut new_set = set_data.clone();
             let removed = new_set.remove(&value);
             *set_val = Value::Set(new_set);
-            if removed {
-                return Box::into_raw(Box::new(crate::optional::Optional::some(value)));
-            }
-            return Box::into_raw(Box::new(crate::optional::Optional::none()));
+            return removed;
         }
     }
-    Box::into_raw(Box::new(crate::optional::Optional::none()))
+    false
 }
 
 /// # Safety
@@ -134,33 +124,5 @@ pub extern "C" fn mux_set_union(a: *const Set, b: *const Set) -> *mut Set {
 
     let mut result = unsafe { (*a).0.clone() };
     result.extend(unsafe { (*b).0.clone() });
-    Box::into_raw(Box::new(Set(result)))
-}
-
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[allow(clippy::mutable_key_type)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_set_difference(a: *const Set, b: *const Set) -> *mut Set {
-    if a.is_null() || b.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let left = unsafe { &(*a).0 };
-    let right = unsafe { &(*b).0 };
-    let result: BTreeSet<Value> = left.difference(right).cloned().collect();
-    Box::into_raw(Box::new(Set(result)))
-}
-
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[allow(clippy::mutable_key_type)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_set_intersection(a: *const Set, b: *const Set) -> *mut Set {
-    if a.is_null() || b.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let left = unsafe { &(*a).0 };
-    let right = unsafe { &(*b).0 };
-    let result: BTreeSet<Value> = left.intersection(right).cloned().collect();
     Box::into_raw(Box::new(Set(result)))
 }

@@ -26,11 +26,13 @@ import std.math
 import std.io
 import std.random
 import std.datetime
+import std.net
 import std.(math, random as r)
 import std.*
 ```
 
 - `import std` exposes module namespaces like `std.math`, `std.io`, and `std.datetime`
+- `import std` exposes module namespaces like `std.math`, `std.io`, `std.datetime`, and `std.net`
 - `import std.<module>` imports a single stdlib module namespace
 - `import std.*` performs a flat import of stdlib items into the current scope
 

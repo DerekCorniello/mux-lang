@@ -103,9 +103,12 @@ impl SemanticAnalyzer {
 
     fn stdlib_modules() -> Vec<(&'static str, &'static str)> {
         vec![
-            ("std.math", "math"),
+            ("std.assert", "assert"),
+            ("std.datetime", "datetime"),
             ("std.io", "io"),
+            ("std.math", "math"),
             ("std.random", "random"),
+            ("std.net", "net"),
             ("std.sync", "sync"),
         ]
     }
@@ -153,15 +156,6 @@ impl SemanticAnalyzer {
 
     /// Generate helpful context for binary operator type mismatches.
     fn binary_op_help(left: &Type, right: &Type, op: &crate::ast::BinaryOp) -> String {
-        if matches!(
-            op,
-            crate::ast::BinaryOp::Subtract | crate::ast::BinaryOp::Divide
-        ) && matches!(left, Type::Set(_))
-            && matches!(right, Type::Set(_))
-        {
-            return "Set operators supported: '+' union, '-' difference, '/' intersection."
-                .to_string();
-        }
         match (left, right) {
             (Type::Primitive(crate::ast::PrimitiveType::Str), Type::Primitive(crate::ast::PrimitiveType::Int))
             | (Type::Primitive(crate::ast::PrimitiveType::Int), Type::Primitive(crate::ast::PrimitiveType::Str)) => {
@@ -188,21 +182,18 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn type_supports_list_sort(&self, type_: &Type) -> bool {
-        matches!(
-            type_,
-            Type::Primitive(
-                PrimitiveType::Int
-                    | PrimitiveType::Float
-                    | PrimitiveType::Str
-                    | PrimitiveType::Char
-            )
-        ) || self.type_implements_interface(type_, "Comparable")
-    }
-
     /// Build an "undefined symbol" error with a "did you mean?" suggestion if a similar
     /// symbol exists in the current scope.
     fn undefined_symbol_error(&self, kind: &str, name: &str, span: Span) -> SemanticError {
+        // Debug: trace unexpected undefineds for easier diagnosis
+        if name == "Mutex" && kind == "variable" {
+            eprintln!(
+                "undefined_symbol_error triggered for {} '{}', imported_symbols keys: {:?}",
+                kind,
+                name,
+                self.imported_symbols.keys().collect::<Vec<_>>()
+            );
+        }
         if let Some(suggestion) = self.symbol_table.find_similar(name) {
             SemanticError::with_help(
                 format!("Undefined {} '{}'", kind, name),
@@ -693,6 +684,27 @@ impl SemanticAnalyzer {
                             default_count: 0,
                         })
                     } else {
+                        // Conservative fallback: allow unqualified references to class
+                        // names exported by imported stdlib modules (e.g., when doing
+                        // `import std.sync` let `Mutex.new()` resolve). This does not
+                        // consult user modules and avoids introducing wildcard imports.
+                        let stdlib_names: std::collections::HashSet<String> =
+                            Self::stdlib_modules()
+                                .iter()
+                                .map(|(_, short_name)| short_name.to_string())
+                                .collect();
+
+                        for (module_ns, module_symbols) in &self.imported_symbols {
+                            if !stdlib_names.contains(module_ns) {
+                                continue;
+                            }
+                            if let Some(sym) = module_symbols.get(name)
+                                && matches!(sym.kind, SymbolKind::Class)
+                            {
+                                return Ok(Type::Named(name.clone(), Vec::new()));
+                            }
+                        }
+
                         Err(self.undefined_symbol_error("variable", name, expr.span))
                     }
                 }
@@ -1009,27 +1021,6 @@ impl SemanticAnalyzer {
                         default_count,
                         ..
                     } => {
-                        if let ExpressionKind::FieldAccess {
-                            expr: receiver,
-                            field,
-                        } = &func.kind
-                            && field == "sort"
-                        {
-                            let receiver_type = self.get_expression_type(receiver)?;
-                            if let Type::List(elem_type) = receiver_type
-                                && !self.type_supports_list_sort(elem_type.as_ref())
-                            {
-                                return Err(SemanticError::with_help(
-                                    format!(
-                                        "list.sort() requires comparable elements, found {}",
-                                        format_type(elem_type.as_ref())
-                                    ),
-                                    expr.span,
-                                    "Use list.sort() only with int, float, string, char, or types implementing Comparable.",
-                                ));
-                            }
-                        }
-
                         // For named functions, verify the symbol's default_count matches
                         let actual_default_count = match &func.kind {
                             ExpressionKind::Identifier(name) => {
@@ -1111,7 +1102,43 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::FieldAccess { expr, field } => {
-                let expr_type = self.get_expression_type(expr)?;
+                // Try to get the type of the base expression. If that fails because the
+                // identifier is undefined, attempt a conservative lookup into imported
+                // stdlib module symbols to resolve class-qualified accesses like
+                // `Mutex.new()` when `import std.sync` was used.
+                let expr_type_res = self.get_expression_type(expr);
+                let expr_type = match expr_type_res {
+                    Ok(t) => t,
+                    Err(e) => {
+                        // Only try the fallback when the expression is a simple identifier
+                        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
+                            // Restrict to stdlib namespaces
+                            let stdlib_names: std::collections::HashSet<String> =
+                                Self::stdlib_modules()
+                                    .iter()
+                                    .map(|(_, n)| n.to_string())
+                                    .collect();
+                            for (ns, module_symbols) in &self.imported_symbols {
+                                if !stdlib_names.contains(ns) {
+                                    continue;
+                                }
+                                if let Some(class_sym) = module_symbols.get(name)
+                                    && matches!(class_sym.kind, SymbolKind::Class)
+                                {
+                                    // If the class defines the method, return its function type
+                                    if let Some(method_sig) = class_sym.methods.get(field) {
+                                        return Ok(Type::Function {
+                                            params: method_sig.params.clone(),
+                                            returns: Box::new(method_sig.return_type.clone()),
+                                            default_count: 0,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
+                };
 
                 if let Type::Module(module_name) = &expr_type {
                     self.resolve_module_field(module_name, field, expr.span)
@@ -1489,6 +1516,26 @@ impl SemanticAnalyzer {
             }
             return Err(self.field_not_found_error(field, name, span));
         }
+
+        // Check if the class is from an imported module
+        for module_symbols in self.imported_symbols.values() {
+            if let Some(class_symbol) = module_symbols.get(name) {
+                // Found the class in a module - check for the method
+                if let Some(method_sig) = class_symbol.methods.get(field) {
+                    let resolved_sig = if args.is_empty() {
+                        method_sig.clone()
+                    } else {
+                        self.substitute_method_sig(method_sig, &class_symbol.type_params, args)
+                    };
+                    return Ok(Type::Function {
+                        params: resolved_sig.params,
+                        returns: Box::new(resolved_sig.return_type),
+                        default_count: 0,
+                    });
+                }
+            }
+        }
+
         Err(self.method_not_found_error(field, &format_type(expr_type), span))
     }
 
@@ -2067,65 +2114,6 @@ impl SemanticAnalyzer {
                     return_type: Type::Primitive(PrimitiveType::Bool),
                     is_static: false,
                 }),
-                "sort" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Void,
-                    is_static: false,
-                }),
-                "reverse" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Void,
-                    is_static: false,
-                }),
-                "contains" => Some(MethodSig {
-                    params: vec![*elem_type.clone()],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "filter" => Some(MethodSig {
-                    params: vec![Type::Function {
-                        params: vec![*elem_type.clone()],
-                        returns: Box::new(Type::Primitive(PrimitiveType::Bool)),
-                        default_count: 0,
-                    }],
-                    return_type: Type::List(elem_type.clone()),
-                    is_static: false,
-                }),
-                "map" => Some(MethodSig {
-                    params: vec![Type::Function {
-                        params: vec![*elem_type.clone()],
-                        returns: Box::new(Type::Variable("U".to_string())),
-                        default_count: 0,
-                    }],
-                    return_type: Type::List(Box::new(Type::Variable("U".to_string()))),
-                    is_static: false,
-                }),
-                "reduce" => Some(MethodSig {
-                    params: vec![
-                        Type::Variable("U".to_string()),
-                        Type::Function {
-                            params: vec![Type::Variable("U".to_string()), *elem_type.clone()],
-                            returns: Box::new(Type::Variable("U".to_string())),
-                            default_count: 0,
-                        },
-                    ],
-                    return_type: Type::Variable("U".to_string()),
-                    is_static: false,
-                }),
-                "find" => Some(MethodSig {
-                    params: vec![Type::Function {
-                        params: vec![*elem_type.clone()],
-                        returns: Box::new(Type::Primitive(PrimitiveType::Bool)),
-                        default_count: 0,
-                    }],
-                    return_type: Type::Optional(elem_type.clone()),
-                    is_static: false,
-                }),
-                "index_of" => Some(MethodSig {
-                    params: vec![*elem_type.clone()],
-                    return_type: Type::Optional(Box::new(Type::Primitive(PrimitiveType::Int))),
-                    is_static: false,
-                }),
                 "size" => Some(MethodSig {
                     params: vec![],
                     return_type: Type::Primitive(PrimitiveType::Int),
@@ -2172,15 +2160,6 @@ impl SemanticAnalyzer {
                     return_type: Type::Primitive(PrimitiveType::Bool),
                     is_static: false,
                 }),
-                "filter" => Some(MethodSig {
-                    params: vec![Type::Function {
-                        params: vec![*key_type.clone(), *value_type.clone()],
-                        returns: Box::new(Type::Primitive(PrimitiveType::Bool)),
-                        default_count: 0,
-                    }],
-                    return_type: Type::Map(key_type.clone(), value_type.clone()),
-                    is_static: false,
-                }),
                 "remove" => Some(MethodSig {
                     params: vec![*key_type.clone()],
                     return_type: Type::Optional(value_type.clone()),
@@ -2211,7 +2190,7 @@ impl SemanticAnalyzer {
                 }),
                 "remove" => Some(MethodSig {
                     params: vec![*elem_type.clone()],
-                    return_type: Type::Optional(elem_type.clone()),
+                    return_type: Type::Primitive(PrimitiveType::Bool),
                     is_static: false,
                 }),
                 "contains" => Some(MethodSig {
@@ -2390,11 +2369,6 @@ impl SemanticAnalyzer {
                 | BinaryOp::Divide
                 | BinaryOp::Modulo
                 | BinaryOp::Exponent => {
-                    if matches!(op, BinaryOp::Subtract | BinaryOp::Divide)
-                        && matches!(left_type, Type::Set(_))
-                    {
-                        return Some(left_type.clone());
-                    }
                     // built-in support for numeric primitives
                     if matches!(
                         left_type,
@@ -3986,7 +3960,28 @@ impl SemanticAnalyzer {
                     }
                     return Ok(());
                 }
-                if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
+                // Consider imported stdlib class names as existing for identifier checks
+                let mut exists_like =
+                    self.symbol_table.exists(name) || self.get_builtin_sig(name).is_some();
+                if !exists_like {
+                    let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
+                        .iter()
+                        .map(|(_, n)| n.to_string())
+                        .collect();
+                    for (ns, module_symbols) in &self.imported_symbols {
+                        if !stdlib_names.contains(ns) {
+                            continue;
+                        }
+                        if let Some(sym) = module_symbols.get(name)
+                            && matches!(sym.kind, SymbolKind::Class)
+                        {
+                            exists_like = true;
+                            break;
+                        }
+                    }
+                }
+
+                if !exists_like {
                     return Err(self.undefined_symbol_error("variable", name, expr.span));
                 }
                 Ok(())
@@ -5068,6 +5063,15 @@ impl SemanticAnalyzer {
                     Self::stdlib_item_to_symbol(&item, span),
                 );
             }
+        }
+        if module_name == "net" {
+            module_symbols.extend(crate::semantics::symbol_table::net_module_class_symbols(
+                span,
+            ));
+        } else if module_name == "sync" {
+            module_symbols.extend(crate::semantics::symbol_table::sync_module_class_symbols(
+                span,
+            ));
         }
         module_symbols
     }

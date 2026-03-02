@@ -753,9 +753,9 @@ Operators are built-in for primitive types and collections.
 | Operator | Types |
 |----------|-------|
 | `+` | int, float, string, list, map, set |
-| `-` | int, float, set (difference) |
+| `-` | int, float |
 | `*` | int, float |
-| `/` | int, float, set (intersection) |
+| `/` | int, float |
 | `%` | int, float |
 | `**` | int, float |
 | `==` | all types |
@@ -802,12 +802,10 @@ auto map1 = {"a": 1, "b": 2}
 auto map2 = {"b": 3, "c": 4}     // Note: key "b" exists in both
 auto merged = map1 + map2        // {"a": 1, "b": 3, "c": 4}
 
-// Set operators
+// Set union
 auto set1 = {1, 2, 3}
 auto set2 = {3, 4, 5}
 auto unioned = set1 + set2       // {1, 2, 3, 4, 5}
-auto diff = set1 - set2          // {1, 2}
-auto common = set1 / set2        // {3}
 
 // String concatenation
 auto greeting = "Hello, " + "World"  // "Hello, World"
@@ -1305,14 +1303,6 @@ All collections provide a consistent API for access, mutation, and inspection.
 | `.push_back(T item)` | `void` | Appends item to the end of the list |
 | `.pop()` | `optional<T>` | Removes and returns last item, or `none` if empty (alias for pop_back) |
 | `.pop_back()` | `optional<T>` | Removes and returns last item, or `none` if empty |
-| `.sort()` | `void` | Sorts the list in place (requires comparable `T`) |
-| `.reverse()` | `void` | Reverses the list in place |
-| `.contains(T item)` | `bool` | Returns `true` if item exists in the list |
-| `.index_of(T item)` | `optional<int>` | Returns index of first match, or `none` |
-| `.find(func(T) returns bool)` | `optional<T>` | Returns first element matching predicate, or `none` |
-| `.filter(func(T) returns bool)` | `list<T>` | Returns elements that satisfy predicate |
-| `.map(func(T) returns U)` | `list<U>` | Transforms each element into a new list |
-| `.reduce(U init, func(U, T) returns U)` | `U` | Folds list into one value |
 | `.to_string()` | `string` | Returns a string representation of the list |
 
 ```mux
@@ -1350,9 +1340,6 @@ print(nums.is_empty().to_string())   // "false"
 | `.put(K key, V value)` | `void` | Inserts or updates a key-value pair |
 | `.contains(K key)` | `bool` | Returns `true` if key exists in map |
 | `.remove(K key)` | `optional<V>` | Removes key and returns value, or `none` if key not found |
-| `.get_keys()` | `list<K>` | Returns all keys |
-| `.get_values()` | `list<V>` | Returns all values |
-| `.filter(func(K, V) returns bool)` | `map<K, V>` | Returns entries matching predicate |
 | `.to_string()` | `string` | Returns a string representation of the map |
 
 ```mux
@@ -1379,7 +1366,7 @@ scores["Alice"] = 95  // Updates existing key
 | `.is_empty()` | `bool` | Returns `true` if set is empty |
 | `.add(T item)` | `void` | Adds an item to the set |
 | `.contains(T item)` | `bool` | Returns `true` if item exists in set |
-| `.remove(T item)` | `optional<T>` | Removes item and returns `some(item)` if it existed, or `none` |
+| `.remove(T item)` | `optional<T>` | Removes item and returns it, or `none` if not found |
 | `.to_string()` | `string` | Returns a string representation of the set |
 
 ```mux
@@ -1397,13 +1384,6 @@ match tags.remove("review") {
     some(removed) { print("Removed: " + removed) }
     none { print("Item not found") }
 }
-
-// Set operators
-auto set1 = {1, 2, 3}
-auto set2 = {3, 4, 5}
-auto unioned = set1 + set2       // {1, 2, 3, 4, 5}
-auto diff = set1 - set2          // {1, 2}
-auto common = set1 / set2        // {3}
 ```
 
 **Design Note:** Collections use consistent method naming across all types. Safe access via `.get()` returns `optional<T>`, while direct access with `[]` provides unchecked access with runtime bounds checking.
@@ -1904,18 +1884,19 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `assert`, `math`, `io`, `random`, and `datetime`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, and `net`.
 
 Import styles:
 
 ```mux
-import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
 import std.assert              // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*
 import std.random             // use random.*
 import std.datetime           // use datetime.*
 import std.sync               // use sync.*
+import std.net                // use net.*
 import std.(math, random as r)
 import std.*                  // flat import of stdlib items
 ```
@@ -1977,6 +1958,13 @@ import std.*                  // flat import of stdlib items
 - `datetime.sleep(int seconds) -> result<void, string>` (blocking at call site)
 - `datetime.sleep_millis(int milliseconds) -> result<void, string>` (blocking at call site)
 
+Format patterns use chrono `strftime` tokens, for example:
+- `%A` full weekday name
+- `%a` abbreviated weekday name
+- `%B` full month name
+- `%b` abbreviated month name
+- `%Y-%m-%d %H:%M:%S`
+
 ### 17.6 sync
 
 `sync` provides basic concurrency primitives.
@@ -1997,12 +1985,15 @@ import std.*                  // flat import of stdlib items
 - `CondVar.signal() -> result<void, string>`
 - `CondVar.broadcast() -> result<void, string>`
 
-Format patterns use chrono `strftime` tokens, for example:
-- `%A` full weekday name
-- `%a` abbreviated weekday name
-- `%B` full month name
-- `%b` abbreviated month name
-- `%Y-%m-%d %H:%M:%S`
+### 17.7 net
+
+`net` exposes the primitives you need to work with raw sockets and build higher-level protocols.
+
+- **`TcpStream`** provides `connect`, blocking reads/writes, `set_nonblocking` (returns `result<void, string>`), and `peer_addr`/`local_addr` helpers that both return `result<string, string>`.
+- **`UdpSocket`** lets you bind to a local port, send datagrams, receive a `(Bytes, string)` tuple plus the sender address, toggle non-blocking mode via `set_nonblocking` (`result<void, string>`), and inspect `peer_addr`/`local_addr` results.
+- **Request/Response shapes** define the protocol-agnostic payloads that HTTP (or future) libraries can share: store `method`, `url`, `headers`, and `body` in a `map`, while responses pair `status`, `headers`, and `body`.
+
+Both classes return explicit `result` types so you can handle networking errors without hidden panics.
 
 ---
 

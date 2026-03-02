@@ -1,7 +1,7 @@
 use crate::ast::PrimitiveType;
 use crate::lexer::Span;
 use crate::semantics::error::SemanticError;
-use crate::semantics::types::{BuiltInSig, Symbol, Type};
+use crate::semantics::types::{BuiltInSig, MethodSig, Symbol, SymbolKind, Type};
 use lazy_static::lazy_static;
 use phf::phf_map;
 use std::cell::RefCell;
@@ -187,6 +187,303 @@ fn io_result(ok: Type) -> Type {
     Type::Result(Box::new(ok), Box::new(str_()))
 }
 
+fn net_bytes_type() -> Type {
+    Type::List(Box::new(Type::Primitive(PrimitiveType::Int)))
+}
+
+fn net_tuple_bytes_addr_type() -> Type {
+    Type::Tuple(Box::new(net_bytes_type()), Box::new(str_()))
+}
+
+fn tcp_stream_type() -> Type {
+    Type::Named("TcpStream".to_string(), Vec::new())
+}
+
+fn udp_socket_type() -> Type {
+    Type::Named("UdpSocket".to_string(), Vec::new())
+}
+
+fn make_net_class_symbol(name: &str, methods: HashMap<String, MethodSig>, span: Span) -> Symbol {
+    Symbol {
+        kind: SymbolKind::Class,
+        span,
+        type_: Some(Type::Named(name.to_string(), Vec::new())),
+        interfaces: HashMap::new(),
+        methods,
+        fields: HashMap::new(),
+        type_params: Vec::new(),
+        original_name: None,
+        llvm_name: None,
+        default_param_count: 0,
+        variants: None,
+    }
+}
+
+fn tcp_stream_methods() -> HashMap<String, MethodSig> {
+    let mut methods = HashMap::new();
+    methods.insert(
+        "connect".to_string(),
+        MethodSig {
+            params: vec![str_()],
+            return_type: io_result(tcp_stream_type()),
+            is_static: true,
+        },
+    );
+    methods.insert(
+        "read".to_string(),
+        MethodSig {
+            params: vec![int()],
+            return_type: io_result(net_bytes_type()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "write".to_string(),
+        MethodSig {
+            params: vec![net_bytes_type()],
+            return_type: io_result(int()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "close".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Void,
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "set_nonblocking".to_string(),
+        MethodSig {
+            params: vec![bool_()],
+            return_type: io_result(Type::Void),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "peer_addr".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: io_result(str_()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "local_addr".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: io_result(str_()),
+            is_static: false,
+        },
+    );
+    methods
+}
+
+fn udp_socket_methods() -> HashMap<String, MethodSig> {
+    let mut methods = HashMap::new();
+    methods.insert(
+        "bind".to_string(),
+        MethodSig {
+            params: vec![str_()],
+            return_type: io_result(udp_socket_type()),
+            is_static: true,
+        },
+    );
+    methods.insert(
+        "send_to".to_string(),
+        MethodSig {
+            params: vec![net_bytes_type(), str_()],
+            return_type: io_result(int()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "recv_from".to_string(),
+        MethodSig {
+            params: vec![int()],
+            return_type: io_result(net_tuple_bytes_addr_type()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "close".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Void,
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "set_nonblocking".to_string(),
+        MethodSig {
+            params: vec![bool_()],
+            return_type: io_result(Type::Void),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "peer_addr".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: io_result(str_()),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "local_addr".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: io_result(str_()),
+            is_static: false,
+        },
+    );
+    methods
+}
+
+pub(super) fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
+    let mut classes = HashMap::new();
+    classes.insert(
+        "TcpStream".to_string(),
+        make_net_class_symbol("TcpStream", tcp_stream_methods(), span),
+    );
+    classes.insert(
+        "UdpSocket".to_string(),
+        make_net_class_symbol("UdpSocket", udp_socket_methods(), span),
+    );
+    classes
+}
+
+// Sync module: provide class symbols and method signatures for thread/sync primitives
+fn thread_methods() -> HashMap<String, MethodSig> {
+    let mut methods = HashMap::new();
+    methods.insert(
+        "join".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false,
+        },
+    );
+    methods
+}
+
+fn condvar_methods() -> HashMap<String, MethodSig> {
+    let mut methods = HashMap::new();
+    methods.insert(
+        "new".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Named("CondVar".to_string(), Vec::new()),
+            is_static: true,
+        },
+    );
+    methods.insert(
+        "wait".to_string(),
+        MethodSig {
+            params: vec![Type::Named("Mutex".to_string(), Vec::new())],
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "signal".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false,
+        },
+    );
+    methods
+}
+
+fn rwlock_methods() -> HashMap<String, MethodSig> {
+    let mut methods = HashMap::new();
+    methods.insert(
+        "new".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Named("RwLock".to_string(), Vec::new()),
+            is_static: true,
+        },
+    );
+    methods.insert(
+        "read_lock".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "write_lock".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "unlock".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false,
+        },
+    );
+    methods
+}
+
+fn mutex_methods() -> HashMap<String, MethodSig> {
+    let mut methods = HashMap::new();
+    methods.insert(
+        "new".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Named("Mutex".to_string(), Vec::new()),
+            is_static: true,
+        },
+    );
+    methods.insert(
+        "lock".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false,
+        },
+    );
+    methods.insert(
+        "unlock".to_string(),
+        MethodSig {
+            params: Vec::new(),
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false,
+        },
+    );
+    methods
+}
+
+pub(super) fn sync_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
+    let mut classes = HashMap::new();
+    classes.insert(
+        "Thread".to_string(),
+        make_net_class_symbol("Thread", thread_methods(), span),
+    );
+    classes.insert(
+        "CondVar".to_string(),
+        make_net_class_symbol("CondVar", condvar_methods(), span),
+    );
+    classes.insert(
+        "RwLock".to_string(),
+        make_net_class_symbol("RwLock", rwlock_methods(), span),
+    );
+    classes.insert(
+        "Mutex".to_string(),
+        make_net_class_symbol("Mutex", mutex_methods(), span),
+    );
+    classes
+}
+
 fn datetime_fn(name: &'static str, params: &'static [Type], ret: Type) -> StdlibItem {
     StdlibItem::Function {
         params: params.to_vec(),
@@ -226,7 +523,7 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 };
 
 /// List of all available stdlib modules for wildcard imports
-pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random", "sync"];
+pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random", "sync", "net"];
 
 lazy_static! {
     // io uses lazy_static rather than PHF because signatures include Type::Named(Result<...>),
@@ -338,29 +635,30 @@ lazy_static! {
 
     pub static ref SYNC_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
         let mut m = HashMap::new();
+        // spawn(func() returns void) -> result<Thread, string>
         m.insert(
             "sync.spawn",
             StdlibItem::Function {
                 params: vec![Type::Function {
-                    params: vec![],
+                    params: Vec::new(),
                     returns: Box::new(Type::Void),
                     default_count: 0,
                 }],
-                ret: Type::Result(
-                    Box::new(Type::Named("Thread".to_string(), vec![])),
-                    Box::new(Type::Primitive(PrimitiveType::Str)),
-                ),
+                ret: Type::Result(Box::new(Type::Named("Thread".to_string(), Vec::new())), Box::new(str_())),
                 llvm_name: "mux_sync_spawn".to_string(),
             },
         );
+
+        // sleep(int) -> void
         m.insert(
             "sync.sleep",
             StdlibItem::Function {
-                params: vec![Type::Primitive(PrimitiveType::Int)],
+                params: INT_PARAM.to_vec(),
                 ret: Type::Void,
                 llvm_name: "mux_sync_sleep".to_string(),
             },
         );
+
         m
     };
 
@@ -451,6 +749,7 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| DATETIME_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| SYNC_STDLIB_ITEMS.get(name).cloned())
+    // TODO: why is NET_STDLIB_ITEMS not added to the chain above?
 }
 
 #[derive(Debug)]
