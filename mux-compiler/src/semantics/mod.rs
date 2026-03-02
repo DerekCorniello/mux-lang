@@ -2,6 +2,7 @@
 
 pub mod error;
 pub mod format;
+pub mod stdlib;
 pub mod symbol_table;
 pub mod types;
 pub mod unifier;
@@ -332,198 +333,23 @@ impl SemanticAnalyzer {
     }
 
     fn add_builtin_functions(&mut self) {
-        let builtins = vec![
-            (
-                "print",
-                vec![Type::Primitive(PrimitiveType::Str)],
-                Type::Void,
-            ),
-            ("read_line", vec![], Type::Primitive(PrimitiveType::Str)),
-            (
-                "range",
-                vec![
-                    Type::Primitive(PrimitiveType::Int),
-                    Type::Primitive(PrimitiveType::Int),
-                ],
-                Type::List(Box::new(Type::Primitive(PrimitiveType::Int))),
-            ),
-            (
-                "some",
-                vec![Type::Variable("T".to_string())],
-                Type::Optional(Box::new(Type::Variable("T".to_string()))),
-            ),
-            ("none", vec![], Type::Optional(Box::new(Type::Void))),
-            (
-                "ok",
-                vec![Type::Variable("T".to_string())],
-                Type::Result(
-                    Box::new(Type::Variable("T".to_string())),
-                    Box::new(Type::Variable("E".to_string())),
-                ),
-            ),
-            (
-                "err",
-                vec![Type::Variable("E".to_string())],
-                Type::Result(
-                    Box::new(Type::Variable("T".to_string())),
-                    Box::new(Type::Variable("E".to_string())),
-                ),
-            ),
-        ];
-        for (name, params, ret) in builtins {
-            let func_type = Type::Function {
-                params,
-                returns: Box::new(ret),
-                default_count: 0,
-            };
-            self.symbol_table
-                .add_symbol(
-                    name,
-                    Self::make_symbol(SymbolKind::Function, Span::new(0, 0), Some(func_type)),
-                )
-                .expect("builtin function registration should not fail");
+        // Register built-in functions from the canonical stdlib table.
+        let span = Span::new(0, 0);
+        for (name, sig) in BUILT_IN_FUNCTIONS.iter() {
+            self.register_builtin_function(name, sig, span);
         }
+
+        // Register sync module class symbols (Thread/Mutex/etc.)
         self.add_sync_builtin_types();
     }
 
     fn add_sync_builtin_types(&mut self) {
         let span = Span::new(0, 0);
-        let result_void_string = Type::Result(
-            Box::new(Type::Void),
-            Box::new(Type::Primitive(PrimitiveType::Str)),
-        );
-
-        let mut thread_symbol = Self::make_symbol(
-            SymbolKind::Class,
-            span,
-            Some(Type::Named("Thread".to_string(), vec![])),
-        );
-        thread_symbol.methods.insert(
-            "join".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: result_void_string.clone(),
-                is_static: false,
-            },
-        );
-        thread_symbol.methods.insert(
-            "detach".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: result_void_string.clone(),
-                is_static: false,
-            },
-        );
-        let _ = self.symbol_table.add_symbol("Thread", thread_symbol);
-
-        let mut mutex_symbol = Self::make_symbol(
-            SymbolKind::Class,
-            span,
-            Some(Type::Named("Mutex".to_string(), vec![])),
-        );
-        mutex_symbol.methods.insert(
-            "new".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: Type::Named("Mutex".to_string(), vec![]),
-                is_static: true,
-            },
-        );
-        mutex_symbol.methods.insert(
-            "lock".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: result_void_string.clone(),
-                is_static: false,
-            },
-        );
-        mutex_symbol.methods.insert(
-            "unlock".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: result_void_string.clone(),
-                is_static: false,
-            },
-        );
-        let _ = self.symbol_table.add_symbol("Mutex", mutex_symbol);
-
-        let mut rwlock_symbol = Self::make_symbol(
-            SymbolKind::Class,
-            span,
-            Some(Type::Named("RwLock".to_string(), vec![])),
-        );
-        rwlock_symbol.methods.insert(
-            "new".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: Type::Named("RwLock".to_string(), vec![]),
-                is_static: true,
-            },
-        );
-        rwlock_symbol.methods.insert(
-            "read_lock".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: result_void_string.clone(),
-                is_static: false,
-            },
-        );
-        rwlock_symbol.methods.insert(
-            "write_lock".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: result_void_string.clone(),
-                is_static: false,
-            },
-        );
-        rwlock_symbol.methods.insert(
-            "unlock".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: result_void_string.clone(),
-                is_static: false,
-            },
-        );
-        let _ = self.symbol_table.add_symbol("RwLock", rwlock_symbol);
-
-        let mut condvar_symbol = Self::make_symbol(
-            SymbolKind::Class,
-            span,
-            Some(Type::Named("CondVar".to_string(), vec![])),
-        );
-        condvar_symbol.methods.insert(
-            "new".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: Type::Named("CondVar".to_string(), vec![]),
-                is_static: true,
-            },
-        );
-        condvar_symbol.methods.insert(
-            "wait".to_string(),
-            MethodSig {
-                params: vec![Type::Named("Mutex".to_string(), vec![])],
-                return_type: result_void_string.clone(),
-                is_static: false,
-            },
-        );
-        condvar_symbol.methods.insert(
-            "signal".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: result_void_string.clone(),
-                is_static: false,
-            },
-        );
-        condvar_symbol.methods.insert(
-            "broadcast".to_string(),
-            MethodSig {
-                params: vec![],
-                return_type: result_void_string,
-                is_static: false,
-            },
-        );
-        let _ = self.symbol_table.add_symbol("CondVar", condvar_symbol);
+        // Use canonical class symbols from the stdlib module and register them.
+        let classes = crate::semantics::symbol_table::sync_module_class_symbols(span);
+        for (name, sym) in classes {
+            let _ = self.symbol_table.add_symbol(&name, sym);
+        }
     }
 
     #[allow(clippy::only_used_in_recursion)]
