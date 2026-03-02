@@ -6,7 +6,7 @@
 //! - Collection method calls (list, map, set)
 //! - Optional method calls
 
-use inkwell::values::BasicValueEnum;
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum};
 
 use crate::ast::{ExpressionNode, PrimitiveType};
 use crate::semantics::Type;
@@ -265,7 +265,7 @@ impl<'a> CodeGenerator<'a> {
                         return Err("TcpStream.read takes exactly 1 argument".to_string());
                     }
                     let size = self.generate_expression(&args[0])?;
-                    let call = self.build_net_call("mux_net_tcp_read", &[obj_value.into(), size])?;
+                    let call = self.build_net_call("mux_net_tcp_read", &[obj_value, size])?;
                     Ok(Some(call))
                 }
                 "write" => {
@@ -273,15 +273,14 @@ impl<'a> CodeGenerator<'a> {
                         return Err("TcpStream.write takes exactly 1 argument".to_string());
                     }
                     let data = self.generate_expression(&args[0])?;
-                    let call =
-                        self.build_net_call("mux_net_tcp_write", &[obj_value.into(), data])?;
+                    let call = self.build_net_call("mux_net_tcp_write", &[obj_value, data])?;
                     Ok(Some(call))
                 }
                 "close" => {
                     if !args.is_empty() {
                         return Err("TcpStream.close takes no arguments".to_string());
                     }
-                    let call = self.build_net_call("mux_net_tcp_close", &[obj_value.into()])?;
+                    let call = self.build_net_call("mux_net_tcp_close", &[obj_value])?;
                     Ok(Some(call))
                 }
                 "set_nonblocking" => {
@@ -290,21 +289,22 @@ impl<'a> CodeGenerator<'a> {
                     }
                     let bool_val = self.generate_expression(&args[0])?;
                     let converted = self.bool_to_i32(bool_val)?;
-                    let call = self.build_net_call("mux_net_tcp_set_nonblocking", &[obj_value.into(), converted])?;
+                    let call = self
+                        .build_net_call("mux_net_tcp_set_nonblocking", &[obj_value, converted])?;
                     Ok(Some(call))
                 }
                 "peer_addr" => {
                     if !args.is_empty() {
                         return Err("TcpStream.peer_addr takes no arguments".to_string());
                     }
-                    let call = self.build_net_call("mux_net_tcp_peer_addr", &[obj_value.into()])?;
+                    let call = self.build_net_call("mux_net_tcp_peer_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
                 "local_addr" => {
                     if !args.is_empty() {
                         return Err("TcpStream.local_addr takes no arguments".to_string());
                     }
-                    let call = self.build_net_call("mux_net_tcp_local_addr", &[obj_value.into()])?;
+                    let call = self.build_net_call("mux_net_tcp_local_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
                 _ => Ok(None),
@@ -316,10 +316,8 @@ impl<'a> CodeGenerator<'a> {
                     }
                     let data = self.generate_expression(&args[0])?;
                     let addr = self.generate_expression(&args[1])?;
-                    let call = self.build_net_call(
-                        "mux_net_udp_send_to",
-                        &[obj_value.into(), data, addr],
-                    )?;
+                    let call =
+                        self.build_net_call("mux_net_udp_send_to", &[obj_value, data, addr])?;
                     Ok(Some(call))
                 }
                 "recv_from" => {
@@ -327,15 +325,14 @@ impl<'a> CodeGenerator<'a> {
                         return Err("UdpSocket.recv_from takes 1 argument".to_string());
                     }
                     let size = self.generate_expression(&args[0])?;
-                    let call =
-                        self.build_net_call("mux_net_udp_recv_from", &[obj_value.into(), size])?;
+                    let call = self.build_net_call("mux_net_udp_recv_from", &[obj_value, size])?;
                     Ok(Some(call))
                 }
                 "close" => {
                     if !args.is_empty() {
                         return Err("UdpSocket.close takes no arguments".to_string());
                     }
-                    let call = self.build_net_call("mux_net_udp_close", &[obj_value.into()])?;
+                    let call = self.build_net_call("mux_net_udp_close", &[obj_value])?;
                     Ok(Some(call))
                 }
                 "set_nonblocking" => {
@@ -344,26 +341,22 @@ impl<'a> CodeGenerator<'a> {
                     }
                     let bool_val = self.generate_expression(&args[0])?;
                     let converted = self.bool_to_i32(bool_val)?;
-                    let call = self.build_net_call(
-                        "mux_net_udp_set_nonblocking",
-                        &[obj_value.into(), converted],
-                    )?;
+                    let call = self
+                        .build_net_call("mux_net_udp_set_nonblocking", &[obj_value, converted])?;
                     Ok(Some(call))
                 }
                 "peer_addr" => {
                     if !args.is_empty() {
                         return Err("UdpSocket.peer_addr takes no arguments".to_string());
                     }
-                    let call =
-                        self.build_net_call("mux_net_udp_peer_addr", &[obj_value.into()])?;
+                    let call = self.build_net_call("mux_net_udp_peer_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
                 "local_addr" => {
                     if !args.is_empty() {
                         return Err("UdpSocket.local_addr takes no arguments".to_string());
                     }
-                    let call =
-                        self.build_net_call("mux_net_udp_local_addr", &[obj_value.into()])?;
+                    let call = self.build_net_call("mux_net_udp_local_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
                 _ => Ok(None),
@@ -404,6 +397,72 @@ impl<'a> CodeGenerator<'a> {
             Type::Set(_) => self.generate_set_method_call(obj_value, method_name, args),
             Type::Tuple(_, _) => self.generate_tuple_method_call(obj_value, method_name, args),
             Type::Named(name, type_args) => {
+                if name == "Thread" {
+                    if !args.is_empty() {
+                        return Err(format!("{}() takes no arguments", method_name));
+                    }
+                    return match method_name {
+                        "join" => self.call_runtime_function("mux_thread_join", &[obj_value]),
+                        "detach" => self.call_runtime_function("mux_thread_detach", &[obj_value]),
+                        _ => Err(format!("Method {} not implemented for Thread", method_name)),
+                    };
+                }
+                if name == "Mutex" {
+                    if !args.is_empty() {
+                        return Err(format!("{}() takes no arguments", method_name));
+                    }
+                    return match method_name {
+                        "lock" => self.call_runtime_function("mux_mutex_lock", &[obj_value]),
+                        "unlock" => self.call_runtime_function("mux_mutex_unlock", &[obj_value]),
+                        _ => Err(format!("Method {} not implemented for Mutex", method_name)),
+                    };
+                }
+                if name == "RwLock" {
+                    if !args.is_empty() {
+                        return Err(format!("{}() takes no arguments", method_name));
+                    }
+                    return match method_name {
+                        "read_lock" => {
+                            self.call_runtime_function("mux_rwlock_read_lock", &[obj_value])
+                        }
+                        "write_lock" => {
+                            self.call_runtime_function("mux_rwlock_write_lock", &[obj_value])
+                        }
+                        "unlock" => self.call_runtime_function("mux_rwlock_unlock", &[obj_value]),
+                        _ => Err(format!("Method {} not implemented for RwLock", method_name)),
+                    };
+                }
+                if name == "CondVar" {
+                    return match method_name {
+                        "wait" => {
+                            if args.len() != 1 {
+                                return Err("wait() method takes exactly 1 argument".to_string());
+                            }
+                            let mutex_val = self.generate_expression(&args[0])?;
+                            let mutex_boxed = self.box_value(mutex_val);
+                            self.call_runtime_function(
+                                "mux_condvar_wait",
+                                &[obj_value, mutex_boxed.into()],
+                            )
+                        }
+                        "signal" => {
+                            if !args.is_empty() {
+                                return Err("signal() method takes no arguments".to_string());
+                            }
+                            self.call_runtime_function("mux_condvar_signal", &[obj_value])
+                        }
+                        "broadcast" => {
+                            if !args.is_empty() {
+                                return Err("broadcast() method takes no arguments".to_string());
+                            }
+                            self.call_runtime_function("mux_condvar_broadcast", &[obj_value])
+                        }
+                        _ => Err(format!(
+                            "Method {} not implemented for CondVar",
+                            method_name
+                        )),
+                    };
+                }
                 if let Some(class) = self.analyzer.symbol_table().lookup(name) {
                     if let Some(method) = class.methods.get(method_name) {
                         if method.is_static {
@@ -427,7 +486,7 @@ impl<'a> CodeGenerator<'a> {
                         // Non-specialized methods expect concrete types
                         let is_specialized = method_func_name.contains('$');
 
-                        let mut call_args = vec![obj_value.into()]; // self
+                        let mut call_args: Vec<BasicMetadataValueEnum<'a>> = vec![obj_value.into()]; // self
                         for arg in args {
                             let arg_val = self.generate_expression(arg)?;
                             if is_specialized {

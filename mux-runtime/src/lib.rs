@@ -272,8 +272,8 @@ pub mod int;
 pub mod io;
 pub mod list;
 pub mod map;
-pub mod net;
 pub mod math;
+pub mod net;
 pub mod object;
 pub mod optional;
 pub mod random;
@@ -282,6 +282,7 @@ pub mod result;
 pub mod set;
 pub mod std;
 pub mod string;
+pub mod sync;
 pub mod tuple;
 
 pub use std::{mux_value_list_get_value, mux_value_list_length, mux_value_list_slice};

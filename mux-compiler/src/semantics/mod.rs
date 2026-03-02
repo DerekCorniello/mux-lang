@@ -103,10 +103,13 @@ impl SemanticAnalyzer {
 
     fn stdlib_modules() -> Vec<(&'static str, &'static str)> {
         vec![
-            ("std.math", "math"),
+            ("std.assert", "assert"),
+            ("std.datetime", "datetime"),
             ("std.io", "io"),
+            ("std.math", "math"),
             ("std.random", "random"),
             ("std.net", "net"),
+            ("std.sync", "sync"),
         ]
     }
 
@@ -182,6 +185,15 @@ impl SemanticAnalyzer {
     /// Build an "undefined symbol" error with a "did you mean?" suggestion if a similar
     /// symbol exists in the current scope.
     fn undefined_symbol_error(&self, kind: &str, name: &str, span: Span) -> SemanticError {
+        // Debug: trace unexpected undefineds for easier diagnosis
+        if name == "Mutex" && kind == "variable" {
+            eprintln!(
+                "undefined_symbol_error triggered for {} '{}', imported_symbols keys: {:?}",
+                kind,
+                name,
+                self.imported_symbols.keys().collect::<Vec<_>>()
+            );
+        }
         if let Some(suggestion) = self.symbol_table.find_similar(name) {
             SemanticError::with_help(
                 format!("Undefined {} '{}'", kind, name),
@@ -371,6 +383,147 @@ impl SemanticAnalyzer {
                 )
                 .expect("builtin function registration should not fail");
         }
+        self.add_sync_builtin_types();
+    }
+
+    fn add_sync_builtin_types(&mut self) {
+        let span = Span::new(0, 0);
+        let result_void_string = Type::Result(
+            Box::new(Type::Void),
+            Box::new(Type::Primitive(PrimitiveType::Str)),
+        );
+
+        let mut thread_symbol = Self::make_symbol(
+            SymbolKind::Class,
+            span,
+            Some(Type::Named("Thread".to_string(), vec![])),
+        );
+        thread_symbol.methods.insert(
+            "join".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        thread_symbol.methods.insert(
+            "detach".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        let _ = self.symbol_table.add_symbol("Thread", thread_symbol);
+
+        let mut mutex_symbol = Self::make_symbol(
+            SymbolKind::Class,
+            span,
+            Some(Type::Named("Mutex".to_string(), vec![])),
+        );
+        mutex_symbol.methods.insert(
+            "new".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: Type::Named("Mutex".to_string(), vec![]),
+                is_static: true,
+            },
+        );
+        mutex_symbol.methods.insert(
+            "lock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        mutex_symbol.methods.insert(
+            "unlock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        let _ = self.symbol_table.add_symbol("Mutex", mutex_symbol);
+
+        let mut rwlock_symbol = Self::make_symbol(
+            SymbolKind::Class,
+            span,
+            Some(Type::Named("RwLock".to_string(), vec![])),
+        );
+        rwlock_symbol.methods.insert(
+            "new".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: Type::Named("RwLock".to_string(), vec![]),
+                is_static: true,
+            },
+        );
+        rwlock_symbol.methods.insert(
+            "read_lock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        rwlock_symbol.methods.insert(
+            "write_lock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        rwlock_symbol.methods.insert(
+            "unlock".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        let _ = self.symbol_table.add_symbol("RwLock", rwlock_symbol);
+
+        let mut condvar_symbol = Self::make_symbol(
+            SymbolKind::Class,
+            span,
+            Some(Type::Named("CondVar".to_string(), vec![])),
+        );
+        condvar_symbol.methods.insert(
+            "new".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: Type::Named("CondVar".to_string(), vec![]),
+                is_static: true,
+            },
+        );
+        condvar_symbol.methods.insert(
+            "wait".to_string(),
+            MethodSig {
+                params: vec![Type::Named("Mutex".to_string(), vec![])],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        condvar_symbol.methods.insert(
+            "signal".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string.clone(),
+                is_static: false,
+            },
+        );
+        condvar_symbol.methods.insert(
+            "broadcast".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: result_void_string,
+                is_static: false,
+            },
+        );
+        let _ = self.symbol_table.add_symbol("CondVar", condvar_symbol);
     }
 
     #[allow(clippy::only_used_in_recursion)]
@@ -531,6 +684,27 @@ impl SemanticAnalyzer {
                             default_count: 0,
                         })
                     } else {
+                        // Conservative fallback: allow unqualified references to class
+                        // names exported by imported stdlib modules (e.g., when doing
+                        // `import std.sync` let `Mutex.new()` resolve). This does not
+                        // consult user modules and avoids introducing wildcard imports.
+                        let stdlib_names: std::collections::HashSet<String> =
+                            Self::stdlib_modules()
+                                .iter()
+                                .map(|(_, short_name)| short_name.to_string())
+                                .collect();
+
+                        for (module_ns, module_symbols) in &self.imported_symbols {
+                            if !stdlib_names.contains(module_ns) {
+                                continue;
+                            }
+                            if let Some(sym) = module_symbols.get(name)
+                                && matches!(sym.kind, SymbolKind::Class)
+                            {
+                                return Ok(Type::Named(name.clone(), Vec::new()));
+                            }
+                        }
+
                         Err(self.undefined_symbol_error("variable", name, expr.span))
                     }
                 }
@@ -928,7 +1102,43 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::FieldAccess { expr, field } => {
-                let expr_type = self.get_expression_type(expr)?;
+                // Try to get the type of the base expression. If that fails because the
+                // identifier is undefined, attempt a conservative lookup into imported
+                // stdlib module symbols to resolve class-qualified accesses like
+                // `Mutex.new()` when `import std.sync` was used.
+                let expr_type_res = self.get_expression_type(expr);
+                let expr_type = match expr_type_res {
+                    Ok(t) => t,
+                    Err(e) => {
+                        // Only try the fallback when the expression is a simple identifier
+                        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
+                            // Restrict to stdlib namespaces
+                            let stdlib_names: std::collections::HashSet<String> =
+                                Self::stdlib_modules()
+                                    .iter()
+                                    .map(|(_, n)| n.to_string())
+                                    .collect();
+                            for (ns, module_symbols) in &self.imported_symbols {
+                                if !stdlib_names.contains(ns) {
+                                    continue;
+                                }
+                                if let Some(class_sym) = module_symbols.get(name)
+                                    && matches!(class_sym.kind, SymbolKind::Class)
+                                {
+                                    // If the class defines the method, return its function type
+                                    if let Some(method_sig) = class_sym.methods.get(field) {
+                                        return Ok(Type::Function {
+                                            params: method_sig.params.clone(),
+                                            returns: Box::new(method_sig.return_type.clone()),
+                                            default_count: 0,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
+                };
 
                 if let Type::Module(module_name) = &expr_type {
                     self.resolve_module_field(module_name, field, expr.span)
@@ -1306,6 +1516,26 @@ impl SemanticAnalyzer {
             }
             return Err(self.field_not_found_error(field, name, span));
         }
+
+        // Check if the class is from an imported module
+        for module_symbols in self.imported_symbols.values() {
+            if let Some(class_symbol) = module_symbols.get(name) {
+                // Found the class in a module - check for the method
+                if let Some(method_sig) = class_symbol.methods.get(field) {
+                    let resolved_sig = if args.is_empty() {
+                        method_sig.clone()
+                    } else {
+                        self.substitute_method_sig(method_sig, &class_symbol.type_params, args)
+                    };
+                    return Ok(Type::Function {
+                        params: resolved_sig.params,
+                        returns: Box::new(resolved_sig.return_type),
+                        default_count: 0,
+                    });
+                }
+            }
+        }
+
         Err(self.method_not_found_error(field, &format_type(expr_type), span))
     }
 
@@ -3730,7 +3960,28 @@ impl SemanticAnalyzer {
                     }
                     return Ok(());
                 }
-                if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
+                // Consider imported stdlib class names as existing for identifier checks
+                let mut exists_like =
+                    self.symbol_table.exists(name) || self.get_builtin_sig(name).is_some();
+                if !exists_like {
+                    let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
+                        .iter()
+                        .map(|(_, n)| n.to_string())
+                        .collect();
+                    for (ns, module_symbols) in &self.imported_symbols {
+                        if !stdlib_names.contains(ns) {
+                            continue;
+                        }
+                        if let Some(sym) = module_symbols.get(name)
+                            && matches!(sym.kind, SymbolKind::Class)
+                        {
+                            exists_like = true;
+                            break;
+                        }
+                    }
+                }
+
+                if !exists_like {
                     return Err(self.undefined_symbol_error("variable", name, expr.span));
                 }
                 Ok(())
@@ -4814,7 +5065,13 @@ impl SemanticAnalyzer {
             }
         }
         if module_name == "net" {
-            module_symbols.extend(crate::semantics::symbol_table::net_module_class_symbols(span));
+            module_symbols.extend(crate::semantics::symbol_table::net_module_class_symbols(
+                span,
+            ));
+        } else if module_name == "sync" {
+            module_symbols.extend(crate::semantics::symbol_table::sync_module_class_symbols(
+                span,
+            ));
         }
         module_symbols
     }

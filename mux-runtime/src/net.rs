@@ -32,12 +32,20 @@ lazy_static! {
     );
 }
 
-fn lock_map<'a, T>(map: &'a SocketMap<T>) -> std::sync::MutexGuard<'a, HashMap<i64, Arc<Mutex<T>>>> {
+fn lock_map<'a, T>(
+    map: &'a SocketMap<T>,
+) -> std::sync::MutexGuard<'a, HashMap<i64, Arc<Mutex<T>>>> {
     map.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn next_handle() -> i64 {
-    NEXT_HANDLE.fetch_add(1, Ordering::SeqCst)
+    loop {
+        let handle = NEXT_HANDLE.fetch_add(1, Ordering::SeqCst);
+        if handle > 0 {
+            return handle;
+        }
+        NEXT_HANDLE.store(1, Ordering::SeqCst);
+    }
 }
 
 fn insert_socket<T>(map: &SocketMap<T>, socket: T) -> i64 {
@@ -70,21 +78,17 @@ fn socket_entry_or_err<T>(
     handle: i64,
     label: &str,
 ) -> Result<Arc<Mutex<T>>, String> {
-    get_socket_entry(map, handle)
-        .ok_or_else(|| format!("invalid {} handle", label))
+    get_socket_entry(map, handle).ok_or_else(|| format!("invalid {} handle", label))
 }
 
-fn with_socket<T, R, F>(
-    map: &SocketMap<T>,
-    handle: i64,
-    label: &str,
-    op: F,
-) -> Result<R, String>
+fn with_socket<T, R, F>(map: &SocketMap<T>, handle: i64, label: &str, op: F) -> Result<R, String>
 where
     F: FnOnce(&mut T) -> Result<R, String>,
 {
     let entry = socket_entry_or_err(map, handle, label)?;
-    let mut guard = entry.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut guard = entry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     op(&mut guard)
 }
 
@@ -161,7 +165,7 @@ fn create_socket_value(handle: i64, type_id: TypeId) -> Value {
         unsafe { *(data_ptr as *mut i64) = handle };
     }
     let value = unsafe { (*obj_ptr).clone() };
-    unsafe { mux_rc_dec(obj_ptr) };
+    mux_rc_dec(obj_ptr);
     value
 }
 
@@ -317,28 +321,28 @@ pub extern "C" fn mux_net_tcp_set_nonblocking(stream: *mut Value, enabled: i32) 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_peer_addr(stream: *mut Value) -> *mut MuxResult {
-    let result = tcp_handle(stream).and_then(|handle|
+    let result = tcp_handle(stream).and_then(|handle| {
         with_tcp_stream(handle, |socket| {
             socket
                 .peer_addr()
                 .map(|addr| addr.to_string())
                 .map_err(|e| format!("tcp peer_addr failed: {}", e))
         })
-    );
+    });
     net_result_string(result)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_local_addr(stream: *mut Value) -> *mut MuxResult {
-    let result = tcp_handle(stream).and_then(|handle|
+    let result = tcp_handle(stream).and_then(|handle| {
         with_tcp_stream(handle, |socket| {
             socket
                 .local_addr()
                 .map(|addr| addr.to_string())
                 .map_err(|e| format!("tcp local_addr failed: {}", e))
         })
-    );
+    });
     net_result_string(result)
 }
 
@@ -396,7 +400,9 @@ pub extern "C" fn mux_net_udp_recv_from(socket: *mut Value, size: i64) -> *mut M
     };
     match with_udp_socket(handle, |sock| {
         let mut buf = vec![0u8; size as usize];
-        let result = sock.recv_from(&mut buf).map_err(|e| format!("udp recv failed: {}", e))?;
+        let result = sock
+            .recv_from(&mut buf)
+            .map_err(|e| format!("udp recv failed: {}", e))?;
         buf.truncate(result.0);
         Ok(tuple_from_bytes_and_addr(buf, result.1.to_string()))
     }) {
@@ -430,27 +436,25 @@ pub extern "C" fn mux_net_udp_set_nonblocking(socket: *mut Value, enabled: i32) 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_udp_peer_addr(socket: *mut Value) -> *mut MuxResult {
-    let result = udp_handle(socket).and_then(|handle|
+    let result = udp_handle(socket).and_then(|handle| {
         with_udp_socket(handle, |sock| {
-            sock
-                .peer_addr()
+            sock.peer_addr()
                 .map(|addr| addr.to_string())
                 .map_err(|e| format!("udp peer_addr failed: {}", e))
         })
-    );
+    });
     net_result_string(result)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_udp_local_addr(socket: *mut Value) -> *mut MuxResult {
-    let result = udp_handle(socket).and_then(|handle|
+    let result = udp_handle(socket).and_then(|handle| {
         with_udp_socket(handle, |sock| {
-            sock
-                .local_addr()
+            sock.local_addr()
                 .map(|addr| addr.to_string())
                 .map_err(|e| format!("udp local_addr failed: {}", e))
         })
-    );
+    });
     net_result_string(result)
 }

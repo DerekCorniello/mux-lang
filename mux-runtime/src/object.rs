@@ -35,7 +35,11 @@ impl ObjectType {
     }
 }
 
-pub fn register_object_type(name: &str, size: usize, destructor: Option<fn(*mut c_void)>) -> TypeId {
+pub fn register_object_type(
+    name: &str,
+    size: usize,
+    destructor: Option<fn(*mut c_void)>,
+) -> TypeId {
     let obj_type = ObjectType::new(name.to_string(), size, destructor);
     let id = obj_type.id;
     TYPE_REGISTRY

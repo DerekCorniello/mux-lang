@@ -1,0 +1,40 @@
+// UDP-focused net smoke test that prints every successful step.
+import std.net
+import std.assert
+
+func main() returns void {
+    print("Starting udp loopback test")
+    match net.UdpSocket.bind("127.0.0.1:0") {
+        ok(sock) {
+            match sock.local_addr() {
+                ok(local_addr) {
+                    print("Bound udp socket on " + local_addr)
+                    match sock.set_nonblocking(false) {
+                        ok(_) { print("Confirmed blocking mode") }
+                        err(e) { assert.assert(false, e) }
+                    }
+                    const list<int> payload = [116, 101, 115, 116]
+                    match sock.send_to(payload, local_addr) {
+                        ok(bytes_written) {
+                            print("Sent " + bytes_written.to_string() + " bytes to " + local_addr)
+                        }
+                        err(e) { assert.assert(false, e) }
+                    }
+
+                    match sock.recv_from(32) {
+                        ok(response) {
+                            print("Received " + response.left.to_string() + " from " + response.right)
+                            assert.assert(response.right == local_addr, "sender mismatch")
+                            assert.assert(response.left[0] == payload[0], "payload mismatch")
+                            print("udp success")
+                        }
+                        err(e) { assert.assert(false, e) }
+                    }
+                }
+                err(e) { assert.assert(false, e) }
+            }
+            sock.close()
+        }
+        err(e) { assert.assert(false, e) }
+    }
+}

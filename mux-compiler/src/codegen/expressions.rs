@@ -1731,6 +1731,74 @@ impl<'a> CodeGenerator<'a> {
                                     }
                                 }
                             }
+                            // Handle module.ClassName.static_method() calls
+                            // e.g., net.UdpSocket.bind(...) where UdpSocket is a class in the net module
+                            if let ExpressionKind::Identifier(module_name) = &inner_expr.kind {
+                                if let Some(symbol) =
+                                    self.analyzer.symbol_table().lookup(module_name)
+                                {
+                                    if symbol.kind == crate::semantics::SymbolKind::Import {
+                                        // Check if submodule_name is a class in the module
+                                        if let Some(module_syms) =
+                                            self.analyzer.imported_symbols().get(module_name)
+                                        {
+                                            if let Some(class_symbol) =
+                                                module_syms.get(submodule_name)
+                                            {
+                                                if class_symbol.kind
+                                                    == crate::semantics::SymbolKind::Class
+                                                {
+                                                    // This is a static method call on a class from a module
+                                                    // Look up the method in the class's methods
+                                                    if let Some(_method) =
+                                                        class_symbol.methods.get(field)
+                                                    {
+                                                        // Try net static method first
+                                                        if let Some(call) = self
+                                                            .try_generate_net_static_method_call(
+                                                                submodule_name,
+                                                                field,
+                                                                args,
+                                                            )?
+                                                        {
+                                                            return Ok(call);
+                                                        }
+                                                        // Fall back to generic static method call
+                                                        let mut call_args = vec![];
+                                                        for arg in args {
+                                                            call_args.push(
+                                                                self.generate_expression(arg)?
+                                                                    .into(),
+                                                            );
+                                                        }
+                                                        let func_name =
+                                                            format!("{}.{}", submodule_name, field);
+                                                        if let Some(func) =
+                                                            self.module.get_function(&func_name)
+                                                        {
+                                                            let call = self
+                                                                .builder
+                                                                .build_call(
+                                                                    func,
+                                                                    &call_args,
+                                                                    &format!("{}_call", func_name),
+                                                                )
+                                                                .map_err(|e| e.to_string())?;
+                                                            return Ok(call.try_as_basic_value().left().expect(
+                                                                "static method call should return a basic value",
+                                                            ));
+                                                        }
+                                                        return Err(format!(
+                                                            "Static method {} not found for class {}",
+                                                            field, submodule_name
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             // Not a nested module access - continue to normal handling
                         }
                         ExpressionKind::Identifier(name) => {
@@ -1812,20 +1880,52 @@ impl<'a> CodeGenerator<'a> {
                                             ));
                                         }
                                     } else if symbol.kind == crate::semantics::SymbolKind::Class {
-                                        // handle constructor/static method calls
-                                    if let Some(method) = symbol.methods.get(field) {
-                                        if let Some(call) = self.try_generate_net_static_method_call(
-                                            name,
-                                            field,
-                                            args,
-                                        )? {
-                                            return Ok(call);
+                                        if matches!(name.as_str(), "Mutex" | "RwLock" | "CondVar")
+                                            && field == "new"
+                                        {
+                                            if !args.is_empty() {
+                                                return Err(format!(
+                                                    "{}.new() takes no arguments",
+                                                    name
+                                                ));
+                                            }
+                                            let runtime_fn = match name.as_str() {
+                                                "Mutex" => "mux_mutex_new",
+                                                "RwLock" => "mux_rwlock_new",
+                                                "CondVar" => "mux_condvar_new",
+                                                _ => unreachable!(),
+                                            };
+                                            let created = self
+                                                .builder
+                                                .build_call(
+                                                    self.module.get_function(runtime_fn).ok_or(
+                                                        format!("{} not found", runtime_fn),
+                                                    )?,
+                                                    &[],
+                                                    &format!("{}_new_call", name),
+                                                )
+                                                .map_err(|e| e.to_string())?
+                                                .try_as_basic_value()
+                                                .left()
+                                                .ok_or_else(|| {
+                                                    format!("{} should return a value", runtime_fn)
+                                                })?;
+                                            return Ok(created);
                                         }
+                                        // handle constructor/static method calls
+                                        if let Some(method) = symbol.methods.get(field) {
+                                            if let Some(call) = self
+                                                .try_generate_net_static_method_call(
+                                                    name, field, args,
+                                                )?
+                                            {
+                                                return Ok(call);
+                                            }
 
-                                        if !method.is_static {
-                                            return Err(format!(
-                                                "Method {} on class {} is not static",
-                                                field, name
+                                            if !method.is_static {
+                                                return Err(format!(
+                                                    "Method {} on class {} is not static",
+                                                    field, name
                                                 ));
                                             }
                                             // generate static method call (no self parameter)

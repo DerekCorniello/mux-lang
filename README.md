@@ -1889,12 +1889,13 @@ The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, 
 Import styles:
 
 ```mux
-import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.net
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
 import std.assert              // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*
 import std.random             // use random.*
 import std.datetime           // use datetime.*
+import std.sync               // use sync.*
 import std.net                // use net.*
 import std.(math, random as r)
 import std.*                  // flat import of stdlib items
@@ -1964,7 +1965,27 @@ Format patterns use chrono `strftime` tokens, for example:
 - `%b` abbreviated month name
 - `%Y-%m-%d %H:%M:%S`
 
-### 17.6 net
+### 17.6 sync
+
+`sync` provides basic concurrency primitives.
+
+- `sync.spawn(fn() -> void) -> result<Thread, string>`
+- `sync.sleep(int milliseconds) -> void`
+- `Thread.join() -> result<void, string>`
+- `Thread.detach() -> result<void, string>`
+- `Mutex.new() -> Mutex`
+- `Mutex.lock() -> result<void, string>`
+- `Mutex.unlock() -> result<void, string>`
+- `RwLock.new() -> RwLock`
+- `RwLock.read_lock() -> result<void, string>`
+- `RwLock.write_lock() -> result<void, string>`
+- `RwLock.unlock() -> result<void, string>`
+- `CondVar.new() -> CondVar`
+- `CondVar.wait(Mutex) -> result<void, string>`
+- `CondVar.signal() -> result<void, string>`
+- `CondVar.broadcast() -> result<void, string>`
+
+### 17.7 net
 
 `net` exposes the primitives you need to work with raw sockets and build higher-level protocols.
 
