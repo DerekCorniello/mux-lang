@@ -19,7 +19,7 @@ func main() returns void {
 You can import stdlib in multiple forms:
 
 ```mux title="stdlib_import_forms.mux"
-import std                      // namespace import: std.math, std.io, std.random, std.datetime
+import std                      // namespace import: std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
 import std.math                 // single module namespace
 import std.(math, random as r)  // qualified and selective imports with aliasing
 import std.*                    // flat import of all stdlib items

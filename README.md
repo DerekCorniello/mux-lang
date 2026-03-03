@@ -1884,7 +1884,7 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, and `net`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, and `net`.
 
 Import styles:
 

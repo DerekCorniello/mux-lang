@@ -1896,12 +1896,12 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, and `net`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, and `net`.
 
 Import styles:
 
 ```mux
-import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.net
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
 import std.assert             // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*

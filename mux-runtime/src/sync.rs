@@ -59,6 +59,8 @@ lazy_static! {
         8,
         Some(destroy_condvar_object as fn(*mut c_void))
     );
+    static ref THREAD_TYPE_ID: TypeId =
+        register_object_type("Thread", 8, Some(destroy_thread_object as fn(*mut c_void)));
 }
 
 fn ok_unit() -> *mut MuxResult {
@@ -124,6 +126,17 @@ fn destroy_condvar_object(ptr: *mut c_void) {
     }
 }
 
+fn destroy_thread_object(ptr: *mut c_void) {
+    if ptr.is_null() {
+        return;
+    }
+    let id = unsafe { *(ptr as *mut i64) };
+    let _entry = {
+        let mut threads = THREADS.lock().expect("THREADS lock should not be poisoned");
+        threads.remove(&id)
+    };
+}
+
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 fn extract_handle_id(handle: *mut Value, _type_name: &str) -> Result<i64, *mut MuxResult> {
     if handle.is_null() {
@@ -134,21 +147,6 @@ fn extract_handle_id(handle: *mut Value, _type_name: &str) -> Result<i64, *mut M
         return Err(err_string("handle data is null"));
     }
     Ok(unsafe { *(ptr as *const i64) })
-}
-
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-fn extract_int_handle_id(handle: *mut Value, type_name: &str) -> Result<i64, *mut MuxResult> {
-    if handle.is_null() {
-        return Err(err_string(format!("{} handle is null", type_name)));
-    }
-    let value = unsafe { &*handle };
-    match value {
-        Value::Int(id) => Ok(*id),
-        _ => Err(err_string(format!(
-            "Invalid {} handle representation",
-            type_name
-        ))),
-    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -193,13 +191,22 @@ pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut MuxResult {
             handle: Some(join_handle),
         },
     );
-    Box::into_raw(Box::new(MuxResult::ok(Value::Int(id))))
+    drop(threads);
+
+    let obj_ptr = alloc_object(*THREAD_TYPE_ID);
+    let data_ptr = unsafe { get_object_ptr(obj_ptr) };
+    if !data_ptr.is_null() {
+        unsafe { *(data_ptr as *mut i64) = id };
+    }
+    let value = unsafe { (*obj_ptr).clone() };
+    mux_rc_dec(obj_ptr);
+    Box::into_raw(Box::new(MuxResult::ok(value)))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_thread_join(thread_handle: *mut Value) -> *mut MuxResult {
-    let id = match extract_int_handle_id(thread_handle, "Thread") {
+    let id = match extract_handle_id(thread_handle, "Thread") {
         Ok(id) => id,
         Err(e) => return e,
     };
@@ -227,7 +234,7 @@ pub extern "C" fn mux_thread_join(thread_handle: *mut Value) -> *mut MuxResult {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_thread_detach(thread_handle: *mut Value) -> *mut MuxResult {
-    let id = match extract_int_handle_id(thread_handle, "Thread") {
+    let id = match extract_handle_id(thread_handle, "Thread") {
         Ok(id) => id,
         Err(e) => return e,
     };
@@ -291,7 +298,7 @@ pub extern "C" fn mux_mutex_new() -> *mut Value {
             mux_rc_dec(obj_ptr);
             Box::into_raw(Box::new(value))
         }
-        Err(_) => std::ptr::null_mut(),
+        Err(e) => panic!("Failed to initialize Mutex: {}", e),
     }
 }
 
@@ -312,7 +319,7 @@ pub extern "C" fn mux_rwlock_new() -> *mut Value {
             mux_rc_dec(obj_ptr);
             Box::into_raw(Box::new(value))
         }
-        Err(_) => std::ptr::null_mut(),
+        Err(e) => panic!("Failed to initialize RwLock: {}", e),
     }
 }
 
@@ -335,7 +342,7 @@ pub extern "C" fn mux_condvar_new() -> *mut Value {
             mux_rc_dec(obj_ptr);
             Box::into_raw(Box::new(value))
         }
-        Err(_) => std::ptr::null_mut(),
+        Err(e) => panic!("Failed to initialize CondVar: {}", e),
     }
 }
 

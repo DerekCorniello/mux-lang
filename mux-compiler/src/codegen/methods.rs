@@ -489,6 +489,85 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    pub(super) fn try_generate_sync_instance_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        obj_type: &Type,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<Option<BasicValueEnum<'a>>, String> {
+        let type_name = if let Type::Named(name, _) = obj_type {
+            name
+        } else {
+            return Ok(None);
+        };
+
+        match type_name.as_str() {
+            "Thread" => {
+                self.ensure_no_args("Thread", args)?;
+                match method_name {
+                    "join" => self
+                        .call_runtime_function("mux_thread_join", &[obj_value])
+                        .map(Some),
+                    "detach" => self
+                        .call_runtime_function("mux_thread_detach", &[obj_value])
+                        .map(Some),
+                    _ => Ok(None),
+                }
+            }
+            "Mutex" => {
+                self.ensure_no_args("Mutex", args)?;
+                match method_name {
+                    "lock" => self
+                        .call_runtime_function("mux_mutex_lock", &[obj_value])
+                        .map(Some),
+                    "unlock" => self
+                        .call_runtime_function("mux_mutex_unlock", &[obj_value])
+                        .map(Some),
+                    _ => Ok(None),
+                }
+            }
+            "RwLock" => {
+                self.ensure_no_args("RwLock", args)?;
+                match method_name {
+                    "read_lock" => self
+                        .call_runtime_function("mux_rwlock_read_lock", &[obj_value])
+                        .map(Some),
+                    "write_lock" => self
+                        .call_runtime_function("mux_rwlock_write_lock", &[obj_value])
+                        .map(Some),
+                    "unlock" => self
+                        .call_runtime_function("mux_rwlock_unlock", &[obj_value])
+                        .map(Some),
+                    _ => Ok(None),
+                }
+            }
+            "CondVar" => match method_name {
+                "wait" => {
+                    if args.len() != 1 {
+                        return Err("wait() method takes exactly 1 argument".to_string());
+                    }
+                    let mutex_val = self.generate_expression(&args[0])?;
+                    let mutex_boxed = self.box_value(mutex_val);
+                    self.call_runtime_function("mux_condvar_wait", &[obj_value, mutex_boxed.into()])
+                        .map(Some)
+                }
+                "signal" => {
+                    self.ensure_no_args("signal", args)?;
+                    self.call_runtime_function("mux_condvar_signal", &[obj_value])
+                        .map(Some)
+                }
+                "broadcast" => {
+                    self.ensure_no_args("broadcast", args)?;
+                    self.call_runtime_function("mux_condvar_broadcast", &[obj_value])
+                        .map(Some)
+                }
+                _ => Ok(None),
+            },
+            _ => Ok(None),
+        }
+    }
+
     pub(super) fn generate_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
@@ -512,6 +591,15 @@ impl<'a> CodeGenerator<'a> {
             return Ok(call);
         }
 
+        if let Some(call) = self.try_generate_sync_instance_method_call(
+            obj_value,
+            &resolved_obj_type,
+            method_name,
+            args,
+        )? {
+            return Ok(call);
+        }
+
         match &resolved_obj_type {
             Type::Primitive(prim) => {
                 self.generate_primitive_method_call(obj_value, prim, method_name)
@@ -521,73 +609,6 @@ impl<'a> CodeGenerator<'a> {
             Type::Set(_) => self.generate_set_method_call(obj_value, method_name, args),
             Type::Tuple(_, _) => self.generate_tuple_method_call(obj_value, method_name, args),
             Type::Named(name, type_args) => {
-                if name == "Thread" {
-                    if !args.is_empty() {
-                        return Err(format!("{}() takes no arguments", method_name));
-                    }
-                    return match method_name {
-                        "join" => self.call_runtime_function("mux_thread_join", &[obj_value]),
-                        "detach" => self.call_runtime_function("mux_thread_detach", &[obj_value]),
-                        _ => Err(format!("Method {} not implemented for Thread", method_name)),
-                    };
-                }
-                if name == "Mutex" {
-                    if !args.is_empty() {
-                        return Err(format!("{}() takes no arguments", method_name));
-                    }
-                    return match method_name {
-                        "lock" => self.call_runtime_function("mux_mutex_lock", &[obj_value]),
-                        "unlock" => self.call_runtime_function("mux_mutex_unlock", &[obj_value]),
-                        _ => Err(format!("Method {} not implemented for Mutex", method_name)),
-                    };
-                }
-                if name == "RwLock" {
-                    if !args.is_empty() {
-                        return Err(format!("{}() takes no arguments", method_name));
-                    }
-                    return match method_name {
-                        "read_lock" => {
-                            self.call_runtime_function("mux_rwlock_read_lock", &[obj_value])
-                        }
-                        "write_lock" => {
-                            self.call_runtime_function("mux_rwlock_write_lock", &[obj_value])
-                        }
-                        "unlock" => self.call_runtime_function("mux_rwlock_unlock", &[obj_value]),
-                        _ => Err(format!("Method {} not implemented for RwLock", method_name)),
-                    };
-                }
-                if name == "CondVar" {
-                    return match method_name {
-                        "wait" => {
-                            if args.len() != 1 {
-                                return Err("wait() method takes exactly 1 argument".to_string());
-                            }
-                            let mutex_val = self.generate_expression(&args[0])?;
-                            let mutex_boxed = self.box_value(mutex_val);
-                            self.call_runtime_function(
-                                "mux_condvar_wait",
-                                &[obj_value, mutex_boxed.into()],
-                            )
-                        }
-                        "signal" => {
-                            if !args.is_empty() {
-                                return Err("signal() method takes no arguments".to_string());
-                            }
-                            self.call_runtime_function("mux_condvar_signal", &[obj_value])
-                        }
-                        "broadcast" => {
-                            if !args.is_empty() {
-                                return Err("broadcast() method takes no arguments".to_string());
-                            }
-                            self.call_runtime_function("mux_condvar_broadcast", &[obj_value])
-                        }
-                        _ => Err(format!(
-                            "Method {} not implemented for CondVar",
-                            method_name
-                        )),
-                    };
-                }
-                // Delegate to centralized class instance invocation helper
                 self.invoke_class_instance_method(name, type_args, obj_value, method_name, args)
             }
             Type::Optional(_) => self.generate_optional_method_call(obj_value, method_name, args),
