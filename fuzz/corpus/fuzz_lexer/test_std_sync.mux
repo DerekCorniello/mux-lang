@@ -1,0 +1,84 @@
+import std.sync
+
+print("=== std.sync smoke test ===")
+
+result<Thread, string> spawned = sync.spawn(func() returns void {
+    sync.sleep(5)
+    print("worker: finished")
+    return
+})
+
+match spawned {
+    ok(t) {
+        match t.join() {
+            ok(_) { print("join ok") }
+            err(e) { print("join err: " + e) }
+        }
+    }
+    err(e) { print("spawn err: " + e) }
+}
+
+Mutex m = Mutex.new()
+match m.lock() {
+    ok(_) { print("mutex lock ok") }
+    err(e) { print("mutex lock err: " + e) }
+}
+match m.unlock() {
+    ok(_) { print("mutex unlock ok") }
+    err(e) { print("mutex unlock err: " + e) }
+}
+
+RwLock rw = RwLock.new()
+match rw.read_lock() {
+    ok(_) { print("rwlock read_lock ok") }
+    err(e) { print("rwlock read_lock err: " + e) }
+}
+match rw.unlock() {
+    ok(_) { print("rwlock unlock ok") }
+    err(e) { print("rwlock unlock err: " + e) }
+}
+
+CondVar cv = CondVar.new()
+result<Thread, string> notifier = sync.spawn(func() returns void {
+    sync.sleep(20)
+    match m.lock() {
+        ok(_) {
+            match cv.signal() {
+                ok(_) { print("condvar signal ok") }
+                err(e) { print("condvar signal err: " + e) }
+            }
+            match m.unlock() {
+                ok(_) { print("notifier mutex unlock ok") }
+                err(e) { print("notifier mutex unlock err: " + e) }
+            }
+        }
+        err(e) { print("notifier mutex lock err: " + e) }
+    }
+    return
+})
+
+match m.lock() {
+    ok(_) {
+        match cv.wait(m) {
+            ok(_) { print("condvar wait ok") }
+            err(e) { print("condvar wait err: " + e) }
+        }
+        match m.unlock() {
+            ok(_) { print("post-wait mutex unlock ok") }
+            err(e) { print("post-wait mutex unlock err: " + e) }
+        }
+    }
+    err(e) { print("pre-wait mutex lock err: " + e) }
+}
+
+match notifier {
+    ok(t) {
+        match t.join() {
+            ok(_) { print("notifier join ok") }
+            err(e) { print("notifier join err: " + e) }
+        }
+    }
+    err(e) { print("notifier spawn err: " + e) }
+}
+
+print("=== std.sync done ===")

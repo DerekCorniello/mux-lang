@@ -1,0 +1,24 @@
+// Test std.math library import and usage
+
+// Test 1: Namespace import
+import std.math
+
+float result = math.pow(2.0, 3.0)
+print("Test 1: math.pow(2.0, 3.0) = " + result.to_string())
+
+float root = math.sqrt(16.0)
+print("Test 2: math.sqrt(16.0) = " + root.to_string())
+
+// Test 3: Selective import
+import std.math.sin
+
+float sine = sin(0.0)
+print("Test 3: sin(0.0) = " + sine.to_string())
+
+// Test 4: Aliased import
+import std.math as m
+
+float cosine = m.cos(0.0)
+print("Test 4: m.cos(0.0) = " + cosine.to_string())
+
+print("All std.math tests passed")

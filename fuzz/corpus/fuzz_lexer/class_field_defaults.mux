@@ -1,0 +1,88 @@
+// Comprehensive test for class field default values
+// This tests the original bug report and various edge cases
+
+interface Drawable {
+    func draw() returns void
+}
+
+// Test 1: User's original bug report example
+class Circle is Drawable {
+    float radius = 5.0
+    func draw() returns void { 
+        print("Circle radius=" + self.radius.to_string()) 
+    }
+}
+
+print("=== Test 1: User's Original Example ===")
+auto c = Circle.new()
+print(c.radius.to_string())
+c.draw()
+
+// Test 2: Override default and verify instance independence
+print("=== Test 2: Override and Instance Independence ===")
+c.radius = 10.0
+print("Modified c.radius: " + c.radius.to_string())
+
+auto c2 = Circle.new()
+print("New instance c2.radius: " + c2.radius.to_string())
+
+// Test 3: All primitive types
+print("=== Test 3: All Primitive Types ===")
+class AllTypes {
+    int count = 42
+    float pi = 3.14
+    string name = "MuxLang"
+    bool active = true
+}
+
+auto obj = AllTypes.new()
+print("int: " + obj.count.to_string())
+print("float: " + obj.pi.to_string())
+print("string: " + obj.name)
+print("bool: " + obj.active.to_string())
+
+// Test 4: Mixed fields (some with defaults, some without)
+print("=== Test 4: Mixed Fields ===")
+class Mixed {
+    int with_default = 100
+    float no_default
+    string another = "test"
+}
+
+auto m = Mixed.new()
+print("with_default: " + m.with_default.to_string())
+print("no_default (should be 0): " + m.no_default.to_string())
+print("another: " + m.another)
+
+// Test 5: Const fields with defaults
+print("=== Test 5: Const Fields ===")
+class Config {
+    const int MAX_SIZE = 1000
+    const string VERSION = "1.0.0"
+    int current = 0
+}
+
+auto cfg = Config.new()
+print("MAX_SIZE: " + cfg.MAX_SIZE.to_string())
+print("VERSION: " + cfg.VERSION)
+print("current: " + cfg.current.to_string())
+
+// Test 6: Multiple instances with different modifications
+print("=== Test 6: Multiple Instances ===")
+auto circle1 = Circle.new()
+auto circle2 = Circle.new()
+auto circle3 = Circle.new()
+
+circle1.radius = 1.0
+circle2.radius = 2.0
+circle3.radius = 3.0
+
+print("circle1: " + circle1.radius.to_string())
+print("circle2: " + circle2.radius.to_string())
+print("circle3: " + circle3.radius.to_string())
+
+// Verify original default is still used for new instances
+auto circle4 = Circle.new()
+print("circle4 (new, should be 5.0): " + circle4.radius.to_string())
+
+print("=== All Tests Passed! ===")

@@ -1,0 +1,24 @@
+// Arithmetic operators test
+
+// Basic operations
+auto sum = 10 + 5
+auto diff = 10 - 5
+auto prod = 10 * 5
+auto quot = 10 / 5
+auto rem = 10 % 3
+
+print("10 + 5: " + sum.to_string())
+print("10 - 5: " + diff.to_string())
+print("10 * 5: " + prod.to_string())
+print("10 / 5: " + quot.to_string())
+print("10 % 3: " + rem.to_string())
+
+// Exponent operator
+print("2 ** 3: " + (2 ** 3).to_string())
+print("2.0 ** 3.0: " + (2.0 ** 3.0).to_string())
+
+// Precedence - ** higher than * / 
+print("2 * 3 ** 2: " + (2 * 3 ** 2).to_string())
+
+// Right-associativity
+print("2 ** 3 ** 2: " + (2 ** 3 ** 2).to_string())

@@ -1,0 +1,35 @@
+class Inner {
+    int x
+}
+
+class Outer {
+    Inner inner
+}
+
+func mutate_value(Outer o) returns void {
+    o.inner.x = 99
+}
+
+func mutate_ref(&Outer o) returns void {
+    o.inner.x = 77
+}
+
+func main() returns void {
+    auto i = Inner.new()
+    i.x = 1
+
+    auto o = Outer.new()
+    o.inner = i
+
+    auto o2 = o
+    o2.inner.x = 2
+
+    print(o.inner.x.to_string())
+
+    mutate_value(o)
+    print(o.inner.x.to_string())
+
+    mutate_ref(&o)
+    print(o.inner.x.to_string())
+    return
+}

@@ -1,0 +1,14 @@
+target/
+mux-website/
+.git/
+.github/
+.claude/
+CLAUDE.md
+AGENTS.md
+CONTRIBUTING.md
+README.md
+TESTING.md
+LICENSE
+sonar-project.properties
+run_all_test_scripts.sh
+run_all_error_cases.sh

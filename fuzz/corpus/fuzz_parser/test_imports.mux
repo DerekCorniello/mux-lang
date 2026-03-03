@@ -1,0 +1,37 @@
+// Comprehensive import system test
+// Tests: basic imports, wildcard, selective, aliasing, name mangling, module init
+
+// Test 1: Basic namespace import
+import counter
+
+print("Test 1: Basic import with namespace")
+print(counter.increment().to_string())
+print(counter.increment().to_string())
+print(counter.get_count().to_string())
+
+// Test 2: Wildcard import
+import logger.*
+
+print("Test 2: Wildcard import")
+write_log("Direct function call")
+write_error("No namespace needed")
+
+// Test 3: Selective import
+import utils.add
+
+print("Test 3: Selective import")
+print(add(10, 5).to_string())
+
+// Test 4: Module aliasing
+import utils as u
+
+print("Test 4: Module alias")
+print(u.multiply(3, 4).to_string())
+
+// Test 5: Name mangling (both logger and utils have init)
+print("Test 5: Name mangling")
+u.init()
+
+// Test 6: Module state persistence
+print("Test 6: Module state")
+print(counter.increment().to_string())  // Should be 3

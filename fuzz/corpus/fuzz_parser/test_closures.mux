@@ -1,0 +1,79 @@
+// Comprehensive closure test suite
+
+// Test 1: Closure returned from function (captures function parameter)
+func make_adder(int base) returns func(int) returns int {
+    return func(int x) returns int {
+        return base + x
+    }
+}
+
+// Test 2: Higher-order function that takes a closure as argument
+func apply_twice(func(int) returns int f, int x) returns int {
+    return f(f(x))
+}
+
+// Test 3: Deeply nested closures (3 levels)
+func make_multiplier_adder(int mult) returns func(int) returns func(int) returns int {
+    return func(int add) returns func(int) returns int {
+        return func(int x) returns int {
+            return (x * mult) + add
+        }
+    }
+}
+
+func main() returns void {
+    // Test 1: Simple closure with capture
+    int x = 10
+    auto add_to_x = func(int y) returns int {
+        return x + y
+    }
+    print("Simple capture: " + add_to_x(5).to_string())  // 15
+
+    // Test 2: Closure mutation of captured variable
+    int counter = 0
+    auto increment = func() returns void {
+        counter = counter + 1
+    }
+    increment()
+    increment()
+    increment()
+    print("Mutation (3 increments): " + counter.to_string())  // 3
+
+    // Test 3: Multiple captured variables with mutation
+    int a = 10
+    int b = 20
+    auto sum_and_update = func() returns int {
+        int result = a + b
+        a = a * 2
+        b = b * 2
+        return result
+    }
+    print("Multi-capture first: " + sum_and_update().to_string())   // 30
+    print("Multi-capture second: " + sum_and_update().to_string())  // 60
+
+    // Test 4: Closure returned from function
+    auto add5 = make_adder(5)
+    auto add10 = make_adder(10)
+    print("Returned closure add5(3): " + add5(3).to_string())   // 8
+    print("Returned closure add10(3): " + add10(3).to_string()) // 13
+
+    // Test 5: Closure as function argument
+    int multiplier = 3
+    auto triple = func(int n) returns int {
+        return n * multiplier
+    }
+    print("Closure as arg: " + apply_twice(triple, 2).to_string())  // 18 (2*3=6, 6*3=18)
+
+    // Test 6: Deep nested closures
+    auto times2_plus = make_multiplier_adder(2)
+    auto times2_plus5 = times2_plus(5)
+    print("Deep nested (3*2)+5: " + times2_plus5(3).to_string())  // 11
+
+    // Test 7: Non-capturing lambda (uniform ABI)
+    auto double_it = func(int n) returns int {
+        return n * 2
+    }
+    print("Non-capturing: " + double_it(7).to_string())  // 14
+
+    print("All closure tests passed!")
+}

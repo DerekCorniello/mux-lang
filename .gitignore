@@ -28,3 +28,7 @@ test_scripts/*
 test_scripts/error_cases/*.mux
 !test_scripts/error_cases/*.mux
 test_scripts/error_cases/*
+
+# Fuzz testing artifacts (crashes, hangs) -- not the seed corpus
+fuzz/artifacts/
+fuzz/target/

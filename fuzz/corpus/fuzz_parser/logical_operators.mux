@@ -1,0 +1,316 @@
+// Comprehensive test for logical operators: !, &&, ||
+// Tests basic operations, precedence, short-circuit evaluation, and edge cases
+
+print("=== Testing NOT Operator (!) ===")
+
+// Basic NOT
+bool t = true
+bool f = false
+
+bool not_true = !t
+bool not_false = !f
+
+if not_true {
+    print("✗ FAIL: !true should be false")
+} else {
+    print("✓ !true = false")
+}
+
+if not_false {
+    print("✓ !false = true")
+} else {
+    print("✗ FAIL: !false should be true")
+}
+
+// Double negation
+bool double_neg_true = !!t
+bool double_neg_false = !!f
+
+if double_neg_true {
+    print("✓ !!true = true")
+} else {
+    print("✗ FAIL: !!true should be true")
+}
+
+if double_neg_false {
+    print("✗ FAIL: !!false should be false")
+} else {
+    print("✓ !!false = false")
+}
+
+// NOT with literals
+if !true {
+    print("✗ FAIL: !true should be false")
+} else {
+    print("✓ !true (literal) = false")
+}
+
+if !false {
+    print("✓ !false (literal) = true")
+} else {
+    print("✗ FAIL: !false should be true")
+}
+
+// NOT with comparisons
+int x = 5
+int y = 10
+
+if !(x > y) {
+    print("✓ !(5 > 10) = true")
+} else {
+    print("✗ FAIL: !(5 > 10) should be true")
+}
+
+if !(x < y) {
+    print("✗ FAIL: !(5 < 10) should be false")
+} else {
+    print("✓ !(5 < 10) = false")
+}
+
+print("")
+print("=== Testing AND Operator (&&) ===")
+
+// Truth table for AND
+bool tt = true && true
+bool tf = true && false
+bool ft = false && true
+bool ff = false && false
+
+if tt {
+    print("✓ true && true = true")
+} else {
+    print("✗ FAIL: true && true should be true")
+}
+
+if tf {
+    print("✗ FAIL: true && false should be false")
+} else {
+    print("✓ true && false = false")
+}
+
+if ft {
+    print("✗ FAIL: false && true should be false")
+} else {
+    print("✓ false && true = false")
+}
+
+if ff {
+    print("✗ FAIL: false && false should be false")
+} else {
+    print("✓ false && false = false")
+}
+
+// AND with comparisons
+if (x < y) && (y > 0) {
+    print("✓ (5 < 10) && (10 > 0) = true")
+} else {
+    print("✗ FAIL: (5 < 10) && (10 > 0) should be true")
+}
+
+if (x > y) && (y > 0) {
+    print("✗ FAIL: (5 > 10) && (10 > 0) should be false")
+} else {
+    print("✓ (5 > 10) && (10 > 0) = false")
+}
+
+// Chained AND
+if true && true && true {
+    print("✓ true && true && true = true")
+} else {
+    print("✗ FAIL: true && true && true should be true")
+}
+
+if true && true && false {
+    print("✗ FAIL: true && true && false should be false")
+} else {
+    print("✓ true && true && false = false")
+}
+
+print("")
+print("=== Testing OR Operator (||) ===")
+
+// Truth table for OR
+bool or_tt = true || true
+bool or_tf = true || false
+bool or_ft = false || true
+bool or_ff = false || false
+
+if or_tt {
+    print("✓ true || true = true")
+} else {
+    print("✗ FAIL: true || true should be true")
+}
+
+if or_tf {
+    print("✓ true || false = true")
+} else {
+    print("✗ FAIL: true || false should be true")
+}
+
+if or_ft {
+    print("✓ false || true = true")
+} else {
+    print("✗ FAIL: false || true should be true")
+}
+
+if or_ff {
+    print("✗ FAIL: false || false should be false")
+} else {
+    print("✓ false || false = false")
+}
+
+// OR with comparisons
+if (x > y) || (y > 0) {
+    print("✓ (5 > 10) || (10 > 0) = true")
+} else {
+    print("✗ FAIL: (5 > 10) || (10 > 0) should be true")
+}
+
+if (x > y) || (y < 0) {
+    print("✗ FAIL: (5 > 10) || (10 < 0) should be false")
+} else {
+    print("✓ (5 > 10) || (10 < 0) = false")
+}
+
+// Chained OR
+if false || false || true {
+    print("✓ false || false || true = true")
+} else {
+    print("✗ FAIL: false || false || true should be true")
+}
+
+if false || false || false {
+    print("✗ FAIL: false || false || false should be false")
+} else {
+    print("✓ false || false || false = false")
+}
+
+print("")
+print("=== Testing Short-Circuit Evaluation ===")
+
+// Helper functions to test side effects
+func should_not_run_and() returns bool {
+    print("✗ ERROR: should_not_run_and() was called (short-circuit failed)")
+    return true
+}
+
+func should_run_and() returns bool {
+    print("  should_run_and() called (expected)")
+    return true
+}
+
+func should_not_run_or() returns bool {
+    print("✗ ERROR: should_not_run_or() was called (short-circuit failed)")
+    return false
+}
+
+func should_run_or() returns bool {
+    print("  should_run_or() called (expected)")
+    return false
+}
+
+// Test AND short-circuit: false && func() should NOT call func()
+print("Testing: false && should_not_run_and()")
+bool and_sc1 = false && should_not_run_and()
+print("✓ Short-circuit AND: right side not evaluated when left is false")
+
+// Test AND non-short-circuit: true && func() SHOULD call func()
+print("Testing: true && should_run_and()")
+bool and_sc2 = true && should_run_and()
+print("✓ AND evaluates right side when left is true")
+
+// Test OR short-circuit: true || func() should NOT call func()
+print("Testing: true || should_not_run_or()")
+bool or_sc1 = true || should_not_run_or()
+print("✓ Short-circuit OR: right side not evaluated when left is true")
+
+// Test OR non-short-circuit: false || func() SHOULD call func()
+print("Testing: false || should_run_or()")
+bool or_sc2 = false || should_run_or()
+print("✓ OR evaluates right side when left is false")
+
+print("")
+print("=== Testing Mixed Operators and Precedence ===")
+
+// NOT has higher precedence than AND
+bool a = true
+bool b = false
+bool c = true
+
+// !b && c should be (!b) && c = true && true = true
+if !b && c {
+    print("✓ !false && true = true (precedence: NOT before AND)")
+} else {
+    print("✗ FAIL: !false && true should be true")
+}
+
+// AND has higher precedence than OR
+// false || true && true should be false || (true && true) = false || true = true
+if false || true && true {
+    print("✓ false || true && true = true (precedence: AND before OR)")
+} else {
+    print("✗ FAIL: false || true && true should be true")
+}
+
+// Complex expression: !(a && b) || c
+// !(true && false) || true = !false || true = true || true = true
+if !(a && b) || c {
+    print("✓ !(true && false) || true = true")
+} else {
+    print("✗ FAIL: !(true && false) || true should be true")
+}
+
+// De Morgan's law: !(a && b) should equal (!a || !b)
+bool demorgan1 = !(a && b)
+bool demorgan2 = !a || !b
+if demorgan1 == demorgan2 {
+    print("✓ De Morgan's law: !(a && b) == (!a || !b)")
+} else {
+    print("✗ FAIL: De Morgan's law failed")
+}
+
+// De Morgan's law: !(a || b) should equal (!a && !b)
+bool demorgan3 = !(a || b)
+bool demorgan4 = !a && !b
+if demorgan3 == demorgan4 {
+    print("✓ De Morgan's law: !(a || b) == (!a && !b)")
+} else {
+    print("✗ FAIL: De Morgan's law failed")
+}
+
+// Complex nested expression
+bool complex = (a && !b) || (!a && b)
+if complex {
+    print("✓ (true && !false) || (!true && false) = true")
+} else {
+    print("✗ FAIL: (true && !false) || (!true && false) should be true")
+}
+
+print("")
+print("=== Testing Logical Operators in Control Flow ===")
+
+// In if conditions
+int result = 0
+if x < 10 && y > 5 {
+    result = 1
+}
+if result == 1 {
+    print("✓ Logical AND in if condition works")
+} else {
+    print("✗ FAIL: Logical AND in if condition failed")
+}
+
+// In while loops
+int counter = 0
+bool flag = true
+while counter < 3 && flag {
+    counter = counter + 1
+}
+if counter == 3 {
+    print("✓ Logical AND in while condition works")
+} else {
+    print("✗ FAIL: Logical AND in while condition failed")
+}
+
+print("")
+print("=== All Logical Operator Tests Completed ===")

@@ -1,0 +1,55 @@
+services:
+  # PostgreSQL for SQL/database integration testing
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mux_test
+      POSTGRES_PASSWORD: mux_test_pass
+      POSTGRES_DB: mux_test_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mux_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  # TCP/UDP echo server for networking tests
+  echo-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python3", "/mux/scripts/echo-server.py"]
+    ports:
+      - "9000:9000"
+      - "9001:9001/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.socket(); s.connect(('127.0.0.1',9000)); s.close()\""]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  # Main test runner
+  mux-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      echo-server:
+        condition: service_healthy
+    environment:
+      LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
+      MUX_RUNTIME_SRC: /mux/mux-runtime
+      # Connection info for services
+      MUX_TEST_POSTGRES_HOST: postgres
+      MUX_TEST_POSTGRES_PORT: "5432"
+      MUX_TEST_POSTGRES_USER: mux_test
+      MUX_TEST_POSTGRES_PASSWORD: mux_test_pass
+      MUX_TEST_POSTGRES_DB: mux_test_db
+      MUX_TEST_ECHO_TCP_HOST: echo-server
+      MUX_TEST_ECHO_TCP_PORT: "9000"
+      MUX_TEST_ECHO_UDP_HOST: echo-server
+      MUX_TEST_ECHO_UDP_PORT: "9001"
+    command: ["scripts/run-tests.sh"]

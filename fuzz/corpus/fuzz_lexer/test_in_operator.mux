@@ -1,0 +1,20 @@
+// Test 'in' operator
+
+// List containment
+auto nums = [1, 2, 3, 4, 5]
+print((3 in nums).to_string())        // true
+print((10 in nums).to_string())       // false
+
+// Set containment
+auto tags = {"urgent", "important"}
+print(("urgent" in tags).to_string()) // true
+print(("archived" in tags).to_string()) // false
+
+// String containment
+auto msg = "hello world"
+print(("world" in msg).to_string())   // true
+print(("foo" in msg).to_string())     // false
+
+// Char in string
+print(('o' in msg).to_string())       // true
+print(('z' in msg).to_string())       // false

@@ -1,0 +1,490 @@
+// Comprehensive Test Suite for All Comparison Operators
+//
+// This test validates that all comparison operators work correctly
+// for all supported types in the Mux language.
+//
+// Coverage:
+// - INT:    ==, !=, <, >, <=, >= (all 6 operators)
+// - FLOAT:  ==, !=, <, >, <=, >= (all 6 operators)
+// - STRING: ==, != (only equality operators)
+// - CHAR:   ==, != (only equality operators)
+// - BOOL:   ==, != (only equality operators)
+// - LIST:   ==, != (only equality operators)
+// - MAP:    ==, != (only equality operators)
+// - SET:    ==, != (only equality operators, order-independent)
+//
+// Expected: All tests should output "✓" (pass). Any "✗ FAIL" indicates
+// a bug in the comparison operator implementation.
+
+func main() returns void {
+    print("=== COMPREHENSIVE COMPARISON OPERATOR TESTS ===")
+    print("")
+    
+    // ========== INT COMPARISONS ==========
+    print("--- INT COMPARISONS ---")
+    
+    // Int: == (Equal)
+    if 5 == 5 {
+        print("✓ int: 5 == 5")
+    } else {
+        print("✗ FAIL: int: 5 == 5")
+    }
+    
+    if 5 == 3 {
+        print("✗ FAIL: int: 5 == 3 should be false")
+    } else {
+        print("✓ int: 5 == 3 is false")
+    }
+    
+    // Int: != (Not Equal)
+    if 5 != 3 {
+        print("✓ int: 5 != 3")
+    } else {
+        print("✗ FAIL: int: 5 != 3")
+    }
+    
+    if 5 != 5 {
+        print("✗ FAIL: int: 5 != 5 should be false")
+    } else {
+        print("✓ int: 5 != 5 is false")
+    }
+    
+    // Int: < (Less Than)
+    if 3 < 5 {
+        print("✓ int: 3 < 5")
+    } else {
+        print("✗ FAIL: int: 3 < 5")
+    }
+    
+    if 5 < 3 {
+        print("✗ FAIL: int: 5 < 3 should be false")
+    } else {
+        print("✓ int: 5 < 3 is false")
+    }
+    
+    // Int: > (Greater Than)
+    if 5 > 3 {
+        print("✓ int: 5 > 3")
+    } else {
+        print("✗ FAIL: int: 5 > 3")
+    }
+    
+    if 3 > 5 {
+        print("✗ FAIL: int: 3 > 5 should be false")
+    } else {
+        print("✓ int: 3 > 5 is false")
+    }
+    
+    // Int: <= (Less Than or Equal)
+    if 3 <= 5 {
+        print("✓ int: 3 <= 5")
+    } else {
+        print("✗ FAIL: int: 3 <= 5")
+    }
+    
+    if 5 <= 5 {
+        print("✓ int: 5 <= 5")
+    } else {
+        print("✗ FAIL: int: 5 <= 5")
+    }
+    
+    if 5 <= 3 {
+        print("✗ FAIL: int: 5 <= 3 should be false")
+    } else {
+        print("✓ int: 5 <= 3 is false")
+    }
+    
+    // Int: >= (Greater Than or Equal)
+    if 5 >= 3 {
+        print("✓ int: 5 >= 3")
+    } else {
+        print("✗ FAIL: int: 5 >= 3")
+    }
+    
+    if 5 >= 5 {
+        print("✓ int: 5 >= 5")
+    } else {
+        print("✗ FAIL: int: 5 >= 5")
+    }
+    
+    if 3 >= 5 {
+        print("✗ FAIL: int: 3 >= 5 should be false")
+    } else {
+        print("✓ int: 3 >= 5 is false")
+    }
+    
+    print("")
+    
+    // ========== FLOAT COMPARISONS ==========
+    print("--- FLOAT COMPARISONS ---")
+    
+    // Float: == (Equal)
+    if 5.5 == 5.5 {
+        print("✓ float: 5.5 == 5.5")
+    } else {
+        print("✗ FAIL: float: 5.5 == 5.5")
+    }
+    
+    if 5.5 == 3.3 {
+        print("✗ FAIL: float: 5.5 == 3.3 should be false")
+    } else {
+        print("✓ float: 5.5 == 3.3 is false")
+    }
+    
+    // Float: != (Not Equal)
+    if 5.5 != 3.3 {
+        print("✓ float: 5.5 != 3.3")
+    } else {
+        print("✗ FAIL: float: 5.5 != 3.3")
+    }
+    
+    if 5.5 != 5.5 {
+        print("✗ FAIL: float: 5.5 != 5.5 should be false")
+    } else {
+        print("✓ float: 5.5 != 5.5 is false")
+    }
+    
+    // Float: < (Less Than)
+    if 3.3 < 5.5 {
+        print("✓ float: 3.3 < 5.5")
+    } else {
+        print("✗ FAIL: float: 3.3 < 5.5")
+    }
+    
+    if 5.5 < 3.3 {
+        print("✗ FAIL: float: 5.5 < 3.3 should be false")
+    } else {
+        print("✓ float: 5.5 < 3.3 is false")
+    }
+    
+    // Float: > (Greater Than)
+    if 5.5 > 3.3 {
+        print("✓ float: 5.5 > 3.3")
+    } else {
+        print("✗ FAIL: float: 5.5 > 3.3")
+    }
+    
+    if 3.3 > 5.5 {
+        print("✗ FAIL: float: 3.3 > 5.5 should be false")
+    } else {
+        print("✓ float: 3.3 > 5.5 is false")
+    }
+    
+    // Float: <= (Less Than or Equal)
+    if 3.3 <= 5.5 {
+        print("✓ float: 3.3 <= 5.5")
+    } else {
+        print("✗ FAIL: float: 3.3 <= 5.5")
+    }
+    
+    if 5.5 <= 5.5 {
+        print("✓ float: 5.5 <= 5.5")
+    } else {
+        print("✗ FAIL: float: 5.5 <= 5.5")
+    }
+    
+    if 5.5 <= 3.3 {
+        print("✗ FAIL: float: 5.5 <= 3.3 should be false")
+    } else {
+        print("✓ float: 5.5 <= 3.3 is false")
+    }
+    
+    // Float: >= (Greater Than or Equal)
+    if 5.5 >= 3.3 {
+        print("✓ float: 5.5 >= 3.3")
+    } else {
+        print("✗ FAIL: float: 5.5 >= 3.3")
+    }
+    
+    if 5.5 >= 5.5 {
+        print("✓ float: 5.5 >= 5.5")
+    } else {
+        print("✗ FAIL: float: 5.5 >= 5.5")
+    }
+    
+    if 3.3 >= 5.5 {
+        print("✗ FAIL: float: 3.3 >= 5.5 should be false")
+    } else {
+        print("✓ float: 3.3 >= 5.5 is false")
+    }
+    
+    print("")
+    
+    // ========== STRING COMPARISONS ==========
+    print("--- STRING COMPARISONS ---")
+    
+    // String: == (Equal)
+    if "hello" == "hello" {
+        print("✓ string: \"hello\" == \"hello\"")
+    } else {
+        print("✗ FAIL: string: \"hello\" == \"hello\"")
+    }
+    
+    if "hello" == "world" {
+        print("✗ FAIL: string: \"hello\" == \"world\" should be false")
+    } else {
+        print("✓ string: \"hello\" == \"world\" is false")
+    }
+    
+    // String: empty strings
+    if "" == "" {
+        print("✓ string: \"\" == \"\"")
+    } else {
+        print("✗ FAIL: string: \"\" == \"\"")
+    }
+    
+    // String: != (Not Equal)
+    if "hello" != "world" {
+        print("✓ string: \"hello\" != \"world\"")
+    } else {
+        print("✗ FAIL: string: \"hello\" != \"world\"")
+    }
+    
+    if "hello" != "hello" {
+        print("✗ FAIL: string: \"hello\" != \"hello\" should be false")
+    } else {
+        print("✓ string: \"hello\" != \"hello\" is false")
+    }
+    
+    // String: case sensitivity
+    if "Hello" != "hello" {
+        print("✓ string: \"Hello\" != \"hello\" (case sensitive)")
+    } else {
+        print("✗ FAIL: string: \"Hello\" != \"hello\" (case sensitive)")
+    }
+    
+    print("")
+    
+    // ========== CHAR COMPARISONS ==========
+    print("--- CHAR COMPARISONS ---")
+    
+    // Char: == (Equal)
+    if 'a' == 'a' {
+        print("✓ char: 'a' == 'a'")
+    } else {
+        print("✗ FAIL: char: 'a' == 'a'")
+    }
+    
+    if 'a' == 'b' {
+        print("✗ FAIL: char: 'a' == 'b' should be false")
+    } else {
+        print("✓ char: 'a' == 'b' is false")
+    }
+    
+    // Char: special characters
+    if ' ' == ' ' {
+        print("✓ char: ' ' == ' ' (space)")
+    } else {
+        print("✗ FAIL: char: ' ' == ' ' (space)")
+    }
+    
+    if 'A' == 'a' {
+        print("✗ FAIL: char: 'A' == 'a' should be false (case sensitive)")
+    } else {
+        print("✓ char: 'A' == 'a' is false (case sensitive)")
+    }
+    
+    // Char: != (Not Equal)
+    if 'a' != 'b' {
+        print("✓ char: 'a' != 'b'")
+    } else {
+        print("✗ FAIL: char: 'a' != 'b'")
+    }
+    
+    if 'x' != 'y' {
+        print("✓ char: 'x' != 'y'")
+    } else {
+        print("✗ FAIL: char: 'x' != 'y'")
+    }
+    
+    if 'a' != 'a' {
+        print("✗ FAIL: char: 'a' != 'a' should be false")
+    } else {
+        print("✓ char: 'a' != 'a' is false")
+    }
+    
+    // Char: numeric chars
+    if '0' == '0' {
+        print("✓ char: '0' == '0' (numeric char)")
+    } else {
+        print("✗ FAIL: char: '0' == '0' (numeric char)")
+    }
+    
+    if '0' != '1' {
+        print("✓ char: '0' != '1' (numeric chars)")
+    } else {
+        print("✗ FAIL: char: '0' != '1' (numeric chars)")
+    }
+    
+    print("")
+    
+    // ========== BOOL COMPARISONS ==========
+    print("--- BOOL COMPARISONS ---")
+    
+    // Bool: == (Equal)
+    if true == true {
+        print("✓ bool: true == true")
+    } else {
+        print("✗ FAIL: bool: true == true")
+    }
+    
+    if false == false {
+        print("✓ bool: false == false")
+    } else {
+        print("✗ FAIL: bool: false == false")
+    }
+    
+    if true == false {
+        print("✗ FAIL: bool: true == false should be false")
+    } else {
+        print("✓ bool: true == false is false")
+    }
+    
+    // Bool: != (Not Equal)
+    if true != false {
+        print("✓ bool: true != false")
+    } else {
+        print("✗ FAIL: bool: true != false")
+    }
+    
+    if true != true {
+        print("✗ FAIL: bool: true != true should be false")
+    } else {
+        print("✓ bool: true != true is false")
+    }
+    
+    print("")
+    
+    // ========== LIST COMPARISONS ==========
+    print("--- LIST COMPARISONS ---")
+    
+    auto list1 = [1, 2, 3]
+    auto list2 = [1, 2, 3]
+    auto list3 = [1, 2, 4]
+    auto list4 = [1, 2]
+    
+    // List: == (Equal)
+    if list1 == list2 {
+        print("✓ list: [1, 2, 3] == [1, 2, 3]")
+    } else {
+        print("✗ FAIL: list: [1, 2, 3] == [1, 2, 3]")
+    }
+    
+    if list1 == list3 {
+        print("✗ FAIL: list: [1, 2, 3] == [1, 2, 4] should be false")
+    } else {
+        print("✓ list: [1, 2, 3] == [1, 2, 4] is false")
+    }
+    
+    if list1 == list4 {
+        print("✗ FAIL: list: [1, 2, 3] == [1, 2] should be false")
+    } else {
+        print("✓ list: [1, 2, 3] == [1, 2] is false (different lengths)")
+    }
+    
+    // List: != (Not Equal)
+    if list1 != list3 {
+        print("✓ list: [1, 2, 3] != [1, 2, 4]")
+    } else {
+        print("✗ FAIL: list: [1, 2, 3] != [1, 2, 4]")
+    }
+    
+    if list1 != list4 {
+        print("✓ list: [1, 2, 3] != [1, 2]")
+    } else {
+        print("✗ FAIL: list: [1, 2, 3] != [1, 2]")
+    }
+    
+    if list1 != list2 {
+        print("✗ FAIL: list: [1, 2, 3] != [1, 2, 3] should be false")
+    } else {
+        print("✓ list: [1, 2, 3] != [1, 2, 3] is false")
+    }
+    
+    print("")
+    
+    // ========== MAP COMPARISONS ==========
+    print("--- MAP COMPARISONS ---")
+    
+    auto map1 = {1: "a", 2: "b"}
+    auto map2 = {1: "a", 2: "b"}
+    auto map3 = {1: "a", 2: "c"}
+    auto map4 = {1: "a"}
+    
+    // Map: == (Equal)
+    if map1 == map2 {
+        print("✓ map: {1: \"a\", 2: \"b\"} == {1: \"a\", 2: \"b\"}")
+    } else {
+        print("✗ FAIL: map: {1: \"a\", 2: \"b\"} == {1: \"a\", 2: \"b\"}")
+    }
+    
+    if map1 == map3 {
+        print("✗ FAIL: map: {1: \"a\", 2: \"b\"} == {1: \"a\", 2: \"c\"} should be false")
+    } else {
+        print("✓ map: {1: \"a\", 2: \"b\"} == {1: \"a\", 2: \"c\"} is false")
+    }
+    
+    if map1 == map4 {
+        print("✗ FAIL: map: {1: \"a\", 2: \"b\"} == {1: \"a\"} should be false")
+    } else {
+        print("✓ map: {1: \"a\", 2: \"b\"} == {1: \"a\"} is false (different sizes)")
+    }
+    
+    // Map: != (Not Equal)
+    if map1 != map3 {
+        print("✓ map: {1: \"a\", 2: \"b\"} != {1: \"a\", 2: \"c\"}")
+    } else {
+        print("✗ FAIL: map: {1: \"a\", 2: \"b\"} != {1: \"a\", 2: \"c\"}")
+    }
+    
+    if map1 != map2 {
+        print("✗ FAIL: map: {1: \"a\", 2: \"b\"} != {1: \"a\", 2: \"b\"} should be false")
+    } else {
+        print("✓ map: {1: \"a\", 2: \"b\"} != {1: \"a\", 2: \"b\"} is false")
+    }
+    
+    print("")
+    
+    // ========== SET COMPARISONS ==========
+    print("--- SET COMPARISONS ---")
+    
+    auto set1 = {1, 2, 3}
+    auto set2 = {3, 2, 1}
+    auto set3 = {1, 2, 4}
+    auto set4 = {1, 2}
+    
+    // Set: == (Equal - order independent)
+    if set1 == set2 {
+        print("✓ set: {1, 2, 3} == {3, 2, 1} (order independent)")
+    } else {
+        print("✗ FAIL: set: {1, 2, 3} == {3, 2, 1} (order independent)")
+    }
+    
+    if set1 == set3 {
+        print("✗ FAIL: set: {1, 2, 3} == {1, 2, 4} should be false")
+    } else {
+        print("✓ set: {1, 2, 3} == {1, 2, 4} is false")
+    }
+    
+    if set1 == set4 {
+        print("✗ FAIL: set: {1, 2, 3} == {1, 2} should be false")
+    } else {
+        print("✓ set: {1, 2, 3} == {1, 2} is false (different sizes)")
+    }
+    
+    // Set: != (Not Equal)
+    if set1 != set3 {
+        print("✓ set: {1, 2, 3} != {1, 2, 4}")
+    } else {
+        print("✗ FAIL: set: {1, 2, 3} != {1, 2, 4}")
+    }
+    
+    if set1 != set2 {
+        print("✗ FAIL: set: {1, 2, 3} != {3, 2, 1} should be false")
+    } else {
+        print("✓ set: {1, 2, 3} != {3, 2, 1} is false (order independent)")
+    }
+    
+    print("")
+    print("=== ALL COMPARISON TESTS COMPLETED ===")
+}

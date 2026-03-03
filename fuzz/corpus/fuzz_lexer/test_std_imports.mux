@@ -1,0 +1,8 @@
+// Test std library imports - separate tests to avoid conflicts
+
+// Test 1: import std - access via std.math.sin(), std.io.print()
+import std
+
+float result = std.math.pow(2.0, 3.0)
+print("Test 1: std.math.pow(2.0, 3.0) = " + result.to_string())
+print("Test 1 passed!")

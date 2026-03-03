@@ -1,0 +1,196 @@
+// Comprehensive Collections Test Suite
+// Tests all working list, map, and set operations
+
+print("========================================")
+print("LIST OPERATIONS")
+print("========================================")
+
+// Empty list test
+list<int> empty_list = []
+print("Empty list: " + empty_list.to_string())
+print("empty_list.is_empty(): " + empty_list.is_empty().to_string())
+print("empty_list.size(): " + empty_list.size().to_string())
+
+// List creation and basic access
+auto nums = [10, 20, 30, 40, 50]
+print("\nInitial list: " + nums.to_string())
+
+// Direct index access (read)
+print("nums[0] = " + nums[0].to_string())
+print("nums[2] = " + nums[2].to_string())
+print("nums[4] (last) = " + nums[4].to_string())
+
+// Safe access with get()
+print("\nSafe access with get():")
+print("nums.get(0) = " + nums.get(0).to_string())
+print("nums.get(100) = " + nums.get(100).to_string())  // Should be none
+
+// Index assignment (write)
+print("\nIndex assignment:")
+nums[0] = 100
+print("After nums[0] = 100: " + nums.to_string())
+
+nums[4] = 999
+print("After nums[4] = 999: " + nums.to_string())
+
+// List extension
+print("\nList extension:")
+nums[7] = 777
+print("After nums[7] = 777 (extends): " + nums.to_string())
+
+// List methods - is_empty()
+print("\nList methods:")
+print("Is empty: " + nums.is_empty().to_string())
+
+// Concatenation
+auto list_a = [1, 2, 3]
+auto list_b = [4, 5, 6]
+auto combined = list_a + list_b
+print("\nConcatenation: [1,2,3] + [4,5,6] = " + combined.to_string())
+
+print("\n========================================")
+print("MAP OPERATIONS")
+print("========================================")
+
+// Map creation
+auto scores = {"Alice": 90, "Bob": 85, "Charlie": 95}
+print("Initial map: " + scores.to_string())
+
+// Direct key access (read)
+print("\nDirect key access:")
+print("scores[\"Alice\"] = " + scores["Alice"].to_string())
+print("scores[\"Bob\"] = " + scores["Bob"].to_string())
+
+// Safe access with get()
+print("\nSafe access with get():")
+print("scores.get(\"Alice\") = " + scores.get("Alice").to_string())
+print("scores.get(\"Missing\") = " + scores.get("Missing").to_string())
+
+// Key assignment (update existing)
+print("\nKey assignment (update):")
+scores["Alice"] = 95
+print("After scores[\"Alice\"] = 95: " + scores.to_string())
+
+// Key assignment (add new)
+print("\nKey assignment (add new):")
+scores["David"] = 88
+print("After scores[\"David\"] = 88: " + scores.to_string())
+
+// put() method
+print("\nput() method:")
+scores.put("Eve", 92)
+print("After put(\"Eve\", 92): " + scores.to_string())
+
+// remove() method
+print("\nremove() method:")
+auto removed_val = scores.remove("Bob")
+print("Removed Bob: " + removed_val.to_string())
+print("After remove(\"Bob\"): " + scores.to_string())
+
+// contains() method
+print("\ncontains() method:")
+print("scores.contains(\"Alice\"): " + scores.contains("Alice").to_string())
+print("scores.contains(\"Bob\"): " + scores.contains("Bob").to_string())
+
+// get_keys(), get_values(), get_pairs()
+print("\nMap keys, values, pairs:")
+auto score_keys = scores.get_keys()
+auto score_values = scores.get_values()
+auto score_pairs = scores.get_pairs()
+print("scores.get_keys() = " + score_keys.to_string())
+print("scores.get_values() = " + score_values.to_string())
+print("scores.get_pairs() = " + score_pairs.to_string())
+
+// Map methods
+print("\nMap properties:")
+print("Size: " + scores.size().to_string())
+print("Is empty: " + scores.is_empty().to_string())
+
+// Map merge
+auto map_a = {"a": 1, "b": 2}
+auto map_b = {"b": 3, "c": 4}  // Note: b will be overwritten
+auto merged = map_a + map_b
+print("\nMap merge: {a:1,b:2} + {b:3,c:4} = " + merged.to_string())
+
+print("\n========================================")
+print("SET OPERATIONS")
+print("========================================")
+
+// Set creation
+auto unique_nums = {1, 2, 3, 4, 5}
+print("Initial set: " + unique_nums.to_string())
+
+// Set methods
+print("\nSet properties:")
+print("Size: " + unique_nums.size().to_string())
+print("Is empty: " + unique_nums.is_empty().to_string())
+
+// contains()
+print("\ncontains() method:")
+print("unique_nums.contains(3): " + unique_nums.contains(3).to_string())
+print("unique_nums.contains(99): " + unique_nums.contains(99).to_string())
+
+// add() method
+print("\nadd() method:")
+unique_nums.add(6)
+print("After add(6): " + unique_nums.to_string())
+
+// remove() method
+print("\nremove() method:")
+auto removed = unique_nums.remove(3)
+print("remove(3) returned: " + removed.to_string())
+print("After remove(3): " + unique_nums.to_string())
+
+// Try to remove something that doesn't exist
+auto removed_missing = unique_nums.remove(99)
+print("remove(99) (not in set) returned: " + removed_missing.to_string())
+print("Set still: " + unique_nums.to_string())
+
+// add() and contains() for strings
+auto tags = {"urgent", "important"}
+print("\nString set:")
+print("Initial: " + tags.to_string())
+print("tags.contains(\"urgent\"): " + tags.contains("urgent").to_string())
+print("tags.contains(\"review\"): " + tags.contains("review").to_string())
+tags.add("review")
+print("After add(\"review\"): " + tags.to_string())
+
+// Set union
+auto set_a = {1, 2, 3}
+auto set_b = {3, 4, 5}
+auto union_set = set_a + set_b
+print("\nSet union: {1,2,3} + {3,4,5} = " + union_set.to_string())
+
+print("\n========================================")
+print("NESTED COLLECTIONS")
+print("========================================")
+
+// Nested list
+auto matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+print("Matrix: " + matrix.to_string())
+print("matrix[0]: " + matrix[0].to_string())
+print("matrix[0][0]: " + matrix[0][0].to_string())
+print("matrix[1][2]: " + matrix[1][2].to_string())
+
+// Modify nested element
+matrix[0][0] = 100
+print("\nAfter matrix[0][0] = 100:")
+print("Matrix: " + matrix.to_string())
+
+print("\n========================================")
+print("NEGATIVE INDEX WRITE (wraparound)")
+print("========================================")
+
+auto wrap_list = [1, 2, 3, 4, 5]
+print("Initial: " + wrap_list.to_string())
+
+// Write using negative index (wraparound)
+wrap_list[-1] = 999
+print("After wrap_list[-1] = 999: " + wrap_list.to_string())
+
+wrap_list[-2] = 888
+print("After wrap_list[-2] = 888: " + wrap_list.to_string())
+
+print("\n========================================")
+print("ALL TESTS COMPLETED SUCCESSFULLY!")
+print("========================================")
