@@ -174,6 +174,103 @@ impl<'a> CodeGenerator<'a> {
             .unwrap_or_else(|| panic!("{} should return a basic value", func_name)))
     }
 
+    // Validate argument counts for methods
+    fn ensure_arg_count(
+        &self,
+        method: &str,
+        args: &[ExpressionNode],
+        expected: usize,
+    ) -> Result<(), String> {
+        if args.len() != expected {
+            Err(format!(
+                "{}() method takes exactly {} argument(s)",
+                method, expected
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn ensure_no_args(&self, method: &str, args: &[ExpressionNode]) -> Result<(), String> {
+        if !args.is_empty() {
+            Err(format!("{}() method takes no arguments", method))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Invoke a class instance method (user-defined class).
+    /// Centralizes the logic that chooses specialized method names, boxes args when
+    /// calling specialized functions, issues the call and handles void/non-void returns.
+    fn invoke_class_instance_method(
+        &mut self,
+        class_name: &str,
+        type_args: &[Type],
+        obj_value: BasicValueEnum<'a>,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if let Some(class) = self.analyzer.symbol_table().lookup(class_name) {
+            if let Some(method) = class.methods.get(method_name) {
+                if method.is_static {
+                    return Err(format!(
+                        "Cannot call static method {} on instance",
+                        method_name
+                    ));
+                }
+
+                let specialized_method_name =
+                    self.create_specialized_method_name(class_name, type_args, method_name);
+                let method_func_name =
+                    if self.module.get_function(&specialized_method_name).is_some() {
+                        specialized_method_name.clone()
+                    } else {
+                        format!("{}.{}", class_name, method_name)
+                    };
+
+                let is_specialized = method_func_name.contains('$');
+
+                let mut call_args: Vec<BasicMetadataValueEnum<'a>> = vec![obj_value.into()];
+                for arg in args {
+                    let arg_val = self.generate_expression(arg)?;
+                    if is_specialized {
+                        call_args.push(self.box_value(arg_val).into());
+                    } else {
+                        call_args.push(arg_val.into());
+                    }
+                }
+
+                let func = self
+                    .module
+                    .get_function(&method_func_name)
+                    .ok_or(format!("Method '{}' not found", method_func_name))?;
+                let call = self
+                    .builder
+                    .build_call(
+                        func,
+                        &call_args,
+                        &format!("{}_call", method_func_name.replace('.', "_")),
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                if let Some(value) = call.try_as_basic_value().left() {
+                    Ok(value)
+                } else if method.return_type == Type::Void {
+                    Ok(self.context.i32_type().const_int(0, false).into())
+                } else {
+                    Err("Method call failed to return value".to_string())
+                }
+            } else {
+                Err(format!(
+                    "Method {} not found on class {}",
+                    method_name, class_name
+                ))
+            }
+        } else {
+            Err(format!("Class {} not found", class_name))
+        }
+    }
+
     pub(super) fn build_net_call(
         &mut self,
         func_name: &str,
@@ -224,20 +321,25 @@ impl<'a> CodeGenerator<'a> {
         method_name: &str,
         args: &[ExpressionNode],
     ) -> Result<Option<BasicValueEnum<'a>>, String> {
+        // small helper to generate single arg with validation
+        fn gen_one_arg<'a>(
+            s: &mut CodeGenerator<'a>,
+            args: &[ExpressionNode],
+        ) -> Result<BasicValueEnum<'a>, String> {
+            if args.len() != 1 {
+                return Err("method takes exactly 1 argument".to_string());
+            }
+            s.generate_expression(&args[0])
+        }
+
         match (class_name, method_name) {
             ("TcpStream", "connect") => {
-                if args.len() != 1 {
-                    return Err("TcpStream.connect takes exactly 1 argument".to_string());
-                }
-                let addr = self.generate_expression(&args[0])?;
+                let addr = gen_one_arg(self, args)?;
                 let call = self.build_net_call("mux_net_tcp_connect", &[addr])?;
                 Ok(Some(call))
             }
             ("UdpSocket", "bind") => {
-                if args.len() != 1 {
-                    return Err("UdpSocket.bind takes exactly 1 argument".to_string());
-                }
-                let addr = self.generate_expression(&args[0])?;
+                let addr = gen_one_arg(self, args)?;
                 let call = self.build_net_call("mux_net_udp_bind", &[addr])?;
                 Ok(Some(call))
             }
@@ -258,52 +360,61 @@ impl<'a> CodeGenerator<'a> {
             return Ok(None);
         };
 
+        // helper to validate one-arg methods and produce expression
+        fn gen_one<'a>(
+            s: &mut CodeGenerator<'a>,
+            args: &[ExpressionNode],
+        ) -> Result<BasicValueEnum<'a>, String> {
+            if args.len() != 1 {
+                return Err("method takes exactly 1 argument".to_string());
+            }
+            s.generate_expression(&args[0])
+        }
+
+        // helper to validate two-arg methods
+        fn gen_two<'a>(
+            s: &mut CodeGenerator<'a>,
+            args: &[ExpressionNode],
+        ) -> Result<(BasicValueEnum<'a>, BasicValueEnum<'a>), String> {
+            if args.len() != 2 {
+                return Err("method takes exactly 2 arguments".to_string());
+            }
+            let a = s.generate_expression(&args[0])?;
+            let b = s.generate_expression(&args[1])?;
+            Ok((a, b))
+        }
+
         match type_name.as_str() {
             "TcpStream" => match method_name {
                 "read" => {
-                    if args.len() != 1 {
-                        return Err("TcpStream.read takes exactly 1 argument".to_string());
-                    }
-                    let size = self.generate_expression(&args[0])?;
+                    let size = gen_one(self, args)?;
                     let call = self.build_net_call("mux_net_tcp_read", &[obj_value, size])?;
                     Ok(Some(call))
                 }
                 "write" => {
-                    if args.len() != 1 {
-                        return Err("TcpStream.write takes exactly 1 argument".to_string());
-                    }
-                    let data = self.generate_expression(&args[0])?;
+                    let data = gen_one(self, args)?;
                     let call = self.build_net_call("mux_net_tcp_write", &[obj_value, data])?;
                     Ok(Some(call))
                 }
                 "close" => {
-                    if !args.is_empty() {
-                        return Err("TcpStream.close takes no arguments".to_string());
-                    }
+                    self.ensure_no_args("close", args)?;
                     let call = self.build_net_call("mux_net_tcp_close", &[obj_value])?;
                     Ok(Some(call))
                 }
                 "set_nonblocking" => {
-                    if args.len() != 1 {
-                        return Err("TcpStream.set_nonblocking takes 1 argument".to_string());
-                    }
-                    let bool_val = self.generate_expression(&args[0])?;
+                    let bool_val = gen_one(self, args)?;
                     let converted = self.bool_to_i32(bool_val)?;
                     let call = self
                         .build_net_call("mux_net_tcp_set_nonblocking", &[obj_value, converted])?;
                     Ok(Some(call))
                 }
                 "peer_addr" => {
-                    if !args.is_empty() {
-                        return Err("TcpStream.peer_addr takes no arguments".to_string());
-                    }
+                    self.ensure_no_args("peer_addr", args)?;
                     let call = self.build_net_call("mux_net_tcp_peer_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
                 "local_addr" => {
-                    if !args.is_empty() {
-                        return Err("TcpStream.local_addr takes no arguments".to_string());
-                    }
+                    self.ensure_no_args("local_addr", args)?;
                     let call = self.build_net_call("mux_net_tcp_local_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
@@ -311,51 +422,35 @@ impl<'a> CodeGenerator<'a> {
             },
             "UdpSocket" => match method_name {
                 "send_to" => {
-                    if args.len() != 2 {
-                        return Err("UdpSocket.send_to takes 2 arguments".to_string());
-                    }
-                    let data = self.generate_expression(&args[0])?;
-                    let addr = self.generate_expression(&args[1])?;
+                    let (data, addr) = gen_two(self, args)?;
                     let call =
                         self.build_net_call("mux_net_udp_send_to", &[obj_value, data, addr])?;
                     Ok(Some(call))
                 }
                 "recv_from" => {
-                    if args.len() != 1 {
-                        return Err("UdpSocket.recv_from takes 1 argument".to_string());
-                    }
-                    let size = self.generate_expression(&args[0])?;
+                    let size = gen_one(self, args)?;
                     let call = self.build_net_call("mux_net_udp_recv_from", &[obj_value, size])?;
                     Ok(Some(call))
                 }
                 "close" => {
-                    if !args.is_empty() {
-                        return Err("UdpSocket.close takes no arguments".to_string());
-                    }
+                    self.ensure_no_args("close", args)?;
                     let call = self.build_net_call("mux_net_udp_close", &[obj_value])?;
                     Ok(Some(call))
                 }
                 "set_nonblocking" => {
-                    if args.len() != 1 {
-                        return Err("UdpSocket.set_nonblocking takes 1 argument".to_string());
-                    }
-                    let bool_val = self.generate_expression(&args[0])?;
+                    let bool_val = gen_one(self, args)?;
                     let converted = self.bool_to_i32(bool_val)?;
                     let call = self
                         .build_net_call("mux_net_udp_set_nonblocking", &[obj_value, converted])?;
                     Ok(Some(call))
                 }
                 "peer_addr" => {
-                    if !args.is_empty() {
-                        return Err("UdpSocket.peer_addr takes no arguments".to_string());
-                    }
+                    self.ensure_no_args("peer_addr", args)?;
                     let call = self.build_net_call("mux_net_udp_peer_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
                 "local_addr" => {
-                    if !args.is_empty() {
-                        return Err("UdpSocket.local_addr takes no arguments".to_string());
-                    }
+                    self.ensure_no_args("local_addr", args)?;
                     let call = self.build_net_call("mux_net_udp_local_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
@@ -463,71 +558,8 @@ impl<'a> CodeGenerator<'a> {
                         )),
                     };
                 }
-                if let Some(class) = self.analyzer.symbol_table().lookup(name) {
-                    if let Some(method) = class.methods.get(method_name) {
-                        if method.is_static {
-                            return Err(format!(
-                                "Cannot call static method {} on instance",
-                                method_name
-                            ));
-                        }
-
-                        // generate instance method call - prioritize specialized methods
-                        let specialized_method_name =
-                            self.create_specialized_method_name(name, type_args, method_name);
-                        let method_func_name =
-                            if self.module.get_function(&specialized_method_name).is_some() {
-                                specialized_method_name.clone()
-                            } else {
-                                format!("{}.{}", name, method_name)
-                            };
-
-                        // Specialized methods (containing '$') expect boxed parameters
-                        // Non-specialized methods expect concrete types
-                        let is_specialized = method_func_name.contains('$');
-
-                        let mut call_args: Vec<BasicMetadataValueEnum<'a>> = vec![obj_value.into()]; // self
-                        for arg in args {
-                            let arg_val = self.generate_expression(arg)?;
-                            if is_specialized {
-                                call_args.push(self.box_value(arg_val).into());
-                            } else {
-                                call_args.push(arg_val.into());
-                            }
-                        }
-                        let call = self
-                            .builder
-                            .build_call(
-                                self.module
-                                    .get_function(&method_func_name)
-                                    .ok_or(format!("Method '{}' not found", method_func_name))?,
-                                &call_args,
-                                &format!("{}_call", method_func_name.replace('.', "_")),
-                            )
-                            .map_err(|e| e.to_string())?;
-                        match call.try_as_basic_value().left() {
-                            Some(value) => Ok(value),
-                            None => {
-                                // check if method returns void
-                                if method.return_type == Type::Void {
-                                    // void method - this is expected, return a placeholder
-                                    // the method was executed, we just don't have a return value
-                                    Ok(self.context.i32_type().const_int(0, false).into())
-                                } else {
-                                    // non-void method returning None - this is an error
-                                    Err("Method call failed to return value".to_string())
-                                }
-                            }
-                        }
-                    } else {
-                        Err(format!(
-                            "Method {} not found on class {}",
-                            method_name, name
-                        ))
-                    }
-                } else {
-                    Err(format!("Class {} not found", name))
-                }
+                // Delegate to centralized class instance invocation helper
+                self.invoke_class_instance_method(name, type_args, obj_value, method_name, args)
             }
             Type::Optional(_) => self.generate_optional_method_call(obj_value, method_name, args),
             Type::Result(_, _) => self.generate_result_method_call(obj_value, method_name, args),
@@ -661,14 +693,10 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         match method_name {
             "get" => {
-                if args.len() != 1 {
-                    return Err("get() method takes exactly 1 argument".to_string());
-                }
+                self.ensure_arg_count("get", args, 1)?;
                 let index_val = self.generate_expression(&args[0])?;
-
                 let raw_list =
                     self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
-
                 let call = self
                     .builder
                     .build_call(
@@ -699,9 +727,7 @@ impl<'a> CodeGenerator<'a> {
                     .expect("mux_optional_into_value should return a basic value"))
             }
             "push_back" => {
-                if args.len() != 1 {
-                    return Err("push_back() method takes exactly 1 argument".to_string());
-                }
+                self.ensure_arg_count("push_back", args, 1)?;
                 let elem_val = self.generate_expression(&args[0])?;
                 let elem_ptr = self.box_value(elem_val);
 
@@ -712,15 +738,11 @@ impl<'a> CodeGenerator<'a> {
                 Ok(self.context.i32_type().const_int(0, false).into())
             }
             "pop_back" => {
-                if !args.is_empty() {
-                    return Err("pop_back() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("pop_back", args)?;
                 self.call_runtime_function("mux_list_pop_back_value", &[obj_value])
             }
             "push" => {
-                if args.len() != 1 {
-                    return Err("push() method takes exactly 1 argument".to_string());
-                }
+                self.ensure_arg_count("push", args, 1)?;
                 let elem_val = self.generate_expression(&args[0])?;
                 let elem_ptr = self.box_value(elem_val);
 
@@ -731,31 +753,23 @@ impl<'a> CodeGenerator<'a> {
                 Ok(self.context.i32_type().const_int(0, false).into())
             }
             "pop" => {
-                if !args.is_empty() {
-                    return Err("pop() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("pop", args)?;
                 self.call_runtime_function("mux_list_pop_value", &[obj_value])
             }
             "is_empty" => {
-                if !args.is_empty() {
-                    return Err("is_empty() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("is_empty", args)?;
                 let raw_list =
                     self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
                 self.call_runtime_function("mux_list_is_empty", &[raw_list])
             }
             "size" => {
-                if !args.is_empty() {
-                    return Err("size() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("size", args)?;
                 let raw_list =
                     self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
                 self.call_runtime_function("mux_list_length", &[raw_list])
             }
             "to_string" => {
-                if !args.is_empty() {
-                    return Err("to_string() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("to_string", args)?;
                 let raw_list =
                     self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
                 let cstr = self.call_runtime_function("mux_list_to_string", &[raw_list])?;
@@ -773,9 +787,7 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         match method_name {
             "to_string" => {
-                if !args.is_empty() {
-                    return Err("to_string() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("to_string", args)?;
                 self.generate_to_string_call(obj_value)
             }
             "put" => {
@@ -835,25 +847,19 @@ impl<'a> CodeGenerator<'a> {
                 Ok(optional_value)
             }
             "get_keys" => {
-                if !args.is_empty() {
-                    return Err("get_keys() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("get_keys", args)?;
                 let extract_map =
                     self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
                 self.call_runtime_function("mux_map_keys", &[extract_map])
             }
             "get_values" => {
-                if !args.is_empty() {
-                    return Err("get_values() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("get_values", args)?;
                 let extract_map =
                     self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
                 self.call_runtime_function("mux_map_values", &[extract_map])
             }
             "get_pairs" => {
-                if !args.is_empty() {
-                    return Err("get_pairs() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("get_pairs", args)?;
                 let extract_map =
                     self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
                 self.call_runtime_function("mux_map_pairs", &[extract_map])
@@ -881,25 +887,19 @@ impl<'a> CodeGenerator<'a> {
                     .expect("mux_map_contains should return a basic value"))
             }
             "size" => {
-                if !args.is_empty() {
-                    return Err("size() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("size", args)?;
                 let extract_map =
                     self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
                 self.call_runtime_function("mux_map_size", &[extract_map])
             }
             "is_empty" => {
-                if !args.is_empty() {
-                    return Err("is_empty() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("is_empty", args)?;
                 let extract_map =
                     self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
                 self.call_runtime_function("mux_map_is_empty", &[extract_map])
             }
             "remove" => {
-                if args.len() != 1 {
-                    return Err("remove() method takes exactly 1 argument".to_string());
-                }
+                self.ensure_arg_count("remove", args, 1)?;
                 let key_val = self.generate_expression(&args[0])?;
                 let key_ptr = self.box_value(key_val);
 
@@ -937,15 +937,11 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         match method_name {
             "to_string" => {
-                if !args.is_empty() {
-                    return Err("to_string() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("to_string", args)?;
                 self.generate_to_string_call(obj_value)
             }
             "add" => {
-                if args.len() != 1 {
-                    return Err("add() method takes exactly 1 argument".to_string());
-                }
+                self.ensure_arg_count("add", args, 1)?;
                 let elem_val = self.generate_expression(&args[0])?;
                 let elem_ptr = self.box_value(elem_val);
 
@@ -957,17 +953,13 @@ impl<'a> CodeGenerator<'a> {
                 Ok(self.context.i32_type().const_int(0, false).into())
             }
             "remove" => {
-                if args.len() != 1 {
-                    return Err("remove() method takes exactly 1 argument".to_string());
-                }
+                self.ensure_arg_count("remove", args, 1)?;
                 let elem_val = self.generate_expression(&args[0])?;
                 let elem_ptr = self.box_value(elem_val);
                 self.call_runtime_function("mux_set_remove_value", &[obj_value, elem_ptr.into()])
             }
             "contains" => {
-                if args.len() != 1 {
-                    return Err("contains() method takes exactly 1 argument".to_string());
-                }
+                self.ensure_arg_count("contains", args, 1)?;
                 let elem_val = self.generate_expression(&args[0])?;
                 let elem_ptr = self.box_value(elem_val);
                 let extract_set =
@@ -975,17 +967,13 @@ impl<'a> CodeGenerator<'a> {
                 self.call_runtime_function("mux_set_contains", &[extract_set, elem_ptr.into()])
             }
             "size" => {
-                if !args.is_empty() {
-                    return Err("size() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("size", args)?;
                 let extract_set =
                     self.extract_raw_pointer(obj_value, "mux_value_get_set", "extract_set")?;
                 self.call_runtime_function("mux_set_size", &[extract_set])
             }
             "is_empty" => {
-                if !args.is_empty() {
-                    return Err("is_empty() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("is_empty", args)?;
                 let extract_set =
                     self.extract_raw_pointer(obj_value, "mux_value_get_set", "extract_set")?;
                 self.call_runtime_function("mux_set_is_empty", &[extract_set])
@@ -1002,21 +990,15 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         match method_name {
             "to_string" => {
-                if !args.is_empty() {
-                    return Err("to_string() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("to_string", args)?;
                 self.generate_to_string_call(obj_value)
             }
             "is_some" => {
-                if !args.is_empty() {
-                    return Err("is_some() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("is_some", args)?;
                 self.call_unary_predicate(obj_value, "mux_optional_is_some")
             }
             "is_none" => {
-                if !args.is_empty() {
-                    return Err("is_none() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("is_none", args)?;
                 self.call_unary_predicate(obj_value, "mux_optional_is_none")
             }
             _ => Err(format!(
@@ -1034,21 +1016,15 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         match method_name {
             "to_string" => {
-                if !args.is_empty() {
-                    return Err("to_string() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("to_string", args)?;
                 self.generate_to_string_call(obj_value)
             }
             "is_ok" => {
-                if !args.is_empty() {
-                    return Err("is_ok() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("is_ok", args)?;
                 self.call_unary_predicate(obj_value, "mux_result_is_ok")
             }
             "is_err" => {
-                if !args.is_empty() {
-                    return Err("is_err() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("is_err", args)?;
                 self.call_unary_predicate(obj_value, "mux_result_is_err")
             }
             _ => Err(format!(
@@ -1066,9 +1042,7 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         match method_name {
             "to_string" => {
-                if !args.is_empty() {
-                    return Err("to_string() method takes no arguments".to_string());
-                }
+                self.ensure_no_args("to_string", args)?;
                 let tuple_ptr = if obj_value.is_pointer_value() {
                     self.extract_raw_pointer(obj_value, "mux_value_get_tuple", "get_tuple")?
                         .into_pointer_value()
