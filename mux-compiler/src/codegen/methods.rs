@@ -210,64 +210,93 @@ impl<'a> CodeGenerator<'a> {
         method_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
-        if let Some(class) = self.analyzer.symbol_table().lookup(class_name) {
-            if let Some(method) = class.methods.get(method_name) {
-                if method.is_static {
-                    return Err(format!(
-                        "Cannot call static method {} on instance",
-                        method_name
-                    ));
-                }
+        let class = self
+            .analyzer
+            .symbol_table()
+            .lookup(class_name)
+            .ok_or_else(|| format!("Class {} not found", class_name))?;
 
-                let specialized_method_name =
-                    self.create_specialized_method_name(class_name, type_args, method_name);
-                let method_func_name =
-                    if self.module.get_function(&specialized_method_name).is_some() {
-                        specialized_method_name.clone()
-                    } else {
-                        format!("{}.{}", class_name, method_name)
-                    };
+        let method = class
+            .methods
+            .get(method_name)
+            .ok_or_else(|| format!("Method {} not found on class {}", method_name, class_name))?;
 
-                let is_specialized = method_func_name.contains('$');
+        if method.is_static {
+            return Err(format!(
+                "Cannot call static method {} on instance",
+                method_name
+            ));
+        }
 
-                let mut call_args: Vec<BasicMetadataValueEnum<'a>> = vec![obj_value.into()];
-                for arg in args {
-                    let arg_val = self.generate_expression(arg)?;
-                    if is_specialized {
-                        call_args.push(self.box_value(arg_val).into());
-                    } else {
-                        call_args.push(arg_val.into());
-                    }
-                }
+        let method_func_name = self.resolve_method_func_name(class_name, type_args, method_name)?;
+        let is_specialized = method_func_name.contains('$');
 
-                let func = self
-                    .module
-                    .get_function(&method_func_name)
-                    .ok_or(format!("Method '{}' not found", method_func_name))?;
-                let call = self
-                    .builder
-                    .build_call(
-                        func,
-                        &call_args,
-                        &format!("{}_call", method_func_name.replace('.', "_")),
-                    )
-                    .map_err(|e| e.to_string())?;
+        let call_args = self.build_method_call_args(obj_value, args, is_specialized)?;
 
-                if let Some(value) = call.try_as_basic_value().left() {
-                    Ok(value)
-                } else if method.return_type == Type::Void {
-                    Ok(self.context.i32_type().const_int(0, false).into())
-                } else {
-                    Err("Method call failed to return value".to_string())
-                }
-            } else {
-                Err(format!(
-                    "Method {} not found on class {}",
-                    method_name, class_name
-                ))
-            }
+        let func = self
+            .module
+            .get_function(&method_func_name)
+            .ok_or_else(|| format!("Method '{}' not found", method_func_name))?;
+
+        let call = self
+            .builder
+            .build_call(
+                func,
+                &call_args,
+                &format!("{}_call", method_func_name.replace('.', "_")),
+            )
+            .map_err(|e| e.to_string())?;
+
+        self.handle_method_return_value(call, &method.return_type)
+    }
+
+    fn resolve_method_func_name(
+        &self,
+        class_name: &str,
+        type_args: &[Type],
+        method_name: &str,
+    ) -> Result<String, String> {
+        let specialized_method_name =
+            self.create_specialized_method_name(class_name, type_args, method_name);
+
+        if self.module.get_function(&specialized_method_name).is_some() {
+            Ok(specialized_method_name)
         } else {
-            Err(format!("Class {} not found", class_name))
+            Ok(format!("{}.{}", class_name, method_name))
+        }
+    }
+
+    fn build_method_call_args(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        args: &[ExpressionNode],
+        is_specialized: bool,
+    ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
+        let mut call_args: Vec<BasicMetadataValueEnum<'a>> = vec![obj_value.into()];
+
+        for arg in args {
+            let arg_val = self.generate_expression(arg)?;
+            if is_specialized {
+                call_args.push(self.box_value(arg_val).into());
+            } else {
+                call_args.push(arg_val.into());
+            }
+        }
+
+        Ok(call_args)
+    }
+
+    fn handle_method_return_value(
+        &self,
+        call: inkwell::values::CallSiteValue<'a>,
+        return_type: &Type,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if let Some(value) = call.try_as_basic_value().left() {
+            Ok(value)
+        } else if *return_type == Type::Void {
+            Ok(self.context.i32_type().const_int(0, false).into())
+        } else {
+            Err("Method call failed to return value".to_string())
         }
     }
 

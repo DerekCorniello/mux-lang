@@ -1331,39 +1331,73 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<Type, SemanticError> {
         if let Some(symbol) = self.symbol_table.lookup(name) {
-            if let Some((field_type, _)) = symbol.fields.get(field) {
-                return Ok(self.substitute_type_params(field_type, &symbol.type_params, args));
-            }
-            if let Some(method_sig) = self.get_method_sig(expr_type, field) {
-                return Ok(Type::Function {
-                    params: method_sig.params,
-                    returns: Box::new(method_sig.return_type),
-                    default_count: 0,
-                });
-            }
-            return Err(self.field_not_found_error(field, name, span));
+            return self
+                .resolve_field_from_local_symbol(&symbol, args, expr_type, field, name, span);
         }
 
-        // Check if the class is from an imported module
+        self.resolve_field_from_imported_module(name, field, expr_type, args, span)
+    }
+
+    fn resolve_field_from_local_symbol(
+        &mut self,
+        symbol: &Symbol,
+        args: &[Type],
+        expr_type: &Type,
+        field: &str,
+        name: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if let Some((field_type, _)) = symbol.fields.get(field) {
+            return Ok(self.substitute_type_params(field_type, &symbol.type_params, args));
+        }
+
+        if let Some(method_sig) = self.get_method_sig(expr_type, field) {
+            return Ok(self.wrap_method_signature(&method_sig));
+        }
+
+        Err(self.field_not_found_error(field, name, span))
+    }
+
+    fn resolve_field_from_imported_module(
+        &mut self,
+        name: &str,
+        field: &str,
+        expr_type: &Type,
+        args: &[Type],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
         for module_symbols in self.imported_symbols.values() {
-            if let Some(class_symbol) = module_symbols.get(name) {
-                // Found the class in a module - check for the method
-                if let Some(method_sig) = class_symbol.methods.get(field) {
-                    let resolved_sig = if args.is_empty() {
-                        method_sig.clone()
-                    } else {
-                        self.substitute_method_sig(method_sig, &class_symbol.type_params, args)
-                    };
-                    return Ok(Type::Function {
-                        params: resolved_sig.params,
-                        returns: Box::new(resolved_sig.return_type),
-                        default_count: 0,
-                    });
-                }
+            if let Some(class_symbol) = module_symbols.get(name)
+                && let Some(method_sig) = class_symbol.methods.get(field)
+            {
+                let resolved_sig =
+                    self.resolve_method_sig_for_field(method_sig, &class_symbol.type_params, args);
+                return Ok(self.wrap_method_signature(&resolved_sig));
             }
         }
 
         Err(self.method_not_found_error(field, &format_type(expr_type), span))
+    }
+
+    fn resolve_method_sig_for_field(
+        &self,
+        method_sig: &MethodSig,
+        type_params: &[(String, Vec<String>)],
+        args: &[Type],
+    ) -> MethodSig {
+        if args.is_empty() {
+            method_sig.clone()
+        } else {
+            self.substitute_method_sig(method_sig, type_params, args)
+        }
+    }
+
+    fn wrap_method_signature(&self, method_sig: &MethodSig) -> Type {
+        Type::Function {
+            params: method_sig.params.clone(),
+            returns: Box::new(method_sig.return_type.clone()),
+            default_count: 0,
+        }
     }
 
     fn check_type_compatibility(

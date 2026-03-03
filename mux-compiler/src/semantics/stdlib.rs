@@ -236,126 +236,122 @@ fn make_class_symbol(name: &str, methods: HashMap<String, MethodSig>, span: Span
     }
 }
 
+macro_rules! define_methods {
+    (
+        $($method_name:expr => {
+            params: [$($param:expr),* $(,)?],
+            return_type: $ret_type:expr,
+            is_static: $is_static:expr $(,)?
+        }),*
+        $(,)?
+    ) => {
+        {
+            let mut methods = HashMap::new();
+            $(
+                methods.insert(
+                    $method_name.to_string(),
+                    MethodSig {
+                        params: vec![$($param),*],
+                        return_type: $ret_type,
+                        is_static: $is_static,
+                    },
+                );
+            )*
+            methods
+        }
+    };
+}
+
+macro_rules! insert_items {
+    (
+        $map:expr;
+        $($name:expr => $item_expr:expr),*
+        $(,)?
+    ) => {
+        $(
+            $map.insert($name, $item_expr);
+        )*
+    };
+}
+
 fn tcp_stream_methods() -> HashMap<String, MethodSig> {
-    let mut methods = HashMap::new();
-    methods.insert(
-        "connect".to_string(),
-        MethodSig {
-            params: vec![str_()],
+    define_methods! {
+        "connect" => {
+            params: [str_()],
             return_type: io_result(tcp_stream_type()),
-            is_static: true,
+            is_static: true
         },
-    );
-    methods.insert(
-        "read".to_string(),
-        MethodSig {
-            params: vec![int()],
+        "read" => {
+            params: [int()],
             return_type: io_result(net_bytes_type()),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "write".to_string(),
-        MethodSig {
-            params: vec![net_bytes_type()],
+        "write" => {
+            params: [net_bytes_type()],
             return_type: io_result(int()),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "close".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "close" => {
+            params: [],
             return_type: Type::Void,
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "set_nonblocking".to_string(),
-        MethodSig {
-            params: vec![bool_()],
+        "set_nonblocking" => {
+            params: [bool_()],
             return_type: io_result(Type::Void),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "peer_addr".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "peer_addr" => {
+            params: [],
             return_type: io_result(str_()),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "local_addr".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "local_addr" => {
+            params: [],
             return_type: io_result(str_()),
-            is_static: false,
-        },
-    );
-    methods
+            is_static: false
+        }
+    }
 }
 
 fn udp_socket_methods() -> HashMap<String, MethodSig> {
-    let mut methods = HashMap::new();
-    methods.insert(
-        "bind".to_string(),
-        MethodSig {
-            params: vec![str_()],
+    define_methods! {
+        "bind" => {
+            params: [str_()],
             return_type: io_result(udp_socket_type()),
-            is_static: true,
+            is_static: true
         },
-    );
-    methods.insert(
-        "send_to".to_string(),
-        MethodSig {
-            params: vec![net_bytes_type(), str_()],
+        "send_to" => {
+            params: [net_bytes_type(), str_()],
             return_type: io_result(int()),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "recv_from".to_string(),
-        MethodSig {
-            params: vec![int()],
+        "recv_from" => {
+            params: [int()],
             return_type: io_result(net_tuple_bytes_addr_type()),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "close".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "close" => {
+            params: [],
             return_type: Type::Void,
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "set_nonblocking".to_string(),
-        MethodSig {
-            params: vec![bool_()],
+        "set_nonblocking" => {
+            params: [bool_()],
             return_type: io_result(Type::Void),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "peer_addr".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "peer_addr" => {
+            params: [],
             return_type: io_result(str_()),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "local_addr".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "local_addr" => {
+            params: [],
             return_type: io_result(str_()),
-            is_static: false,
-        },
-    );
-    methods
+            is_static: false
+        }
+    }
 }
 
 pub fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
@@ -372,111 +368,78 @@ pub fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
 }
 
 fn thread_methods() -> HashMap<String, MethodSig> {
-    let mut methods = HashMap::new();
-    methods.insert(
-        "join".to_string(),
-        MethodSig {
-            params: Vec::new(),
+    define_methods! {
+        "join" => {
+            params: [],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false,
-        },
-    );
-    methods
+            is_static: false
+        }
+    }
 }
 
 fn condvar_methods() -> HashMap<String, MethodSig> {
-    let mut methods = HashMap::new();
-    methods.insert(
-        "new".to_string(),
-        MethodSig {
-            params: Vec::new(),
+    define_methods! {
+        "new" => {
+            params: [],
             return_type: Type::Named("CondVar".to_string(), Vec::new()),
-            is_static: true,
+            is_static: true
         },
-    );
-    methods.insert(
-        "wait".to_string(),
-        MethodSig {
-            params: vec![Type::Named("Mutex".to_string(), Vec::new())],
+        "wait" => {
+            params: [Type::Named("Mutex".to_string(), Vec::new())],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "signal".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "signal" => {
+            params: [],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false,
-        },
-    );
-    methods
+            is_static: false
+        }
+    }
 }
 
 fn rwlock_methods() -> HashMap<String, MethodSig> {
-    let mut methods = HashMap::new();
-    methods.insert(
-        "new".to_string(),
-        MethodSig {
-            params: Vec::new(),
+    define_methods! {
+        "new" => {
+            params: [],
             return_type: Type::Named("RwLock".to_string(), Vec::new()),
-            is_static: true,
+            is_static: true
         },
-    );
-    methods.insert(
-        "read_lock".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "read_lock" => {
+            params: [],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "write_lock".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "write_lock" => {
+            params: [],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "unlock".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "unlock" => {
+            params: [],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false,
-        },
-    );
-    methods
+            is_static: false
+        }
+    }
 }
 
 fn mutex_methods() -> HashMap<String, MethodSig> {
-    let mut methods = HashMap::new();
-    methods.insert(
-        "new".to_string(),
-        MethodSig {
-            params: Vec::new(),
+    define_methods! {
+        "new" => {
+            params: [],
             return_type: Type::Named("Mutex".to_string(), Vec::new()),
-            is_static: true,
+            is_static: true
         },
-    );
-    methods.insert(
-        "lock".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "lock" => {
+            params: [],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false,
+            is_static: false
         },
-    );
-    methods.insert(
-        "unlock".to_string(),
-        MethodSig {
-            params: Vec::new(),
+        "unlock" => {
+            params: [],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false,
-        },
-    );
-    methods
+            is_static: false
+        }
+    }
 }
 
 pub fn sync_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
@@ -520,38 +483,20 @@ pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "rando
 lazy_static! {
     pub static ref IO_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
         let mut m = HashMap::new();
-        m.insert(
-            "io.read_file",
-            io_str_fn("mux_io_read_file", io_result(str_())),
-        );
-        m.insert(
-            "io.write_file",
-            io_str_str_fn("mux_io_write_file", io_result(Type::Void)),
-        );
-        m.insert("io.exists", io_str_fn("mux_io_exists", io_result(bool_())));
-        m.insert(
-            "io.remove",
-            io_str_fn("mux_io_remove", io_result(Type::Void)),
-        );
-        m.insert(
-            "io.is_file",
-            io_str_fn("mux_io_is_file", io_result(bool_())),
-        );
-        m.insert("io.is_dir", io_str_fn("mux_io_is_dir", io_result(bool_())));
-        m.insert("io.mkdir", io_str_fn("mux_io_mkdir", io_result(Type::Void)));
-        m.insert(
-            "io.listdir",
-            io_str_fn(
-                "mux_io_listdir",
-                io_result(Type::List(Box::new(Type::Primitive(PrimitiveType::Str)))),
-            ),
-        );
-        m.insert("io.join", io_str_str_fn("mux_io_join", io_result(str_())));
-        m.insert(
-            "io.basename",
-            io_str_fn("mux_io_basename", io_result(str_())),
-        );
-        m.insert("io.dirname", io_str_fn("mux_io_dirname", io_result(str_())));
+        insert_items! {
+            m;
+            "io.read_file" => io_str_fn("mux_io_read_file", io_result(str_())),
+            "io.write_file" => io_str_str_fn("mux_io_write_file", io_result(Type::Void)),
+            "io.exists" => io_str_fn("mux_io_exists", io_result(bool_())),
+            "io.remove" => io_str_fn("mux_io_remove", io_result(Type::Void)),
+            "io.is_file" => io_str_fn("mux_io_is_file", io_result(bool_())),
+            "io.is_dir" => io_str_fn("mux_io_is_dir", io_result(bool_())),
+            "io.mkdir" => io_str_fn("mux_io_mkdir", io_result(Type::Void)),
+            "io.listdir" => io_str_fn("mux_io_listdir", io_result(Type::List(Box::new(Type::Primitive(PrimitiveType::Str))))),
+            "io.join" => io_str_str_fn("mux_io_join", io_result(str_())),
+            "io.basename" => io_str_fn("mux_io_basename", io_result(str_())),
+            "io.dirname" => io_str_fn("mux_io_dirname", io_result(str_()))
+        }
         m
     };
     pub static ref MATH_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
@@ -563,97 +508,50 @@ lazy_static! {
             }
         }
         let mut m = HashMap::new();
-        m.insert("math.sqrt", make_math_fn("mux_math_sqrt", FLOAT_PARAM));
-        m.insert("math.sin", make_math_fn("mux_math_sin", FLOAT_PARAM));
-        m.insert("math.cos", make_math_fn("mux_math_cos", FLOAT_PARAM));
-        m.insert("math.tan", make_math_fn("mux_math_tan", FLOAT_PARAM));
-        m.insert("math.asin", make_math_fn("mux_math_asin", FLOAT_PARAM));
-        m.insert("math.acos", make_math_fn("mux_math_acos", FLOAT_PARAM));
-        m.insert("math.atan", make_math_fn("mux_math_atan", FLOAT_PARAM));
-        m.insert("math.ln", make_math_fn("mux_math_ln", FLOAT_PARAM));
-        m.insert("math.log2", make_math_fn("mux_math_log2", FLOAT_PARAM));
-        m.insert("math.log10", make_math_fn("mux_math_log10", FLOAT_PARAM));
-        m.insert("math.exp", make_math_fn("mux_math_exp", FLOAT_PARAM));
-        m.insert("math.abs", make_math_fn("mux_math_abs", FLOAT_PARAM));
-        m.insert("math.floor", make_math_fn("mux_math_floor", FLOAT_PARAM));
-        m.insert("math.ceil", make_math_fn("mux_math_ceil", FLOAT_PARAM));
-        m.insert("math.round", make_math_fn("mux_math_round", FLOAT_PARAM));
-        m.insert(
-            "math.atan2",
-            make_math_fn("mux_math_atan2", FLOAT_FLOAT_PARAMS),
-        );
-        m.insert("math.log", make_math_fn("mux_math_log", FLOAT_FLOAT_PARAMS));
-        m.insert("math.min", make_math_fn("mux_math_min", FLOAT_FLOAT_PARAMS));
-        m.insert("math.max", make_math_fn("mux_math_max", FLOAT_FLOAT_PARAMS));
-        m.insert(
-            "math.hypot",
-            make_math_fn("mux_math_hypot", FLOAT_FLOAT_PARAMS),
-        );
-        m.insert("math.pow", make_math_fn("mux_math_pow", FLOAT_FLOAT_PARAMS));
+        insert_items! {
+            m;
+            "math.sqrt" => make_math_fn("mux_math_sqrt", FLOAT_PARAM),
+            "math.sin" => make_math_fn("mux_math_sin", FLOAT_PARAM),
+            "math.cos" => make_math_fn("mux_math_cos", FLOAT_PARAM),
+            "math.tan" => make_math_fn("mux_math_tan", FLOAT_PARAM),
+            "math.asin" => make_math_fn("mux_math_asin", FLOAT_PARAM),
+            "math.acos" => make_math_fn("mux_math_acos", FLOAT_PARAM),
+            "math.atan" => make_math_fn("mux_math_atan", FLOAT_PARAM),
+            "math.ln" => make_math_fn("mux_math_ln", FLOAT_PARAM),
+            "math.log2" => make_math_fn("mux_math_log2", FLOAT_PARAM),
+            "math.log10" => make_math_fn("mux_math_log10", FLOAT_PARAM),
+            "math.exp" => make_math_fn("mux_math_exp", FLOAT_PARAM),
+            "math.abs" => make_math_fn("mux_math_abs", FLOAT_PARAM),
+            "math.floor" => make_math_fn("mux_math_floor", FLOAT_PARAM),
+            "math.ceil" => make_math_fn("mux_math_ceil", FLOAT_PARAM),
+            "math.round" => make_math_fn("mux_math_round", FLOAT_PARAM),
+            "math.atan2" => make_math_fn("mux_math_atan2", FLOAT_FLOAT_PARAMS),
+            "math.log" => make_math_fn("mux_math_log", FLOAT_FLOAT_PARAMS),
+            "math.min" => make_math_fn("mux_math_min", FLOAT_FLOAT_PARAMS),
+            "math.max" => make_math_fn("mux_math_max", FLOAT_FLOAT_PARAMS),
+            "math.hypot" => make_math_fn("mux_math_hypot", FLOAT_FLOAT_PARAMS),
+            "math.pow" => make_math_fn("mux_math_pow", FLOAT_FLOAT_PARAMS)
+        }
         m
     };
     pub static ref DATETIME_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
         let mut m = HashMap::new();
-        m.insert(
-            "datetime.now",
-            datetime_fn("mux_datetime_now", EMPTY_PARAMS, io_result(int())),
-        );
-        m.insert(
-            "datetime.now_millis",
-            datetime_fn("mux_datetime_now_millis", EMPTY_PARAMS, io_result(int())),
-        );
-        m.insert(
-            "datetime.year",
-            datetime_fn("mux_datetime_year", INT_PARAM, io_result(int())),
-        );
-        m.insert(
-            "datetime.month",
-            datetime_fn("mux_datetime_month", INT_PARAM, io_result(int())),
-        );
-        m.insert(
-            "datetime.day",
-            datetime_fn("mux_datetime_day", INT_PARAM, io_result(int())),
-        );
-        m.insert(
-            "datetime.hour",
-            datetime_fn("mux_datetime_hour", INT_PARAM, io_result(int())),
-        );
-        m.insert(
-            "datetime.minute",
-            datetime_fn("mux_datetime_minute", INT_PARAM, io_result(int())),
-        );
-        m.insert(
-            "datetime.second",
-            datetime_fn("mux_datetime_second", INT_PARAM, io_result(int())),
-        );
-        m.insert(
-            "datetime.weekday",
-            datetime_fn("mux_datetime_weekday", INT_PARAM, io_result(int())),
-        );
-        m.insert(
-            "datetime.format",
-            datetime_fn("mux_datetime_format", INT_STR_PARAMS, io_result(str_())),
-        );
-        m.insert(
-            "datetime.format_local",
-            datetime_fn(
-                "mux_datetime_format_local",
-                INT_STR_PARAMS,
-                io_result(str_()),
-            ),
-        );
-        m.insert(
-            "datetime.sleep",
-            datetime_fn("mux_datetime_sleep", INT_PARAM, io_result(Type::Void)),
-        );
-        m.insert(
-            "datetime.sleep_millis",
-            datetime_fn(
-                "mux_datetime_sleep_millis",
-                INT_PARAM,
-                io_result(Type::Void),
-            ),
-        );
+        insert_items! {
+            m;
+            "datetime.now" => datetime_fn("mux_datetime_now", EMPTY_PARAMS, io_result(int())),
+            "datetime.now_millis" => datetime_fn("mux_datetime_now_millis", EMPTY_PARAMS, io_result(int())),
+            "datetime.year" => datetime_fn("mux_datetime_year", INT_PARAM, io_result(int())),
+            "datetime.month" => datetime_fn("mux_datetime_month", INT_PARAM, io_result(int())),
+            "datetime.day" => datetime_fn("mux_datetime_day", INT_PARAM, io_result(int())),
+            "datetime.hour" => datetime_fn("mux_datetime_hour", INT_PARAM, io_result(int())),
+            "datetime.minute" => datetime_fn("mux_datetime_minute", INT_PARAM, io_result(int())),
+            "datetime.second" => datetime_fn("mux_datetime_second", INT_PARAM, io_result(int())),
+            "datetime.weekday" => datetime_fn("mux_datetime_weekday", INT_PARAM, io_result(int())),
+            "datetime.format" => datetime_fn("mux_datetime_format", INT_STR_PARAMS, io_result(str_())),
+            "datetime.format_local" => datetime_fn("mux_datetime_format_local", INT_STR_PARAMS, io_result(str_())),
+            "datetime.sleep" => datetime_fn("mux_datetime_sleep", INT_PARAM, io_result(Type::Void)),
+            "datetime.sleep_millis" => datetime_fn("mux_datetime_sleep_millis", INT_PARAM, io_result(Type::Void))
+        }
         m
     };
     pub static ref ASSERT_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
@@ -665,42 +563,22 @@ lazy_static! {
             }
         }
         let mut m = HashMap::new();
-        m.insert(
-            "assert.assert",
-            make_item("mux_assert_assert", BOOL_STR_PARAMS),
-        );
-        m.insert("assert.assert_eq", make_item("mux_assert_eq", &T_T_PARAMS));
-        m.insert("assert.assert_ne", make_item("mux_assert_ne", &T_T_PARAMS));
-        m.insert(
-            "assert.assert_true",
-            make_item("mux_assert_true", BOOL_PARAM),
-        );
-        m.insert(
-            "assert.assert_false",
-            make_item("mux_assert_false", BOOL_PARAM),
-        );
-        m.insert(
-            "assert.assert_some",
-            make_item("mux_assert_some", &OPTIONAL_T_PARAM),
-        );
-        m.insert(
-            "assert.assert_none",
-            make_item("mux_assert_none", &OPTIONAL_T_PARAM),
-        );
-        m.insert(
-            "assert.assert_ok",
-            make_item("mux_assert_ok", &RESULT_T_E_PARAMS),
-        );
-        m.insert(
-            "assert.assert_err",
-            make_item("mux_assert_err", &RESULT_T_E_PARAMS),
-        );
+        insert_items! {
+            m;
+            "assert.assert" => make_item("mux_assert_assert", BOOL_STR_PARAMS),
+            "assert.assert_eq" => make_item("mux_assert_eq", &T_T_PARAMS),
+            "assert.assert_ne" => make_item("mux_assert_ne", &T_T_PARAMS),
+            "assert.assert_true" => make_item("mux_assert_true", BOOL_PARAM),
+            "assert.assert_false" => make_item("mux_assert_false", BOOL_PARAM),
+            "assert.assert_some" => make_item("mux_assert_some", &OPTIONAL_T_PARAM),
+            "assert.assert_none" => make_item("mux_assert_none", &OPTIONAL_T_PARAM),
+            "assert.assert_ok" => make_item("mux_assert_ok", &RESULT_T_E_PARAMS),
+            "assert.assert_err" => make_item("mux_assert_err", &RESULT_T_E_PARAMS)
+        }
         m
     };
     pub static ref SYNC_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
-        let mut m = HashMap::new();
-        m.insert(
-            "sync.spawn",
+        fn spawn_fn() -> StdlibItem {
             StdlibItem::Function {
                 params: vec![Type::Function {
                     params: Vec::new(),
@@ -712,16 +590,21 @@ lazy_static! {
                     Box::new(str_()),
                 ),
                 llvm_name: "mux_sync_spawn".to_string(),
-            },
-        );
-        m.insert(
-            "sync.sleep",
+            }
+        }
+        fn sleep_fn() -> StdlibItem {
             StdlibItem::Function {
                 params: INT_PARAM.to_vec(),
                 ret: Type::Void,
                 llvm_name: "mux_sync_sleep".to_string(),
-            },
-        );
+            }
+        }
+        let mut m = HashMap::new();
+        insert_items! {
+            m;
+            "sync.spawn" => spawn_fn(),
+            "sync.sleep" => sleep_fn()
+        }
         m
     };
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
