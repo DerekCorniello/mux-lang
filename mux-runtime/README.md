@@ -605,7 +605,7 @@ func callback(string event, int timestamp, string _) returns void {
 ### 6.1 Arithmetic Operators
 
 Mux supports standard arithmetic operations with strict type requirements (no implicit conversions):
-
+pub mod sync;
 | Operator | Description | Types | Example |
 |----------|-------------|-------|---------|
 | `+` | Addition | `int`, `float`, `string` | `5 + 3`, `"a" + "b"` |
@@ -1898,17 +1898,19 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `assert`, `math`, `io`, `random`, and `datetime`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, and `net`.
 
 Import styles:
 
 ```mux
-import std                    // use std.assert, std.math, std.io, std.random, std.datetime
-import std.assert              // use assert.*
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
+import std.assert             // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*
 import std.random             // use random.*
 import std.datetime           // use datetime.*
+import std.net                // use net.*
+import std.sync               // use sync.*
 import std.(math, random as r)
 import std.*                  // flat import of stdlib items
 ```
@@ -1976,6 +1978,37 @@ Format patterns use chrono `strftime` tokens, for example:
 - `%B` full month name
 - `%b` abbreviated month name
 - `%Y-%m-%d %H:%M:%S`
+
+
+### 17.6 sync
+
+`sync` provides basic concurrency primitives.
+
+- `sync.spawn(fn() -> void) -> result<Thread, string>`
+- `sync.sleep(int milliseconds) -> void`
+- `Thread.join() -> result<void, string>`
+- `Thread.detach() -> result<void, string>`
+- `Mutex.new() -> Mutex`
+- `Mutex.lock() -> result<void, string>`
+- `Mutex.unlock() -> result<void, string>`
+- `RwLock.new() -> RwLock`
+- `RwLock.read_lock() -> result<void, string>`
+- `RwLock.write_lock() -> result<void, string>`
+- `RwLock.unlock() -> result<void, string>`
+- `CondVar.new() -> CondVar`
+- `CondVar.wait(Mutex) -> result<void, string>`
+- `CondVar.signal() -> result<void, string>`
+- `CondVar.broadcast() -> result<void, string>`
+
+### 17.7 net
+
+The `net` module exposes low-level socket primitives:
+
+- `TcpStream` for connecting to TCP services, performing reads/writes, toggling `set_nonblocking` (returns `result<void, string>`), and querying `peer_addr`/`local_addr` (both return `result<string, string>`) to inspect endpoints.
+- `UdpSocket` for binding to UDP ports, sending datagrams, receiving a `(Bytes, string)` tuple, toggling `set_nonblocking` (`result<void, string>`), and querying `peer_addr`/`local_addr` results.
+- A request/response shape described as simple `map` objects with known keys (`method`, `url`, `headers`, `body`, `status`, etc.).
+
+Methods return explicit `result` values so errors are handled deterministically.
 
 ---
 

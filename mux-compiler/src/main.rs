@@ -64,8 +64,6 @@ enum Commands {
     },
     /// Format a Mux file
     Format { file: PathBuf },
-    /// Try running a Mux file (for quick experimentation)
-    Try { file: PathBuf },
     /// Check system dependencies for the Mux compiler
     Doctor {},
     /// Print the Mux version
@@ -335,10 +333,6 @@ fn main() {
         } => (file, true, output, *intermediate),
         Commands::Format { file } => {
             println!("Formatting is not yet implemented for {}", file.display());
-            return;
-        }
-        Commands::Try { file } => {
-            println!("Trying is not yet implemented for {}", file.display());
             return;
         }
     };

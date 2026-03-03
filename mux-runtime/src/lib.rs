@@ -19,6 +19,7 @@ struct ObjectData {
 impl Drop for ObjectData {
     fn drop(&mut self) {
         if !self.ptr.is_null() && self.size > 0 {
+            crate::object::call_object_destructor(self.type_id, self.ptr);
             let layout =
                 ::std::alloc::Layout::from_size_align(self.size, ::std::mem::align_of::<u8>())
                     .expect("Invalid layout for object");
@@ -272,6 +273,7 @@ pub mod io;
 pub mod list;
 pub mod map;
 pub mod math;
+pub mod net;
 pub mod object;
 pub mod optional;
 pub mod random;
@@ -280,6 +282,7 @@ pub mod result;
 pub mod set;
 pub mod std;
 pub mod string;
+pub mod sync;
 pub mod tuple;
 
 pub use std::{mux_value_list_get_value, mux_value_list_length, mux_value_list_slice};

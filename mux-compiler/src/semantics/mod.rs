@@ -2,6 +2,7 @@
 
 pub mod error;
 pub mod format;
+pub mod stdlib;
 pub mod symbol_table;
 pub mod types;
 pub mod unifier;
@@ -9,7 +10,7 @@ pub mod unifier;
 // Re-exports for public API
 pub use error::SemanticError;
 pub use format::{format_binary_op, format_type};
-pub use symbol_table::{BUILT_IN_FUNCTIONS, SymbolTable};
+pub use symbol_table::SymbolTable;
 pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type};
 pub use unifier::Unifier;
 
@@ -103,9 +104,13 @@ impl SemanticAnalyzer {
 
     fn stdlib_modules() -> Vec<(&'static str, &'static str)> {
         vec![
-            ("std.math", "math"),
+            ("std.assert", "assert"),
+            ("std.datetime", "datetime"),
             ("std.io", "io"),
+            ("std.math", "math"),
             ("std.random", "random"),
+            ("std.net", "net"),
+            ("std.sync", "sync"),
         ]
     }
 
@@ -306,7 +311,8 @@ impl SemanticAnalyzer {
     }
 
     fn get_builtin_sig(&self, name: &str) -> Option<&BuiltInSig> {
-        BUILT_IN_FUNCTIONS.get(name)
+        // Use the canonical BUILT_IN_FUNCTIONS from the stdlib module
+        crate::semantics::stdlib::BUILT_IN_FUNCTIONS.get(name)
     }
 
     pub fn analyze(&mut self, ast: &[AstNode], files: Option<&mut Files>) -> Vec<SemanticError> {
@@ -319,56 +325,22 @@ impl SemanticAnalyzer {
     }
 
     fn add_builtin_functions(&mut self) {
-        let builtins = vec![
-            (
-                "print",
-                vec![Type::Primitive(PrimitiveType::Str)],
-                Type::Void,
-            ),
-            ("read_line", vec![], Type::Primitive(PrimitiveType::Str)),
-            (
-                "range",
-                vec![
-                    Type::Primitive(PrimitiveType::Int),
-                    Type::Primitive(PrimitiveType::Int),
-                ],
-                Type::List(Box::new(Type::Primitive(PrimitiveType::Int))),
-            ),
-            (
-                "some",
-                vec![Type::Variable("T".to_string())],
-                Type::Optional(Box::new(Type::Variable("T".to_string()))),
-            ),
-            ("none", vec![], Type::Optional(Box::new(Type::Void))),
-            (
-                "ok",
-                vec![Type::Variable("T".to_string())],
-                Type::Result(
-                    Box::new(Type::Variable("T".to_string())),
-                    Box::new(Type::Variable("E".to_string())),
-                ),
-            ),
-            (
-                "err",
-                vec![Type::Variable("E".to_string())],
-                Type::Result(
-                    Box::new(Type::Variable("T".to_string())),
-                    Box::new(Type::Variable("E".to_string())),
-                ),
-            ),
-        ];
-        for (name, params, ret) in builtins {
-            let func_type = Type::Function {
-                params,
-                returns: Box::new(ret),
-                default_count: 0,
-            };
-            self.symbol_table
-                .add_symbol(
-                    name,
-                    Self::make_symbol(SymbolKind::Function, Span::new(0, 0), Some(func_type)),
-                )
-                .expect("builtin function registration should not fail");
+        // Register built-in functions from the canonical stdlib table.
+        let span = Span::new(0, 0);
+        for (name, sig) in crate::semantics::stdlib::BUILT_IN_FUNCTIONS.iter() {
+            self.register_builtin_function(name, sig, span);
+        }
+
+        // Register sync module class symbols (Thread/Mutex/etc.)
+        self.add_sync_builtin_types();
+    }
+
+    fn add_sync_builtin_types(&mut self) {
+        let span = Span::new(0, 0);
+        // Use canonical class symbols from the stdlib module and register them.
+        let classes = crate::semantics::stdlib::sync_module_class_symbols(span);
+        for (name, sym) in classes {
+            let _ = self.symbol_table.add_symbol(&name, sym);
         }
     }
 
@@ -530,6 +502,27 @@ impl SemanticAnalyzer {
                             default_count: 0,
                         })
                     } else {
+                        // Conservative fallback: allow unqualified references to class
+                        // names exported by imported stdlib modules (e.g., when doing
+                        // `import std.sync` let `Mutex.new()` resolve). This does not
+                        // consult user modules and avoids introducing wildcard imports.
+                        let stdlib_names: std::collections::HashSet<String> =
+                            Self::stdlib_modules()
+                                .iter()
+                                .map(|(_, short_name)| short_name.to_string())
+                                .collect();
+
+                        for (module_ns, module_symbols) in &self.imported_symbols {
+                            if !stdlib_names.contains(module_ns) {
+                                continue;
+                            }
+                            if let Some(sym) = module_symbols.get(name)
+                                && matches!(sym.kind, SymbolKind::Class)
+                            {
+                                return Ok(Type::Named(name.clone(), Vec::new()));
+                            }
+                        }
+
                         Err(self.undefined_symbol_error("variable", name, expr.span))
                     }
                 }
@@ -927,7 +920,43 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::FieldAccess { expr, field } => {
-                let expr_type = self.get_expression_type(expr)?;
+                // Try to get the type of the base expression. If that fails because the
+                // identifier is undefined, attempt a conservative lookup into imported
+                // stdlib module symbols to resolve class-qualified accesses like
+                // `Mutex.new()` when `import std.sync` was used.
+                let expr_type_res = self.get_expression_type(expr);
+                let expr_type = match expr_type_res {
+                    Ok(t) => t,
+                    Err(e) => {
+                        // Only try the fallback when the expression is a simple identifier
+                        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
+                            // Restrict to stdlib namespaces
+                            let stdlib_names: std::collections::HashSet<String> =
+                                Self::stdlib_modules()
+                                    .iter()
+                                    .map(|(_, n)| n.to_string())
+                                    .collect();
+                            for (ns, module_symbols) in &self.imported_symbols {
+                                if !stdlib_names.contains(ns) {
+                                    continue;
+                                }
+                                if let Some(class_sym) = module_symbols.get(name)
+                                    && matches!(class_sym.kind, SymbolKind::Class)
+                                {
+                                    // If the class defines the method, return its function type
+                                    if let Some(method_sig) = class_sym.methods.get(field) {
+                                        return Ok(Type::Function {
+                                            params: method_sig.params.clone(),
+                                            returns: Box::new(method_sig.return_type.clone()),
+                                            default_count: 0,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
+                };
 
                 if let Type::Module(module_name) = &expr_type {
                     self.resolve_module_field(module_name, field, expr.span)
@@ -1293,19 +1322,73 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<Type, SemanticError> {
         if let Some(symbol) = self.symbol_table.lookup(name) {
-            if let Some((field_type, _)) = symbol.fields.get(field) {
-                return Ok(self.substitute_type_params(field_type, &symbol.type_params, args));
-            }
-            if let Some(method_sig) = self.get_method_sig(expr_type, field) {
-                return Ok(Type::Function {
-                    params: method_sig.params,
-                    returns: Box::new(method_sig.return_type),
-                    default_count: 0,
-                });
-            }
-            return Err(self.field_not_found_error(field, name, span));
+            return self
+                .resolve_field_from_local_symbol(&symbol, args, expr_type, field, name, span);
         }
+
+        self.resolve_field_from_imported_module(name, field, expr_type, args, span)
+    }
+
+    fn resolve_field_from_local_symbol(
+        &mut self,
+        symbol: &Symbol,
+        args: &[Type],
+        expr_type: &Type,
+        field: &str,
+        name: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if let Some((field_type, _)) = symbol.fields.get(field) {
+            return Ok(self.substitute_type_params(field_type, &symbol.type_params, args));
+        }
+
+        if let Some(method_sig) = self.get_method_sig(expr_type, field) {
+            return Ok(self.wrap_method_signature(&method_sig));
+        }
+
+        Err(self.field_not_found_error(field, name, span))
+    }
+
+    fn resolve_field_from_imported_module(
+        &mut self,
+        name: &str,
+        field: &str,
+        expr_type: &Type,
+        args: &[Type],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        for module_symbols in self.imported_symbols.values() {
+            if let Some(class_symbol) = module_symbols.get(name)
+                && let Some(method_sig) = class_symbol.methods.get(field)
+            {
+                let resolved_sig =
+                    self.resolve_method_sig_for_field(method_sig, &class_symbol.type_params, args);
+                return Ok(self.wrap_method_signature(&resolved_sig));
+            }
+        }
+
         Err(self.method_not_found_error(field, &format_type(expr_type), span))
+    }
+
+    fn resolve_method_sig_for_field(
+        &self,
+        method_sig: &MethodSig,
+        type_params: &[(String, Vec<String>)],
+        args: &[Type],
+    ) -> MethodSig {
+        if args.is_empty() {
+            method_sig.clone()
+        } else {
+            self.substitute_method_sig(method_sig, type_params, args)
+        }
+    }
+
+    fn wrap_method_signature(&self, method_sig: &MethodSig) -> Type {
+        Type::Function {
+            params: method_sig.params.clone(),
+            returns: Box::new(method_sig.return_type.clone()),
+            default_count: 0,
+        }
     }
 
     fn check_type_compatibility(
@@ -3729,7 +3812,28 @@ impl SemanticAnalyzer {
                     }
                     return Ok(());
                 }
-                if !self.symbol_table.exists(name) && self.get_builtin_sig(name).is_none() {
+                // Consider imported stdlib class names as existing for identifier checks
+                let mut exists_like =
+                    self.symbol_table.exists(name) || self.get_builtin_sig(name).is_some();
+                if !exists_like {
+                    let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
+                        .iter()
+                        .map(|(_, n)| n.to_string())
+                        .collect();
+                    for (ns, module_symbols) in &self.imported_symbols {
+                        if !stdlib_names.contains(ns) {
+                            continue;
+                        }
+                        if let Some(sym) = module_symbols.get(name)
+                            && matches!(sym.kind, SymbolKind::Class)
+                        {
+                            exists_like = true;
+                            break;
+                        }
+                    }
+                }
+
+                if !exists_like {
                     return Err(self.undefined_symbol_error("variable", name, expr.span));
                 }
                 Ok(())
@@ -4644,7 +4748,7 @@ impl SemanticAnalyzer {
 
     /// Register all built-in functions whose names start with the given prefix.
     fn register_builtin_functions_with_prefix(&mut self, prefix: &str, span: Span) {
-        let matching: Vec<_> = BUILT_IN_FUNCTIONS
+        let matching: Vec<_> = crate::semantics::stdlib::BUILT_IN_FUNCTIONS
             .iter()
             .filter(|(k, _)| k.starts_with(prefix))
             .map(|(k, v)| (k.to_string(), v.clone()))
@@ -4680,7 +4784,7 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
-        use crate::semantics::symbol_table::{STDLIB_MODULES, all_stdlib_items};
+        use crate::semantics::stdlib::{STDLIB_MODULES, all_stdlib_items};
 
         match spec {
             ImportSpec::Module { alias } => {
@@ -4704,7 +4808,12 @@ impl SemanticAnalyzer {
             ImportSpec::Wildcard => {
                 for (key, item) in all_stdlib_items() {
                     if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
-                        self.register_stdlib_item(item_name, &item, span)?;
+                        crate::semantics::stdlib::register_stdlib_item_into(
+                            &mut self.symbol_table,
+                            item_name,
+                            &item,
+                            span,
+                        )?;
                     }
                 }
             }
@@ -4801,16 +4910,21 @@ impl SemanticAnalyzer {
         module_name: &str,
         span: Span,
     ) -> std::collections::HashMap<String, Symbol> {
-        use crate::semantics::symbol_table::all_stdlib_items;
+        use crate::semantics::stdlib::all_stdlib_items;
 
         let mut module_symbols = std::collections::HashMap::new();
         for (key, item) in all_stdlib_items() {
             if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
                 module_symbols.insert(
                     item_name.to_string(),
-                    Self::stdlib_item_to_symbol(&item, span),
+                    crate::semantics::stdlib::stdlib_item_to_symbol(&item, span),
                 );
             }
+        }
+        if module_name == "net" {
+            module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span));
+        } else if module_name == "sync" {
+            module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span));
         }
         module_symbols
     }
@@ -4869,62 +4983,7 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn stdlib_item_to_symbol(
-        item: &crate::semantics::symbol_table::StdlibItem,
-        span: Span,
-    ) -> Symbol {
-        use crate::semantics::symbol_table::StdlibItem;
-
-        match item {
-            StdlibItem::Function {
-                params,
-                ret,
-                llvm_name,
-            } => Symbol {
-                kind: SymbolKind::Function,
-                span,
-                type_: Some(Type::Function {
-                    params: params.to_vec(),
-                    returns: Box::new(ret.clone()),
-                    default_count: 0,
-                }),
-                interfaces: std::collections::HashMap::new(),
-                methods: std::collections::HashMap::new(),
-                fields: std::collections::HashMap::new(),
-                type_params: Vec::new(),
-                original_name: None,
-                llvm_name: Some(llvm_name.to_string()),
-                default_param_count: 0,
-                variants: None,
-            },
-            StdlibItem::Constant { ty, .. } => Symbol {
-                kind: SymbolKind::Constant,
-                span,
-                type_: Some(ty.clone()),
-                interfaces: std::collections::HashMap::new(),
-                methods: std::collections::HashMap::new(),
-                fields: std::collections::HashMap::new(),
-                type_params: Vec::new(),
-                original_name: None,
-                llvm_name: None,
-                default_param_count: 0,
-                variants: None,
-            },
-        }
-    }
-
-    /// Register a single stdlib item to the symbol table (for flat imports)
-    fn register_stdlib_item(
-        &mut self,
-        name: &str,
-        item: &crate::semantics::symbol_table::StdlibItem,
-        span: Span,
-    ) -> Result<(), SemanticError> {
-        let symbol = Self::stdlib_item_to_symbol(item, span);
-
-        self.symbol_table.add_symbol(name, symbol)?;
-        Ok(())
-    }
+    // stdlib item conversion/registration delegated to `crate::semantics::stdlib`.
 
     // Helper to find free variables in a block of statements
     // Returns variables that are used but not declared in the local scope

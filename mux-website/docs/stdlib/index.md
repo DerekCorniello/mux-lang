@@ -19,11 +19,10 @@ func main() returns void {
 You can import stdlib in multiple forms:
 
 ```mux title="stdlib_import_forms.mux"
-import std                    // namespace import: std.math, std.io, std.random, std.datetime
-import std.math               // single module namespace
-import std.datetime
-import std.(math, random as r)
-import std.*                  // flat import of all stdlib items
+import std                      // namespace import: std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
+import std.math                 // single module namespace
+import std.(math, random as r)  // qualified and selective imports with aliasing
+import std.*                    // flat import of all stdlib items
 ```
 
 ## Available Modules
@@ -33,7 +32,9 @@ import std.*                  // flat import of all stdlib items
 | [assert](./assert) | Test assertions that panic on failure | Available |
 | [math](./math) | Mathematical functions and constants | Available |
 | [io](./io) | File and path operations with `result`-based errors | Available |
+| [net](./net) | TCP/UDP primitives and protocol-agnostic request/response shapes | Available |
 | [random](./random) | Pseudorandom number generation | Available |
+| [sync](./sync) | Threading, locks, condition variables, and sleep helpers | Available |
 | [datetime](./datetime) | Time retrieval, formatting, and sleep helpers | Available |
 
 ## Module Stability

@@ -6,7 +6,13 @@
 use super::CodeGenerator;
 use crate::ast::PrimitiveType;
 use crate::semantics::Type;
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FloatValue, IntValue, PointerValue};
+use inkwell::AddressSpace;
+use inkwell::context::Context;
+use inkwell::module::Module;
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType};
+use inkwell::values::{
+    BasicMetadataValueEnum, BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue,
+};
 
 impl<'a> CodeGenerator<'a> {
     pub(super) fn generate_runtime_call(
@@ -25,6 +31,935 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, args, "call")
             .expect("build_call should always return Some");
         call.try_as_basic_value().left()
+    }
+
+    /// Declare runtime functions used by codegen.
+    pub(super) fn declare_runtime_functions<'b>(module: &Module<'b>, context: &'b Context) {
+        // local helpers
+        fn add_i8_fn<'c>(
+            module: &Module<'c>,
+            i8_ptr: PointerType<'c>,
+            name: &str,
+            params: &[BasicTypeEnum<'c>],
+        ) -> FunctionValue<'c> {
+            let llvm_params: Vec<BasicMetadataTypeEnum<'c>> =
+                params.iter().copied().map(Into::into).collect();
+            module.add_function(name, i8_ptr.fn_type(&llvm_params, false), None)
+        }
+
+        fn add_conversion_fn<'c>(
+            module: &Module<'c>,
+            i8_ptr: PointerType<'c>,
+            mux_name: &str,
+            from: BasicTypeEnum<'c>,
+        ) -> FunctionValue<'c> {
+            add_i8_fn(module, i8_ptr, mux_name, &[from])
+        }
+
+        fn add_typed_getter<'c>(
+            module: &Module<'c>,
+            i8_ptr: PointerType<'c>,
+            name: &str,
+            return_type: BasicTypeEnum<'c>,
+        ) -> FunctionValue<'c> {
+            module.add_function(name, return_type.fn_type(&[i8_ptr.into()], false), None)
+        }
+
+        let void_type = context.void_type();
+        let i64_type = context.i64_type();
+        let i32_type = context.i32_type();
+        let f64_type = context.f64_type();
+        let i8_ptr = context.ptr_type(AddressSpace::default());
+        let list_ptr = i8_ptr;
+        let map_ptr = i8_ptr;
+        let set_ptr = i8_ptr;
+
+        module.add_function(
+            "mux_value_from_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_new_string_from_cstr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_print",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function("mux_read_line", i8_ptr.fn_type(&[], false), None);
+        module.add_function(
+            "exit",
+            void_type.fn_type(&[context.i32_type().into()], false),
+            None,
+        );
+        module.add_function("malloc", i8_ptr.fn_type(&[i64_type.into()], false), None);
+
+        let params = &[i8_ptr.into(), i8_ptr.into()];
+        let fn_type = i8_ptr.fn_type(params, false);
+        module.add_function("mux_string_concat", fn_type, None);
+
+        module.add_function(
+            "mux_string_contains",
+            context
+                .bool_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_contains_char",
+            context
+                .bool_type()
+                .fn_type(&[i8_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_equal",
+            context
+                .i32_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_string_not_equal",
+            context
+                .i32_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_equal",
+            context
+                .i32_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_not_equal",
+            context
+                .i32_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        for (name, from_ty) in [
+            ("mux_int_to_string", i64_type.into()),
+            ("mux_int_to_float", i64_type.into()),
+            ("mux_float_to_int", f64_type.into()),
+            ("mux_float_to_string", f64_type.into()),
+            ("mux_bool_to_string", i32_type.into()),
+            ("mux_char_to_int", i64_type.into()),
+            ("mux_char_to_string", i64_type.into()),
+        ] {
+            add_conversion_fn(module, i8_ptr, name, from_ty);
+        }
+
+        for name in [
+            "mux_bool_to_int",
+            "mux_bool_to_float",
+            "mux_string_to_string",
+            "mux_string_to_int",
+            "mux_string_to_float",
+            "mux_list_to_string",
+            "mux_list_value",
+            "mux_map_value",
+            "mux_set_value",
+            "mux_map_to_string",
+        ] {
+            add_i8_fn(module, i8_ptr, name, &[i8_ptr.into()]);
+        }
+
+        module.add_function(
+            "mux_register_object_type",
+            i32_type.fn_type(&[i8_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_alloc_object",
+            i8_ptr.fn_type(&[i32_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_free_object",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_get_object_ptr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_copy_object",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_optional_into_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_list",
+            list_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_map",
+            map_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_get_set",
+            set_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_concat",
+            list_ptr.fn_type(&[list_ptr.into(), list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_merge",
+            map_ptr.fn_type(&[map_ptr.into(), map_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_union",
+            set_ptr.fn_type(&[set_ptr.into(), set_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_range",
+            list_ptr.fn_type(&[i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_new_list", list_ptr.fn_type(&[], false), None);
+
+        module.add_function("mux_new_map", list_ptr.fn_type(&[], false), None);
+
+        module.add_function("mux_new_set", list_ptr.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_new_tuple",
+            list_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_value",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_left",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_right",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_eq",
+            context
+                .bool_type()
+                .fn_type(&[list_ptr.into(), list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_tuple_to_string",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_value_get_tuple",
+            list_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_add",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        add_typed_getter(module, i8_ptr, "mux_value_get_int", i64_type.into());
+        add_typed_getter(module, i8_ptr, "mux_value_get_float", f64_type.into());
+        add_typed_getter(module, i8_ptr, "mux_value_get_bool", i32_type.into());
+        add_typed_getter(module, i8_ptr, "mux_value_get_type_tag", i32_type.into());
+
+        module.add_function(
+            "mux_free_value",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push_back",
+            void_type.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_get",
+            i8_ptr.fn_type(&[list_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_get_value",
+            i8_ptr.fn_type(&[list_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_set",
+            void_type.fn_type(&[list_ptr.into(), i64_type.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_set_value",
+            void_type.fn_type(&[i8_ptr.into(), i64_type.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_length",
+            i64_type.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_contains",
+            context
+                .bool_type()
+                .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_list_length",
+            i64_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_list_get_value",
+            i8_ptr.fn_type(&[i8_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_list_slice",
+            i8_ptr.fn_type(&[i8_ptr.into(), i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop_back",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push",
+            void_type.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop",
+            i8_ptr.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push_back_value",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_push_value",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop_back_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_pop_value",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_list_is_empty",
+            context.bool_type().fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_put",
+            void_type.fn_type(&[map_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_put_value",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_get",
+            i8_ptr.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_contains",
+            context
+                .bool_type()
+                .fn_type(&[map_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_remove",
+            i8_ptr.fn_type(&[map_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_remove_value",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_add",
+            void_type.fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_add_value",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_contains",
+            context
+                .bool_type()
+                .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_remove",
+            context
+                .bool_type()
+                .fn_type(&[list_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_remove_value",
+            context
+                .bool_type()
+                .fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_size",
+            i64_type.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_set_is_empty",
+            context.bool_type().fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_size",
+            i64_type.fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_is_empty",
+            context.bool_type().fn_type(&[list_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_keys",
+            i8_ptr.fn_type(&[map_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_values",
+            i8_ptr.fn_type(&[map_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_map_pairs",
+            i8_ptr.fn_type(&[map_ptr.into()], false),
+            None,
+        );
+
+        for (name, from_ty) in [
+            ("mux_int_value", i64_type.into()),
+            ("mux_float_value", f64_type.into()),
+            ("mux_bool_value", i32_type.into()),
+        ] {
+            add_conversion_fn(module, i8_ptr, name, from_ty);
+        }
+        add_i8_fn(module, i8_ptr, "mux_string_value", &[i8_ptr.into()]);
+        add_typed_getter(module, i8_ptr, "mux_int_from_value", i64_type.into());
+        add_typed_getter(module, i8_ptr, "mux_float_from_value", f64_type.into());
+        add_typed_getter(module, i8_ptr, "mux_bool_from_value", i32_type.into());
+        add_i8_fn(module, i8_ptr, "mux_string_from_value", &[i8_ptr.into()]);
+
+        for (name, from_ty) in [
+            ("mux_optional_some_int", i64_type.into()),
+            ("mux_optional_some_float", f64_type.into()),
+            ("mux_optional_some_bool", i32_type.into()),
+            ("mux_optional_some_char", i64_type.into()),
+            ("mux_result_ok_int", i64_type.into()),
+            ("mux_result_ok_float", f64_type.into()),
+            ("mux_result_ok_bool", i32_type.into()),
+            ("mux_result_ok_char", i64_type.into()),
+        ] {
+            add_conversion_fn(module, i8_ptr, name, from_ty);
+        }
+        for name in [
+            "mux_optional_some_string",
+            "mux_optional_some_value",
+            "mux_result_ok_string",
+            "mux_result_ok_value",
+            "mux_result_err_str",
+            "mux_result_err_value",
+            "mux_optional_data",
+            "mux_optional_get_value",
+            "mux_result_data",
+        ] {
+            add_i8_fn(module, i8_ptr, name, &[i8_ptr.into()]);
+        }
+        module.add_function("mux_optional_none", i8_ptr.fn_type(&[], false), None);
+        add_typed_getter(module, i8_ptr, "mux_optional_discriminant", i32_type.into());
+        add_typed_getter(
+            module,
+            i8_ptr,
+            "mux_optional_is_some",
+            context.bool_type().into(),
+        );
+        add_typed_getter(
+            module,
+            i8_ptr,
+            "mux_optional_is_none",
+            context.bool_type().into(),
+        );
+        add_typed_getter(module, i8_ptr, "mux_result_discriminant", i32_type.into());
+        add_typed_getter(
+            module,
+            i8_ptr,
+            "mux_result_is_ok",
+            context.bool_type().into(),
+        );
+        add_typed_getter(
+            module,
+            i8_ptr,
+            "mux_result_is_err",
+            context.bool_type().into(),
+        );
+
+        module.add_function(
+            "mux_int_pow",
+            i64_type.fn_type(&[i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_math_pow",
+            f64_type.fn_type(&[f64_type.into(), f64_type.into()], false),
+            None,
+        );
+
+        macro_rules! declare_extern_batch {
+            ($module:expr, $names:expr, $fn_type:expr) => {
+                for name in $names {
+                    $module.add_function(name, $fn_type, None);
+                }
+            };
+        }
+
+        declare_extern_batch!(
+            module,
+            &[
+                "mux_math_sqrt",
+                "mux_math_sin",
+                "mux_math_cos",
+                "mux_math_tan",
+                "mux_math_asin",
+                "mux_math_acos",
+                "mux_math_atan",
+                "mux_math_ln",
+                "mux_math_log2",
+                "mux_math_log10",
+                "mux_math_exp",
+                "mux_math_abs",
+                "mux_math_floor",
+                "mux_math_ceil",
+                "mux_math_round",
+            ],
+            f64_type.fn_type(&[f64_type.into()], false)
+        );
+
+        declare_extern_batch!(
+            module,
+            &[
+                "mux_math_atan2",
+                "mux_math_log",
+                "mux_math_min",
+                "mux_math_max",
+                "mux_math_hypot",
+            ],
+            f64_type.fn_type(&[f64_type.into(), f64_type.into()], false)
+        );
+
+        declare_extern_batch!(
+            module,
+            &["mux_math_pi", "mux_math_e"],
+            f64_type.fn_type(&[], false)
+        );
+
+        module.add_function("mux_read_int", i64_type.fn_type(&[], false), None);
+
+        module.add_function("mux_flush_stdout", void_type.fn_type(&[], false), None);
+
+        for name in [
+            "mux_io_read_file",
+            "mux_io_exists",
+            "mux_io_remove",
+            "mux_io_is_file",
+            "mux_io_is_dir",
+            "mux_io_mkdir",
+            "mux_io_listdir",
+            "mux_io_basename",
+            "mux_io_dirname",
+        ] {
+            add_i8_fn(module, i8_ptr, name, &[i8_ptr.into()]);
+        }
+        add_i8_fn(
+            module,
+            i8_ptr,
+            "mux_io_write_file",
+            &[i8_ptr.into(), i8_ptr.into()],
+        );
+        add_i8_fn(
+            module,
+            i8_ptr,
+            "mux_io_join",
+            &[i8_ptr.into(), i8_ptr.into()],
+        );
+
+        for name in ["mux_datetime_now", "mux_datetime_now_millis"] {
+            module.add_function(name, i8_ptr.fn_type(&[], false), None);
+        }
+        for name in [
+            "mux_datetime_year",
+            "mux_datetime_month",
+            "mux_datetime_day",
+            "mux_datetime_hour",
+            "mux_datetime_minute",
+            "mux_datetime_second",
+            "mux_datetime_weekday",
+            "mux_datetime_sleep",
+            "mux_datetime_sleep_millis",
+        ] {
+            module.add_function(name, i8_ptr.fn_type(&[i64_type.into()], false), None);
+        }
+        for name in ["mux_datetime_format", "mux_datetime_format_local"] {
+            module.add_function(
+                name,
+                i8_ptr.fn_type(&[i64_type.into(), i8_ptr.into()], false),
+                None,
+            );
+        }
+
+        module.add_function(
+            "mux_sync_spawn",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sync_sleep",
+            void_type.fn_type(&[i64_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_thread_join",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_thread_detach",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function("mux_mutex_new", i8_ptr.fn_type(&[], false), None);
+        module.add_function(
+            "mux_mutex_lock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_mutex_unlock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function("mux_rwlock_new", i8_ptr.fn_type(&[], false), None);
+        module.add_function(
+            "mux_rwlock_read_lock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_rwlock_write_lock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_rwlock_unlock",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function("mux_condvar_new", i8_ptr.fn_type(&[], false), None);
+        module.add_function(
+            "mux_condvar_wait",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_condvar_signal",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_condvar_broadcast",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_rc_inc",
+            context.void_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_rc_dec",
+            context.bool_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_rand_init",
+            void_type.fn_type(&[i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_rand_int", i64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_rand_range",
+            i64_type.fn_type(&[i64_type.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function("mux_rand_float", f64_type.fn_type(&[], false), None);
+
+        module.add_function(
+            "mux_rand_bool",
+            context.bool_type().fn_type(&[], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_assert_assert",
+            void_type.fn_type(&[context.i32_type().into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_eq",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_ne",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_true",
+            void_type.fn_type(&[context.i32_type().into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_false",
+            void_type.fn_type(&[context.i32_type().into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_some",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_none",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_ok",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_assert_err",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_net_tcp_connect",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_read",
+            i8_ptr.fn_type(&[i8_ptr.into(), i64_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_write",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_close",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_set_nonblocking",
+            i8_ptr.fn_type(&[i8_ptr.into(), i32_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_peer_addr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_local_addr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_net_udp_bind",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_udp_send_to",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_udp_recv_from",
+            i8_ptr.fn_type(&[i8_ptr.into(), i64_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_udp_close",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_udp_set_nonblocking",
+            i8_ptr.fn_type(&[i8_ptr.into(), i32_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_udp_peer_addr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_udp_local_addr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
     }
 
     pub(super) fn box_value(&mut self, val: BasicValueEnum<'a>) -> PointerValue<'a> {

@@ -1884,17 +1884,19 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `assert`, `math`, `io`, `random`, and `datetime`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, and `net`.
 
 Import styles:
 
 ```mux
-import std                    // use std.assert, std.math, std.io, std.random, std.datetime
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
 import std.assert              // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*
 import std.random             // use random.*
 import std.datetime           // use datetime.*
+import std.sync               // use sync.*
+import std.net                // use net.*
 import std.(math, random as r)
 import std.*                  // flat import of stdlib items
 ```
@@ -1962,6 +1964,36 @@ Format patterns use chrono `strftime` tokens, for example:
 - `%B` full month name
 - `%b` abbreviated month name
 - `%Y-%m-%d %H:%M:%S`
+
+### 17.6 sync
+
+`sync` provides basic concurrency primitives.
+
+- `sync.spawn(fn() -> void) -> result<Thread, string>`
+- `sync.sleep(int milliseconds) -> void`
+- `Thread.join() -> result<void, string>`
+- `Thread.detach() -> result<void, string>`
+- `Mutex.new() -> Mutex`
+- `Mutex.lock() -> result<void, string>`
+- `Mutex.unlock() -> result<void, string>`
+- `RwLock.new() -> RwLock`
+- `RwLock.read_lock() -> result<void, string>`
+- `RwLock.write_lock() -> result<void, string>`
+- `RwLock.unlock() -> result<void, string>`
+- `CondVar.new() -> CondVar`
+- `CondVar.wait(Mutex) -> result<void, string>`
+- `CondVar.signal() -> result<void, string>`
+- `CondVar.broadcast() -> result<void, string>`
+
+### 17.7 net
+
+`net` exposes the primitives you need to work with raw sockets and build higher-level protocols.
+
+- **`TcpStream`** provides `connect`, blocking reads/writes, `set_nonblocking` (returns `result<void, string>`), and `peer_addr`/`local_addr` helpers that both return `result<string, string>`.
+- **`UdpSocket`** lets you bind to a local port, send datagrams, receive a `(Bytes, string)` tuple plus the sender address, toggle non-blocking mode via `set_nonblocking` (`result<void, string>`), and inspect `peer_addr`/`local_addr` results.
+- **Request/Response shapes** define the protocol-agnostic payloads that HTTP (or future) libraries can share: store `method`, `url`, `headers`, and `body` in a `map`, while responses pair `status`, `headers`, and `body`.
+
+Both classes return explicit `result` types so you can handle networking errors without hidden panics.
 
 ---
 

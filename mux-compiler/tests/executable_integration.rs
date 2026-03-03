@@ -1,4 +1,5 @@
 use insta::assert_snapshot;
+use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -126,6 +127,10 @@ fn test_executable_all_mux_files_in_dir() {
     // Sort files for consistent test order
     test_files.sort();
 
+    // Precompile regexes once to avoid recompiling them in the loop
+    let ipv4_re = Regex::new(r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}):\d+\b").unwrap();
+    let ipv6_re = Regex::new(r"\[(?P<host>[0-9a-fA-F:]+)\]:\d+\b").unwrap();
+
     for path in test_files {
         let file_name = path
             .file_name()
@@ -150,9 +155,16 @@ fn test_executable_all_mux_files_in_dir() {
             };
 
             println!("Creating executable snapshot for: {}", snapshot_name);
+
+            // Normalize ephemeral ports in output so snapshots are deterministic.
+            // Replace IPv4 addresses like 127.0.0.1:12345 -> 127.0.0.1:PORT
+            // and IPv6 addresses like [::1]:12345 -> [::1]:PORT
+            let normalized = ipv4_re.replace_all(&output_to_snapshot, "$host:PORT");
+            let normalized = ipv6_re.replace_all(&normalized, "[$host]:PORT");
+
             assert_snapshot!(
                 format!("executable_integration__{}", snapshot_name),
-                output_to_snapshot
+                normalized
             );
             println!("✓ Successfully processed executable for: {}", file_name);
         }) {
