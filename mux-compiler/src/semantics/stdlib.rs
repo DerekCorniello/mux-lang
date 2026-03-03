@@ -373,6 +373,11 @@ fn thread_methods() -> HashMap<String, MethodSig> {
             params: [],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
             is_static: false
+        },
+        "detach" => {
+            params: [],
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false
         }
     }
 }
@@ -390,6 +395,11 @@ fn condvar_methods() -> HashMap<String, MethodSig> {
             is_static: false
         },
         "signal" => {
+            params: [],
+            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            is_static: false
+        },
+        "broadcast" => {
             params: [],
             return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
             is_static: false

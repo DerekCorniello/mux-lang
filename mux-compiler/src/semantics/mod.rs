@@ -186,15 +186,6 @@ impl SemanticAnalyzer {
     /// Build an "undefined symbol" error with a "did you mean?" suggestion if a similar
     /// symbol exists in the current scope.
     fn undefined_symbol_error(&self, kind: &str, name: &str, span: Span) -> SemanticError {
-        // Debug: trace unexpected undefineds for easier diagnosis
-        if name == "Mutex" && kind == "variable" {
-            eprintln!(
-                "undefined_symbol_error triggered for {} '{}', imported_symbols keys: {:?}",
-                kind,
-                name,
-                self.imported_symbols.keys().collect::<Vec<_>>()
-            );
-        }
         if let Some(suggestion) = self.symbol_table.find_similar(name) {
             SemanticError::with_help(
                 format!("Undefined {} '{}'", kind, name),

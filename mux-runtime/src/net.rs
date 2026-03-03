@@ -44,7 +44,8 @@ fn next_handle() -> i64 {
         if handle > 0 {
             return handle;
         }
-        NEXT_HANDLE.store(1, Ordering::SeqCst);
+        // Overflow occurred, atomically reset counter to 1
+        let _ = NEXT_HANDLE.compare_exchange(handle, 1, Ordering::SeqCst, Ordering::SeqCst);
     }
 }
 
@@ -250,7 +251,7 @@ pub extern "C" fn mux_net_tcp_connect(addr: *mut Value) -> *mut MuxResult {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_read(stream: *mut Value, size: i64) -> *mut MuxResult {
     if size <= 0 {
-        return net_result_ok(Value::List(Vec::new()));
+        return net_result_err("invalid buffer size".to_string());
     }
     let handle = match tcp_handle(stream) {
         Ok(handle) => handle,
