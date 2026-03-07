@@ -111,6 +111,7 @@ impl SemanticAnalyzer {
             ("std.random", "random"),
             ("std.net", "net"),
             ("std.sync", "sync"),
+            ("std.env", "env"),
         ]
     }
 

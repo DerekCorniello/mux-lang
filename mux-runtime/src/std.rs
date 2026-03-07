@@ -2,6 +2,7 @@ use crate::{
     Value, list::List, map::Map, optional::Optional, refcount::mux_rc_alloc, result::MuxResult,
     set::Set,
 };
+use std::env as sys_env;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -259,6 +260,31 @@ pub extern "C" fn mux_free_set(set: *mut Set) {
 pub extern "C" fn mux_free_optional(opt: *mut Optional) {
     if !opt.is_null() {
         unsafe { drop(Box::from_raw(opt)) };
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_env_get(key: *const c_char) -> *mut Optional {
+    if key.is_null() {
+        return crate::optional::mux_optional_none();
+    }
+    // Convert C string to Rust String
+    let k = unsafe { CStr::from_ptr(key) }
+        .to_string_lossy()
+        .into_owned();
+    match sys_env::var(&k) {
+        Ok(val) => {
+            // If value contains interior NULs, CString::new will fail. Treat as None.
+            if let Ok(cstr) = CString::new(val) {
+                // mux_string_value clones the string, so passing as_ptr is safe while cstr is alive
+                let vptr = mux_string_value(cstr.as_ptr());
+                crate::optional::mux_optional_some_value(vptr)
+            } else {
+                crate::optional::mux_optional_none()
+            }
+        }
+        Err(_) => crate::optional::mux_optional_none(),
     }
 }
 

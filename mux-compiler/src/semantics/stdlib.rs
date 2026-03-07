@@ -488,7 +488,9 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 };
 
 /// List of all available stdlib modules for wildcard imports
-pub const STDLIB_MODULES: &[&str] = &["assert", "datetime", "io", "math", "random", "sync", "net"];
+pub const STDLIB_MODULES: &[&str] = &[
+    "assert", "datetime", "io", "math", "random", "sync", "net", "env",
+];
 
 lazy_static! {
     pub static ref IO_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
@@ -617,6 +619,19 @@ lazy_static! {
         }
         m
     };
+    pub static ref ENV_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        // env.get :: Str -> Optional(Str)
+        m.insert(
+            "env.get",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: Type::Optional(Box::new(str_())),
+                llvm_name: "mux_env_get".to_string(),
+            },
+        );
+        m
+    };
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
         m.insert("int_to_string", sig(vec![int()], str_()));
@@ -707,6 +722,11 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone())),
         )
+        .chain(
+            ENV_STDLIB_ITEMS
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone())),
+        )
 }
 
 pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
@@ -720,6 +740,7 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| DATETIME_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| SYNC_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| ENV_STDLIB_ITEMS.get(name).cloned())
 }
 
 /// Convert a canonical `StdlibItem` into a `Symbol` suitable for registration in a SymbolTable.

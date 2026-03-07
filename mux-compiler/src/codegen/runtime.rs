@@ -708,6 +708,8 @@ impl<'a> CodeGenerator<'a> {
         ] {
             add_i8_fn(module, i8_ptr, name, &[i8_ptr.into()]);
         }
+        // Environment access: env.get(key: *const i8) -> Optional(Str)
+        add_i8_fn(module, i8_ptr, "mux_env_get", &[i8_ptr.into()]);
         add_i8_fn(
             module,
             i8_ptr,
