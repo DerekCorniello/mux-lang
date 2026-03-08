@@ -34,22 +34,45 @@ Use `TcpStream` to connect to a TCP server and perform simple blocking-IO operat
 | `socket.peer_addr()` | — | `result<string, string>` | Returns the peer address when the socket is connected. |
 | `socket.local_addr()` | — | `result<string, string>` | Returns the local bind address. |
 
-## Request / Response shapes
+## Http client
 
-`std.net` also documents the protocol-agnostic shapes that higher-level libraries can share. The compiler does not currently provide a dedicated `Request` type, but you can represent them as `map` objects with the following keys:
+`std.net.http` exposes a low-level JSON-driven HTTP client primitive.
 
-- `method`: `string` (`GET`, `POST`, etc.)
-- `url`: `string`
-- `headers`: `map<string, string>`
-- `body`: `list<int>` (raw bytes)
+| Function | Signature | Return | Description |
+| -------- | --------- | ------ | ----------- |
+| `http.request(req)` | `Json` | `result<Json, string>` | Sends an HTTP request represented as JSON and returns a JSON response shape. |
 
-Likewise, a response consists of:
+### Request JSON shape
 
-- `status`: `int`
-- `headers`: `map<string, string>`
-- `body`: `list<int>`
+- `method`: `string` (required)
+- `url`: `string` (required)
+- `headers`: `object<string, string>` (optional)
+- `body`: `Json` (optional, serialized as JSON text)
 
-Access these fields using the normal `map` API (e.g., `req["method"]` or `req.get("method").value()`).
+### Response JSON shape
+
+- `status`: `number`
+- `headers`: `object<string, string>`
+- `body`: `Json` (parsed from response text when valid JSON, otherwise raw string)
+
+## Quick HTTP example
+
+```mux
+import std.json
+import std.net
+
+func main() returns void {
+    match json.parse("{\"method\":\"POST\",\"url\":\"https://httpbin.org/post\",\"headers\":{\"Accept\":\"application/json\"},\"body\":{\"value\":42}}") {
+        ok(req) {
+            match net.http.request(req) {
+                ok(resp) { print("http response json received") }
+                err(e) { print("http error: " + e) }
+            }
+        }
+        err(e) { print("invalid request json: " + e) }
+    }
+}
+```
 
 ## Quick UDP example
 

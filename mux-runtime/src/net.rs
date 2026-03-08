@@ -1,9 +1,10 @@
+use crate::json::{json_to_value, value_to_json, Json};
 use crate::object::{alloc_object, get_object_ptr, register_object_type};
 use crate::refcount::mux_rc_dec;
 use crate::result::MuxResult;
 use crate::{Tuple, TypeId, Value};
 use lazy_static::lazy_static;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::io::{Read, Write};
 use std::net::{TcpStream as StdTcpStream, UdpSocket as StdUdpSocket};
@@ -229,6 +230,130 @@ fn net_result_unit(result: Result<(), String>) -> *mut MuxResult {
 fn net_result_string(result: Result<String, String>) -> *mut MuxResult {
     match result {
         Ok(value) => net_result_ok(Value::String(value)),
+        Err(err) => net_result_err(err),
+    }
+}
+
+fn value_to_json_map(value: *const Value, label: &str) -> Result<BTreeMap<String, Json>, String> {
+    if value.is_null() {
+        return Err(format!("{} is null", label));
+    }
+    let json = value_to_json(unsafe { &*value })?;
+    if let Json::Object(map) = json {
+        Ok(map)
+    } else {
+        Err(format!("{} must be a JSON object", label))
+    }
+}
+
+fn json_get_string(
+    map: &BTreeMap<String, Json>,
+    key: &str,
+    required: bool,
+) -> Result<Option<String>, String> {
+    match map.get(key) {
+        Some(Json::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(format!("'{}' must be a string", key)),
+        None if required => Err(format!("missing required field '{}'", key)),
+        None => Ok(None),
+    }
+}
+
+fn json_headers(
+    map: &BTreeMap<String, Json>,
+    key: &str,
+) -> Result<BTreeMap<String, String>, String> {
+    let Some(headers_value) = map.get(key) else {
+        return Ok(BTreeMap::new());
+    };
+    let Json::Object(headers) = headers_value else {
+        return Err(format!("'{}' must be a JSON object", key));
+    };
+
+    let mut resolved = BTreeMap::new();
+    for (name, value) in headers {
+        if let Json::String(header_value) = value {
+            resolved.insert(name.clone(), header_value.clone());
+        } else {
+            return Err(format!("header '{}' must be a string", name));
+        }
+    }
+    Ok(resolved)
+}
+
+fn read_http_response(response: ureq::Response) -> Result<Value, String> {
+    let status = i64::from(response.status());
+    let mut response_headers = BTreeMap::new();
+    for name in response.headers_names() {
+        if let Some(value) = response.header(&name) {
+            response_headers.insert(name, Json::String(value.to_string()));
+        }
+    }
+
+    let body_text = response
+        .into_string()
+        .map_err(|e| format!("failed to read response body: {}", e))?;
+    let body_json = if body_text.trim().is_empty() {
+        Json::Null
+    } else {
+        Json::parse(&body_text).unwrap_or(Json::String(body_text))
+    };
+
+    let mut response_map = BTreeMap::new();
+    response_map.insert("status".to_string(), Json::Number(status as f64));
+    response_map.insert("headers".to_string(), Json::Object(response_headers));
+    response_map.insert("body".to_string(), body_json);
+    Ok(json_to_value(&Json::Object(response_map)))
+}
+
+fn execute_http_request(request: *const Value) -> Result<Value, String> {
+    let request_map = value_to_json_map(request, "request")?;
+    let method = json_get_string(&request_map, "method", true)?
+        .ok_or_else(|| "missing required field 'method'".to_string())?;
+    let url = json_get_string(&request_map, "url", true)?
+        .ok_or_else(|| "missing required field 'url'".to_string())?;
+    let headers = json_headers(&request_map, "headers")?;
+    let body = request_map.get("body").cloned();
+
+    let mut has_content_type = false;
+    let mut req = ureq::request(&method, &url);
+    for (header_name, header_value) in &headers {
+        if header_name.eq_ignore_ascii_case("content-type") {
+            has_content_type = true;
+        }
+        req = req.set(header_name, header_value);
+    }
+
+    let response = if let Some(body_json) = body {
+        if !has_content_type {
+            req = req.set("Content-Type", "application/json");
+        }
+        let payload = body_json.stringify(None);
+        match req.send_string(&payload) {
+            Ok(response) => response,
+            Err(ureq::Error::Status(_, response)) => response,
+            Err(ureq::Error::Transport(error)) => {
+                return Err(format!("http request failed: {}", error));
+            }
+        }
+    } else {
+        match req.call() {
+            Ok(response) => response,
+            Err(ureq::Error::Status(_, response)) => response,
+            Err(ureq::Error::Transport(error)) => {
+                return Err(format!("http request failed: {}", error));
+            }
+        }
+    };
+
+    read_http_response(response)
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_net_http_request(request: *const Value) -> *mut MuxResult {
+    match execute_http_request(request) {
+        Ok(value) => net_result_ok(value),
         Err(err) => net_result_err(err),
     }
 }

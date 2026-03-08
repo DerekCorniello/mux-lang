@@ -43,6 +43,9 @@ fn str_() -> Type {
 fn bool_() -> Type {
     Type::Primitive(PrimitiveType::Bool)
 }
+fn json_type() -> Type {
+    Type::Named("Json".to_string(), Vec::new())
+}
 
 fn sig(params: Vec<Type>, return_type: Type) -> BuiltInSig {
     BuiltInSig {
@@ -236,6 +239,22 @@ fn make_class_symbol(name: &str, methods: HashMap<String, MethodSig>, span: Span
     }
 }
 
+fn make_import_module_symbol(module_name: &str, span: Span) -> Symbol {
+    Symbol {
+        kind: SymbolKind::Import,
+        span,
+        type_: Some(Type::Module(module_name.to_string())),
+        interfaces: HashMap::new(),
+        methods: HashMap::new(),
+        fields: HashMap::new(),
+        type_params: Vec::new(),
+        original_name: None,
+        llvm_name: None,
+        default_param_count: 0,
+        variants: None,
+    }
+}
+
 macro_rules! define_methods {
     (
         $($method_name:expr => {
@@ -363,6 +382,10 @@ pub fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
     classes.insert(
         "UdpSocket".to_string(),
         make_class_symbol("UdpSocket", udp_socket_methods(), span),
+    );
+    classes.insert(
+        "http".to_string(),
+        make_import_module_symbol("net.http", span),
     );
     classes
 }
@@ -632,6 +655,18 @@ lazy_static! {
         );
         m
     };
+    pub static ref NET_HTTP_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        m.insert(
+            "net.http.request",
+            StdlibItem::Function {
+                params: vec![json_type()],
+                ret: io_result(json_type()),
+                llvm_name: "mux_net_http_request".to_string(),
+            },
+        );
+        m
+    };
     pub static ref DATA_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
         let mut m = HashMap::new();
         // json.parse :: Str -> Result(Json, Str)
@@ -780,6 +815,11 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
                 .map(|(k, v)| (k.to_string(), v.clone())),
         )
         .chain(
+            NET_HTTP_STDLIB_ITEMS
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone())),
+        )
+        .chain(
             DATA_STDLIB_ITEMS
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone())),
@@ -798,6 +838,7 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| SYNC_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| ENV_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| NET_HTTP_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| DATA_STDLIB_ITEMS.get(name).cloned())
 }
 

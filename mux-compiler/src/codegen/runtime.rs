@@ -919,6 +919,11 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_net_http_request",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
             "mux_net_tcp_connect",
             i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,

@@ -4808,6 +4808,11 @@ impl SemanticAnalyzer {
                     let module_symbols = self.collect_stdlib_module_symbols(module, span);
                     self.imported_symbols
                         .insert(module.to_string(), module_symbols);
+                    if *module == "net" {
+                        let http_symbols = self.collect_stdlib_module_symbols("net.http", span);
+                        self.imported_symbols
+                            .insert("net.http".to_string(), http_symbols);
+                    }
                 }
 
                 self.imported_symbols
@@ -4912,6 +4917,11 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         let module_symbols = self.collect_stdlib_module_symbols(module_name, span);
+        if module_name == "net" {
+            let http_symbols = self.collect_stdlib_module_symbols("net.http", span);
+            self.imported_symbols
+                .insert("net.http".to_string(), http_symbols);
+        }
         self.apply_stdlib_module_import_spec(module_name, spec, span, module_symbols)
     }
 
@@ -4924,7 +4934,9 @@ impl SemanticAnalyzer {
 
         let mut module_symbols = std::collections::HashMap::new();
         for (key, item) in all_stdlib_items() {
-            if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
+            if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name))
+                && !item_name.contains('.')
+            {
                 module_symbols.insert(
                     item_name.to_string(),
                     crate::semantics::stdlib::stdlib_item_to_symbol(&item, span),

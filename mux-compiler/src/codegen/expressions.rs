@@ -1782,14 +1782,24 @@ impl<'a> CodeGenerator<'a> {
                                             .and_then(|module_syms| module_syms.get(submodule_name))
                                         {
                                             // submodule is an Import, check if field is a function in submodule
-                                            if let Some(function_symbol) = self
+                                            let qualified_submodule_name =
+                                                format!("{}.{}", module_name, submodule_name);
+                                            let function_symbol = self
                                                 .analyzer
                                                 .imported_symbols()
-                                                .get(submodule_name)
+                                                .get(&qualified_submodule_name)
                                                 .and_then(|submodule_syms| {
                                                     submodule_syms.get(field)
                                                 })
-                                            {
+                                                .or_else(|| {
+                                                    self.analyzer
+                                                        .imported_symbols()
+                                                        .get(submodule_name)
+                                                        .and_then(|submodule_syms| {
+                                                            submodule_syms.get(field)
+                                                        })
+                                                });
+                                            if let Some(function_symbol) = function_symbol {
                                                 let func_type = function_symbol.type_.clone();
                                                 let llvm_function_name = function_symbol
                                                     .llvm_name
