@@ -108,6 +108,7 @@ impl SemanticAnalyzer {
             ("std.datetime", "datetime"),
             ("std.io", "io"),
             ("std.math", "math"),
+            ("std.json", "json"),
             ("std.random", "random"),
             ("std.net", "net"),
             ("std.sync", "sync"),
@@ -4926,6 +4927,19 @@ impl SemanticAnalyzer {
             module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span));
         } else if module_name == "sync" {
             module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span));
+        } else if module_name == "json" {
+            // Expose Json as a named type in the std.json module so code can refer to json.Json
+            module_symbols.insert(
+                "Json".to_string(),
+                Self::make_symbol(
+                    crate::semantics::types::SymbolKind::Class,
+                    span,
+                    Some(crate::semantics::types::Type::Named(
+                        "Json".to_string(),
+                        Vec::new(),
+                    )),
+                ),
+            );
         }
         module_symbols
     }

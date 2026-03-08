@@ -1,0 +1,31 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+{"a":[1.0,2.0,3.0],"b":null}
+{
+  "a": [
+    1.0,
+    2.0,
+    3.0
+  ],
+  "b": null
+}
+{
+  "arr": [
+    1.0,
+    2.0,
+    3.0
+  ],
+  "nested": {
+    "x": true
+  },
+  "num": 42.0
+}
+[1.0,2.0,3.0,4.0]
+{
+  "x": 1.0,
+  "y": 2.0
+}
+{k: 10}
+parse failed as expected: key must be a string at line 1 column 3

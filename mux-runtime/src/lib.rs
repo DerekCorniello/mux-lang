@@ -270,6 +270,7 @@ pub mod datetime;
 pub mod float;
 pub mod int;
 pub mod io;
+pub mod json;
 pub mod list;
 pub mod map;
 pub mod math;

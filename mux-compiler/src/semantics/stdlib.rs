@@ -489,7 +489,7 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 
 /// List of all available stdlib modules for wildcard imports
 pub const STDLIB_MODULES: &[&str] = &[
-    "assert", "datetime", "io", "math", "random", "sync", "net", "env",
+    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "json",
 ];
 
 lazy_static! {
@@ -632,6 +632,51 @@ lazy_static! {
         );
         m
     };
+    pub static ref JSON_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        // json.parse :: Str -> Result(Json, Str)
+        m.insert(
+            "json.parse",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: Type::Result(Box::new(Type::Named("Json".to_string(), Vec::new())), Box::new(str_())),
+                llvm_name: "mux_json_parse".to_string(),
+            },
+        );
+        // json.stringify :: Json, Optional(Int) -> Str
+        m.insert(
+            "json.stringify",
+            StdlibItem::Function {
+                // Note: runtime signature accepts (Value*, Optional) where Optional may contain an Int.
+                // The compiler-side signature remains Json + Optional(Int) so type checking works.
+                params: vec![Type::Named("Json".to_string(), Vec::new()), Type::Optional(Box::new(Type::Primitive(PrimitiveType::Int)))],
+                ret: str_(),
+                llvm_name: "mux_json_stringify".to_string(),
+            },
+        );
+        // json.from_map :: Map(Str, T) -> Result(Json, Str)
+        m.insert(
+            "json.from_map",
+            StdlibItem::Function {
+                params: vec![Type::Map(Box::new(str_()), Box::new(Type::Variable("T".to_string())))],
+                ret: Type::Result(Box::new(Type::Named("Json".to_string(), Vec::new())), Box::new(str_())),
+                llvm_name: "mux_json_from_map".to_string(),
+            },
+        );
+        // json.to_map :: Json -> Result(Map(Str, Json), Str)
+        m.insert(
+            "json.to_map",
+            StdlibItem::Function {
+                params: vec![Type::Named("Json".to_string(), Vec::new())],
+                ret: Type::Result(
+                    Box::new(Type::Map(Box::new(str_()), Box::new(Type::Named("Json".to_string(), Vec::new())))),
+                    Box::new(str_()),
+                ),
+                llvm_name: "mux_json_to_map".to_string(),
+            },
+        );
+        m
+    };
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
         m.insert("int_to_string", sig(vec![int()], str_()));
@@ -724,6 +769,11 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
         )
         .chain(
             ENV_STDLIB_ITEMS
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone())),
+        )
+        .chain(
+            JSON_STDLIB_ITEMS
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone())),
         )

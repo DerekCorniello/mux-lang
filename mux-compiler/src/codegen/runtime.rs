@@ -710,6 +710,15 @@ impl<'a> CodeGenerator<'a> {
         }
         // Environment access: env.get(key: *const i8) -> Optional(Str)
         add_i8_fn(module, i8_ptr, "mux_env_get", &[i8_ptr.into()]);
+        // JSON helpers
+        add_i8_fn(module, i8_ptr, "mux_json_parse", &[i8_ptr.into()]);
+        module.add_function(
+            "mux_json_stringify",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        add_i8_fn(module, i8_ptr, "mux_json_from_map", &[i8_ptr.into()]);
+        add_i8_fn(module, i8_ptr, "mux_json_to_map", &[i8_ptr.into()]);
         add_i8_fn(
             module,
             i8_ptr,
