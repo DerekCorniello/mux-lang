@@ -484,7 +484,7 @@ fn read_http_request_headers(stream: &mut StdTcpStream) -> Result<(Vec<u8>, usiz
 fn parse_http_request_headers(
     header_slice: &[u8],
 ) -> Result<(String, String, String, BTreeMap<String, String>), String> {
-    let mut parsed_headers = [httparse::EMPTY_HEADER; MAX_HTTP_HEADERS_COUNT];
+    let mut parsed_headers = vec![httparse::EMPTY_HEADER; MAX_HTTP_HEADERS_COUNT];
     let mut request = httparse::Request::new(&mut parsed_headers);
     let parse_status = request
         .parse(header_slice)
