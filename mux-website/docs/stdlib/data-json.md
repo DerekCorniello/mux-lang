@@ -13,7 +13,7 @@ title: Data JSON
 Example:
 
 ```mux
-import std.json
+import std.data.json
 
 func main() returns void {
     match json.parse("{\"user\": \"mux\"}") {

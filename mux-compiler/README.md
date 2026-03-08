@@ -1986,6 +1986,18 @@ Format patterns use chrono `strftime` tokens, for example:
 - `Thread.join() -> result<void, string>`
 - `Thread.detach() -> result<void, string>`
 
+- `Mutex.new() -> Mutex`
+- `Mutex.lock() -> result<void, string>`
+- `Mutex.unlock() -> result<void, string>`
+- `RwLock.new() -> RwLock`
+- `RwLock.read_lock() -> result<void, string>`
+- `RwLock.write_lock() -> result<void, string>`
+- `RwLock.unlock() -> result<void, string>`
+- `CondVar.new() -> CondVar`
+- `CondVar.wait(Mutex) -> result<void, string>`
+- `CondVar.signal() -> result<void, string>`
+- `CondVar.broadcast() -> result<void, string>`
+
 ### 17.7 net
 
 `net` exposes TCP/UDP sockets plus the JSON-driven HTTP client described in the docs.
@@ -2017,27 +2029,8 @@ Format patterns use chrono `strftime` tokens, for example:
 
 - `data.csv.parse(string csv_text) -> result<Csv, string>`
 - `data.csv.parse_with_headers(string csv_text) -> result<Csv, string>`
-- `Mutex.new() -> Mutex`
-- `Mutex.lock() -> result<void, string>`
-- `Mutex.unlock() -> result<void, string>`
-- `RwLock.new() -> RwLock`
-- `RwLock.read_lock() -> result<void, string>`
-- `RwLock.write_lock() -> result<void, string>`
-- `RwLock.unlock() -> result<void, string>`
-- `CondVar.new() -> CondVar`
-- `CondVar.wait(Mutex) -> result<void, string>`
-- `CondVar.signal() -> result<void, string>`
-- `CondVar.broadcast() -> result<void, string>`
 
-### 17.7 net
 
-`net` exposes raw networking primitives, including:
-
-- `TcpStream` for connecting to TCP services, reading/writing bytes, toggling `set_nonblocking` (`result<void, string>`), and querying `peer_addr`/`local_addr` (`result<string, string>`) endpoints.
-- `UdpSocket` for binding to a port, sending datagrams, receiving `(Bytes, string)` tuples, toggling `set_nonblocking` (`result<void, string>`), and querying `peer_addr`/`local_addr` results.
-- A protocol-neutral request/response shape described as simple `map` objects with `method`, `url`, `headers`, `body`, `status`, etc., so higher-level protocols can share a common shape.
-
-Methods return explicit `result` values so errors are handled deterministically.
 
 
 ## Project File Structure

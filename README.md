@@ -1974,6 +1974,18 @@ Format patterns use chrono `strftime` tokens, for example:
 - `Thread.join() -> result<void, string>`
 - `Thread.detach() -> result<void, string>`
 
+- `Mutex.new() -> Mutex`
+- `Mutex.lock() -> result<void, string>`
+- `Mutex.unlock() -> result<void, string>`
+- `RwLock.new() -> RwLock`
+- `RwLock.read_lock() -> result<void, string>`
+- `RwLock.write_lock() -> result<void, string>`
+- `RwLock.unlock() -> result<void, string>`
+- `CondVar.new() -> CondVar`
+- `CondVar.wait(Mutex) -> result<void, string>`
+- `CondVar.signal() -> result<void, string>`
+- `CondVar.broadcast() -> result<void, string>`
+
 ### 17.7 net
 
 `net` exposes TCP/UDP sockets plus the JSON-driven HTTP client described in the docs.
@@ -2005,27 +2017,8 @@ Format patterns use chrono `strftime` tokens, for example:
 
 - `data.csv.parse(string csv_text) -> result<Csv, string>`
 - `data.csv.parse_with_headers(string csv_text) -> result<Csv, string>`
-- `Mutex.new() -> Mutex`
-- `Mutex.lock() -> result<void, string>`
-- `Mutex.unlock() -> result<void, string>`
-- `RwLock.new() -> RwLock`
-- `RwLock.read_lock() -> result<void, string>`
-- `RwLock.write_lock() -> result<void, string>`
-- `RwLock.unlock() -> result<void, string>`
-- `CondVar.new() -> CondVar`
-- `CondVar.wait(Mutex) -> result<void, string>`
-- `CondVar.signal() -> result<void, string>`
-- `CondVar.broadcast() -> result<void, string>`
 
-### 17.7 net
 
-`net` exposes the primitives you need to work with raw sockets and build higher-level protocols.
-
-- **`TcpStream`** provides `connect`, blocking reads/writes, `set_nonblocking` (returns `result<void, string>`), and `peer_addr`/`local_addr` helpers that both return `result<string, string>`.
-- **`UdpSocket`** lets you bind to a local port, send datagrams, receive a `(Bytes, string)` tuple plus the sender address, toggle non-blocking mode via `set_nonblocking` (`result<void, string>`), and inspect `peer_addr`/`local_addr` results.
-- **Request/Response shapes** define the protocol-agnostic payloads that HTTP (or future) libraries can share: store `method`, `url`, `headers`, and `body` in a `map`, while responses pair `status`, `headers`, and `body`.
-
-Both classes return explicit `result` types so you can handle networking errors without hidden panics.
 
 ---
 

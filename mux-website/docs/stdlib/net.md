@@ -58,7 +58,7 @@ Use `TcpStream` to connect to a TCP server and perform simple blocking-IO operat
 ## Quick HTTP example
 
 ```mux
-import std.json
+import std.data.json
 import std.net
 
 func main() returns void {

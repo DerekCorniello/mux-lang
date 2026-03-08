@@ -285,8 +285,14 @@ fn read_http_response(response: ureq::Response) -> Result<Value, String> {
     let status = i64::from(response.status());
     let mut response_headers = BTreeMap::new();
     for name in response.headers_names() {
-        if let Some(value) = response.header(&name) {
-            response_headers.insert(name, Json::String(value.to_string()));
+        // `ureq::Response::header` returns only the first value for a header name.
+        // HTTP allows multiple values for the same header (e.g. Set-Cookie). Join
+        // multiple values with ", " per RFC 7230 §3.2.2 so callers receive all
+        // header occurrences.
+        let values = response.all(&name);
+        if !values.is_empty() {
+            let joined = values.join(", ");
+            response_headers.insert(name, Json::String(joined));
         }
     }
 
