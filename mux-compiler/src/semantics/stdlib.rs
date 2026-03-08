@@ -632,7 +632,7 @@ lazy_static! {
         );
         m
     };
-    pub static ref JSON_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+    pub static ref DATA_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
         let mut m = HashMap::new();
         // json.parse :: Str -> Result(Json, Str)
         m.insert(
@@ -643,14 +643,14 @@ lazy_static! {
                 llvm_name: "mux_json_parse".to_string(),
             },
         );
-        // json.stringify :: Json, Optional(Int) -> Str
+        // json.stringify :: Json, Optional(Int) -> Result(Str, Str)
         m.insert(
             "json.stringify",
             StdlibItem::Function {
                 // Note: runtime signature accepts (Value*, Optional) where Optional may contain an Int.
-                // The compiler-side signature remains Json + Optional(Int) so type checking works.
+                // Now returns Result(Str, Str) to distinguish serialization errors from successful output.
                 params: vec![Type::Named("Json".to_string(), Vec::new()), Type::Optional(Box::new(Type::Primitive(PrimitiveType::Int)))],
-                ret: str_(),
+                ret: Type::Result(Box::new(str_()), Box::new(str_())),
                 llvm_name: "mux_json_stringify".to_string(),
             },
         );
@@ -675,32 +675,6 @@ lazy_static! {
                 llvm_name: "mux_json_to_map".to_string(),
             },
         );
-        m
-    };
-    pub static ref DATA_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
-        let mut m = HashMap::new();
-        // data.csv.parse :: Str -> Result(Csv, Str)
-        m.insert(
-            "data.csv.parse",
-            StdlibItem::Function {
-                params: STR_PARAM.to_vec(),
-                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
-                llvm_name: "mux_csv_parse".to_string(),
-            },
-        );
-        // data.csv.parse_with_headers :: Str -> Result(Csv, Str)
-        m.insert(
-            "data.csv.parse_with_headers",
-            StdlibItem::Function {
-                params: STR_PARAM.to_vec(),
-                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
-                llvm_name: "mux_csv_parse_with_headers".to_string(),
-            },
-        );
-        m
-    };
-    pub static ref CSV_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
-        let mut m = HashMap::new();
         // csv.parse :: Str -> Result(Csv, Str)
         m.insert(
             "csv.parse",
@@ -713,6 +687,23 @@ lazy_static! {
         // csv.parse_with_headers :: Str -> Result(Csv, Str)
         m.insert(
             "csv.parse_with_headers",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
+                llvm_name: "mux_csv_parse_with_headers".to_string(),
+            },
+        );
+        // Backwards-compatibility aliases: data.csv.parse and data.csv.parse_with_headers
+        m.insert(
+            "data.csv.parse",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
+                llvm_name: "mux_csv_parse".to_string(),
+            },
+        );
+        m.insert(
+            "data.csv.parse_with_headers",
             StdlibItem::Function {
                 params: STR_PARAM.to_vec(),
                 ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
@@ -817,16 +808,6 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
                 .map(|(k, v)| (k.to_string(), v.clone())),
         )
         .chain(
-            JSON_STDLIB_ITEMS
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone())),
-        )
-        .chain(
-            CSV_STDLIB_ITEMS
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone())),
-        )
-        .chain(
             DATA_STDLIB_ITEMS
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone())),
@@ -845,8 +826,6 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| SYNC_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| ENV_STDLIB_ITEMS.get(name).cloned())
-        .or_else(|| JSON_STDLIB_ITEMS.get(name).cloned())
-        .or_else(|| CSV_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| DATA_STDLIB_ITEMS.get(name).cloned())
 }
 

@@ -1,0 +1,13 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+failed to create Json from map with NaN: cannot serialize NaN to JSON
+failed to create Json from map with +Inf: cannot serialize infinity to JSON
+failed to create Json from map with -Inf: cannot serialize infinity to JSON
+finite floats ok: {
+  "x": 3.14,
+  "y": -42.0,
+  "z": 0.0
+}
+all NaN/Inf tests completed!

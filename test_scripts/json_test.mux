@@ -5,28 +5,51 @@ string s = "{\"a\": [1, 2, 3], \"b\": null}"
 auto r = json.parse(s)
 match r {
   ok(val) {
-    string compact = json.stringify(val, none)
-    string pretty = json.stringify(val, some(2))
-    print(compact)
-    print(pretty)
+    match json.stringify(val, none) {
+      ok(compact) {
+        print(compact)
+      }
+      err(e) { print("stringify compact failed: " + e) }
+    }
+    match json.stringify(val, some(2)) {
+      ok(pretty) {
+        print(pretty)
+      }
+      err(e) { print("stringify pretty failed: " + e) }
+    }
 
     // Build JSON structures by parsing literal JSON strings and stringify them
     string obj_s = "{\"num\": 42, \"arr\": [1,2,3], \"nested\": {\"x\": true}}"
     match json.parse(obj_s) {
-      ok(o) { print(json.stringify(o, some(2))) }
+      ok(o) {
+        match json.stringify(o, some(2)) {
+          ok(s) { print(s) }
+          err(e) { print("stringify failed: " + e) }
+        }
+      }
       err(e) { print("unexpected parse error: " + e) }
     }
 
     string list_s = "[1, 2, 3, 4]"
     match json.parse(list_s) {
-      ok(l) { print(json.stringify(l, none)) }
+      ok(l) {
+        match json.stringify(l, none) {
+          ok(s) { print(s) }
+          err(e) { print("stringify failed: " + e) }
+        }
+      }
       err(e) { print("unexpected parse error: " + e) }
     }
 
     // from_map: convert a Mux map -> Json
     auto native_map = {"x": 1, "y": 2}
     match json.from_map(native_map) {
-      ok(j) { print(json.stringify(j, some(2))) }
+      ok(j) {
+        match json.stringify(j, some(2)) {
+          ok(s) { print(s) }
+          err(e) { print("stringify failed: " + e) }
+        }
+      }
       err(e) { print("from_map failed: " + e) }
     }
 

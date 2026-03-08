@@ -119,10 +119,10 @@ pub extern "C" fn mux_csv_parse_with_headers(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_csv_to_string(val: *const Value) -> *const c_char {
+pub extern "C" fn mux_csv_to_string(val: *const Value) -> *mut Value {
     if val.is_null() {
-        let csv_string = "null input".to_string();
-        return CString::new(csv_string).unwrap().into_raw();
+        let s = Value::String("null input".to_string());
+        return crate::refcount::mux_rc_alloc(s);
     }
 
     let v = unsafe { &*val };
@@ -130,9 +130,9 @@ pub extern "C" fn mux_csv_to_string(val: *const Value) -> *const c_char {
     match validate_and_extract_csv(v) {
         Ok((headers, rows)) => {
             let csv_string = build_csv_string(&headers, &rows, true);
-            CString::new(csv_string).unwrap().into_raw()
+            crate::refcount::mux_rc_alloc(Value::String(csv_string))
         }
-        Err(e) => CString::new(e).unwrap().into_raw(),
+        Err(e) => crate::refcount::mux_rc_alloc(Value::String(e)),
     }
 }
 
@@ -203,14 +203,16 @@ fn build_csv_string(headers: &[String], rows: &[Vec<String>], include_headers: b
         let mut wtr = csv::Writer::from_writer(&mut output);
 
         if include_headers && !headers.is_empty() {
-            let _ = wtr.write_record(headers);
+            wtr.write_record(headers)
+                .expect("in-memory write to Vec should not fail");
         }
 
         for row in rows {
-            let _ = wtr.write_record(row);
+            wtr.write_record(row)
+                .expect("in-memory write to Vec should not fail");
         }
 
-        let _ = wtr.flush();
+        wtr.flush().expect("in-memory flush to Vec should not fail");
     }
     String::from_utf8(output).unwrap_or_else(|_| "invalid UTF-8 in CSV output".to_string())
 }

@@ -841,8 +841,7 @@ impl<'a> CodeGenerator<'a> {
         match method_name {
             "to_string" => {
                 self.ensure_no_args("to_string", args)?;
-                let cstr = self.call_runtime_function("mux_csv_to_string", &[obj_value])?;
-                self.call_cstr_to_mux_string(cstr)
+                self.call_runtime_function("mux_csv_to_string", &[obj_value])
             }
             _ => Err(format!("Method {} not implemented for Csv", method_name)),
         }

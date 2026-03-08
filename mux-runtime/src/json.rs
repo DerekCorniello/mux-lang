@@ -93,13 +93,24 @@ pub fn value_to_json(v: &Value) -> Result<Json, String> {
         Value::Unit => Ok(Json::Null),
         Value::Bool(b) => Ok(Json::Bool(*b)),
         Value::Int(i) => Ok(Json::Number(*i as f64)),
-        Value::Float(f) => Ok(Json::Number(f.into_inner())),
+        Value::Float(f) => {
+            let float_val = f.into_inner();
+            if float_val.is_finite() {
+                Ok(Json::Number(float_val))
+            } else if float_val.is_nan() {
+                Err("cannot serialize NaN to JSON".to_string())
+            } else {
+                Err("cannot serialize infinity to JSON".to_string())
+            }
+        }
         Value::String(s) => Ok(Json::String(s.clone())),
-        Value::List(list) => Ok(Json::Array(
-            list.iter()
-                .map(|it| value_to_json(it).unwrap_or(Json::Null))
-                .collect(),
-        )),
+        Value::List(list) => {
+            let items = list
+                .iter()
+                .map(value_to_json)
+                .collect::<Result<Vec<Json>, String>>()?;
+            Ok(Json::Array(items))
+        }
         Value::Map(map) => {
             let mut m = BTreeMap::new();
             for (k, v) in map.iter() {
@@ -152,9 +163,12 @@ pub extern "C" fn mux_json_parse(input: *const c_char) -> *mut crate::result::Mu
 pub extern "C" fn mux_json_stringify(
     val: *const Value,
     indent_opt: *const crate::optional::Optional,
-) -> *mut Value {
+) -> *mut crate::result::MuxResult {
     if val.is_null() {
-        return std::ptr::null_mut();
+        let msg = CString::new("null input").unwrap();
+        unsafe {
+            return crate::result::mux_result_err_str(msg.as_ptr());
+        }
     }
     let v = unsafe { &*val };
     let indent = if indent_opt.is_null() {
@@ -175,11 +189,12 @@ pub extern "C" fn mux_json_stringify(
         Ok(j) => {
             let s = j.stringify(indent);
             let result_value = Value::String(s);
-            crate::refcount::mux_rc_alloc(result_value)
+            let v_ptr = crate::refcount::mux_rc_alloc(result_value);
+            crate::result::mux_result_ok_value(v_ptr)
         }
         Err(e) => {
-            let result_value = Value::String(e);
-            crate::refcount::mux_rc_alloc(result_value)
+            let cmsg = CString::new(e).unwrap();
+            unsafe { crate::result::mux_result_err_str(cmsg.as_ptr()) }
         }
     }
 }
