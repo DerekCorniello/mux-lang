@@ -349,23 +349,69 @@ fn find_double_crlf(buf: &[u8]) -> Option<usize> {
 
 fn reason_phrase(status: u16) -> &'static str {
     match status {
+        100 => "Continue",
+        101 => "Switching Protocols",
+        102 => "Processing",
+        103 => "Early Hints",
         200 => "OK",
         201 => "Created",
         202 => "Accepted",
+        203 => "Non-Authoritative Information",
         204 => "No Content",
+        205 => "Reset Content",
+        206 => "Partial Content",
+        207 => "Multi-Status",
+        208 => "Already Reported",
+        226 => "IM Used",
+        300 => "Multiple Choices",
+        301 => "Moved Permanently",
+        302 => "Found",
+        303 => "See Other",
+        304 => "Not Modified",
+        305 => "Use Proxy",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
         400 => "Bad Request",
         401 => "Unauthorized",
+        402 => "Payment Required",
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        406 => "Not Acceptable",
+        407 => "Proxy Authentication Required",
+        408 => "Request Timeout",
         409 => "Conflict",
+        410 => "Gone",
+        411 => "Length Required",
+        412 => "Precondition Failed",
+        413 => "Payload Too Large",
+        414 => "URI Too Long",
+        415 => "Unsupported Media Type",
+        416 => "Range Not Satisfiable",
+        417 => "Expectation Failed",
+        418 => "I'm a teapot",
+        421 => "Misdirected Request",
         422 => "Unprocessable Entity",
+        423 => "Locked",
+        424 => "Failed Dependency",
+        425 => "Too Early",
+        426 => "Upgrade Required",
+        428 => "Precondition Required",
         429 => "Too Many Requests",
+        431 => "Request Header Fields Too Large",
+        451 => "Unavailable For Legal Reasons",
         500 => "Internal Server Error",
         501 => "Not Implemented",
         502 => "Bad Gateway",
         503 => "Service Unavailable",
-        _ => "OK",
+        504 => "Gateway Timeout",
+        505 => "HTTP Version Not Supported",
+        506 => "Variant Also Negotiates",
+        507 => "Insufficient Storage",
+        508 => "Loop Detected",
+        510 => "Not Extended",
+        511 => "Network Authentication Required",
+        _ => "Unknown",
     }
 }
 
@@ -415,10 +461,10 @@ fn header_content_length(headers: &BTreeMap<String, String>) -> Result<usize, St
     Ok(len)
 }
 
-fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
+fn read_http_request_headers(stream: &mut StdTcpStream) -> Result<(Vec<u8>, usize), String> {
     let mut buffer = Vec::new();
     let mut chunk = [0u8; 1024];
-    let header_end = loop {
+    loop {
         let count = stream
             .read(&mut chunk)
             .map_err(|e| format!("http read failed: {}", e))?;
@@ -430,11 +476,14 @@ fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
             return Err("http headers too large".to_string());
         }
         if let Some(pos) = find_double_crlf(&buffer) {
-            break pos + 4;
+            return Ok((buffer, pos + 4));
         }
-    };
+    }
+}
 
-    let header_slice = &buffer[..header_end];
+fn parse_http_request_headers(
+    header_slice: &[u8],
+) -> Result<(String, String, String, BTreeMap<String, String>), String> {
     let mut parsed_headers = [httparse::EMPTY_HEADER; MAX_HTTP_HEADERS_COUNT];
     let mut request = httparse::Request::new(&mut parsed_headers);
     let parse_status = request
@@ -446,13 +495,15 @@ fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
 
     let method = request
         .method
-        .ok_or_else(|| "http request missing method".to_string())?;
+        .ok_or_else(|| "http request missing method".to_string())?
+        .to_string();
     let raw_target = request
         .path
-        .ok_or_else(|| "http request missing target".to_string())?;
+        .ok_or_else(|| "http request missing target".to_string())?
+        .to_string();
     let version = match request.version {
-        Some(0) => "HTTP/1.0",
-        Some(1) => "HTTP/1.1",
+        Some(0) => "HTTP/1.0".to_string(),
+        Some(1) => "HTTP/1.1".to_string(),
         Some(v) => return Err(format!("unsupported http version {}", v)),
         None => return Err("http request missing version".to_string()),
     };
@@ -461,11 +512,26 @@ fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
     for header in request.headers.iter() {
         let value = std::str::from_utf8(header.value)
             .map_err(|_| format!("header '{}' contains invalid utf-8", header.name))?;
-        headers.insert(header.name.to_string(), value.trim().to_string());
+        let header_name = header.name.to_string();
+        let header_value = value.trim();
+        headers
+            .entry(header_name)
+            .and_modify(|existing: &mut String| {
+                existing.push_str(", ");
+                existing.push_str(header_value);
+            })
+            .or_insert_with(|| header_value.to_string());
     }
+    Ok((method, raw_target, version, headers))
+}
 
-    let content_length = header_content_length(&headers)?;
-    let mut body = buffer[header_end..].to_vec();
+fn read_http_request_body(
+    stream: &mut StdTcpStream,
+    initial_body: &[u8],
+    content_length: usize,
+) -> Result<Vec<u8>, String> {
+    let mut body = initial_body.to_vec();
+    let mut chunk = [0u8; 1024];
     while body.len() < content_length {
         let count = stream
             .read(&mut chunk)
@@ -480,25 +546,36 @@ fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
         }
     }
     body.truncate(content_length);
+    Ok(body)
+}
 
-    let body_json = if body.is_empty() {
-        Json::Null
+fn decode_http_request_body(body: &[u8]) -> Result<Json, String> {
+    if body.is_empty() {
+        Ok(Json::Null)
     } else {
         let body_text =
-            std::str::from_utf8(&body).map_err(|_| "request body is not utf-8".to_string())?;
-        Json::parse(body_text).unwrap_or(Json::String(body_text.to_string()))
-    };
+            std::str::from_utf8(body).map_err(|_| "request body is not utf-8".to_string())?;
+        Ok(Json::parse(body_text).unwrap_or(Json::String(body_text.to_string())))
+    }
+}
 
-    let mut req_map = BTreeMap::new();
+fn build_http_request_json(
+    method: String,
+    raw_target: String,
+    version: String,
+    headers: BTreeMap<String, String>,
+    body_json: Json,
+) -> Json {
     let (path, query) = if let Some((p, q)) = raw_target.split_once('?') {
         (p.to_string(), q.to_string())
     } else {
-        (raw_target.to_string(), String::new())
+        (raw_target, String::new())
     };
-    req_map.insert("method".to_string(), Json::String(method.to_string()));
+    let mut req_map = BTreeMap::new();
+    req_map.insert("method".to_string(), Json::String(method));
     req_map.insert("path".to_string(), Json::String(path));
     req_map.insert("query".to_string(), Json::String(query));
-    req_map.insert("version".to_string(), Json::String(version.to_string()));
+    req_map.insert("version".to_string(), Json::String(version));
     req_map.insert(
         "headers".to_string(),
         Json::Object(
@@ -509,7 +586,18 @@ fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
         ),
     );
     req_map.insert("body".to_string(), body_json);
-    Ok(Json::Object(req_map))
+    Json::Object(req_map)
+}
+
+fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
+    let (buffer, header_end) = read_http_request_headers(stream)?;
+    let (method, raw_target, version, headers) = parse_http_request_headers(&buffer[..header_end])?;
+    let content_length = header_content_length(&headers)?;
+    let body = read_http_request_body(stream, &buffer[header_end..], content_length)?;
+    let body_json = decode_http_request_body(&body)?;
+    Ok(build_http_request_json(
+        method, raw_target, version, headers, body_json,
+    ))
 }
 
 fn write_http_response(stream: &mut StdTcpStream, response: &Json) -> Result<(), String> {

@@ -84,6 +84,12 @@ Use `TcpStream` to connect to a TCP server and perform simple blocking-IO operat
 - `headers`: `object<string, string>` (optional)
 - `body`: `Json` (optional, defaults to `null`)
 
+### Response serialization notes
+
+- `http.write_response` always serializes `body` as JSON text using Mux JSON stringification.
+- If `headers` does not include `Content-Type`, the runtime defaults it to `application/json`.
+- You can override `Content-Type` explicitly in `headers` when you need a different value.
+
 ## Quick HTTP example
 
 ```mux

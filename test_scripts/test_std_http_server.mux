@@ -40,46 +40,64 @@ func main() returns void {
                         return
                     })
 
-                    match listener.accept() {
-                        ok(stream) {
-                            match net.http.read_request(stream) {
-                                ok(request_json) {
-                                    match json.to_map(request_json) {
-                                        ok(request_map) {
-                                            auto method_json = request_map["method"]
-                                            match method_json.stringify(none) {
-                                                ok(method_text) { assert.assert(method_text == "\"POST\"", "unexpected request method") }
-                                                err(e) { assert.assert(false, "failed to stringify method: " + e) }
-                                            }
-
-                                            auto path_json = request_map["path"]
-                                            match path_json.stringify(none) {
-                                                ok(path_text) { assert.assert(path_text == "\"/echo\"", "unexpected request path") }
-                                                err(e) { assert.assert(false, "failed to stringify path: " + e) }
-                                            }
-                                        }
-                                        err(e) { assert.assert(false, "request json was not object: " + e) }
-                                    }
-
-                                    match json.parse("{\"status\":201,\"headers\":{\"X-Test\":\"mux\"},\"body\":{\"ok\":true}}") {
-                                        ok(response_json) {
-                                            match net.http.write_response(stream, response_json) {
-                                                ok(_) { print("http server response sent") }
-                                                err(e) { assert.assert(false, "write_response failed: " + e) }
-                                            }
-                                        }
-                                        err(e) { assert.assert(false, "failed to parse response json: " + e) }
-                                    }
-                                }
-                                err(e) { assert.assert(false, "read_request failed: " + e) }
-                            }
-                            stream.close()
-                        }
-                        err(e) { assert.assert(false, "listener accept failed: " + e) }
-                    }
-
                     match client {
                         ok(t) {
+                            match listener.set_nonblocking(true) {
+                                ok(_) {}
+                                err(e) { assert.assert(false, "listener set_nonblocking failed: " + e) }
+                            }
+
+                            auto attempts = 0
+                            auto accepted = false
+
+                            while attempts < 200 {
+                                match listener.accept() {
+                                    ok(stream) {
+                                        accepted = true
+
+                                        match net.http.read_request(stream) {
+                                            ok(request_json) {
+                                                match json.to_map(request_json) {
+                                                    ok(request_map) {
+                                                        auto method_json = request_map["method"]
+                                                        match method_json.stringify(none) {
+                                                            ok(method_text) { assert.assert(method_text == "\"POST\"", "unexpected request method") }
+                                                            err(e) { assert.assert(false, "failed to stringify method: " + e) }
+                                                        }
+
+                                                        auto path_json = request_map["path"]
+                                                        match path_json.stringify(none) {
+                                                            ok(path_text) { assert.assert(path_text == "\"/echo\"", "unexpected request path") }
+                                                            err(e) { assert.assert(false, "failed to stringify path: " + e) }
+                                                        }
+                                                    }
+                                                    err(e) { assert.assert(false, "request json was not object: " + e) }
+                                                }
+
+                                                match json.parse("{\"status\":201,\"headers\":{\"X-Test\":\"mux\"},\"body\":{\"ok\":true}}") {
+                                                    ok(response_json) {
+                                                        match net.http.write_response(stream, response_json) {
+                                                            ok(_) { print("http server response sent") }
+                                                            err(e) { assert.assert(false, "write_response failed: " + e) }
+                                                        }
+                                                    }
+                                                    err(e) { assert.assert(false, "failed to parse response json: " + e) }
+                                                }
+                                            }
+                                            err(e) { assert.assert(false, "read_request failed: " + e) }
+                                        }
+                                        stream.close()
+                                        break
+                                    }
+                                    err(_) {
+                                        sync.sleep(5)
+                                        attempts = attempts + 1
+                                    }
+                                }
+                            }
+
+                            assert.assert(accepted, "timed out waiting for client connection")
+
                             match t.join() {
                                 ok(_) { print("client join ok") }
                                 err(e) { assert.assert(false, "client join failed: " + e) }

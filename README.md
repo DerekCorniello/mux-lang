@@ -1997,6 +1997,7 @@ Format patterns use chrono `strftime` tokens, for example:
 - `net.http.request(Json req) -> result<Json, string>`
 - `net.http.read_request(TcpStream stream) -> result<Json, string>`
 - `net.http.write_response(TcpStream stream, Json response) -> result<void, string>`
+  `write_response` serializes body as JSON and defaults `Content-Type` to `application/json` unless you set it in `headers`.
 - `net.TcpStream.read(int size)`, `net.TcpStream.write(list<int> bytes)`
 - `net.UdpSocket.send_to(list<int> bytes, string addr)`, `net.UdpSocket.recv_from(int size)`
   (all methods return `result<T, string>` when they can fail)
