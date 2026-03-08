@@ -43,6 +43,9 @@ fn str_() -> Type {
 fn bool_() -> Type {
     Type::Primitive(PrimitiveType::Bool)
 }
+fn json_type() -> Type {
+    Type::Named("Json".to_string(), Vec::new())
+}
 
 fn sig(params: Vec<Type>, return_type: Type) -> BuiltInSig {
     BuiltInSig {
@@ -219,6 +222,9 @@ fn tcp_stream_type() -> Type {
 fn udp_socket_type() -> Type {
     Type::Named("UdpSocket".to_string(), Vec::new())
 }
+fn tcp_listener_type() -> Type {
+    Type::Named("TcpListener".to_string(), Vec::new())
+}
 
 fn make_class_symbol(name: &str, methods: HashMap<String, MethodSig>, span: Span) -> Symbol {
     Symbol {
@@ -227,6 +233,22 @@ fn make_class_symbol(name: &str, methods: HashMap<String, MethodSig>, span: Span
         type_: Some(Type::Named(name.to_string(), Vec::new())),
         interfaces: HashMap::new(),
         methods,
+        fields: HashMap::new(),
+        type_params: Vec::new(),
+        original_name: None,
+        llvm_name: None,
+        default_param_count: 0,
+        variants: None,
+    }
+}
+
+fn make_import_module_symbol(module_name: &str, span: Span) -> Symbol {
+    Symbol {
+        kind: SymbolKind::Import,
+        span,
+        type_: Some(Type::Module(module_name.to_string())),
+        interfaces: HashMap::new(),
+        methods: HashMap::new(),
         fields: HashMap::new(),
         type_params: Vec::new(),
         original_name: None,
@@ -354,6 +376,36 @@ fn udp_socket_methods() -> HashMap<String, MethodSig> {
     }
 }
 
+fn tcp_listener_methods() -> HashMap<String, MethodSig> {
+    define_methods! {
+        "bind" => {
+            params: [str_()],
+            return_type: io_result(tcp_listener_type()),
+            is_static: true
+        },
+        "accept" => {
+            params: [],
+            return_type: io_result(tcp_stream_type()),
+            is_static: false
+        },
+        "close" => {
+            params: [],
+            return_type: Type::Void,
+            is_static: false
+        },
+        "set_nonblocking" => {
+            params: [bool_()],
+            return_type: io_result(Type::Void),
+            is_static: false
+        },
+        "local_addr" => {
+            params: [],
+            return_type: io_result(str_()),
+            is_static: false
+        }
+    }
+}
+
 pub fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
     let mut classes = HashMap::new();
     classes.insert(
@@ -363,6 +415,14 @@ pub fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
     classes.insert(
         "UdpSocket".to_string(),
         make_class_symbol("UdpSocket", udp_socket_methods(), span),
+    );
+    classes.insert(
+        "TcpListener".to_string(),
+        make_class_symbol("TcpListener", tcp_listener_methods(), span),
+    );
+    classes.insert(
+        "http".to_string(),
+        make_import_module_symbol("net.http", span),
     );
     classes
 }
@@ -489,7 +549,7 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 
 /// List of all available stdlib modules for wildcard imports
 pub const STDLIB_MODULES: &[&str] = &[
-    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "json", "data",
+    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "data",
 ];
 
 lazy_static! {
@@ -628,6 +688,34 @@ lazy_static! {
                 params: STR_PARAM.to_vec(),
                 ret: Type::Optional(Box::new(str_())),
                 llvm_name: "mux_env_get".to_string(),
+            },
+        );
+        m
+    };
+    pub static ref NET_HTTP_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        m.insert(
+            "net.http.request",
+            StdlibItem::Function {
+                params: vec![json_type()],
+                ret: io_result(json_type()),
+                llvm_name: "mux_net_http_request".to_string(),
+            },
+        );
+        m.insert(
+            "net.http.read_request",
+            StdlibItem::Function {
+                params: vec![tcp_stream_type()],
+                ret: io_result(json_type()),
+                llvm_name: "mux_net_http_read_request".to_string(),
+            },
+        );
+        m.insert(
+            "net.http.write_response",
+            StdlibItem::Function {
+                params: vec![tcp_stream_type(), json_type()],
+                ret: io_result(Type::Void),
+                llvm_name: "mux_net_http_write_response".to_string(),
             },
         );
         m
@@ -780,6 +868,11 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
                 .map(|(k, v)| (k.to_string(), v.clone())),
         )
         .chain(
+            NET_HTTP_STDLIB_ITEMS
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone())),
+        )
+        .chain(
             DATA_STDLIB_ITEMS
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone())),
@@ -798,6 +891,7 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| SYNC_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| ENV_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| NET_HTTP_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| DATA_STDLIB_ITEMS.get(name).cloned())
 }
 

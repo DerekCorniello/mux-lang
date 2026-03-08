@@ -1,4 +1,4 @@
-import std.json
+import std.data.json
 
 // Parse a valid JSON string and stringify compact + pretty
 string json_str = "{\"a\": [1, 2, 3], \"b\": null}"

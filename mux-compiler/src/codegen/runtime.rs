@@ -919,6 +919,46 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_net_http_request",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_http_read_request",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_http_write_response",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_listener_bind",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_listener_accept",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_listener_set_nonblocking",
+            i8_ptr.fn_type(&[i8_ptr.into(), i32_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_listener_local_addr",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_net_tcp_listener_close",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
             "mux_net_tcp_connect",
             i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,

@@ -1,0 +1,62 @@
+import std.assert
+import std.data.json
+import std.net
+
+func main() returns void {
+    print("Starting http client smoke test")
+
+    match json.parse("{\"method\":\"GET\",\"url\":\"https://httpbin.org/get\",\"headers\":{\"Accept\":\"application/json\"}}") {
+        ok(req) {
+            match net.http.request(req) {
+                ok(resp_json) {
+                    match json.to_map(resp_json) {
+                        ok(resp_map) {
+                            assert.assert(resp_map.contains("status"), "response missing status")
+                            assert.assert(resp_map.contains("headers"), "response missing headers")
+                            assert.assert(resp_map.contains("body"), "response missing body")
+
+                            auto status_json = resp_map["status"]
+                            match status_json.stringify(none) {
+                                ok(status_str) {
+                                    assert.assert(
+                                        status_str == "200" || status_str == "200.0",
+                                        "unexpected status: " + status_str
+                                    )
+                                }
+                                err(e) { assert.assert(false, "failed to stringify status: " + e) }
+                            }
+
+                            auto body_json = resp_map["body"]
+                            match json.to_map(body_json) {
+                                ok(body_map) {
+                                    assert.assert(body_map.contains("url"), "response body missing url")
+                                    assert.assert(body_map.contains("headers"), "response body missing headers")
+                                }
+                                err(e) { assert.assert(false, "response body was not an object: " + e) }
+                            }
+
+                            print("http request success path validated")
+                        }
+                        err(e) { assert.assert(false, "failed to convert response to map: " + e) }
+                    }
+                }
+                err(e) { assert.assert(false, "http request failed: " + e) }
+            }
+        }
+        err(e) { assert.assert(false, "failed to build request json: " + e) }
+    }
+
+    match json.parse("{\"url\":\"https://httpbin.org/get\"}") {
+        ok(invalid_req) {
+            match net.http.request(invalid_req) {
+                ok(_) { assert.assert(false, "expected invalid request to fail") }
+                err(e) {
+                    print("http invalid-request path validated: " + e)
+                }
+            }
+        }
+        err(e) { assert.assert(false, "failed to build invalid request json: " + e) }
+    }
+
+    print("http smoke test passed")
+}

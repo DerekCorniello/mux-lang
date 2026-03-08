@@ -1,4 +1,4 @@
-import std.json
+import std.data.json
 
 // Test that stringify rejects NaN with an error
 auto nan_map = {"x": 0.0 / 0.0}

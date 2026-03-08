@@ -1985,6 +1985,7 @@ Format patterns use chrono `strftime` tokens, for example:
 - `sync.sleep(int milliseconds) -> void`
 - `Thread.join() -> result<void, string>`
 - `Thread.detach() -> result<void, string>`
+
 - `Mutex.new() -> Mutex`
 - `Mutex.lock() -> result<void, string>`
 - `Mutex.unlock() -> result<void, string>`
@@ -1999,13 +2000,42 @@ Format patterns use chrono `strftime` tokens, for example:
 
 ### 17.7 net
 
-`net` exposes raw networking primitives, including:
+`net` exposes TCP/UDP sockets plus HTTP client/server primitives with JSON request and response shapes.
 
-- `TcpStream` for connecting to TCP services, reading/writing bytes, toggling `set_nonblocking` (`result<void, string>`), and querying `peer_addr`/`local_addr` (`result<string, string>`) endpoints.
-- `UdpSocket` for binding to a port, sending datagrams, receiving `(Bytes, string)` tuples, toggling `set_nonblocking` (`result<void, string>`), and querying `peer_addr`/`local_addr` results.
-- A protocol-neutral request/response shape described as simple `map` objects with `method`, `url`, `headers`, `body`, `status`, etc., so higher-level protocols can share a common shape.
+- `net.TcpStream.connect(string addr) -> result<TcpStream, string>`
+- `net.TcpListener.bind(string addr) -> result<TcpListener, string>`
+- `listener.accept() -> result<TcpStream, string>`
+- `net.UdpSocket.bind(string addr) -> result<UdpSocket, string>`
+- `net.http.request(Json req) -> result<Json, string>`
+- `net.http.read_request(TcpStream stream) -> result<Json, string>`
+- `net.http.write_response(TcpStream stream, Json response) -> result<void, string>`
+  `write_response` serializes body as JSON and defaults `Content-Type` to `application/json` unless you set it in `headers`.
+- `net.TcpStream.read(int size)`, `net.TcpStream.write(list<int> bytes)`
+- `net.UdpSocket.send_to(list<int> bytes, string addr)`, `net.UdpSocket.recv_from(int size)`
+  (all methods return `result<T, string>` when they can fail)
 
-Methods return explicit `result` values so errors are handled deterministically.
+### 17.8 env
+
+`env` exposes operating-system environment access with explicit errors.
+
+- `env.get(string name) -> optional<string>`
+
+### 17.9 data.json
+
+`data.json` is the JSON utility layer built on `std.json`.
+
+- `data.json.parse(string json) -> result<Json, string>`
+- `data.json.from_map(map<string, T>) -> result<Json, string>`
+- `data.json.to_map(Json value) -> result<map<string, Json>, string>`
+
+### 17.10 data.csv
+
+`data.csv` parses CSV text into structured rows.
+
+- `data.csv.parse(string csv_text) -> result<Csv, string>`
+- `data.csv.parse_with_headers(string csv_text) -> result<Csv, string>`
+
+
 
 
 ## Project File Structure

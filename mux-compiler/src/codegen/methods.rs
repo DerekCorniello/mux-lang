@@ -362,6 +362,11 @@ impl<'a> CodeGenerator<'a> {
         }
 
         match (class_name, method_name) {
+            ("TcpListener", "bind") => {
+                let addr = gen_one_arg(self, args)?;
+                let call = self.build_net_call("mux_net_tcp_listener_bind", &[addr])?;
+                Ok(Some(call))
+            }
             ("TcpStream", "connect") => {
                 let addr = gen_one_arg(self, args)?;
                 let call = self.build_net_call("mux_net_tcp_connect", &[addr])?;
@@ -445,6 +450,34 @@ impl<'a> CodeGenerator<'a> {
                 "local_addr" => {
                     self.ensure_no_args("local_addr", args)?;
                     let call = self.build_net_call("mux_net_tcp_local_addr", &[obj_value])?;
+                    Ok(Some(call))
+                }
+                _ => Ok(None),
+            },
+            "TcpListener" => match method_name {
+                "accept" => {
+                    self.ensure_no_args("accept", args)?;
+                    let call = self.build_net_call("mux_net_tcp_listener_accept", &[obj_value])?;
+                    Ok(Some(call))
+                }
+                "close" => {
+                    self.ensure_no_args("close", args)?;
+                    let call = self.build_net_call("mux_net_tcp_listener_close", &[obj_value])?;
+                    Ok(Some(call))
+                }
+                "set_nonblocking" => {
+                    let bool_val = gen_one(self, args)?;
+                    let converted = self.bool_to_i32(bool_val)?;
+                    let call = self.build_net_call(
+                        "mux_net_tcp_listener_set_nonblocking",
+                        &[obj_value, converted],
+                    )?;
+                    Ok(Some(call))
+                }
+                "local_addr" => {
+                    self.ensure_no_args("local_addr", args)?;
+                    let call =
+                        self.build_net_call("mux_net_tcp_listener_local_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
                 _ => Ok(None),

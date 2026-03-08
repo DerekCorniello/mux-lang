@@ -108,13 +108,56 @@ impl SemanticAnalyzer {
             ("std.datetime", "datetime"),
             ("std.io", "io"),
             ("std.math", "math"),
-            ("std.json", "json"),
-            ("std.csv", "csv"),
+            ("std.data", "data"),
             ("std.random", "random"),
             ("std.net", "net"),
             ("std.sync", "sync"),
             ("std.env", "env"),
         ]
+    }
+
+    /// Map of stdlib parent module -> declared nested child modules.
+    /// Keys are the short parent name (e.g. "net", "data"). Values are full
+    /// child module paths (e.g. "net.http", "data.json"). This is used to
+    /// eagerly inject nested stdlib modules when a parent stdlib module is
+    /// imported (for example importing `std.net` also makes `net.http` usable).
+    fn stdlib_nested_modules_map() -> std::collections::HashMap<&'static str, Vec<&'static str>> {
+        let mut m = std::collections::HashMap::new();
+        m.insert("net", vec!["net.http"]);
+        m.insert("data", vec!["data.json", "data.csv"]);
+        m
+    }
+
+    /// Inject nested stdlib children for a given parent stdlib module into
+    /// `self.imported_symbols`. `parent_module` is the short name (e.g. "net").
+    fn inject_nested_stdlib_children(&mut self, parent_module: &str, span: Span) {
+        let map = Self::stdlib_nested_modules_map();
+        if let Some(children) = map.get(parent_module) {
+            for child in children {
+                // collect symbols for the child module (child is a full path like "net.http" or "data.json")
+                let child_symbols = self.collect_stdlib_module_symbols(child, span);
+                // store under the full child module path so module imports and
+                // module-qualified accesses (Module("net.http")) resolve correctly
+                self.imported_symbols
+                    .insert(child.to_string(), child_symbols.clone());
+
+                // Also expose the short child name (e.g. "json") for backward
+                // compatibility so code referencing `json.parse` works after
+                // importing the parent (e.g. `import std.data`). Don't overwrite
+                // an existing user-provided namespace.
+                if let Some(short_name) = child.split('.').next_back()
+                    && !self.imported_symbols.contains_key(short_name)
+                {
+                    self.imported_symbols
+                        .insert(short_name.to_string(), child_symbols);
+                    // Register module symbol in symbol table so unqualified
+                    // module references resolve (e.g., json.parse)
+                    let _ = self
+                        .symbol_table
+                        .add_symbol(short_name, self.make_module_symbol(short_name, span));
+                }
+            }
+        }
     }
 
     pub fn set_current_file(&mut self, file: std::path::PathBuf) {
@@ -4774,12 +4817,32 @@ impl SemanticAnalyzer {
         spec: &crate::ast::ImportSpec,
         span: Span,
     ) -> Result<(), SemanticError> {
+        // First, try exact matches like "std.data" -> module_name "data"
         if let Some(module_name) = Self::stdlib_modules()
             .iter()
             .find(|(path, _)| *path == module_path)
             .map(|(_, name)| name)
         {
             return self.import_stdlib_module(module_name, spec, span);
+        }
+
+        // Support nested stdlib import paths like "std.data.json" by mapping
+        // them to their parent stdlib entry (e.g. "std.data") and passing the
+        // tail ("data.json") to import_stdlib_module which understands
+        // nested child names.
+        if let Some(tail) = module_path.strip_prefix("std.") {
+            // tail is like "data.json" or "net.http" or just "data"
+            if let Some(parent) = tail.split('.').next() {
+                let parent_path = format!("std.{}", parent);
+                if Self::stdlib_modules()
+                    .iter()
+                    .any(|(path, _)| *path == parent_path)
+                {
+                    // Pass the full tail (e.g. "data.json") as the module_name so
+                    // collect_stdlib_module_symbols can lookup the child symbols.
+                    return self.import_stdlib_module(tail, spec, span);
+                }
+            }
         }
 
         match module_path {
@@ -4808,6 +4871,8 @@ impl SemanticAnalyzer {
                     let module_symbols = self.collect_stdlib_module_symbols(module, span);
                     self.imported_symbols
                         .insert(module.to_string(), module_symbols);
+                    // Inject any nested stdlib children declared for this parent module
+                    self.inject_nested_stdlib_children(module, span);
                 }
 
                 self.imported_symbols
@@ -4912,6 +4977,8 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         let module_symbols = self.collect_stdlib_module_symbols(module_name, span);
+        // Inject any nested stdlib children declared for this parent
+        self.inject_nested_stdlib_children(module_name, span);
         self.apply_stdlib_module_import_spec(module_name, spec, span, module_symbols)
     }
 
@@ -4923,27 +4990,64 @@ impl SemanticAnalyzer {
         use crate::semantics::stdlib::all_stdlib_items;
 
         let mut module_symbols = std::collections::HashMap::new();
+        let prefixes = Self::stdlib_module_prefixes(module_name);
+
         for (key, item) in all_stdlib_items() {
-            if let Some(item_name) = key.strip_prefix(&format!("{}.", module_name)) {
+            if let Some(item_name) = Self::stdlib_item_name_for_module(&key, &prefixes) {
                 module_symbols.insert(
-                    item_name.to_string(),
+                    item_name,
                     crate::semantics::stdlib::stdlib_item_to_symbol(&item, span),
                 );
             }
         }
 
-        if module_name == "net" {
-            module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span));
-        } else if module_name == "sync" {
-            module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span));
-        } else if module_name == "json" {
-            // Expose Json type with stringify method
-            module_symbols.insert("Json".to_string(), Self::make_json_symbol(span));
-        } else if module_name == "csv" {
-            // Expose Csv type
-            module_symbols.insert("Csv".to_string(), Self::make_csv_symbol(span));
-        }
+        Self::inject_stdlib_module_special_symbols(module_name, span, &mut module_symbols);
         module_symbols
+    }
+
+    fn stdlib_module_prefixes(module_name: &str) -> Vec<String> {
+        if !module_name.contains('.') {
+            return vec![module_name.to_string()];
+        }
+        let mut prefixes = vec![module_name.to_string()];
+        if let Some(last) = module_name.split('.').next_back() {
+            prefixes.push(last.to_string());
+        }
+        prefixes
+    }
+
+    fn stdlib_item_name_for_module(key: &str, prefixes: &[String]) -> Option<String> {
+        for prefix in prefixes {
+            let pattern = format!("{}.", prefix);
+            if let Some(rest) = key.strip_prefix(&pattern)
+                && !rest.contains('.')
+            {
+                return Some(rest.to_string());
+            }
+        }
+        None
+    }
+
+    fn inject_stdlib_module_special_symbols(
+        module_name: &str,
+        span: Span,
+        module_symbols: &mut std::collections::HashMap<String, Symbol>,
+    ) {
+        match module_name {
+            "net" => {
+                module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span))
+            }
+            "sync" => {
+                module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span))
+            }
+            _ if module_name.ends_with(".json") => {
+                module_symbols.insert("Json".to_string(), Self::make_json_symbol(span));
+            }
+            _ if module_name.ends_with(".csv") => {
+                module_symbols.insert("Csv".to_string(), Self::make_csv_symbol(span));
+            }
+            _ => {}
+        }
     }
 
     fn csv_headers_type() -> Type {
@@ -5030,11 +5134,21 @@ impl SemanticAnalyzer {
 
         match spec {
             ImportSpec::Module { alias } => {
-                let namespace = alias.as_deref().unwrap_or(module_name);
+                let namespace = alias.as_deref().map(|s| s.to_string()).unwrap_or_else(|| {
+                    // If importing a nested module like "data.json" prefer the
+                    // short child name "json" as the namespace so callers can
+                    // reference `json.parse` without an alias.
+                    if module_name.contains('.') {
+                        module_name.split('.').next_back().unwrap().to_string()
+                    } else {
+                        module_name.to_string()
+                    }
+                });
+
                 self.imported_symbols
                     .insert(namespace.to_string(), module_symbols.clone());
                 self.symbol_table.add_symbol(
-                    namespace,
+                    &namespace,
                     Symbol {
                         kind: SymbolKind::Import,
                         span,
