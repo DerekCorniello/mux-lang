@@ -433,7 +433,7 @@ fn json_get_required_int(map: &BTreeMap<String, Json>, key: &str) -> Result<i64,
                 return Err(format!("'{}' must be a finite number", key));
             }
             let rounded = value.round();
-            if (rounded - value).abs() > f64::EPSILON {
+            if value.fract() != 0.0 {
                 return Err(format!("'{}' must be an integer", key));
             }
             Ok(rounded as i64)
@@ -443,12 +443,12 @@ fn json_get_required_int(map: &BTreeMap<String, Json>, key: &str) -> Result<i64,
     }
 }
 
-fn header_content_length(headers: &BTreeMap<String, String>) -> Result<usize, String> {
+fn header_content_length(headers: &BTreeMap<String, String>) -> Result<Option<usize>, String> {
     let Some(raw_value) = headers
         .iter()
         .find_map(|(k, v)| k.eq_ignore_ascii_case("content-length").then_some(v))
     else {
-        return Ok(0);
+        return Ok(None);
     };
 
     let len = raw_value
@@ -458,7 +458,7 @@ fn header_content_length(headers: &BTreeMap<String, String>) -> Result<usize, St
     if len > MAX_HTTP_BODY_BYTES {
         return Err("request body too large".to_string());
     }
-    Ok(len)
+    Ok(Some(len))
 }
 
 fn read_http_request_headers(stream: &mut StdTcpStream) -> Result<(Vec<u8>, usize), String> {
@@ -592,8 +592,18 @@ fn build_http_request_json(
 fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
     let (buffer, header_end) = read_http_request_headers(stream)?;
     let (method, raw_target, version, headers) = parse_http_request_headers(&buffer[..header_end])?;
-    let content_length = header_content_length(&headers)?;
-    let body = read_http_request_body(stream, &buffer[header_end..], content_length)?;
+    let initial_body = &buffer[header_end..];
+    let content_length = match header_content_length(&headers)? {
+        Some(len) => len,
+        None => {
+            if initial_body.is_empty() {
+                0
+            } else {
+                return Err("request body present without Content-Length header".to_string());
+            }
+        }
+    };
+    let body = read_http_request_body(stream, initial_body, content_length)?;
     let body_json = decode_http_request_body(&body)?;
     Ok(build_http_request_json(
         method, raw_target, version, headers, body_json,
@@ -624,8 +634,6 @@ fn write_http_response(stream: &mut StdTcpStream, response: &Json) -> Result<(),
     }
 
     let body_json = response_map.get("body").cloned().unwrap_or(Json::Null);
-    let body_text = body_json.stringify(None);
-    let body_bytes = body_text.as_bytes();
 
     if !headers
         .keys()
@@ -633,6 +641,22 @@ fn write_http_response(stream: &mut StdTcpStream, response: &Json) -> Result<(),
     {
         headers.insert("Content-Type".to_string(), "application/json".to_string());
     }
+    let is_json_content_type = headers
+        .iter()
+        .find_map(|(name, value)| {
+            name.eq_ignore_ascii_case("content-type")
+                .then_some(value.as_str())
+        })
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"));
+    let body_bytes = if !is_json_content_type {
+        match &body_json {
+            Json::String(text) => text.as_bytes().to_vec(),
+            _ => body_json.stringify(None).into_bytes(),
+        }
+    } else {
+        body_json.stringify(None).into_bytes()
+    };
     headers.insert("Content-Length".to_string(), body_bytes.len().to_string());
     if !headers
         .keys()
@@ -658,7 +682,7 @@ fn write_http_response(stream: &mut StdTcpStream, response: &Json) -> Result<(),
         .write_all(message.as_bytes())
         .map_err(|e| format!("http write failed: {}", e))?;
     stream
-        .write_all(body_bytes)
+        .write_all(&body_bytes)
         .map_err(|e| format!("http write failed: {}", e))?;
     stream
         .flush()
