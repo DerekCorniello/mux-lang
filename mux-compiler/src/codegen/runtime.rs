@@ -617,6 +617,11 @@ impl<'a> CodeGenerator<'a> {
             "mux_optional_is_none",
             context.bool_type().into(),
         );
+        module.add_function(
+            "mux_free_optional",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
         add_typed_getter(module, i8_ptr, "mux_result_discriminant", i32_type.into());
         add_typed_getter(
             module,
@@ -719,6 +724,19 @@ impl<'a> CodeGenerator<'a> {
         );
         add_i8_fn(module, i8_ptr, "mux_json_from_map", &[i8_ptr.into()]);
         add_i8_fn(module, i8_ptr, "mux_json_to_map", &[i8_ptr.into()]);
+        // CSV helpers
+        add_i8_fn(module, i8_ptr, "mux_csv_parse", &[i8_ptr.into()]);
+        add_i8_fn(
+            module,
+            i8_ptr,
+            "mux_csv_parse_with_headers",
+            &[i8_ptr.into()],
+        );
+        module.add_function(
+            "mux_csv_to_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
         add_i8_fn(
             module,
             i8_ptr,

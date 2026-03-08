@@ -608,6 +608,9 @@ impl<'a> CodeGenerator<'a> {
             Type::Map(_, _) => self.generate_map_method_call(obj_value, method_name, args),
             Type::Set(_) => self.generate_set_method_call(obj_value, method_name, args),
             Type::Tuple(_, _) => self.generate_tuple_method_call(obj_value, method_name, args),
+            Type::Named(name, type_args) if name == "Csv" => {
+                self.generate_csv_method_call(obj_value, method_name, args)
+            }
             Type::Named(name, type_args) => {
                 self.invoke_class_instance_method(name, type_args, obj_value, method_name, args)
             }
@@ -826,6 +829,22 @@ impl<'a> CodeGenerator<'a> {
                 self.call_cstr_to_mux_string(cstr)
             }
             _ => Err(format!("Method {} not implemented for lists", method_name)),
+        }
+    }
+
+    fn generate_csv_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "to_string" => {
+                self.ensure_no_args("to_string", args)?;
+                let cstr = self.call_runtime_function("mux_csv_to_string", &[obj_value])?;
+                self.call_cstr_to_mux_string(cstr)
+            }
+            _ => Err(format!("Method {} not implemented for Csv", method_name)),
         }
     }
 

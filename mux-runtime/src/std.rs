@@ -1,6 +1,6 @@
 use crate::{
-    Value, list::List, map::Map, optional::Optional, refcount::mux_rc_alloc, result::MuxResult,
-    set::Set,
+    list::List, map::Map, optional::Optional, refcount::mux_rc_alloc, result::MuxResult, set::Set,
+    Value,
 };
 use std::env as sys_env;
 use std::ffi::{CStr, CString};
@@ -361,7 +361,13 @@ pub extern "C" fn mux_value_equal(a: *const Value, b: *const Value) -> i32 {
     if a.is_null() || b.is_null() {
         return if a == b { 1 } else { 0 };
     }
-    unsafe { if *a == *b { 1 } else { 0 } }
+    unsafe {
+        if *a == *b {
+            1
+        } else {
+            0
+        }
+    }
 }
 
 /// Compare two Value pointers for inequality
@@ -369,7 +375,11 @@ pub extern "C" fn mux_value_equal(a: *const Value, b: *const Value) -> i32 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_not_equal(a: *const Value, b: *const Value) -> i32 {
-    if mux_value_equal(a, b) == 1 { 0 } else { 1 }
+    if mux_value_equal(a, b) == 1 {
+        0
+    } else {
+        1
+    }
 }
 
 // Proper Value cleanup function

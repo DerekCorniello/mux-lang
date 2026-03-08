@@ -266,6 +266,7 @@ impl From<String> for Value {
 pub mod assert;
 pub mod bool;
 pub mod boxing;
+pub mod data;
 pub mod datetime;
 pub mod float;
 pub mod int;

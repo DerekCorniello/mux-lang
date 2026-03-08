@@ -98,6 +98,46 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    fn generate_csv_field_access(
+        &mut self,
+        expr: &ExpressionNode,
+        field: &str,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if field != "headers" && field != "rows" {
+            return Err(format!("Csv has no field '{}'", field));
+        }
+        let csv_value = self.generate_expression(expr)?;
+        let raw_map = self
+            .generate_runtime_call("mux_value_get_map", &[csv_value.into()])
+            .ok_or_else(|| "mux_value_get_map should return a value".to_string())?;
+        let key_value = self.csv_field_key_value(field)?;
+        let map_get = self
+            .generate_runtime_call("mux_map_get", &[raw_map.into(), key_value.into()])
+            .ok_or_else(|| "mux_map_get should return a value".to_string())?
+            .into_pointer_value();
+        let value = self
+            .generate_runtime_call("mux_optional_get_value", &[map_get.into()])
+            .ok_or_else(|| "mux_optional_get_value should return a value".to_string())?;
+        let free_opt = self
+            .module
+            .get_function("mux_free_optional")
+            .ok_or("mux_free_optional not found")?;
+        let _ = self
+            .builder
+            .build_call(free_opt, &[map_get.into()], "free_csv_optional");
+        Ok(value)
+    }
+
+    fn csv_field_key_value(&mut self, field: &str) -> Result<BasicValueEnum<'a>, String> {
+        let key_global = self
+            .builder
+            .build_global_string_ptr(field, &format!("csv_field_key_{}", field))
+            .map_err(|e| e.to_string())?;
+        let key_ptr = key_global.as_pointer_value();
+        self.generate_runtime_call("mux_new_string_from_cstr", &[key_ptr.into()])
+            .ok_or_else(|| "mux_new_string_from_cstr should return a value".to_string())
+    }
+
     /// Helper to generate a call to the mux_print runtime function.
     /// Used for both direct print() calls and std.print() static method calls.
     pub(super) fn generate_print_call(
@@ -3385,6 +3425,12 @@ impl<'a> CodeGenerator<'a> {
                     };
 
                     return Ok(field_value);
+                }
+
+                if let Type::Named(name, _) = &expr_type {
+                    if name == "Csv" {
+                        return self.generate_csv_field_access(expr, field);
+                    }
                 }
 
                 let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {

@@ -489,7 +489,7 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 
 /// List of all available stdlib modules for wildcard imports
 pub const STDLIB_MODULES: &[&str] = &[
-    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "json",
+    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "json", "data",
 ];
 
 lazy_static! {
@@ -677,6 +677,50 @@ lazy_static! {
         );
         m
     };
+    pub static ref DATA_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        // data.csv.parse :: Str -> Result(Csv, Str)
+        m.insert(
+            "data.csv.parse",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
+                llvm_name: "mux_csv_parse".to_string(),
+            },
+        );
+        // data.csv.parse_with_headers :: Str -> Result(Csv, Str)
+        m.insert(
+            "data.csv.parse_with_headers",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
+                llvm_name: "mux_csv_parse_with_headers".to_string(),
+            },
+        );
+        m
+    };
+    pub static ref CSV_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        // csv.parse :: Str -> Result(Csv, Str)
+        m.insert(
+            "csv.parse",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
+                llvm_name: "mux_csv_parse".to_string(),
+            },
+        );
+        // csv.parse_with_headers :: Str -> Result(Csv, Str)
+        m.insert(
+            "csv.parse_with_headers",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
+                llvm_name: "mux_csv_parse_with_headers".to_string(),
+            },
+        );
+        m
+    };
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
         m.insert("int_to_string", sig(vec![int()], str_()));
@@ -777,6 +821,16 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone())),
         )
+        .chain(
+            CSV_STDLIB_ITEMS
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone())),
+        )
+        .chain(
+            DATA_STDLIB_ITEMS
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone())),
+        )
 }
 
 pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
@@ -791,6 +845,9 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| ASSERT_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| SYNC_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| ENV_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| JSON_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| CSV_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| DATA_STDLIB_ITEMS.get(name).cloned())
 }
 
 /// Convert a canonical `StdlibItem` into a `Symbol` suitable for registration in a SymbolTable.

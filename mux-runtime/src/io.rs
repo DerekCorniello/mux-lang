@@ -4,8 +4,8 @@ use std::io::{self, Read, Write};
 use std::os::raw::c_char;
 use std::path::Path;
 
-use crate::Value;
 use crate::result::MuxResult;
+use crate::Value;
 
 #[derive(Debug)]
 pub struct MuxFile(pub std::fs::File);
