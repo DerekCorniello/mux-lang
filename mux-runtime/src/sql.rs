@@ -416,9 +416,7 @@ fn route_connect(uri: &str) -> Result<SqlConnection, String> {
         return Err("unsupported sql provider: sqlserver".to_string());
     }
 
-    SqliteConnection::open(uri)
-        .map(SqlConnection::Sqlite)
-        .map_err(|e| format!("sqlite connect failed: {}", e))
+    Err(format!("unsupported or unrecognised sql uri scheme: {}", uri))
 }
 
 fn sqlite_execute(
@@ -575,9 +573,9 @@ pub unsafe extern "C" fn mux_sql_value_string(value: *const c_char) -> *mut Valu
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_sql_value_bytes(value: *const Value) -> *mut Value {
+pub extern "C" fn mux_sql_value_bytes(value: *const Value) -> *mut MuxResult {
     if value.is_null() {
-        return crate::refcount::mux_rc_alloc(Value::List(Vec::new()));
+        return sql_result_err("sql value bytes pointer is null".to_string());
     }
     let list = unsafe { &*value };
     match list {
@@ -585,17 +583,18 @@ pub extern "C" fn mux_sql_value_bytes(value: *const Value) -> *mut Value {
             let mut bytes = Vec::with_capacity(items.len());
             for item in items {
                 let Value::Int(byte) = item else {
-                    return crate::refcount::mux_rc_alloc(Value::List(Vec::new()));
+                    return sql_result_err("blob parameter must be list<int>".to_string());
                 };
                 if *byte < 0 || *byte > 255 {
-                    return crate::refcount::mux_rc_alloc(Value::List(Vec::new()));
+                    return sql_result_err("blob byte out of range".to_string());
                 }
                 bytes.push(Value::Int(*byte));
             }
-            crate::refcount::mux_rc_alloc(Value::List(bytes))
+            sql_result_ok(Value::List(bytes))
         }
-        _ => crate::refcount::mux_rc_alloc(Value::List(Vec::new())),
+        _ => sql_result_err("sql.bytes expects a list<int>".to_string()),
     }
+}
 }
 
 #[unsafe(no_mangle)]
@@ -839,18 +838,18 @@ pub extern "C" fn mux_sql_transaction_query(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_sql_resultset_rows(resultset: *mut Value) -> *mut Value {
+pub extern "C" fn mux_sql_resultset_rows(resultset: *mut Value) -> *mut MuxResult {
     let result = resultset_handle(resultset)
         .and_then(|handle| with_resultset(handle, |rs| Ok(Value::List(rs.rows.clone()))));
     match result {
-        Ok(value) => crate::refcount::mux_rc_alloc(value),
-        Err(_) => crate::refcount::mux_rc_alloc(Value::List(Vec::new())),
+        Ok(value) => sql_result_ok(value),
+        Err(err) => sql_result_err(err),
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_sql_resultset_next(resultset: *mut Value) -> *mut Value {
+pub extern "C" fn mux_sql_resultset_next(resultset: *mut Value) -> *mut MuxResult {
     let result = resultset_handle(resultset).and_then(|handle| {
         with_resultset(handle, |rs| {
             let value = if rs.next_index < rs.rows.len() {
@@ -864,14 +863,14 @@ pub extern "C" fn mux_sql_resultset_next(resultset: *mut Value) -> *mut Value {
         })
     });
     match result {
-        Ok(value) => crate::refcount::mux_rc_alloc(value),
-        Err(_) => crate::refcount::mux_rc_alloc(Value::Optional(None)),
+        Ok(value) => sql_result_ok(value),
+        Err(err) => sql_result_err(err),
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_sql_resultset_columns(resultset: *mut Value) -> *mut Value {
+pub extern "C" fn mux_sql_resultset_columns(resultset: *mut Value) -> *mut MuxResult {
     let result = resultset_handle(resultset).and_then(|handle| {
         with_resultset(handle, |rs| {
             let columns = rs
@@ -884,7 +883,8 @@ pub extern "C" fn mux_sql_resultset_columns(resultset: *mut Value) -> *mut Value
         })
     });
     match result {
-        Ok(value) => crate::refcount::mux_rc_alloc(value),
-        Err(_) => crate::refcount::mux_rc_alloc(Value::List(Vec::new())),
+        Ok(value) => sql_result_ok(value),
+        Err(err) => sql_result_err(err),
     }
+}
 }

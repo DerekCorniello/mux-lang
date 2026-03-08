@@ -494,8 +494,18 @@ fn sql_transaction_methods() -> HashMap<String, MethodSig> {
             return_type: io_result(int()),
             is_static: false
         },
+        "execute_params" => {
+            params: [str_(), Type::List(Box::new(sql_value_type()))],
+            return_type: io_result(int()),
+            is_static: false
+        },
         "query" => {
             params: [str_()],
+            return_type: io_result(sql_result_set_type()),
+            is_static: false
+        },
+        "query_params" => {
+            params: [str_(), Type::List(Box::new(sql_value_type()))],
             return_type: io_result(sql_result_set_type()),
             is_static: false
         }
