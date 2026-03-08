@@ -5,7 +5,10 @@ string csv1 = "a,b,c\n1,2,3\n4,5,6"
 match csv.parse(csv1) {
   ok(result) {
     print("Test 1 - parse (no headers):")
-    print(result.to_string())
+    match result.stringify(none) {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
   }
   err(msg) { print("Test 1 failed: " + msg) }
 }
@@ -15,27 +18,34 @@ string csv2 = "name,age,city\nAlice,30,NYC\nBob,25,LA"
 match csv.parse_with_headers(csv2) {
   ok(result) {
     print("\nTest 2 - parse_with_headers:")
-    print(result.to_string())
+    match result.stringify(none) {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
   }
   err(msg) { print("Test 2 failed: " + msg) }
 }
 
-// Test 3: to_string method on parsed CSV
+// Test 3: stringify method on parsed CSV
 match csv.parse_with_headers("x,y\n1,2\n3,4") {
   ok(csv_data) {
-    print("\nTest 3 - to_string on parsed CSV:")
-    string output = csv_data.to_string()
-    print(output)
+    print("\nTest 3 - stringify on parsed CSV:")
+    match csv_data.stringify(none) {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
   }
   err(msg) { print("Test 3 failed: " + msg) }
 }
 
-// Test 4: to_string on CSV without headers
+// Test 4: stringify on CSV without headers
 match csv.parse("a,b\n1,2") {
   ok(csv_data) {
-    print("\nTest 4 - to_string on CSV without headers:")
-    string output = csv_data.to_string()
-    print(output)
+    print("\nTest 4 - stringify on CSV without headers:")
+    match csv_data.stringify(none) {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
   }
   err(msg) { print("Test 4 failed: " + msg) }
 }
@@ -65,7 +75,10 @@ string empty = ""
 match csv.parse(empty) {
   ok(result) {
     print("\nTest 7 - empty CSV:")
-    print(result.to_string())
+    match result.stringify(none) {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
   }
   err(msg) { print("Test 7 failed: " + msg) }
 }

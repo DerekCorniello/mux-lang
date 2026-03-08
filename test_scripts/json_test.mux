@@ -1,76 +1,79 @@
 import std.json
 
 // Parse a valid JSON string and stringify compact + pretty
-string s = "{\"a\": [1, 2, 3], \"b\": null}"
-auto r = json.parse(s)
-match r {
+string json_str = "{\"a\": [1, 2, 3], \"b\": null}"
+match json.parse(json_str) {
   ok(val) {
-    match json.stringify(val, none) {
-      ok(compact) {
-        print(compact)
-      }
+    // Test compact stringify
+    match val.stringify(none) {
+      ok(s) { print(s) }
       err(e) { print("stringify compact failed: " + e) }
     }
-    match json.stringify(val, some(2)) {
-      ok(pretty) {
-        print(pretty)
-      }
+    // Test pretty stringify with 2-space indent
+    match val.stringify(some(2)) {
+      ok(s) { print(s) }
       err(e) { print("stringify pretty failed: " + e) }
     }
-
-    // Build JSON structures by parsing literal JSON strings and stringify them
-    string obj_s = "{\"num\": 42, \"arr\": [1,2,3], \"nested\": {\"x\": true}}"
-    match json.parse(obj_s) {
-      ok(o) {
-        match json.stringify(o, some(2)) {
-          ok(s) { print(s) }
-          err(e) { print("stringify failed: " + e) }
-        }
-      }
-      err(e) { print("unexpected parse error: " + e) }
-    }
-
-    string list_s = "[1, 2, 3, 4]"
-    match json.parse(list_s) {
-      ok(l) {
-        match json.stringify(l, none) {
-          ok(s) { print(s) }
-          err(e) { print("stringify failed: " + e) }
-        }
-      }
-      err(e) { print("unexpected parse error: " + e) }
-    }
-
-    // from_map: convert a Mux map -> Json
-    auto native_map = {"x": 1, "y": 2}
-    match json.from_map(native_map) {
-      ok(j) {
-        match json.stringify(j, some(2)) {
-          ok(s) { print(s) }
-          err(e) { print("stringify failed: " + e) }
-        }
-      }
-      err(e) { print("from_map failed: " + e) }
-    }
-
-    // to_map: convert a Json object -> Mux map
-    match json.parse("{\"k\": 10}") {
-      ok(jv) {
-        match json.to_map(jv) {
-          ok(m) { print(m.to_string()) }
-          err(e) { print("to_map failed: " + e) }
-        }
-      }
-      err(e) { print("unexpected parse error: " + e) }
-    }
   }
-  err(msg) { print("parse error: " + msg) }
+  err(e) { print("parse failed: " + e) }
 }
 
-// Parse an invalid JSON string and ensure we receive an error
-string bad_s = "{ not valid json }"
-auto r2 = json.parse(bad_s)
-match r2 {
-  ok(_) { print("unexpected ok") }
-  err(msg) { print("parse failed as expected: " + msg) }
+// Build JSON structures by parsing literal JSON strings and stringify them
+print("")
+
+// Test 1: Object with array
+match json.parse("{\"arr\": [1, 2, 3, 4], \"nested\": {\"x\": true}, \"num\": 42}") {
+  ok(o) {
+    match o.stringify(some(2)) {
+      ok(s) { print(s) }
+      err(e) { print("stringify failed: " + e) }
+    }
+  }
+  err(e) { print("parse object failed: " + e) }
+}
+
+print("")
+
+// Test 2: Array
+match json.parse("[1, 2, 3, 4]") {
+  ok(l) {
+    match l.stringify(none) {
+      ok(s) { print(s) }
+      err(e) { print("stringify failed: " + e) }
+    }
+  }
+  err(e) { print("parse array failed: " + e) }
+}
+
+print("")
+
+// Test 3: from_map and stringify
+match json.from_map({"x": 1.0, "y": 2.0}) {
+  ok(j) {
+    match j.stringify(some(2)) {
+      ok(s) { print(s) }
+      err(e) { print("stringify failed: " + e) }
+    }
+  }
+  err(e) { print("from_map failed: " + e) }
+}
+
+print("")
+
+// Test 4: to_map
+match json.parse("{\"x\": 1, \"y\": 2}") {
+  ok(j) {
+    match json.to_map(j) {
+      ok(m) { print(m.to_string()) }
+      err(e) { print("to_map failed: " + e) }
+    }
+  }
+  err(e) { print("parse failed: " + e) }
+}
+
+// Test error cases
+print("")
+match json.parse("{k: 10}") {
+  ok(_) { print("parse succeeded unexpectedly") }
+  err(e) { print("parse failed as expected: " + e) }
 }

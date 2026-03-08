@@ -17,7 +17,9 @@ pub extern "C" fn mux_csv_parse(input: *const c_char) -> *mut crate::result::Mux
         .to_string_lossy()
         .into_owned();
 
-    let mut reader = csv::Reader::from_reader(s.as_bytes());
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(s.as_bytes());
     let mut rows = Vec::new();
 
     for result in reader.records() {
@@ -119,10 +121,12 @@ pub extern "C" fn mux_csv_parse_with_headers(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_csv_to_string(val: *const Value) -> *mut Value {
+pub extern "C" fn mux_csv_to_string(val: *const Value) -> *mut crate::result::MuxResult {
     if val.is_null() {
-        let s = Value::String("null input".to_string());
-        return crate::refcount::mux_rc_alloc(s);
+        let msg = CString::new("null input").unwrap();
+        unsafe {
+            return crate::result::mux_result_err_str(msg.as_ptr());
+        }
     }
 
     let v = unsafe { &*val };
@@ -130,9 +134,13 @@ pub extern "C" fn mux_csv_to_string(val: *const Value) -> *mut Value {
     match validate_and_extract_csv(v) {
         Ok((headers, rows)) => {
             let csv_string = build_csv_string(&headers, &rows, true);
-            crate::refcount::mux_rc_alloc(Value::String(csv_string))
+            let result_value = crate::refcount::mux_rc_alloc(Value::String(csv_string));
+            crate::result::mux_result_ok_value(result_value)
         }
-        Err(e) => crate::refcount::mux_rc_alloc(Value::String(e)),
+        Err(e) => {
+            let msg = CString::new(e).unwrap();
+            unsafe { crate::result::mux_result_err_str(msg.as_ptr()) }
+        }
     }
 }
 

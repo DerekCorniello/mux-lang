@@ -643,17 +643,6 @@ lazy_static! {
                 llvm_name: "mux_json_parse".to_string(),
             },
         );
-        // json.stringify :: Json, Optional(Int) -> Result(Str, Str)
-        m.insert(
-            "json.stringify",
-            StdlibItem::Function {
-                // Note: runtime signature accepts (Value*, Optional) where Optional may contain an Int.
-                // Now returns Result(Str, Str) to distinguish serialization errors from successful output.
-                params: vec![Type::Named("Json".to_string(), Vec::new()), Type::Optional(Box::new(Type::Primitive(PrimitiveType::Int)))],
-                ret: Type::Result(Box::new(str_()), Box::new(str_())),
-                llvm_name: "mux_json_stringify".to_string(),
-            },
-        );
         // json.from_map :: Map(Str, T) -> Result(Json, Str)
         m.insert(
             "json.from_map",

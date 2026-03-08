@@ -109,12 +109,11 @@ impl SemanticAnalyzer {
             ("std.io", "io"),
             ("std.math", "math"),
             ("std.json", "json"),
+            ("std.csv", "csv"),
             ("std.random", "random"),
             ("std.net", "net"),
             ("std.sync", "sync"),
             ("std.env", "env"),
-            ("std.data", "data"),
-            ("std.data", "csv"),
         ]
     }
 
@@ -351,7 +350,7 @@ impl SemanticAnalyzer {
 
     fn add_csv_builtin_types(&mut self) {
         let span = Span::new(0, 0);
-        let symbol = Self::make_csv_symbol(span, true);
+        let symbol = Self::make_csv_symbol(span);
         let _ = self.symbol_table.add_symbol("Csv", symbol);
     }
 
@@ -4932,27 +4931,17 @@ impl SemanticAnalyzer {
                 );
             }
         }
+
         if module_name == "net" {
             module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span));
         } else if module_name == "sync" {
             module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span));
         } else if module_name == "json" {
-            // Expose Json as a named type in the std.json module so code can refer to json.Json
-            module_symbols.insert(
-                "Json".to_string(),
-                Self::make_symbol(
-                    crate::semantics::types::SymbolKind::Class,
-                    span,
-                    Some(crate::semantics::types::Type::Named(
-                        "Json".to_string(),
-                        Vec::new(),
-                    )),
-                ),
-            );
-        } else if module_name == "data" {
-            module_symbols.insert("Csv".to_string(), Self::make_csv_symbol(span, false));
+            // Expose Json type with stringify method
+            module_symbols.insert("Json".to_string(), Self::make_json_symbol(span));
         } else if module_name == "csv" {
-            module_symbols.insert("Csv".to_string(), Self::make_csv_symbol(span, true));
+            // Expose Csv type
+            module_symbols.insert("Csv".to_string(), Self::make_csv_symbol(span));
         }
         module_symbols
     }
@@ -4972,18 +4961,21 @@ impl SemanticAnalyzer {
         fields
     }
 
-    fn make_csv_symbol(span: Span, include_to_string: bool) -> Symbol {
+    fn make_csv_symbol(span: Span) -> Symbol {
         let mut methods = std::collections::HashMap::new();
-        if include_to_string {
-            methods.insert(
-                "to_string".to_string(),
-                MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                },
-            );
-        }
+        methods.insert(
+            "stringify".to_string(),
+            MethodSig {
+                params: vec![Type::Optional(Box::new(Type::Primitive(
+                    PrimitiveType::Int,
+                )))],
+                return_type: Type::Result(
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                ),
+                is_static: false,
+            },
+        );
         Symbol {
             kind: SymbolKind::Class,
             span,
@@ -4991,6 +4983,36 @@ impl SemanticAnalyzer {
             interfaces: std::collections::HashMap::new(),
             methods,
             fields: Self::csv_fields(),
+            type_params: Vec::new(),
+            original_name: None,
+            llvm_name: None,
+            default_param_count: 0,
+            variants: None,
+        }
+    }
+
+    fn make_json_symbol(span: Span) -> Symbol {
+        let mut methods = std::collections::HashMap::new();
+        methods.insert(
+            "stringify".to_string(),
+            MethodSig {
+                params: vec![Type::Optional(Box::new(Type::Primitive(
+                    PrimitiveType::Int,
+                )))],
+                return_type: Type::Result(
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                ),
+                is_static: false,
+            },
+        );
+        Symbol {
+            kind: SymbolKind::Class,
+            span,
+            type_: Some(Type::Named("Json".to_string(), Vec::new())),
+            interfaces: std::collections::HashMap::new(),
+            methods,
+            fields: std::collections::HashMap::new(),
             type_params: Vec::new(),
             original_name: None,
             llvm_name: None,
