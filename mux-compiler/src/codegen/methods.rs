@@ -843,13 +843,9 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         match method_name {
             "stringify" => {
-                if args.len() != 1 {
-                    return Err(
-                        "stringify() expects exactly 1 argument (optional indent)".to_string()
-                    );
+                if !args.is_empty() {
+                    return Err("stringify() expects no arguments".to_string());
                 }
-                let _indent_arg = self.generate_expression(&args[0])?;
-                // Note: For CSV, we ignore the indent parameter (always formatted consistently)
                 self.call_runtime_function("mux_csv_to_string", &[obj_value])
             }
             _ => Err(format!("Method {} not implemented for Csv", method_name)),

@@ -4966,9 +4966,7 @@ impl SemanticAnalyzer {
         methods.insert(
             "stringify".to_string(),
             MethodSig {
-                params: vec![Type::Optional(Box::new(Type::Primitive(
-                    PrimitiveType::Int,
-                )))],
+                params: vec![],
                 return_type: Type::Result(
                     Box::new(Type::Primitive(PrimitiveType::Str)),
                     Box::new(Type::Primitive(PrimitiveType::Str)),

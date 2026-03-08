@@ -5,7 +5,7 @@ string csv1 = "a,b,c\n1,2,3\n4,5,6"
 match csv.parse(csv1) {
   ok(result) {
     print("Test 1 - parse (no headers):")
-    match result.stringify(none) {
+    match result.stringify() {
       ok(output) { print(output) }
       err(e) { print("stringify failed: " + e) }
     }
@@ -18,7 +18,7 @@ string csv2 = "name,age,city\nAlice,30,NYC\nBob,25,LA"
 match csv.parse_with_headers(csv2) {
   ok(result) {
     print("\nTest 2 - parse_with_headers:")
-    match result.stringify(none) {
+    match result.stringify() {
       ok(output) { print(output) }
       err(e) { print("stringify failed: " + e) }
     }
@@ -30,7 +30,7 @@ match csv.parse_with_headers(csv2) {
 match csv.parse_with_headers("x,y\n1,2\n3,4") {
   ok(csv_data) {
     print("\nTest 3 - stringify on parsed CSV:")
-    match csv_data.stringify(none) {
+    match csv_data.stringify() {
       ok(output) { print(output) }
       err(e) { print("stringify failed: " + e) }
     }
@@ -42,7 +42,7 @@ match csv.parse_with_headers("x,y\n1,2\n3,4") {
 match csv.parse("a,b\n1,2") {
   ok(csv_data) {
     print("\nTest 4 - stringify on CSV without headers:")
-    match csv_data.stringify(none) {
+    match csv_data.stringify() {
       ok(output) { print(output) }
       err(e) { print("stringify failed: " + e) }
     }
@@ -75,7 +75,7 @@ string empty = ""
 match csv.parse(empty) {
   ok(result) {
     print("\nTest 7 - empty CSV:")
-    match result.stringify(none) {
+    match result.stringify() {
       ok(output) { print(output) }
       err(e) { print("stringify failed: " + e) }
     }

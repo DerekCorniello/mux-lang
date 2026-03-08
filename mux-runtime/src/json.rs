@@ -127,7 +127,6 @@ pub fn value_to_json(v: &Value) -> Result<Json, String> {
     }
 }
 
-#[allow(dead_code)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_json_parse(input: *const c_char) -> *mut crate::result::MuxResult {

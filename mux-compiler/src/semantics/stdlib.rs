@@ -682,23 +682,6 @@ lazy_static! {
                 llvm_name: "mux_csv_parse_with_headers".to_string(),
             },
         );
-        // Backwards-compatibility aliases: data.csv.parse and data.csv.parse_with_headers
-        m.insert(
-            "data.csv.parse",
-            StdlibItem::Function {
-                params: STR_PARAM.to_vec(),
-                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
-                llvm_name: "mux_csv_parse".to_string(),
-            },
-        );
-        m.insert(
-            "data.csv.parse_with_headers",
-            StdlibItem::Function {
-                params: STR_PARAM.to_vec(),
-                ret: Type::Result(Box::new(Type::Named("Csv".to_string(), Vec::new())), Box::new(str_())),
-                llvm_name: "mux_csv_parse_with_headers".to_string(),
-            },
-        );
         m
     };
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
