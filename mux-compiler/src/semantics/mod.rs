@@ -4990,11 +4990,10 @@ impl SemanticAnalyzer {
         use crate::semantics::stdlib::all_stdlib_items;
 
         let mut module_symbols = std::collections::HashMap::new();
-        // Allow collecting for child module names like "net.http" or
-        // "data.json". Try matching using the full module name first
-        // (e.g. "net.http" -> keys like "net.http.request"), then
-        // fall back to the short child name (e.g. "data.json" -> "json").
-        let mut prefixes = Vec::new();
+        // Build prefixes to match stdlib keys. For nested modules we want to
+        // prefer the full module name ("net.http") and then the short child
+        // name ("http" / "json") as a fallback.
+        let mut prefixes: Vec<String> = Vec::with_capacity(2);
         if module_name.contains('.') {
             prefixes.push(module_name.to_string());
             if let Some(last) = module_name.split('.').next_back() {
@@ -5004,17 +5003,26 @@ impl SemanticAnalyzer {
             prefixes.push(module_name.to_string());
         }
 
-        for (key, item) in all_stdlib_items() {
+        // Helper: given a stdlib key like "net.http.request" and a set of
+        // prefixes, return the item name (e.g. "request") when it matches.
+        let find_item_name = |key: &str| -> Option<String> {
             for prefix in &prefixes {
-                if let Some(item_name) = key.strip_prefix(&format!("{}.", prefix))
-                    && !item_name.contains('.')
+                let pat = format!("{}.", prefix);
+                if let Some(rest) = key.strip_prefix(&pat)
+                    && !rest.contains('.')
                 {
-                    module_symbols.insert(
-                        item_name.to_string(),
-                        crate::semantics::stdlib::stdlib_item_to_symbol(&item, span),
-                    );
-                    break;
+                    return Some(rest.to_string());
                 }
+            }
+            None
+        };
+
+        for (key, item) in all_stdlib_items() {
+            if let Some(item_name) = find_item_name(&key) {
+                module_symbols.insert(
+                    item_name,
+                    crate::semantics::stdlib::stdlib_item_to_symbol(&item, span),
+                );
             }
         }
 
