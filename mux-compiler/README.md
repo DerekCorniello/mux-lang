@@ -2000,11 +2000,16 @@ Format patterns use chrono `strftime` tokens, for example:
 
 ### 17.7 net
 
-`net` exposes TCP/UDP sockets plus the JSON-driven HTTP client described in the docs.
+`net` exposes TCP/UDP sockets plus HTTP client/server primitives with JSON request and response shapes.
 
 - `net.TcpStream.connect(string addr) -> result<TcpStream, string>`
+- `net.TcpListener.bind(string addr) -> result<TcpListener, string>`
+- `listener.accept() -> result<TcpStream, string>`
 - `net.UdpSocket.bind(string addr) -> result<UdpSocket, string>`
 - `net.http.request(Json req) -> result<Json, string>`
+- `net.http.read_request(TcpStream stream) -> result<Json, string>`
+- `net.http.write_response(TcpStream stream, Json response) -> result<void, string>`
+  `write_response` serializes body as JSON and defaults `Content-Type` to `application/json` unless you set it in `headers`.
 - `net.TcpStream.read(int size)`, `net.TcpStream.write(list<int> bytes)`
 - `net.UdpSocket.send_to(list<int> bytes, string addr)`, `net.UdpSocket.recv_from(int size)`
   (all methods return `result<T, string>` when they can fail)

@@ -4990,35 +4990,10 @@ impl SemanticAnalyzer {
         use crate::semantics::stdlib::all_stdlib_items;
 
         let mut module_symbols = std::collections::HashMap::new();
-        // Build prefixes to match stdlib keys. For nested modules we want to
-        // prefer the full module name ("net.http") and then the short child
-        // name ("http" / "json") as a fallback.
-        let mut prefixes: Vec<String> = Vec::with_capacity(2);
-        if module_name.contains('.') {
-            prefixes.push(module_name.to_string());
-            if let Some(last) = module_name.split('.').next_back() {
-                prefixes.push(last.to_string());
-            }
-        } else {
-            prefixes.push(module_name.to_string());
-        }
-
-        // Helper: given a stdlib key like "net.http.request" and a set of
-        // prefixes, return the item name (e.g. "request") when it matches.
-        let find_item_name = |key: &str| -> Option<String> {
-            for prefix in &prefixes {
-                let pat = format!("{}.", prefix);
-                if let Some(rest) = key.strip_prefix(&pat)
-                    && !rest.contains('.')
-                {
-                    return Some(rest.to_string());
-                }
-            }
-            None
-        };
+        let prefixes = Self::stdlib_module_prefixes(module_name);
 
         for (key, item) in all_stdlib_items() {
-            if let Some(item_name) = find_item_name(&key) {
+            if let Some(item_name) = Self::stdlib_item_name_for_module(&key, &prefixes) {
                 module_symbols.insert(
                     item_name,
                     crate::semantics::stdlib::stdlib_item_to_symbol(&item, span),
@@ -5026,20 +5001,53 @@ impl SemanticAnalyzer {
             }
         }
 
-        // Module-specific class/type injections. Support both legacy short
-        // names (e.g., "json") and nested names (e.g., "data.json").
-        if module_name == "net" {
-            module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span));
-        } else if module_name == "sync" {
-            module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span));
-        } else if module_name == "json" || module_name.ends_with(".json") {
-            // Expose Json type with stringify method
-            module_symbols.insert("Json".to_string(), Self::make_json_symbol(span));
-        } else if module_name == "csv" || module_name.ends_with(".csv") {
-            // Expose Csv type
-            module_symbols.insert("Csv".to_string(), Self::make_csv_symbol(span));
-        }
+        Self::inject_stdlib_module_special_symbols(module_name, span, &mut module_symbols);
         module_symbols
+    }
+
+    fn stdlib_module_prefixes(module_name: &str) -> Vec<String> {
+        if !module_name.contains('.') {
+            return vec![module_name.to_string()];
+        }
+        let mut prefixes = vec![module_name.to_string()];
+        if let Some(last) = module_name.split('.').next_back() {
+            prefixes.push(last.to_string());
+        }
+        prefixes
+    }
+
+    fn stdlib_item_name_for_module(key: &str, prefixes: &[String]) -> Option<String> {
+        for prefix in prefixes {
+            let pattern = format!("{}.", prefix);
+            if let Some(rest) = key.strip_prefix(&pattern)
+                && !rest.contains('.')
+            {
+                return Some(rest.to_string());
+            }
+        }
+        None
+    }
+
+    fn inject_stdlib_module_special_symbols(
+        module_name: &str,
+        span: Span,
+        module_symbols: &mut std::collections::HashMap<String, Symbol>,
+    ) {
+        match module_name {
+            "net" => {
+                module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span))
+            }
+            "sync" => {
+                module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span))
+            }
+            _ if module_name.ends_with(".json") => {
+                module_symbols.insert("Json".to_string(), Self::make_json_symbol(span));
+            }
+            _ if module_name.ends_with(".csv") => {
+                module_symbols.insert("Csv".to_string(), Self::make_csv_symbol(span));
+            }
+            _ => {}
+        }
     }
 
     fn csv_headers_type() -> Type {
