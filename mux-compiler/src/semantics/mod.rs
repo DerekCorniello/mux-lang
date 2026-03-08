@@ -113,6 +113,7 @@ impl SemanticAnalyzer {
             ("std.net", "net"),
             ("std.sync", "sync"),
             ("std.env", "env"),
+            ("std.sql", "sql"),
         ]
     }
 
@@ -5039,6 +5040,9 @@ impl SemanticAnalyzer {
             }
             "sync" => {
                 module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span))
+            }
+            "sql" => {
+                module_symbols.extend(crate::semantics::stdlib::sql_module_class_symbols(span))
             }
             _ if module_name.ends_with(".json") => {
                 module_symbols.insert("Json".to_string(), Self::make_json_symbol(span));

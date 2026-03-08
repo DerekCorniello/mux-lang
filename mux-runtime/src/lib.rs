@@ -282,6 +282,7 @@ pub mod random;
 pub mod refcount;
 pub mod result;
 pub mod set;
+pub mod sql;
 pub mod std;
 pub mod string;
 pub mod sync;

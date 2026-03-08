@@ -19,7 +19,7 @@ func main() returns void {
 You can import stdlib in multiple forms:
 
 ```mux title="stdlib_import_forms.mux"
-import std                      // namespace import: std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
+import std                      // namespace import: std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net, std.env, std.data, std.sql
 import std.math                 // single module namespace
 import std.(math, random as r)  // qualified and selective imports with aliasing
 import std.*                    // flat import of all stdlib items
@@ -33,6 +33,7 @@ import std.*                    // flat import of all stdlib items
 | [math](./math) | Mathematical functions and constants | Available |
 | [io](./io) | File and path operations with `result`-based errors | Available |
 | [net](./net) | TCP/UDP primitives plus JSON HTTP client/server bindings | Available |
+| [sql](./sql) | SQL connections, transactions, result sets, and typed SQL values | Available (SQLite) |
 | [env](./env) | Environment inspection utilities (`env.get`) | Available |
 | [data.json](./data-json) | JSON parsing, conversion, and serialization helpers | Available |
 | [data.csv](./data-csv) | CSV parsing with optional header support | Available |

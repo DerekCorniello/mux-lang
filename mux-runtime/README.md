@@ -1898,12 +1898,12 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, and `net`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, `net`, `env`, `data`, and `sql`.
 
 Import styles:
 
 ```mux
-import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net, std.env, std.data, std.sql
 import std.assert             // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*
@@ -1911,6 +1911,9 @@ import std.random             // use random.*
 import std.datetime           // use datetime.*
 import std.net                // use net.*
 import std.sync               // use sync.*
+import std.env                // use env.*
+import std.data               // use data.*
+import std.sql                // use sql.*
 import std.(math, random as r)
 import std.*                  // flat import of stdlib items
 ```
@@ -2025,6 +2028,49 @@ Format patterns use chrono `strftime` tokens, for example:
 
 - `data.csv.parse(string csv_text) -> result<Csv, string>`
 - `data.csv.parse_with_headers(string csv_text) -> result<Csv, string>`
+
+### 17.11 sql
+
+`sql` provides database connectivity and typed SQL values.
+
+- `sql.connect(string uri) -> result<Connection, string>`
+- `Connection.close() -> void`
+- `Connection.execute(string sql) -> result<int, string>`
+- `Connection.execute_params(string sql, list<SqlValue> params) -> result<int, string>`
+- `Connection.query(string sql) -> result<ResultSet, string>`
+- `Connection.query_params(string sql, list<SqlValue> params) -> result<ResultSet, string>`
+- `Connection.begin_transaction() -> result<Transaction, string>`
+- `Transaction.commit() -> result<void, string>`
+- `Transaction.rollback() -> result<void, string>`
+- `Transaction.execute(string sql) -> result<int, string>`
+- `Transaction.query(string sql) -> result<ResultSet, string>`
+- `ResultSet.rows() -> list<map<string, SqlValue>>`
+- `ResultSet.next() -> optional<map<string, SqlValue>>`
+- `ResultSet.columns() -> list<string>`
+
+`SqlValue` constructors:
+
+- `sql.int(int) -> SqlValue`
+- `sql.float(float) -> SqlValue`
+- `sql.bool(bool) -> SqlValue`
+- `sql.string(string) -> SqlValue`
+- `sql.bytes(list<int>) -> SqlValue`
+- `sql.null() -> SqlValue`
+
+`SqlValue` methods:
+
+- `.is_null() -> bool`
+- `.as_bool() -> result<bool, string>`
+- `.as_int() -> result<int, string>`
+- `.as_float() -> result<float, string>`
+- `.as_string() -> result<string, string>`
+- `.as_bytes() -> result<list<int>, string>`
+- `.to_string() -> string`
+
+Current provider support:
+
+- SQLite: available now (`sqlite::memory:`, `sqlite:///path/to/file.db`)
+- PostgreSQL/MySQL/MariaDB/SQL Server: URI detection and clear unsupported errors today
 
 ---
 

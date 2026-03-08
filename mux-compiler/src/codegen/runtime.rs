@@ -1029,6 +1029,133 @@ impl<'a> CodeGenerator<'a> {
             i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,
         );
+
+        module.add_function(
+            "mux_sql_connect",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_int",
+            i8_ptr.fn_type(&[i64_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_float",
+            i8_ptr.fn_type(&[f64_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_bool",
+            i8_ptr.fn_type(&[context.bool_type().into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_bytes",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function("mux_sql_value_null", i8_ptr.fn_type(&[], false), None);
+        module.add_function(
+            "mux_sql_value_is_null",
+            context.bool_type().fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_as_bool",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_as_int",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_as_float",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_as_string",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_value_as_bytes",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_connection_close",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_connection_execute",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_connection_execute_params",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_connection_query",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_connection_query_params",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_connection_begin_transaction",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_transaction_commit",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_transaction_rollback",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_transaction_execute",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_transaction_query",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_resultset_rows",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_resultset_next",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_resultset_columns",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
     }
 
     pub(super) fn box_value(&mut self, val: BasicValueEnum<'a>) -> PointerValue<'a> {
