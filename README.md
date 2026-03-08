@@ -1973,6 +1973,38 @@ Format patterns use chrono `strftime` tokens, for example:
 - `sync.sleep(int milliseconds) -> void`
 - `Thread.join() -> result<void, string>`
 - `Thread.detach() -> result<void, string>`
+
+### 17.7 net
+
+`net` exposes TCP/UDP sockets plus the JSON-driven HTTP client described in the docs.
+
+- `net.TcpStream.connect(string addr) -> result<TcpStream, string>`
+- `net.UdpSocket.bind(string addr) -> result<UdpSocket, string>`
+- `net.http.request(Json req) -> result<Json, string>`
+- `net.TcpStream.read(int size)`, `net.TcpStream.write(list<int> bytes)`
+- `net.UdpSocket.send_to(list<int> bytes, string addr)`, `net.UdpSocket.recv_from(int size)`
+  (all methods return `result<T, string>` when they can fail)
+
+### 17.8 env
+
+`env` exposes operating-system environment access with explicit errors.
+
+- `env.get(string name) -> optional<string>`
+
+### 17.9 data.json
+
+`data.json` is the JSON utility layer built on `std.json`.
+
+- `data.json.parse(string json) -> result<Json, string>`
+- `data.json.from_map(map<string, T>) -> result<Json, string>`
+- `data.json.to_map(Json value) -> result<map<string, Json>, string>`
+
+### 17.10 data.csv
+
+`data.csv` parses CSV text into structured rows.
+
+- `data.csv.parse(string csv_text) -> result<Csv, string>`
+- `data.csv.parse_with_headers(string csv_text) -> result<Csv, string>`
 - `Mutex.new() -> Mutex`
 - `Mutex.lock() -> result<void, string>`
 - `Mutex.unlock() -> result<void, string>`
