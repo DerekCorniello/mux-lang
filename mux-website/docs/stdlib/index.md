@@ -32,7 +32,7 @@ import std.*                    // flat import of all stdlib items
 | [assert](./assert) | Test assertions that panic on failure | Available |
 | [math](./math) | Mathematical functions and constants | Available |
 | [io](./io) | File and path operations with `result`-based errors | Available |
-| [net](./net) | TCP/UDP primitives plus the JSON HTTP client | Available |
+| [net](./net) | TCP/UDP primitives plus JSON HTTP client/server bindings | Available |
 | [env](./env) | Environment inspection utilities (`env.get`) | Available |
 | [data.json](./data-json) | JSON parsing, conversion, and serialization helpers | Available |
 | [data.csv](./data-csv) | CSV parsing with optional header support | Available |

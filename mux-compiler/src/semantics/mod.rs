@@ -5026,16 +5026,15 @@ impl SemanticAnalyzer {
             }
         }
 
-        // Module-specific class/type injections. Support both legacy short
-        // names (e.g., "json") and nested names (e.g., "data.json").
+        // Module-specific class/type injections
         if module_name == "net" {
             module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span));
         } else if module_name == "sync" {
             module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span));
-        } else if module_name == "json" || module_name.ends_with(".json") {
+        } else if module_name.ends_with(".json") {
             // Expose Json type with stringify method
             module_symbols.insert("Json".to_string(), Self::make_json_symbol(span));
-        } else if module_name == "csv" || module_name.ends_with(".csv") {
+        } else if module_name.ends_with(".csv") {
             // Expose Csv type
             module_symbols.insert("Csv".to_string(), Self::make_csv_symbol(span));
         }

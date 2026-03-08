@@ -1,0 +1,99 @@
+import std.assert
+import std.data.json
+import std.net
+import std.sync
+
+func main() returns void {
+    print("Starting http server smoke test")
+
+    match net.TcpListener.bind("127.0.0.1:0") {
+        ok(listener) {
+            match listener.local_addr() {
+                ok(addr) {
+                    result<Thread, string> client = sync.spawn(func() returns void {
+                        auto req_json = "{\"method\":\"POST\",\"url\":\"http://" + addr + "/echo?x=1\",\"headers\":{\"Accept\":\"application/json\"},\"body\":{\"message\":\"hello\"}}"
+                        match json.parse(req_json) {
+                            ok(request) {
+                                match net.http.request(request) {
+                                    ok(response) {
+                                        match json.to_map(response) {
+                                            ok(response_map) {
+                                                auto status_json = response_map["status"]
+                                                match status_json.stringify(none) {
+                                                    ok(status_text) {
+                                                        assert.assert(
+                                                            status_text == "201" || status_text == "201.0",
+                                                            "unexpected status from server: " + status_text
+                                                        )
+                                                    }
+                                                    err(e) { assert.assert(false, "failed to stringify response status: " + e) }
+                                                }
+                                            }
+                                            err(e) { assert.assert(false, "response was not object json: " + e) }
+                                        }
+                                    }
+                                    err(e) { assert.assert(false, "client request failed: " + e) }
+                                }
+                            }
+                            err(e) { assert.assert(false, "failed to parse client request json: " + e) }
+                        }
+                        return
+                    })
+
+                    match listener.accept() {
+                        ok(stream) {
+                            match net.http.read_request(stream) {
+                                ok(request_json) {
+                                    match json.to_map(request_json) {
+                                        ok(request_map) {
+                                            auto method_json = request_map["method"]
+                                            match method_json.stringify(none) {
+                                                ok(method_text) { assert.assert(method_text == "\"POST\"", "unexpected request method") }
+                                                err(e) { assert.assert(false, "failed to stringify method: " + e) }
+                                            }
+
+                                            auto path_json = request_map["path"]
+                                            match path_json.stringify(none) {
+                                                ok(path_text) { assert.assert(path_text == "\"/echo\"", "unexpected request path") }
+                                                err(e) { assert.assert(false, "failed to stringify path: " + e) }
+                                            }
+                                        }
+                                        err(e) { assert.assert(false, "request json was not object: " + e) }
+                                    }
+
+                                    match json.parse("{\"status\":201,\"headers\":{\"X-Test\":\"mux\"},\"body\":{\"ok\":true}}") {
+                                        ok(response_json) {
+                                            match net.http.write_response(stream, response_json) {
+                                                ok(_) { print("http server response sent") }
+                                                err(e) { assert.assert(false, "write_response failed: " + e) }
+                                            }
+                                        }
+                                        err(e) { assert.assert(false, "failed to parse response json: " + e) }
+                                    }
+                                }
+                                err(e) { assert.assert(false, "read_request failed: " + e) }
+                            }
+                            stream.close()
+                        }
+                        err(e) { assert.assert(false, "listener accept failed: " + e) }
+                    }
+
+                    match client {
+                        ok(t) {
+                            match t.join() {
+                                ok(_) { print("client join ok") }
+                                err(e) { assert.assert(false, "client join failed: " + e) }
+                            }
+                        }
+                        err(e) { assert.assert(false, "client spawn failed: " + e) }
+                    }
+                }
+                err(e) { assert.assert(false, "listener local_addr failed: " + e) }
+            }
+            listener.close()
+        }
+        err(e) { assert.assert(false, "listener bind failed: " + e) }
+    }
+
+    print("http server smoke test passed")
+}

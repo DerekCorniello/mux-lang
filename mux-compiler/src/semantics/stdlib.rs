@@ -222,6 +222,9 @@ fn tcp_stream_type() -> Type {
 fn udp_socket_type() -> Type {
     Type::Named("UdpSocket".to_string(), Vec::new())
 }
+fn tcp_listener_type() -> Type {
+    Type::Named("TcpListener".to_string(), Vec::new())
+}
 
 fn make_class_symbol(name: &str, methods: HashMap<String, MethodSig>, span: Span) -> Symbol {
     Symbol {
@@ -373,6 +376,36 @@ fn udp_socket_methods() -> HashMap<String, MethodSig> {
     }
 }
 
+fn tcp_listener_methods() -> HashMap<String, MethodSig> {
+    define_methods! {
+        "bind" => {
+            params: [str_()],
+            return_type: io_result(tcp_listener_type()),
+            is_static: true
+        },
+        "accept" => {
+            params: [],
+            return_type: io_result(tcp_stream_type()),
+            is_static: false
+        },
+        "close" => {
+            params: [],
+            return_type: Type::Void,
+            is_static: false
+        },
+        "set_nonblocking" => {
+            params: [bool_()],
+            return_type: io_result(Type::Void),
+            is_static: false
+        },
+        "local_addr" => {
+            params: [],
+            return_type: io_result(str_()),
+            is_static: false
+        }
+    }
+}
+
 pub fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
     let mut classes = HashMap::new();
     classes.insert(
@@ -382,6 +415,10 @@ pub fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
     classes.insert(
         "UdpSocket".to_string(),
         make_class_symbol("UdpSocket", udp_socket_methods(), span),
+    );
+    classes.insert(
+        "TcpListener".to_string(),
+        make_class_symbol("TcpListener", tcp_listener_methods(), span),
     );
     classes.insert(
         "http".to_string(),
@@ -663,6 +700,22 @@ lazy_static! {
                 params: vec![json_type()],
                 ret: io_result(json_type()),
                 llvm_name: "mux_net_http_request".to_string(),
+            },
+        );
+        m.insert(
+            "net.http.read_request",
+            StdlibItem::Function {
+                params: vec![tcp_stream_type()],
+                ret: io_result(json_type()),
+                llvm_name: "mux_net_http_read_request".to_string(),
+            },
+        );
+        m.insert(
+            "net.http.write_response",
+            StdlibItem::Function {
+                params: vec![tcp_stream_type(), json_type()],
+                ret: io_result(Type::Void),
+                llvm_name: "mux_net_http_write_response".to_string(),
             },
         );
         m

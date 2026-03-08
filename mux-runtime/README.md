@@ -1991,11 +1991,15 @@ Format patterns use chrono `strftime` tokens, for example:
 
 ### 17.7 net
 
-`net` exposes TCP/UDP sockets plus the JSON-driven HTTP client described in the docs.
+`net` exposes TCP/UDP sockets plus HTTP client/server primitives with JSON request and response shapes.
 
 - `net.TcpStream.connect(string addr) -> result<TcpStream, string>`
+- `net.TcpListener.bind(string addr) -> result<TcpListener, string>`
+- `listener.accept() -> result<TcpStream, string>`
 - `net.UdpSocket.bind(string addr) -> result<UdpSocket, string>`
 - `net.http.request(Json req) -> result<Json, string>`
+- `net.http.read_request(TcpStream stream) -> result<Json, string>`
+- `net.http.write_response(TcpStream stream, Json response) -> result<void, string>`
 - `net.TcpStream.read(int size)`, `net.TcpStream.write(list<int> bytes)`
 - `net.UdpSocket.send_to(list<int> bytes, string addr)`, `net.UdpSocket.recv_from(int size)`
   (all methods return `result<T, string>` when they can fail)
@@ -2020,27 +2024,6 @@ Format patterns use chrono `strftime` tokens, for example:
 
 - `data.csv.parse(string csv_text) -> result<Csv, string>`
 - `data.csv.parse_with_headers(string csv_text) -> result<Csv, string>`
-- `Mutex.new() -> Mutex`
-- `Mutex.lock() -> result<void, string>`
-- `Mutex.unlock() -> result<void, string>`
-- `RwLock.new() -> RwLock`
-- `RwLock.read_lock() -> result<void, string>`
-- `RwLock.write_lock() -> result<void, string>`
-- `RwLock.unlock() -> result<void, string>`
-- `CondVar.new() -> CondVar`
-- `CondVar.wait(Mutex) -> result<void, string>`
-- `CondVar.signal() -> result<void, string>`
-- `CondVar.broadcast() -> result<void, string>`
-
-### 17.7 net
-
-The `net` module exposes low-level socket primitives:
-
-- `TcpStream` for connecting to TCP services, performing reads/writes, toggling `set_nonblocking` (returns `result<void, string>`), and querying `peer_addr`/`local_addr` (both return `result<string, string>`) to inspect endpoints.
-- `UdpSocket` for binding to UDP ports, sending datagrams, receiving a `(Bytes, string)` tuple, toggling `set_nonblocking` (`result<void, string>`), and querying `peer_addr`/`local_addr` results.
-- A request/response shape described as simple `map` objects with known keys (`method`, `url`, `headers`, `body`, `status`, etc.).
-
-Methods return explicit `result` values so errors are handled deterministically.
 
 ---
 
