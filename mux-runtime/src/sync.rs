@@ -1,14 +1,14 @@
-use crate::TypeId;
-use crate::Value;
 use crate::object::{alloc_object, get_object_ptr, register_object_type};
 use crate::refcount::mux_rc_dec;
 use crate::result::MuxResult;
+use crate::TypeId;
+use crate::Value;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::mem::MaybeUninit;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 

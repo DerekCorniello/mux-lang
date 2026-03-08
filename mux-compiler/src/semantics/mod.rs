@@ -108,9 +108,12 @@ impl SemanticAnalyzer {
             ("std.datetime", "datetime"),
             ("std.io", "io"),
             ("std.math", "math"),
+            ("std.json", "json"),
+            ("std.csv", "csv"),
             ("std.random", "random"),
             ("std.net", "net"),
             ("std.sync", "sync"),
+            ("std.env", "env"),
         ]
     }
 
@@ -331,8 +334,9 @@ impl SemanticAnalyzer {
             self.register_builtin_function(name, sig, span);
         }
 
-        // Register sync module class symbols (Thread/Mutex/etc.)
+        // Register builtin classes
         self.add_sync_builtin_types();
+        self.add_csv_builtin_types();
     }
 
     fn add_sync_builtin_types(&mut self) {
@@ -342,6 +346,12 @@ impl SemanticAnalyzer {
         for (name, sym) in classes {
             let _ = self.symbol_table.add_symbol(&name, sym);
         }
+    }
+
+    fn add_csv_builtin_types(&mut self) {
+        let span = Span::new(0, 0);
+        let symbol = Self::make_csv_symbol(span);
+        let _ = self.symbol_table.add_symbol("Csv", symbol);
     }
 
     #[allow(clippy::only_used_in_recursion)]
@@ -4921,12 +4931,92 @@ impl SemanticAnalyzer {
                 );
             }
         }
+
         if module_name == "net" {
             module_symbols.extend(crate::semantics::stdlib::net_module_class_symbols(span));
         } else if module_name == "sync" {
             module_symbols.extend(crate::semantics::stdlib::sync_module_class_symbols(span));
+        } else if module_name == "json" {
+            // Expose Json type with stringify method
+            module_symbols.insert("Json".to_string(), Self::make_json_symbol(span));
+        } else if module_name == "csv" {
+            // Expose Csv type
+            module_symbols.insert("Csv".to_string(), Self::make_csv_symbol(span));
         }
         module_symbols
+    }
+
+    fn csv_headers_type() -> Type {
+        Type::List(Box::new(Type::Primitive(PrimitiveType::Str)))
+    }
+
+    fn csv_rows_type() -> Type {
+        Type::List(Box::new(Self::csv_headers_type()))
+    }
+
+    fn csv_fields() -> std::collections::HashMap<String, (Type, bool)> {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("headers".to_string(), (Self::csv_headers_type(), true));
+        fields.insert("rows".to_string(), (Self::csv_rows_type(), true));
+        fields
+    }
+
+    fn make_csv_symbol(span: Span) -> Symbol {
+        let mut methods = std::collections::HashMap::new();
+        methods.insert(
+            "stringify".to_string(),
+            MethodSig {
+                params: vec![],
+                return_type: Type::Result(
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                ),
+                is_static: false,
+            },
+        );
+        Symbol {
+            kind: SymbolKind::Class,
+            span,
+            type_: Some(Type::Named("Csv".to_string(), Vec::new())),
+            interfaces: std::collections::HashMap::new(),
+            methods,
+            fields: Self::csv_fields(),
+            type_params: Vec::new(),
+            original_name: None,
+            llvm_name: None,
+            default_param_count: 0,
+            variants: None,
+        }
+    }
+
+    fn make_json_symbol(span: Span) -> Symbol {
+        let mut methods = std::collections::HashMap::new();
+        methods.insert(
+            "stringify".to_string(),
+            MethodSig {
+                params: vec![Type::Optional(Box::new(Type::Primitive(
+                    PrimitiveType::Int,
+                )))],
+                return_type: Type::Result(
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                ),
+                is_static: false,
+            },
+        );
+        Symbol {
+            kind: SymbolKind::Class,
+            span,
+            type_: Some(Type::Named("Json".to_string(), Vec::new())),
+            interfaces: std::collections::HashMap::new(),
+            methods,
+            fields: std::collections::HashMap::new(),
+            type_params: Vec::new(),
+            original_name: None,
+            llvm_name: None,
+            default_param_count: 0,
+            variants: None,
+        }
     }
 
     fn apply_stdlib_module_import_spec(

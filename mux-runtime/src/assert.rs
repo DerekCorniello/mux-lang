@@ -1,6 +1,6 @@
-use crate::Value;
 use crate::optional::Optional;
 use crate::result::MuxResult;
+use crate::Value;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 

@@ -1,0 +1,86 @@
+import std.csv
+
+// Test 1: parse without headers (all rows treated as data)
+string csv1 = "a,b,c\n1,2,3\n4,5,6"
+match csv.parse(csv1) {
+  ok(result) {
+    print("Test 1 - parse (no headers):")
+    match result.stringify() {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
+  }
+  err(msg) { print("Test 1 failed: " + msg) }
+}
+
+// Test 2: parse_with_headers (first row becomes headers)
+string csv2 = "name,age,city\nAlice,30,NYC\nBob,25,LA"
+match csv.parse_with_headers(csv2) {
+  ok(result) {
+    print("\nTest 2 - parse_with_headers:")
+    match result.stringify() {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
+  }
+  err(msg) { print("Test 2 failed: " + msg) }
+}
+
+// Test 3: stringify method on parsed CSV
+match csv.parse_with_headers("x,y\n1,2\n3,4") {
+  ok(csv_data) {
+    print("\nTest 3 - stringify on parsed CSV:")
+    match csv_data.stringify() {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
+  }
+  err(msg) { print("Test 3 failed: " + msg) }
+}
+
+// Test 4: stringify on CSV without headers
+match csv.parse("a,b\n1,2") {
+  ok(csv_data) {
+    print("\nTest 4 - stringify on CSV without headers:")
+    match csv_data.stringify() {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
+  }
+  err(msg) { print("Test 4 failed: " + msg) }
+}
+
+// Test 5: inspect headers and rows fields
+match csv.parse_with_headers("name,age\nAlice,30\nBob,25") {
+  ok(csv_data) {
+    print("\nTest 5 - headers field:")
+    print(csv_data.headers.to_string())
+    print("Test 5 - rows field:")
+    print(csv_data.rows.to_string())
+  }
+  err(msg) { print("Test 5 failed: " + msg) }
+}
+
+// Test 6: ensure rows field is usable without headers
+match csv.parse("a,b\n1,2\n3,4") {
+  ok(csv_data) {
+    print("\nTest 6 - rows field without headers:")
+    print(csv_data.rows.to_string())
+  }
+  err(msg) { print("Test 6 failed: " + msg) }
+}
+
+// Test 7: empty input
+string empty = ""
+match csv.parse(empty) {
+  ok(result) {
+    print("\nTest 7 - empty CSV:")
+    match result.stringify() {
+      ok(output) { print(output) }
+      err(e) { print("stringify failed: " + e) }
+    }
+  }
+  err(msg) { print("Test 7 failed: " + msg) }
+}
+
+print("\nAll CSV tests completed!")
