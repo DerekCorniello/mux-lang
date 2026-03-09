@@ -4,10 +4,10 @@ expression: normalized
 ---
 Starting sql sqlite smoke test
 created users table
+transaction row name: Grace
 first row name: Ada
 first row active: true
 second row name: Linus
 second row active: false
-first row available from cursor
-second row available from cursor
+cursor exhausted after two rows
 sql sqlite smoke test passed

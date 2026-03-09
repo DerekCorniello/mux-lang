@@ -608,6 +608,12 @@ impl<'a> CodeGenerator<'a> {
         add_typed_getter(
             module,
             i8_ptr,
+            "mux_value_optional_discriminant",
+            i32_type.into(),
+        );
+        add_typed_getter(
+            module,
+            i8_ptr,
             "mux_optional_is_some",
             context.bool_type().into(),
         );
@@ -623,6 +629,12 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
         add_typed_getter(module, i8_ptr, "mux_result_discriminant", i32_type.into());
+        add_typed_getter(
+            module,
+            i8_ptr,
+            "mux_value_result_discriminant",
+            i32_type.into(),
+        );
         add_typed_getter(
             module,
             i8_ptr,
@@ -1137,8 +1149,18 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
         module.add_function(
+            "mux_sql_transaction_execute_params",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
             "mux_sql_transaction_query",
             i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_sql_transaction_query_params",
+            i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into(), i8_ptr.into()], false),
             None,
         );
         module.add_function(

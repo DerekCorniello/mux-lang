@@ -8,8 +8,10 @@ title: Sql
 
 Current provider status:
 
-- SQLite: supported now
-- PostgreSQL/MySQL/MariaDB/SQL Server: URI is recognized and returns an unsupported-provider error
+- SQLite: supported (`sqlite::memory:`, `sqlite:///path/to/file.db`)
+- PostgreSQL: supported (`postgres://...`, `postgresql://...`)
+- MySQL/MariaDB: supported (`mysql://...`, `mariadb://...`)
+- SQL Server: URI recognized, currently unsupported
 
 ## Connect
 
@@ -35,7 +37,9 @@ Current provider status:
 | `tx.commit()` | — | `result<void, string>` | Commits the active transaction. |
 | `tx.rollback()` | — | `result<void, string>` | Rolls back the active transaction. |
 | `tx.execute(sql)` | `string` | `result<int, string>` | Executes a statement inside the transaction. |
+| `tx.execute_params(sql, params)` | `string`, `list<SqlValue>` | `result<int, string>` | Parameterized execute inside the transaction. |
 | `tx.query(sql)` | `string` | `result<ResultSet, string>` | Executes a query inside the transaction. |
+| `tx.query_params(sql, params)` | `string`, `list<SqlValue>` | `result<ResultSet, string>` | Parameterized query inside the transaction. |
 
 ## ResultSet
 

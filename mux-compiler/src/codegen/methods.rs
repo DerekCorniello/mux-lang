@@ -692,10 +692,26 @@ impl<'a> CodeGenerator<'a> {
                     self.build_net_call("mux_sql_transaction_execute", &[obj_value, sql])
                         .map(Some)
                 }
+                "execute_params" => {
+                    let (sql, params) = gen_two(self, args)?;
+                    self.build_net_call(
+                        "mux_sql_transaction_execute_params",
+                        &[obj_value, sql, params],
+                    )
+                    .map(Some)
+                }
                 "query" => {
                     let sql = gen_one(self, args)?;
                     self.build_net_call("mux_sql_transaction_query", &[obj_value, sql])
                         .map(Some)
+                }
+                "query_params" => {
+                    let (sql, params) = gen_two(self, args)?;
+                    self.build_net_call(
+                        "mux_sql_transaction_query_params",
+                        &[obj_value, sql, params],
+                    )
+                    .map(Some)
                 }
                 _ => Ok(None),
             },
@@ -928,24 +944,10 @@ impl<'a> CodeGenerator<'a> {
                         "list_get",
                     )
                     .map_err(|e| e.to_string())?;
-                let boxed_call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_optional_into_value")
-                            .expect("mux_optional_into_value must be declared in runtime"),
-                        &[call
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_list_get should return a basic value")
-                            .into()],
-                        "optional_as_value",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(boxed_call
+                Ok(call
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_optional_into_value should return a basic value"))
+                    .expect("mux_list_get should return a basic value"))
             }
             "push_back" => {
                 self.ensure_arg_count("push_back", args, 1)?;
@@ -1131,20 +1133,7 @@ impl<'a> CodeGenerator<'a> {
                     .try_as_basic_value()
                     .left()
                     .expect("mux_map_get should return a basic value");
-                let optional_value = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_optional_into_value")
-                            .expect("mux_optional_into_value must be declared in runtime"),
-                        &[map_get_result.into()],
-                        "optional_value",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_optional_into_value should return a basic value");
-                Ok(optional_value)
+                Ok(map_get_result)
             }
             "get_keys" => {
                 self.ensure_no_args("get_keys", args)?;
@@ -1210,20 +1199,7 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .ok_or("mux_map_remove_value should return a value")?;
 
-                let optional_value = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_optional_into_value")
-                            .expect("mux_optional_into_value must be declared in runtime"),
-                        &[optional_ptr.into()],
-                        "optional_value",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_optional_into_value should return a basic value");
-                Ok(optional_value)
+                Ok(optional_ptr)
             }
             _ => Err(format!("Method {} not implemented for maps", method_name)),
         }

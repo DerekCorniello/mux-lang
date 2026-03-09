@@ -33,3 +33,5 @@ csv = "1"
 ureq = "2.10"
 httparse = "1.10"
 rusqlite = { version = "0.31", features = ["bundled"] }
+postgres = "0.19"
+mysql = "26"

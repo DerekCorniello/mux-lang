@@ -1,5 +1,3 @@
-use crate::optional::Optional;
-use crate::result::MuxResult;
 use crate::Value;
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -10,11 +8,11 @@ fn panic_assert(msg: &str) -> ! {
 }
 
 #[inline]
-fn deref_ptr<T>(ptr: *mut T, context: &str) -> &T {
+fn deref_ptr<T>(ptr: *mut T, context: &str) -> &'static T {
     if ptr.is_null() {
         panic_assert(&format!("{} received null pointer", context));
     }
-    unsafe { &*ptr }
+    unsafe { &*(ptr as *const T) }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -71,40 +69,46 @@ pub extern "C" fn mux_assert_false(condition: i32) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_assert_some(opt: *mut Optional) {
-    let opt_val = deref_ptr(opt, "assert_some");
-    match opt_val {
-        Optional::None => panic_assert("expected Some, got None"),
-        Optional::Some(_) => {}
+pub extern "C" fn mux_assert_some(val: *mut Value) {
+    let v = deref_ptr(val, "assert_some");
+    match v {
+        Value::Optional(None) => panic_assert("expected Some, got None"),
+        Value::Optional(Some(_)) => {}
+        _ => panic_assert("expected Optional value"),
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_assert_none(opt: *mut Optional) {
-    let opt_val = deref_ptr(opt, "assert_none");
-    match opt_val {
-        Optional::None => {}
-        Optional::Some(v) => panic_assert(&format!("expected None, got Some({})", v)),
+pub extern "C" fn mux_assert_none(val: *mut Value) {
+    let v = deref_ptr(val, "assert_none");
+    match v {
+        Value::Optional(None) => {}
+        Value::Optional(Some(inner)) => {
+            panic_assert(&format!("expected None, got Some({})", inner))
+        }
+        _ => panic_assert("expected Optional value"),
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_assert_ok(res: *mut MuxResult) {
-    let res_val = deref_ptr(res, "assert_ok");
-    match res_val {
-        MuxResult::Err(e) => panic_assert(&format!("expected Ok, got Err({})", e)),
-        MuxResult::Ok(_) => {}
+pub extern "C" fn mux_assert_ok(val: *mut Value) {
+    let v = deref_ptr(val, "assert_ok");
+    match v {
+        Value::Result(Err(e)) => panic_assert(&format!("expected Ok, got Err({})", e)),
+        Value::Result(Ok(_)) => {}
+        _ => panic_assert("expected Result value"),
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_assert_err(res: *mut MuxResult) {
-    let res_val = deref_ptr(res, "assert_err");
-    match res_val {
-        MuxResult::Err(_) => {}
-        MuxResult::Ok(v) => panic_assert(&format!("expected Err, got Ok({})", v)),
+pub extern "C" fn mux_assert_err(val: *mut Value) {
+    let v = deref_ptr(val, "assert_err");
+    match v {
+        Value::Result(Err(_)) => {}
+        Value::Result(Ok(v)) => panic_assert(&format!("expected Err, got Ok({})", v)),
+        _ => panic_assert("expected Result value"),
     }
 }

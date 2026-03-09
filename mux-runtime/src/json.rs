@@ -129,7 +129,7 @@ pub fn value_to_json(v: &Value) -> Result<Json, String> {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_json_parse(input: *const c_char) -> *mut crate::result::MuxResult {
+pub extern "C" fn mux_json_parse(input: *const c_char) -> *mut Value {
     if input.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe {
@@ -155,10 +155,7 @@ pub extern "C" fn mux_json_parse(input: *const c_char) -> *mut crate::result::Mu
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_json_stringify(
-    val: *const Value,
-    indent_opt: *const crate::optional::Optional,
-) -> *mut crate::result::MuxResult {
+pub extern "C" fn mux_json_stringify(val: *const Value, indent_opt: *mut Value) -> *mut Value {
     if val.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe {
@@ -171,11 +168,11 @@ pub extern "C" fn mux_json_stringify(
     } else {
         unsafe {
             match &*indent_opt {
-                crate::optional::Optional::Some(boxed) => match &**boxed {
+                Value::Optional(Some(boxed)) => match boxed.as_ref() {
                     Value::Int(i) => Some(*i as usize),
                     _ => None,
                 },
-                crate::optional::Optional::None => None,
+                _ => None,
             }
         }
     };
@@ -196,7 +193,7 @@ pub extern "C" fn mux_json_stringify(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_json_from_map(val: *const Value) -> *mut crate::result::MuxResult {
+pub extern "C" fn mux_json_from_map(val: *const Value) -> *mut Value {
     if val.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe { return crate::result::mux_result_err_str(msg.as_ptr()) }
@@ -238,7 +235,7 @@ pub extern "C" fn mux_json_from_map(val: *const Value) -> *mut crate::result::Mu
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_json_to_map(val: *const Value) -> *mut crate::result::MuxResult {
+pub extern "C" fn mux_json_to_map(val: *const Value) -> *mut Value {
     if val.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe { return crate::result::mux_result_err_str(msg.as_ptr()) }

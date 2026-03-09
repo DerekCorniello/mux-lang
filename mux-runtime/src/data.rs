@@ -6,7 +6,7 @@ use std::os::raw::c_char;
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 #[allow(clippy::mutable_key_type)]
-pub extern "C" fn mux_csv_parse(input: *const c_char) -> *mut crate::result::MuxResult {
+pub extern "C" fn mux_csv_parse(input: *const c_char) -> *mut Value {
     if input.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe {
@@ -55,9 +55,7 @@ pub extern "C" fn mux_csv_parse(input: *const c_char) -> *mut crate::result::Mux
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 #[allow(clippy::mutable_key_type)]
-pub extern "C" fn mux_csv_parse_with_headers(
-    input: *const c_char,
-) -> *mut crate::result::MuxResult {
+pub extern "C" fn mux_csv_parse_with_headers(input: *const c_char) -> *mut Value {
     if input.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe {
@@ -121,7 +119,7 @@ pub extern "C" fn mux_csv_parse_with_headers(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_csv_to_string(val: *const Value) -> *mut crate::result::MuxResult {
+pub extern "C" fn mux_csv_to_string(val: *const Value) -> *mut Value {
     if val.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe {

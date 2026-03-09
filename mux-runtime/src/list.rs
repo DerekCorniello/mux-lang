@@ -36,12 +36,12 @@ pub extern "C" fn mux_list_push_back(list: *mut List, val: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_list_pop_back(list: *mut List) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_list_pop_back(list: *mut List) -> *mut Value {
     let opt = unsafe { (*list).pop_back() };
-    Box::into_raw(Box::new(
-        opt.map(crate::optional::Optional::some)
-            .unwrap_or(crate::optional::Optional::none()),
-    ))
+    match opt {
+        Some(v) => mux_rc_alloc(Value::Optional(Some(Box::new(v)))),
+        None => mux_rc_alloc(Value::Optional(None)),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -53,16 +53,16 @@ pub extern "C" fn mux_list_push(list: *mut List, val: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_list_pop(list: *mut List) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_list_pop(list: *mut List) -> *mut Value {
     let val = if unsafe { (*list).0.is_empty() } {
         None
     } else {
         Some(unsafe { (*list).0.remove(0) })
     };
-    Box::into_raw(Box::new(
-        val.map(crate::optional::Optional::some)
-            .unwrap_or(crate::optional::Optional::none()),
-    ))
+    match val {
+        Some(v) => mux_rc_alloc(Value::Optional(Some(Box::new(v)))),
+        None => mux_rc_alloc(Value::Optional(None)),
+    }
 }
 
 /// # Safety
@@ -112,7 +112,7 @@ pub extern "C" fn mux_list_push_value(list_val: *mut Value, val: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_list_pop_back_value(list_val: *mut Value) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_list_pop_back_value(list_val: *mut Value) -> *mut Value {
     let opt = unsafe {
         let current_list = if let Value::List(ref list_data) = *list_val {
             Some(list_data.clone())
@@ -128,15 +128,15 @@ pub extern "C" fn mux_list_pop_back_value(list_val: *mut Value) -> *mut crate::o
             None
         }
     };
-    Box::into_raw(Box::new(
-        opt.map(crate::optional::Optional::some)
-            .unwrap_or(crate::optional::Optional::none()),
-    ))
+    match opt {
+        Some(v) => mux_rc_alloc(Value::Optional(Some(Box::new(v)))),
+        None => mux_rc_alloc(Value::Optional(None)),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_list_pop_value(list_val: *mut Value) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_list_pop_value(list_val: *mut Value) -> *mut Value {
     let opt = unsafe {
         let current_list = if let Value::List(ref list_data) = *list_val {
             Some(list_data.clone())
@@ -156,21 +156,21 @@ pub extern "C" fn mux_list_pop_value(list_val: *mut Value) -> *mut crate::option
             None
         }
     };
-    Box::into_raw(Box::new(
-        opt.map(crate::optional::Optional::some)
-            .unwrap_or(crate::optional::Optional::none()),
-    ))
+    match opt {
+        Some(v) => mux_rc_alloc(Value::Optional(Some(Box::new(v)))),
+        None => mux_rc_alloc(Value::Optional(None)),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_list_get(list: *const List, index: i64) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_list_get(list: *const List, index: i64) -> *mut Value {
     let len = unsafe { (*list).length() };
     if index < 0 || index >= len {
-        Box::into_raw(Box::new(crate::optional::Optional::none()))
+        mux_rc_alloc(Value::Optional(None))
     } else {
         let val = unsafe { (&(*list).0)[index as usize].clone() };
-        Box::into_raw(Box::new(crate::optional::Optional::some(val)))
+        mux_rc_alloc(Value::Optional(Some(Box::new(val))))
     }
 }
 

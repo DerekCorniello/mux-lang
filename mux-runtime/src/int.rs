@@ -2,7 +2,7 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::result::MuxResult;
+use crate::refcount::mux_rc_alloc;
 use crate::Value;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -88,10 +88,10 @@ pub extern "C" fn mux_int_mul(a: i64, b: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_int_div(a: i64, b: i64) -> *mut MuxResult {
+pub extern "C" fn mux_int_div(a: i64, b: i64) -> *mut Value {
     match Int(a).div(&Int(b)) {
-        Ok(i) => Box::into_raw(Box::new(MuxResult::ok(Value::Int(i.0)))),
-        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
+        Ok(i) => mux_rc_alloc(Value::Result(Ok(Box::new(Value::Int(i.0))))),
+        Err(e) => mux_rc_alloc(Value::Result(Err(Box::new(Value::String(e))))),
     }
 }
 

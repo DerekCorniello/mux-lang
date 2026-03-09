@@ -55,6 +55,11 @@ I also want to acknowlege that I am aware that there are likely far better ways 
 
 Finally, I want to acknowledge that I have also been using this project as a way to experiment with AI tools to help me write, review, test and document code. While I have made every effort to ensure the accuracy and quality of the content, there may be occasional "bad code", errors, or inconsistencies. I appreciate your understanding as I continue to refine both the language and my use of these tools.
 
+### Compiler/Runtime ABI note
+
+• The compiler and runtime now share a single ABI for `optional<T>` and `result<T, E>`: both are boxed `Value` pointers (`*mut Value`). Compiler codegen emits calls that return `*mut Value` for optionals/results and uses the runtime discriminant helpers for pattern matching.
+• If you extend or modify codegen runtime bindings, follow the runtime signatures in `mux-runtime/src` and `mux-compiler/src/codegen/runtime.rs` to keep ABI compatibility.
+
 # Mux Language Specification
 
 ## 1. Overview
@@ -2078,8 +2083,10 @@ Format patterns use chrono `strftime` tokens, for example:
 
 Current provider support:
 
-- SQLite: available now (`sqlite::memory:`, `sqlite:///path/to/file.db`)
-- PostgreSQL/MySQL/MariaDB/SQL Server: URI detection and clear unsupported errors today
+- SQLite: supported (`sqlite::memory:`, `sqlite:///path/to/file.db`)
+- PostgreSQL: supported (`postgres://...`, `postgresql://...`)
+- MySQL/MariaDB: supported (`mysql://...`, `mariadb://...`)
+- SQL Server: URI recognized, currently unsupported
 
 
 

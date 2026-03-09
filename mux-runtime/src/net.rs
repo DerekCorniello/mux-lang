@@ -1,7 +1,6 @@
 use crate::json::{json_to_value, value_to_json, Json};
 use crate::object::{alloc_object, get_object_ptr, register_object_type};
-use crate::refcount::mux_rc_dec;
-use crate::result::MuxResult;
+use crate::refcount::{mux_rc_alloc, mux_rc_dec};
 use crate::{Tuple, TypeId, Value};
 use lazy_static::lazy_static;
 use std::collections::{BTreeMap, HashMap};
@@ -239,22 +238,22 @@ fn tuple_from_bytes_and_addr(bytes: Vec<u8>, addr: String) -> Value {
     Value::Tuple(Box::new(tuple))
 }
 
-fn net_result_ok(value: Value) -> *mut MuxResult {
-    Box::into_raw(Box::new(MuxResult::ok(value)))
+fn net_result_ok(value: Value) -> *mut Value {
+    mux_rc_alloc(Value::Result(Ok(Box::new(value))))
 }
 
-fn net_result_err(msg: String) -> *mut MuxResult {
-    Box::into_raw(Box::new(MuxResult::err(Value::String(msg))))
+fn net_result_err(msg: String) -> *mut Value {
+    mux_rc_alloc(Value::Result(Err(Box::new(Value::String(msg)))))
 }
 
-fn net_result_unit(result: Result<(), String>) -> *mut MuxResult {
+fn net_result_unit(result: Result<(), String>) -> *mut Value {
     match result {
         Ok(()) => net_result_ok(Value::Unit),
         Err(err) => net_result_err(err),
     }
 }
 
-fn net_result_string(result: Result<String, String>) -> *mut MuxResult {
+fn net_result_string(result: Result<String, String>) -> *mut Value {
     match result {
         Ok(value) => net_result_ok(Value::String(value)),
         Err(err) => net_result_err(err),
@@ -735,7 +734,7 @@ fn execute_http_request(request: *const Value) -> Result<Value, String> {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_http_request(request: *const Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_http_request(request: *const Value) -> *mut Value {
     match execute_http_request(request) {
         Ok(value) => net_result_ok(value),
         Err(err) => net_result_err(err),
@@ -744,7 +743,7 @@ pub extern "C" fn mux_net_http_request(request: *const Value) -> *mut MuxResult 
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_listener_bind(addr: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_tcp_listener_bind(addr: *mut Value) -> *mut Value {
     match value_to_string(addr).and_then(|address| {
         StdTcpListener::bind(address).map_err(|e| format!("tcp listener bind failed: {}", e))
     }) {
@@ -758,7 +757,7 @@ pub extern "C" fn mux_net_tcp_listener_bind(addr: *mut Value) -> *mut MuxResult 
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_listener_accept(listener: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_tcp_listener_accept(listener: *mut Value) -> *mut Value {
     let handle = match tcp_listener_handle(listener) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -782,7 +781,7 @@ pub extern "C" fn mux_net_tcp_listener_accept(listener: *mut Value) -> *mut MuxR
 pub extern "C" fn mux_net_tcp_listener_set_nonblocking(
     listener: *mut Value,
     enabled: i32,
-) -> *mut MuxResult {
+) -> *mut Value {
     let handle = match tcp_listener_handle(listener) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -796,7 +795,7 @@ pub extern "C" fn mux_net_tcp_listener_set_nonblocking(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_listener_local_addr(listener: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_tcp_listener_local_addr(listener: *mut Value) -> *mut Value {
     let result = tcp_listener_handle(listener).and_then(|handle| {
         with_tcp_listener(handle, |socket| {
             socket
@@ -819,7 +818,7 @@ pub extern "C" fn mux_net_tcp_listener_close(listener: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_http_read_request(stream: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_http_read_request(stream: *mut Value) -> *mut Value {
     let handle = match tcp_handle(stream) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -837,7 +836,7 @@ pub extern "C" fn mux_net_http_read_request(stream: *mut Value) -> *mut MuxResul
 pub extern "C" fn mux_net_http_write_response(
     stream: *mut Value,
     response: *mut Value,
-) -> *mut MuxResult {
+) -> *mut Value {
     let handle = match tcp_handle(stream) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -856,7 +855,7 @@ pub extern "C" fn mux_net_http_write_response(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_connect(addr: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_tcp_connect(addr: *mut Value) -> *mut Value {
     match value_to_string(addr).and_then(|address| {
         StdTcpStream::connect(address).map_err(|e| format!("failed to connect: {}", e))
     }) {
@@ -870,7 +869,7 @@ pub extern "C" fn mux_net_tcp_connect(addr: *mut Value) -> *mut MuxResult {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_read(stream: *mut Value, size: i64) -> *mut MuxResult {
+pub extern "C" fn mux_net_tcp_read(stream: *mut Value, size: i64) -> *mut Value {
     if size <= 0 {
         return net_result_err("invalid buffer size".to_string());
     }
@@ -897,7 +896,7 @@ pub extern "C" fn mux_net_tcp_read(stream: *mut Value, size: i64) -> *mut MuxRes
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_write(stream: *mut Value, data: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_tcp_write(stream: *mut Value, data: *mut Value) -> *mut Value {
     let handle = match tcp_handle(stream) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -928,7 +927,7 @@ pub extern "C" fn mux_net_tcp_close(stream: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_set_nonblocking(stream: *mut Value, enabled: i32) -> *mut MuxResult {
+pub extern "C" fn mux_net_tcp_set_nonblocking(stream: *mut Value, enabled: i32) -> *mut Value {
     let handle = match tcp_handle(stream) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -942,7 +941,7 @@ pub extern "C" fn mux_net_tcp_set_nonblocking(stream: *mut Value, enabled: i32) 
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_peer_addr(stream: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_tcp_peer_addr(stream: *mut Value) -> *mut Value {
     let result = tcp_handle(stream).and_then(|handle| {
         with_tcp_stream(handle, |socket| {
             socket
@@ -956,7 +955,7 @@ pub extern "C" fn mux_net_tcp_peer_addr(stream: *mut Value) -> *mut MuxResult {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_tcp_local_addr(stream: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_tcp_local_addr(stream: *mut Value) -> *mut Value {
     let result = tcp_handle(stream).and_then(|handle| {
         with_tcp_stream(handle, |socket| {
             socket
@@ -970,7 +969,7 @@ pub extern "C" fn mux_net_tcp_local_addr(stream: *mut Value) -> *mut MuxResult {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_udp_bind(addr: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_udp_bind(addr: *mut Value) -> *mut Value {
     match value_to_string(addr).and_then(|address| {
         StdUdpSocket::bind(address).map_err(|e| format!("udp bind failed: {}", e))
     }) {
@@ -988,7 +987,7 @@ pub extern "C" fn mux_net_udp_send_to(
     socket: *mut Value,
     data: *mut Value,
     addr: *mut Value,
-) -> *mut MuxResult {
+) -> *mut Value {
     let handle = match udp_handle(socket) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -1012,7 +1011,7 @@ pub extern "C" fn mux_net_udp_send_to(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_udp_recv_from(socket: *mut Value, size: i64) -> *mut MuxResult {
+pub extern "C" fn mux_net_udp_recv_from(socket: *mut Value, size: i64) -> *mut Value {
     if size <= 0 {
         return net_result_err("invalid buffer size".to_string());
     }
@@ -1044,7 +1043,7 @@ pub extern "C" fn mux_net_udp_close(socket: *mut Value) {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_udp_set_nonblocking(socket: *mut Value, enabled: i32) -> *mut MuxResult {
+pub extern "C" fn mux_net_udp_set_nonblocking(socket: *mut Value, enabled: i32) -> *mut Value {
     let handle = match udp_handle(socket) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -1057,7 +1056,7 @@ pub extern "C" fn mux_net_udp_set_nonblocking(socket: *mut Value, enabled: i32) 
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_udp_peer_addr(socket: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_udp_peer_addr(socket: *mut Value) -> *mut Value {
     let result = udp_handle(socket).and_then(|handle| {
         with_udp_socket(handle, |sock| {
             sock.peer_addr()
@@ -1070,7 +1069,7 @@ pub extern "C" fn mux_net_udp_peer_addr(socket: *mut Value) -> *mut MuxResult {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_net_udp_local_addr(socket: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_net_udp_local_addr(socket: *mut Value) -> *mut Value {
     let result = udp_handle(socket).and_then(|handle| {
         with_udp_socket(handle, |sock| {
             sock.local_addr()

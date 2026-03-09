@@ -238,7 +238,8 @@ impl<'a> CodeGenerator<'a> {
     }
 
     /// load the discriminant from an enum value as an i32
-    /// this function centralizes discriminant loading logic and ensures type safety
+    /// for optional and result, all values are *mut Value -- use the Value-based discriminant functions
+    /// for user-defined enums, load the discriminant field directly from the struct
     pub(super) fn load_enum_discriminant(
         &self,
         enum_name: &str,
@@ -246,11 +247,10 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<IntValue<'a>, String> {
         match enum_name {
             "optional" | "result" => {
-                // for built-in enums, use runtime functions
                 let discriminant_func = if enum_name == "optional" {
-                    "mux_optional_discriminant"
+                    "mux_value_optional_discriminant"
                 } else {
-                    "mux_result_discriminant"
+                    "mux_value_result_discriminant"
                 };
                 let func = self
                     .module
@@ -265,7 +265,7 @@ impl<'a> CodeGenerator<'a> {
                 Ok(discriminant_call
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_get_discriminant should return a basic value")
+                    .expect("discriminant function should return a basic value")
                     .into_int_value())
             }
             _ => {
