@@ -55,6 +55,11 @@ I also want to acknowlege that I am aware that there are likely far better ways 
 
 Finally, I want to acknowledge that I have also been using this project as a way to experiment with AI tools to help me write, review, test and document code. While I have made every effort to ensure the accuracy and quality of the content, there may be occasional "bad code", errors, or inconsistencies. I appreciate your understanding as I continue to refine both the language and my use of these tools.
 
+### Compiler/Runtime ABI note
+
+• The compiler and runtime now share a single ABI for `optional<T>` and `result<T, E>`: both are boxed `Value` pointers (`*mut Value`). Compiler codegen emits calls that return `*mut Value` for optionals/results and uses the runtime discriminant helpers for pattern matching.
+• If you extend or modify codegen runtime bindings, follow the runtime signatures in `mux-runtime/src` and `mux-compiler/src/codegen/runtime.rs` to keep ABI compatibility.
+
 # Mux Language Specification
 
 ## 1. Overview
@@ -1896,12 +1901,12 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, and `net`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, `net`, `env`, `data`, and `sql`.
 
 Import styles:
 
 ```mux
-import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net, std.env, std.data, std.sql
 import std.assert             // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*
@@ -1909,6 +1914,9 @@ import std.random             // use random.*
 import std.datetime           // use datetime.*
 import std.sync               // use sync.*
 import std.net                // use net.*
+import std.env                // use env.*
+import std.data               // use data.*
+import std.sql                // use sql.*
 import std.(math, random as r)
 import std.*                  // flat import of stdlib items
 ```
@@ -2034,6 +2042,51 @@ Format patterns use chrono `strftime` tokens, for example:
 
 - `data.csv.parse(string csv_text) -> result<Csv, string>`
 - `data.csv.parse_with_headers(string csv_text) -> result<Csv, string>`
+
+### 17.11 sql
+
+`sql` provides database connectivity and typed SQL values.
+
+- `sql.connect(string uri) -> result<Connection, string>`
+- `Connection.close() -> void`
+- `Connection.execute(string sql) -> result<int, string>`
+- `Connection.execute_params(string sql, list<SqlValue> params) -> result<int, string>`
+- `Connection.query(string sql) -> result<ResultSet, string>`
+- `Connection.query_params(string sql, list<SqlValue> params) -> result<ResultSet, string>`
+- `Connection.begin_transaction() -> result<Transaction, string>`
+- `Transaction.commit() -> result<void, string>`
+- `Transaction.rollback() -> result<void, string>`
+- `Transaction.execute(string sql) -> result<int, string>`
+- `Transaction.query(string sql) -> result<ResultSet, string>`
+- `ResultSet.rows() -> list<map<string, SqlValue>>`
+- `ResultSet.next() -> optional<map<string, SqlValue>>`
+- `ResultSet.columns() -> list<string>`
+
+`SqlValue` constructors:
+
+- `sql.int(int) -> SqlValue`
+- `sql.float(float) -> SqlValue`
+- `sql.bool(bool) -> SqlValue`
+- `sql.string(string) -> SqlValue`
+- `sql.bytes(list<int>) -> SqlValue`
+- `sql.null() -> SqlValue`
+
+`SqlValue` methods:
+
+- `.is_null() -> bool`
+- `.as_bool() -> result<bool, string>`
+- `.as_int() -> result<int, string>`
+- `.as_float() -> result<float, string>`
+- `.as_string() -> result<string, string>`
+- `.as_bytes() -> result<list<int>, string>`
+- `.to_string() -> string`
+
+Current provider support:
+
+- SQLite: supported (`sqlite::memory:`, `sqlite:///path/to/file.db`)
+- PostgreSQL: supported (`postgres://...`, `postgresql://...`)
+- MySQL/MariaDB: supported (`mysql://...`, `mariadb://...`)
+- SQL Server: URI recognized, currently unsupported
 
 
 

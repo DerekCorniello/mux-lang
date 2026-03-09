@@ -68,6 +68,7 @@ const sidebars: SidebarsConfig = {
         'stdlib/math',
         'stdlib/io',
         'stdlib/net',
+        'stdlib/sql',
         'stdlib/random',
         'stdlib/datetime',
       ],

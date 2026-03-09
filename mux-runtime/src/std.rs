@@ -1,7 +1,4 @@
-use crate::{
-    list::List, map::Map, optional::Optional, refcount::mux_rc_alloc, result::MuxResult, set::Set,
-    Value,
-};
+use crate::{list::List, map::Map, refcount::mux_rc_alloc, set::Set, Value};
 use std::env as sys_env;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -18,9 +15,9 @@ pub extern "C" fn mux_range(start: i64, end: i64) -> *mut List {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_some(val: *mut Value) -> *mut Optional {
+pub extern "C" fn mux_some(val: *mut Value) -> *mut Value {
     let value = unsafe { (*val).clone() };
-    Box::into_raw(Box::new(Optional::some(value)))
+    mux_rc_alloc(Value::Optional(Some(Box::new(value))))
 }
 
 // Value creation functions for codegen - using reference counting
@@ -43,23 +40,23 @@ pub extern "C" fn mux_string_value(s: *const c_char) -> *mut Value {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_none() -> *mut Optional {
-    Box::into_raw(Box::new(Optional::none()))
+pub extern "C" fn mux_none() -> *mut Value {
+    mux_rc_alloc(Value::Optional(None))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_ok(val: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_ok(val: *mut Value) -> *mut Value {
     let value = unsafe { (*val).clone() };
-    Box::into_raw(Box::new(MuxResult::ok(value)))
+    mux_rc_alloc(Value::Result(Ok(Box::new(value))))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_err(msg: *const c_char) -> *mut MuxResult {
+pub extern "C" fn mux_err(msg: *const c_char) -> *mut Value {
     let c_str = unsafe { CStr::from_ptr(msg) };
     let msg_str = c_str.to_string_lossy().to_string();
-    Box::into_raw(Box::new(MuxResult::err(msg_str)))
+    mux_rc_alloc(Value::Result(Err(Box::new(Value::String(msg_str)))))
 }
 
 #[unsafe(no_mangle)]
@@ -253,19 +250,13 @@ pub extern "C" fn mux_free_set(set: *mut Set) {
     }
 }
 
-/// # Safety
-/// `opt` must be a valid pointer returned by a mux-runtime optional function.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
+/// No-op: optional values are now *mut Value managed by reference counting.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_free_optional(opt: *mut Optional) {
-    if !opt.is_null() {
-        unsafe { drop(Box::from_raw(opt)) };
-    }
-}
+pub extern "C" fn mux_free_optional(_val: *mut Value) {}
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_env_get(key: *const c_char) -> *mut Optional {
+pub extern "C" fn mux_env_get(key: *const c_char) -> *mut Value {
     if key.is_null() {
         return crate::optional::mux_optional_none();
     }
@@ -288,15 +279,9 @@ pub extern "C" fn mux_env_get(key: *const c_char) -> *mut Optional {
     }
 }
 
-/// # Safety
-/// `res` must be a valid pointer returned by a mux-runtime result function.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
+/// No-op: result values are now *mut Value managed by reference counting.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_free_result(res: *mut MuxResult) {
-    if !res.is_null() {
-        unsafe { drop(Box::from_raw(res)) };
-    }
-}
+pub extern "C" fn mux_free_result(_val: *mut Value) {}
 
 // Safe value extraction functions - don't take ownership
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

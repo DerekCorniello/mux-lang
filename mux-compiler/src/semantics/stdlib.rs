@@ -225,6 +225,21 @@ fn udp_socket_type() -> Type {
 fn tcp_listener_type() -> Type {
     Type::Named("TcpListener".to_string(), Vec::new())
 }
+fn sql_connection_type() -> Type {
+    Type::Named("Connection".to_string(), Vec::new())
+}
+fn sql_transaction_type() -> Type {
+    Type::Named("Transaction".to_string(), Vec::new())
+}
+fn sql_result_set_type() -> Type {
+    Type::Named("ResultSet".to_string(), Vec::new())
+}
+fn sql_value_type() -> Type {
+    Type::Named("SqlValue".to_string(), Vec::new())
+}
+fn sql_row_type() -> Type {
+    Type::Map(Box::new(str_()), Box::new(sql_value_type()))
+}
 
 fn make_class_symbol(name: &str, methods: HashMap<String, MethodSig>, span: Span) -> Symbol {
     Symbol {
@@ -427,6 +442,157 @@ pub fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
     classes
 }
 
+fn sql_connection_methods() -> HashMap<String, MethodSig> {
+    define_methods! {
+        "close" => {
+            params: [],
+            return_type: Type::Void,
+            is_static: false
+        },
+        "execute" => {
+            params: [str_()],
+            return_type: io_result(int()),
+            is_static: false
+        },
+        "execute_params" => {
+            params: [str_(), Type::List(Box::new(sql_value_type()))],
+            return_type: io_result(int()),
+            is_static: false
+        },
+        "query" => {
+            params: [str_()],
+            return_type: io_result(sql_result_set_type()),
+            is_static: false
+        },
+        "query_params" => {
+            params: [str_(), Type::List(Box::new(sql_value_type()))],
+            return_type: io_result(sql_result_set_type()),
+            is_static: false
+        },
+        "begin_transaction" => {
+            params: [],
+            return_type: io_result(sql_transaction_type()),
+            is_static: false
+        }
+    }
+}
+
+fn sql_transaction_methods() -> HashMap<String, MethodSig> {
+    define_methods! {
+        "commit" => {
+            params: [],
+            return_type: io_result(Type::Void),
+            is_static: false
+        },
+        "rollback" => {
+            params: [],
+            return_type: io_result(Type::Void),
+            is_static: false
+        },
+        "execute" => {
+            params: [str_()],
+            return_type: io_result(int()),
+            is_static: false
+        },
+        "execute_params" => {
+            params: [str_(), Type::List(Box::new(sql_value_type()))],
+            return_type: io_result(int()),
+            is_static: false
+        },
+        "query" => {
+            params: [str_()],
+            return_type: io_result(sql_result_set_type()),
+            is_static: false
+        },
+        "query_params" => {
+            params: [str_(), Type::List(Box::new(sql_value_type()))],
+            return_type: io_result(sql_result_set_type()),
+            is_static: false
+        }
+    }
+}
+
+fn sql_result_set_methods() -> HashMap<String, MethodSig> {
+    define_methods! {
+        "rows" => {
+            params: [],
+            return_type: Type::List(Box::new(sql_row_type())),
+            is_static: false
+        },
+        "next" => {
+            params: [],
+            return_type: Type::Optional(Box::new(sql_row_type())),
+            is_static: false
+        },
+        "columns" => {
+            params: [],
+            return_type: Type::List(Box::new(str_())),
+            is_static: false
+        }
+    }
+}
+
+fn sql_value_methods() -> HashMap<String, MethodSig> {
+    define_methods! {
+        "is_null" => {
+            params: [],
+            return_type: bool_(),
+            is_static: false
+        },
+        "as_bool" => {
+            params: [],
+            return_type: io_result(bool_()),
+            is_static: false
+        },
+        "as_int" => {
+            params: [],
+            return_type: io_result(int()),
+            is_static: false
+        },
+        "as_float" => {
+            params: [],
+            return_type: io_result(float()),
+            is_static: false
+        },
+        "as_string" => {
+            params: [],
+            return_type: io_result(str_()),
+            is_static: false
+        },
+        "as_bytes" => {
+            params: [],
+            return_type: io_result(Type::List(Box::new(int()))),
+            is_static: false
+        },
+        "to_string" => {
+            params: [],
+            return_type: str_(),
+            is_static: false
+        }
+    }
+}
+
+pub fn sql_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
+    let mut classes = HashMap::new();
+    classes.insert(
+        "Connection".to_string(),
+        make_class_symbol("Connection", sql_connection_methods(), span),
+    );
+    classes.insert(
+        "Transaction".to_string(),
+        make_class_symbol("Transaction", sql_transaction_methods(), span),
+    );
+    classes.insert(
+        "ResultSet".to_string(),
+        make_class_symbol("ResultSet", sql_result_set_methods(), span),
+    );
+    classes.insert(
+        "SqlValue".to_string(),
+        make_class_symbol("SqlValue", sql_value_methods(), span),
+    );
+    classes
+}
+
 fn thread_methods() -> HashMap<String, MethodSig> {
     define_methods! {
         "join" => {
@@ -549,7 +715,7 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 
 /// List of all available stdlib modules for wildcard imports
 pub const STDLIB_MODULES: &[&str] = &[
-    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "data",
+    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "data", "sql",
 ];
 
 lazy_static! {
@@ -772,6 +938,66 @@ lazy_static! {
         );
         m
     };
+    pub static ref SQL_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {
+        let mut m = HashMap::new();
+        m.insert(
+            "sql.connect",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: io_result(sql_connection_type()),
+                llvm_name: "mux_sql_connect".to_string(),
+            },
+        );
+        m.insert(
+            "sql.int",
+            StdlibItem::Function {
+                params: INT_PARAM.to_vec(),
+                ret: sql_value_type(),
+                llvm_name: "mux_sql_value_int".to_string(),
+            },
+        );
+        m.insert(
+            "sql.float",
+            StdlibItem::Function {
+                params: FLOAT_PARAM.to_vec(),
+                ret: sql_value_type(),
+                llvm_name: "mux_sql_value_float".to_string(),
+            },
+        );
+        m.insert(
+            "sql.bool",
+            StdlibItem::Function {
+                params: BOOL_PARAM.to_vec(),
+                ret: sql_value_type(),
+                llvm_name: "mux_sql_value_bool".to_string(),
+            },
+        );
+        m.insert(
+            "sql.string",
+            StdlibItem::Function {
+                params: STR_PARAM.to_vec(),
+                ret: sql_value_type(),
+                llvm_name: "mux_sql_value_string".to_string(),
+            },
+        );
+        m.insert(
+            "sql.bytes",
+            StdlibItem::Function {
+                params: vec![Type::List(Box::new(int()))],
+                ret: sql_value_type(),
+                llvm_name: "mux_sql_value_bytes".to_string(),
+            },
+        );
+        m.insert(
+            "sql.null",
+            StdlibItem::Function {
+                params: EMPTY_PARAMS.to_vec(),
+                ret: sql_value_type(),
+                llvm_name: "mux_sql_value_null".to_string(),
+            },
+        );
+        m
+    };
     pub static ref BUILT_IN_FUNCTIONS: HashMap<&'static str, BuiltInSig> = {
         let mut m = HashMap::new();
         m.insert("int_to_string", sig(vec![int()], str_()));
@@ -877,6 +1103,11 @@ pub fn all_stdlib_items() -> impl Iterator<Item = (String, StdlibItem)> {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone())),
         )
+        .chain(
+            SQL_STDLIB_ITEMS
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone())),
+        )
 }
 
 pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
@@ -893,6 +1124,7 @@ pub fn lookup_stdlib_item(name: &str) -> Option<StdlibItem> {
         .or_else(|| ENV_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| NET_HTTP_STDLIB_ITEMS.get(name).cloned())
         .or_else(|| DATA_STDLIB_ITEMS.get(name).cloned())
+        .or_else(|| SQL_STDLIB_ITEMS.get(name).cloned())
 }
 
 /// Convert a canonical `StdlibItem` into a `Symbol` suitable for registration in a SymbolTable.

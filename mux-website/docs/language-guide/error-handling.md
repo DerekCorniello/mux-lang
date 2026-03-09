@@ -403,6 +403,11 @@ pub struct optional<T> {
 - **Easy error propagation**: Simple with match statements
 - **Interop**: optional and result can wrap the same types
 
+### Runtime ABI note
+
+• Implementation detail: the runtime now represents both `optional<T>` and `result<T, E>` as boxed `Value` pointers (`*mut Value`) at the FFI boundary. This means runtime constructors and C-exported helpers return `*mut Value` for these types. Compiler-generated code and native extensions should treat optionals/results as boxed `Value` objects and use the provided discriminant helpers when matching variants.
+
+
 ## Comparison with Other Languages
 
 ### vs Rust

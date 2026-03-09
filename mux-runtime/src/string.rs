@@ -5,7 +5,6 @@ use std::os::raw::c_char;
 use ordered_float;
 
 use crate::refcount::mux_rc_alloc;
-use crate::result::MuxResult;
 use crate::Value;
 
 #[derive(Clone, Debug)]
@@ -72,25 +71,25 @@ pub unsafe extern "C" fn mux_value_get_string(v: *mut Value) -> *mut c_char {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_string_to_int(s: *const c_char) -> *mut MuxResult {
+pub extern "C" fn mux_string_to_int(s: *const c_char) -> *mut Value {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     match MuxString(rust_str.to_string()).to_int() {
-        Ok(i) => Box::into_raw(Box::new(MuxResult::ok(Value::Int(i)))),
-        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
+        Ok(i) => mux_rc_alloc(Value::Result(Ok(Box::new(Value::Int(i))))),
+        Err(e) => mux_rc_alloc(Value::Result(Err(Box::new(Value::String(e))))),
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_string_to_float(s: *const c_char) -> *mut MuxResult {
+pub extern "C" fn mux_string_to_float(s: *const c_char) -> *mut Value {
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     match MuxString(rust_str.to_string()).to_float() {
-        Ok(f) => Box::into_raw(Box::new(MuxResult::ok(Value::Float(
+        Ok(f) => mux_rc_alloc(Value::Result(Ok(Box::new(Value::Float(
             ordered_float::OrderedFloat(f),
-        )))),
-        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
+        ))))),
+        Err(e) => mux_rc_alloc(Value::Result(Err(Box::new(Value::String(e))))),
     }
 }
 
@@ -207,18 +206,20 @@ pub extern "C" fn mux_string_not_equal(a: *const c_char, b: *const c_char) -> i3
 /// Only works for digit characters '0'-'9'
 /// Returns Result<int, str>
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_char_to_int(c: i64) -> *mut MuxResult {
+pub extern "C" fn mux_char_to_int(c: i64) -> *mut Value {
     if let Some(ch) = char::from_u32(c as u32) {
         if ch.is_ascii_digit() {
             let digit = (ch as u8 - b'0') as i64;
-            Box::into_raw(Box::new(MuxResult::ok(Value::Int(digit))))
+            mux_rc_alloc(Value::Result(Ok(Box::new(Value::Int(digit)))))
         } else {
-            Box::into_raw(Box::new(MuxResult::err(
+            mux_rc_alloc(Value::Result(Err(Box::new(Value::String(
                 "Character is not a digit (0-9)".to_string(),
-            )))
+            )))))
         }
     } else {
-        Box::into_raw(Box::new(MuxResult::err("Invalid character".to_string())))
+        mux_rc_alloc(Value::Result(Err(Box::new(Value::String(
+            "Invalid character".to_string(),
+        )))))
     }
 }
 
