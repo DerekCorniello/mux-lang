@@ -238,18 +238,28 @@ fn drop_transaction_handle(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
+
     let handle = unsafe { *(ptr as *mut i64) };
-    if handle != 0 {
-        if let Some(mut tx) = take_transaction(handle) {
-            if tx.active {
-                if let Some(mut connection) = tx.connection.take() {
-                    let _ = rollback_connection(&mut connection);
-                    if connection_still_alive(tx.connection_handle) {
-                        return_connection(tx.connection_handle, connection);
-                    }
-                }
-            }
-        }
+    if handle == 0 {
+        return;
+    }
+
+    let Some(mut tx) = take_transaction(handle) else {
+        return;
+    };
+
+    if !tx.active {
+        return;
+    }
+
+    let Some(mut connection) = tx.connection.take() else {
+        return;
+    };
+
+    let _ = rollback_connection(&mut connection);
+
+    if connection_still_alive(tx.connection_handle) {
+        return_connection(tx.connection_handle, connection);
     }
 }
 
