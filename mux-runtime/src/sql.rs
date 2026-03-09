@@ -15,6 +15,14 @@ use std::collections::{BTreeMap, HashMap};
 use std::ffi::{c_char, c_void, CStr};
 use std::sync::atomic::{AtomicI64, Ordering};
 
+// THREAD AFFINITY INVARIANT:
+// Handle IDs (Connection, Transaction, ResultSet) are globally unique via NEXT_HANDLE,
+// but the backing stores are thread_local. A handle is only valid on the thread that
+// created it. If a handle is passed to another thread (via sync blocks, closures, or
+// spawned tasks), operations will silently fail with "invalid sql ... handle".
+// This is a fundamental constraint of the current design and not enforced by the type
+// system. Users must ensure handles remain on their creating thread.
+
 static NEXT_HANDLE: AtomicI64 = AtomicI64::new(1);
 
 thread_local! {
@@ -754,8 +762,10 @@ fn mysql_query(
 
     let mut out_rows = Vec::new();
     for row in result {
-        let row = row.map_err(|e| format!("mysql row read failed: {}", e))?;
-        let values = row.unwrap();
+        let mut row = row.map_err(|e| format!("mysql row read failed: {}", e))?;
+        let values: Vec<MySqlValue> = (0..columns.len())
+            .map(|idx| row.take(idx).unwrap_or(MySqlValue::NULL))
+            .collect();
         let mut map = BTreeMap::new();
         for (idx, raw) in values.into_iter().enumerate() {
             let col_name = columns
@@ -887,23 +897,13 @@ fn transaction_query_with_params(
             .connection
             .as_mut()
             .ok_or_else(|| "transaction connection missing".to_string())?;
-        match connection {
-            SqlConnection::Sqlite(conn) => {
-                let resultset = sqlite_query(conn, sql, params)?;
-                let rs_handle = store_resultset(resultset);
-                Ok(create_handle_value(rs_handle, *SQL_RESULTSET_TYPE_ID))
-            }
-            SqlConnection::Postgres(client) => {
-                let resultset = postgres_query(client, sql, params)?;
-                let rs_handle = store_resultset(resultset);
-                Ok(create_handle_value(rs_handle, *SQL_RESULTSET_TYPE_ID))
-            }
-            SqlConnection::MySql(conn) => {
-                let resultset = mysql_query(conn, sql, params)?;
-                let rs_handle = store_resultset(resultset);
-                Ok(create_handle_value(rs_handle, *SQL_RESULTSET_TYPE_ID))
-            }
-        }
+        let resultset = match connection {
+            SqlConnection::Sqlite(conn) => sqlite_query(conn, sql, params),
+            SqlConnection::Postgres(client) => postgres_query(client, sql, params),
+            SqlConnection::MySql(conn) => mysql_query(conn, sql, params),
+        }?;
+        let rs_handle = store_resultset(resultset);
+        Ok(create_handle_value(rs_handle, *SQL_RESULTSET_TYPE_ID))
     })
 }
 
@@ -1054,14 +1054,14 @@ pub extern "C" fn mux_sql_value_as_bytes(value: *const Value) -> *mut Value {
     }
 }
 
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_connection_close(connection: *mut Value) {
     if let Ok(handle) = connection_handle(connection) {
-        if !connection_has_active_transaction(handle) {
-            remove_connection(handle);
-            write_handle(connection, 0);
+        if connection_has_active_transaction(handle) {
+            remove_transaction(handle);
         }
+        remove_connection(handle);
+        write_handle(connection, 0);
     }
 }
 
