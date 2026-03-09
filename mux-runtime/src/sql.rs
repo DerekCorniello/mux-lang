@@ -196,6 +196,20 @@ fn remove_transaction(handle: i64) {
     });
 }
 
+fn remove_transaction_for_connection(conn_handle: i64) {
+    SQL_TRANSACTIONS.with(|transactions| {
+        let mut map = transactions.borrow_mut();
+        map.retain(|_, tx| {
+            if tx.connection_handle == conn_handle && tx.active {
+                if let Some(mut connection) = tx.connection.take() {
+                    let _ = rollback_connection(&mut connection);
+                }
+            }
+            tx.connection_handle != conn_handle
+        });
+    });
+}
+
 fn take_transaction(handle: i64) -> Option<SqlTransaction> {
     SQL_TRANSACTIONS.with(|transactions| transactions.borrow_mut().remove(&handle))
 }
@@ -216,6 +230,10 @@ fn drop_connection_handle(ptr: *mut c_void) {
     }
 }
 
+fn connection_still_alive(handle: i64) -> bool {
+    SQL_CONNECTIONS.with(|connections| connections.borrow().contains_key(&handle))
+}
+
 fn drop_transaction_handle(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
@@ -226,7 +244,9 @@ fn drop_transaction_handle(ptr: *mut c_void) {
             if tx.active {
                 if let Some(mut connection) = tx.connection.take() {
                     let _ = rollback_connection(&mut connection);
-                    return_connection(tx.connection_handle, connection);
+                    if connection_still_alive(tx.connection_handle) {
+                        return_connection(tx.connection_handle, connection);
+                    }
                 }
             }
         }
@@ -585,69 +605,43 @@ fn postgres_query_value(
     idx: usize,
     pg_type: &PgType,
 ) -> Result<Value, String> {
-    if *pg_type == PgType::BOOL {
-        let value: Option<bool> = row
-            .try_get(idx)
-            .map_err(|e| format!("postgres row read failed: {}", e))?;
-        return Ok(value.map(Value::Bool).unwrap_or(Value::Unit));
+    macro_rules! get_col {
+        ($row:expr, $idx:expr, $rust_type:ty, $map:expr) => {{
+            let v: Option<$rust_type> = $row
+                .try_get($idx)
+                .map_err(|e| format!("postgres row read failed: {}", e))?;
+            Ok(v.map($map).unwrap_or(Value::Unit))
+        }};
     }
-    if *pg_type == PgType::INT2 {
-        let value: Option<i16> = row
-            .try_get(idx)
-            .map_err(|e| format!("postgres row read failed: {}", e))?;
-        return Ok(value
-            .map(|v| Value::Int(i64::from(v)))
-            .unwrap_or(Value::Unit));
+
+    match *pg_type {
+        PgType::BOOL => get_col!(row, idx, bool, Value::Bool),
+        PgType::INT2 => get_col!(row, idx, i16, |v| Value::Int(i64::from(v))),
+        PgType::INT4 => get_col!(row, idx, i32, |v| Value::Int(i64::from(v))),
+        PgType::INT8 => get_col!(row, idx, i64, Value::Int),
+        PgType::FLOAT4 => get_col!(row, idx, f32, |v| Value::Float(
+            ordered_float::OrderedFloat(f64::from(v))
+        )),
+        PgType::FLOAT8 => get_col!(row, idx, f64, |v| Value::Float(
+            ordered_float::OrderedFloat(v)
+        )),
+        PgType::BYTEA => {
+            let value: Option<Vec<u8>> = row
+                .try_get(idx)
+                .map_err(|e| format!("postgres row read failed: {}", e))?;
+            Ok(value
+                .map(|bytes| {
+                    Value::List(
+                        bytes
+                            .into_iter()
+                            .map(|b| Value::Int(i64::from(b)))
+                            .collect(),
+                    )
+                })
+                .unwrap_or(Value::Unit))
+        }
+        _ => get_col!(row, idx, String, Value::String),
     }
-    if *pg_type == PgType::INT4 {
-        let value: Option<i32> = row
-            .try_get(idx)
-            .map_err(|e| format!("postgres row read failed: {}", e))?;
-        return Ok(value
-            .map(|v| Value::Int(i64::from(v)))
-            .unwrap_or(Value::Unit));
-    }
-    if *pg_type == PgType::INT8 {
-        let value: Option<i64> = row
-            .try_get(idx)
-            .map_err(|e| format!("postgres row read failed: {}", e))?;
-        return Ok(value.map(Value::Int).unwrap_or(Value::Unit));
-    }
-    if *pg_type == PgType::FLOAT4 {
-        let value: Option<f32> = row
-            .try_get(idx)
-            .map_err(|e| format!("postgres row read failed: {}", e))?;
-        return Ok(value
-            .map(|v| Value::Float(ordered_float::OrderedFloat(f64::from(v))))
-            .unwrap_or(Value::Unit));
-    }
-    if *pg_type == PgType::FLOAT8 {
-        let value: Option<f64> = row
-            .try_get(idx)
-            .map_err(|e| format!("postgres row read failed: {}", e))?;
-        return Ok(value
-            .map(|v| Value::Float(ordered_float::OrderedFloat(v)))
-            .unwrap_or(Value::Unit));
-    }
-    if *pg_type == PgType::BYTEA {
-        let value: Option<Vec<u8>> = row
-            .try_get(idx)
-            .map_err(|e| format!("postgres row read failed: {}", e))?;
-        return Ok(value
-            .map(|bytes| {
-                Value::List(
-                    bytes
-                        .into_iter()
-                        .map(|b| Value::Int(i64::from(b)))
-                        .collect(),
-                )
-            })
-            .unwrap_or(Value::Unit));
-    }
-    let text_value: Option<String> = row
-        .try_get(idx)
-        .map_err(|e| format!("unsupported postgres column type {}: {}", pg_type, e))?;
-    Ok(text_value.map(Value::String).unwrap_or(Value::Unit))
 }
 
 #[allow(clippy::mutable_key_type)]
@@ -1058,7 +1052,7 @@ pub extern "C" fn mux_sql_value_as_bytes(value: *const Value) -> *mut Value {
 pub extern "C" fn mux_sql_connection_close(connection: *mut Value) {
     if let Ok(handle) = connection_handle(connection) {
         if connection_has_active_transaction(handle) {
-            remove_transaction(handle);
+            remove_transaction_for_connection(handle);
         }
         remove_connection(handle);
         write_handle(connection, 0);
@@ -1272,7 +1266,7 @@ pub extern "C" fn mux_sql_resultset_rows(resultset: *mut Value) -> *mut Value {
         .and_then(|handle| with_resultset(handle, |rs| Ok(Value::List(rs.rows.clone()))));
     match result {
         Ok(value) => crate::refcount::mux_rc_alloc(value),
-        Err(_err) => crate::refcount::mux_rc_alloc(Value::Unit),
+        Err(_err) => crate::refcount::mux_rc_alloc(Value::List(vec![])),
     }
 }
 
