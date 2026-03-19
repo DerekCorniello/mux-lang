@@ -21,9 +21,12 @@ use crate::lexer::Span;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+type GenericBound = (String, Vec<Type>);
+type GenericBounds = Vec<GenericBound>;
+
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
-    current_bounds: std::collections::HashMap<String, Vec<String>>,
+    current_bounds: std::collections::HashMap<String, GenericBounds>,
     errors: Vec<SemanticError>,
     is_in_static_method: bool,
     pub current_self_type: Option<Type>,
@@ -35,7 +38,7 @@ pub struct SemanticAnalyzer {
     current_file: Option<std::path::PathBuf>, // Track current file for relative imports
     pub lambda_captures: std::collections::HashMap<Span, Vec<(String, Type)>>, // Track captured variables for each lambda
     pub current_return_type: Option<Type>, // Track current function/lambda return type
-    pub current_class_type_params: Option<Vec<(String, Vec<String>)>>, // Track class-level type params with bounds for method analysis
+    pub current_class_type_params: Option<Vec<(String, GenericBounds)>>, // Track class-level type params with bounds for method analysis
 }
 
 impl Default for SemanticAnalyzer {
@@ -109,6 +112,7 @@ impl SemanticAnalyzer {
             ("std.io", "io"),
             ("std.math", "math"),
             ("std.data", "data"),
+            ("std.dsa", "dsa"),
             ("std.random", "random"),
             ("std.net", "net"),
             ("std.sync", "sync"),
@@ -126,6 +130,18 @@ impl SemanticAnalyzer {
         let mut m = std::collections::HashMap::new();
         m.insert("net", vec!["net.http"]);
         m.insert("data", vec!["data.json", "data.csv"]);
+        m.insert(
+            "dsa",
+            vec![
+                "dsa.collection",
+                "dsa.stack",
+                "dsa.queue",
+                "dsa.heap",
+                "dsa.bintree",
+                "dsa.graph",
+                "dsa.algorithm",
+            ],
+        );
         m
     }
 
@@ -339,7 +355,7 @@ impl SemanticAnalyzer {
 
     /// Set class-level type parameters and their bounds for method analysis.
     /// This should be called before analyzing/generating methods of a generic class.
-    pub fn set_class_type_params(&mut self, params: Vec<(String, Vec<String>)>) {
+    pub fn set_class_type_params(&mut self, params: Vec<(String, GenericBounds)>) {
         self.current_class_type_params = Some(params.clone());
         // Also add to current_bounds for immediate use in type checking
         for (param, bounds) in params {
@@ -355,6 +371,156 @@ impl SemanticAnalyzer {
             }
         }
         self.current_class_type_params = None;
+    }
+
+    fn normalize_type_for_bound(&self, type_: &Type, known_type_params: &[String]) -> Type {
+        match type_ {
+            Type::Named(name, args)
+                if args.is_empty() && known_type_params.iter().any(|p| p == name) =>
+            {
+                Type::Variable(name.clone())
+            }
+            Type::Named(name, args) => Type::Named(
+                name.clone(),
+                args.iter()
+                    .map(|arg| self.normalize_type_for_bound(arg, known_type_params))
+                    .collect(),
+            ),
+            Type::List(inner) => Type::List(Box::new(
+                self.normalize_type_for_bound(inner, known_type_params),
+            )),
+            Type::Set(inner) => Type::Set(Box::new(
+                self.normalize_type_for_bound(inner, known_type_params),
+            )),
+            Type::Map(key, value) => Type::Map(
+                Box::new(self.normalize_type_for_bound(key, known_type_params)),
+                Box::new(self.normalize_type_for_bound(value, known_type_params)),
+            ),
+            Type::Optional(inner) => Type::Optional(Box::new(
+                self.normalize_type_for_bound(inner, known_type_params),
+            )),
+            Type::Reference(inner) => Type::Reference(Box::new(
+                self.normalize_type_for_bound(inner, known_type_params),
+            )),
+            Type::Function {
+                params,
+                returns,
+                default_count,
+            } => Type::Function {
+                params: params
+                    .iter()
+                    .map(|param| self.normalize_type_for_bound(param, known_type_params))
+                    .collect(),
+                returns: Box::new(self.normalize_type_for_bound(returns, known_type_params)),
+                default_count: *default_count,
+            },
+            _ => type_.clone(),
+        }
+    }
+
+    fn resolve_type_param_bounds(
+        &self,
+        type_params: &[(String, Vec<TraitBound>)],
+    ) -> Result<Vec<(String, GenericBounds)>, SemanticError> {
+        let mut resolved = Vec::new();
+        let mut known_type_params = Vec::new();
+
+        for (param, bounds) in type_params {
+            let mut resolved_bounds = Vec::new();
+            for bound in bounds {
+                let resolved_type_args = bound
+                    .type_params
+                    .iter()
+                    .map(|type_param| self.resolve_type(type_param))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .map(|ty| self.normalize_type_for_bound(&ty, &known_type_params))
+                    .collect();
+                resolved_bounds.push((bound.name.clone(), resolved_type_args));
+            }
+            resolved.push((param.clone(), resolved_bounds));
+            known_type_params.push(param.clone());
+        }
+
+        Ok(resolved)
+    }
+
+    fn infer_missing_type_params_from_function_bounds(
+        &self,
+        func_name: &str,
+        substitutions: &mut std::collections::HashMap<String, Type>,
+    ) {
+        let mut func_node_opt = None;
+        for module_nodes in self.all_module_asts.values() {
+            for node in module_nodes {
+                if let AstNode::Function(func) = node
+                    && func.name == func_name
+                {
+                    func_node_opt = Some(func);
+                    break;
+                }
+            }
+            if func_node_opt.is_some() {
+                break;
+            }
+        }
+
+        let Some(func_node) = func_node_opt else {
+            return;
+        };
+
+        for (missing_param_name, _) in &func_node.type_params {
+            if substitutions.contains_key(missing_param_name) {
+                continue;
+            }
+
+            let mut inferred: Option<Type> = None;
+
+            for (owner_param_name, owner_bounds) in &func_node.type_params {
+                let Some(owner_concrete_type) = substitutions.get(owner_param_name) else {
+                    continue;
+                };
+
+                let owner_type_args = match owner_concrete_type {
+                    Type::Named(_, args) => args,
+                    Type::Reference(inner) => {
+                        if let Type::Named(_, args) = inner.as_ref() {
+                            args
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ => continue,
+                };
+
+                if owner_type_args.is_empty() {
+                    continue;
+                }
+
+                for bound in owner_bounds {
+                    for (idx, bound_type_arg) in bound.type_params.iter().enumerate() {
+                        if let TypeKind::Named(bound_name, _) = &bound_type_arg.kind
+                            && bound_name == missing_param_name
+                            && let Some(concrete_arg) = owner_type_args.get(idx)
+                        {
+                            inferred = Some(concrete_arg.clone());
+                            break;
+                        }
+                    }
+                    if inferred.is_some() {
+                        break;
+                    }
+                }
+
+                if inferred.is_some() {
+                    break;
+                }
+            }
+
+            if let Some(inferred_type) = inferred {
+                substitutions.insert(missing_param_name.clone(), inferred_type);
+            }
+        }
     }
 
     fn get_builtin_sig(&self, name: &str) -> Option<&BuiltInSig> {
@@ -963,6 +1129,17 @@ impl SemanticAnalyzer {
                             let arg_type = self.get_expression_type(arg)?;
                             unifier.unify(param, &arg_type, expr.span)?;
                         }
+                        let maybe_func_name = match &func.kind {
+                            ExpressionKind::Identifier(name) => Some(name.as_str()),
+                            ExpressionKind::FieldAccess { field, .. } => Some(field.as_str()),
+                            _ => None,
+                        };
+                        if let Some(func_name) = maybe_func_name {
+                            self.infer_missing_type_params_from_function_bounds(
+                                func_name,
+                                &mut unifier.substitutions,
+                            );
+                        }
                         let unified_returns = unifier.apply(&returns);
                         Ok(unified_returns)
                     }
@@ -1227,43 +1404,54 @@ impl SemanticAnalyzer {
                     let right_type = Box::new(self.resolve_type(&type_args[1])?);
                     return Ok(Type::Tuple(left_type, right_type));
                 }
+                let (lookup_name, symbol): (String, Symbol) =
+                    if let Some((module_name, type_name)) = name.split_once('.') {
+                        let module_symbols =
+                            self.imported_symbols.get(module_name).ok_or_else(|| {
+                                self.undefined_symbol_error("module", module_name, expr.span)
+                            })?;
+                        let symbol = module_symbols.get(type_name).ok_or_else(|| {
+                            self.undefined_symbol_error("type", type_name, expr.span)
+                        })?;
+                        if self.symbol_table.lookup(type_name).is_none() {
+                            let _ = self.symbol_table.add_symbol(type_name, symbol.clone());
+                        }
+                        (type_name.to_string(), symbol.clone())
+                    } else if let Some(symbol) = self.symbol_table.lookup(name) {
+                        (name.clone(), symbol)
+                    } else {
+                        return Err(self.undefined_symbol_error("type", name, expr.span));
+                    };
 
-                if !self.symbol_table.exists(name) {
-                    return Err(self.undefined_symbol_error("type", name, expr.span));
-                }
-
-                // Check type argument count
-                if let Some(symbol) = self.symbol_table.lookup(name) {
-                    let expected_count = symbol.type_params.len();
-                    let actual_count = type_args.len();
-                    if expected_count != actual_count {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Generic type '{}' requires {} type argument(s), got {}",
-                                name, expected_count, actual_count
-                            ),
-                            expr.span,
-                            format!(
-                                "Provide exactly {} type argument{} in angle brackets, e.g. {}<{}>",
-                                expected_count,
-                                if expected_count == 1 { "" } else { "s" },
-                                name,
-                                symbol
-                                    .type_params
-                                    .iter()
-                                    .map(|(p, _)| p.as_str())
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ),
-                        ));
-                    }
+                let expected_count = symbol.type_params.len();
+                let actual_count = type_args.len();
+                if expected_count != actual_count {
+                    return Err(SemanticError::with_help(
+                        format!(
+                            "Generic type '{}' requires {} type argument(s), got {}",
+                            lookup_name, expected_count, actual_count
+                        ),
+                        expr.span,
+                        format!(
+                            "Provide exactly {} type argument{} in angle brackets, e.g. {}<{}>",
+                            expected_count,
+                            if expected_count == 1 { "" } else { "s" },
+                            lookup_name,
+                            symbol
+                                .type_params
+                                .iter()
+                                .map(|(p, _)| p.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    ));
                 }
 
                 let resolved_args = type_args
                     .iter()
                     .map(|arg| self.resolve_type(arg))
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok(Type::Named(name.clone(), resolved_args))
+                Ok(Type::Named(lookup_name, resolved_args))
             }
         }
     }
@@ -1670,10 +1858,32 @@ impl SemanticAnalyzer {
     }
 
     fn type_implements_interface(&self, type_: &Type, interface_name: &str) -> bool {
+        self.type_implements_interface_with_args(type_, interface_name, &[])
+    }
+
+    fn type_implements_interface_with_args(
+        &self,
+        type_: &Type,
+        interface_name: &str,
+        interface_args: &[Type],
+    ) -> bool {
         match type_ {
             Type::Named(name, _) => {
                 if let Some(symbol) = self.symbol_table.lookup(name) {
-                    symbol.interfaces.contains_key(interface_name)
+                    if !symbol.interfaces.contains_key(interface_name) {
+                        return false;
+                    }
+
+                    if interface_args.is_empty() {
+                        return true;
+                    }
+
+                    if let Some(interface_symbol) = self.symbol_table.lookup(interface_name)
+                        && interface_symbol.type_params.len() != interface_args.len()
+                    {
+                        return false;
+                    }
+                    true
                 } else {
                     false
                 }
@@ -1711,7 +1921,10 @@ impl SemanticAnalyzer {
             },
             Type::Variable(var) | Type::Generic(var) => {
                 if let Some(bounds) = self.current_bounds.get(var) {
-                    bounds.contains(&interface_name.to_string())
+                    bounds.iter().any(|(bound_name, bound_args)| {
+                        bound_name == interface_name
+                            && (interface_args.is_empty() || bound_args == interface_args)
+                    })
                 } else {
                     false
                 }
@@ -1785,15 +1998,23 @@ impl SemanticAnalyzer {
             }
             Type::Variable(var) | Type::Generic(var) => {
                 let bounds = self.current_bounds.get(var)?;
-                for bound in bounds {
-                    if let Some(sig) = self.get_builtin_interface_method(bound, method_name) {
+                for (bound_name, bound_args) in bounds {
+                    if let Some(sig) = self.get_builtin_interface_method(bound_name, method_name) {
                         return Some(sig);
                     }
-                    if let Some(interface_symbol) = self.symbol_table.lookup(bound)
+                    if let Some(interface_symbol) = self.symbol_table.lookup(bound_name)
                         && let Some(sig) =
                             self.find_interface_method(&interface_symbol, method_name)
                     {
-                        return Some(sig);
+                        if bound_args.is_empty() {
+                            return Some(sig);
+                        }
+
+                        return Some(self.substitute_method_sig(
+                            &sig,
+                            &interface_symbol.type_params,
+                            bound_args,
+                        ));
                     }
                 }
                 None
@@ -2784,10 +3005,7 @@ impl SemanticAnalyzer {
                 type_params,
                 ..
             } => {
-                let type_param_bounds: Vec<(String, Vec<String>)> = type_params
-                    .iter()
-                    .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
-                    .collect();
+                let type_param_bounds = self.resolve_type_param_bounds(type_params)?;
                 self.analyze_class(name, fields, methods, &type_param_bounds)
             }
             AstNode::Enum { .. } => Ok(()), // enums don't need further analysis.
@@ -2813,9 +3031,8 @@ impl SemanticAnalyzer {
 
         // set current bounds
         self.current_bounds.clear();
-        for (param, bounds) in &func.type_params {
-            let bound_names = bounds.iter().map(|b| b.name.clone()).collect();
-            self.current_bounds.insert(param.clone(), bound_names);
+        for (param, bounds) in self.resolve_type_param_bounds(&func.type_params)? {
+            self.current_bounds.insert(param, bounds);
         }
 
         // Also add class-level type params (for methods in generic classes)
@@ -2935,7 +3152,7 @@ impl SemanticAnalyzer {
         name: &str,
         _fields: &[Field],
         methods: &[FunctionNode],
-        type_params: &[(String, Vec<String>)],
+        type_params: &[(String, GenericBounds)],
     ) -> Result<(), SemanticError> {
         // Methods were already added to the class symbol during first pass (collect_hoistable_declarations)
         // Here we just need to analyze method bodies with proper self type
@@ -3280,7 +3497,7 @@ impl SemanticAnalyzer {
 
                 // Handle std library specially
                 if module_path == "std" || module_path.starts_with("std.") {
-                    self.handle_std_import(module_path, spec, stmt.span)?;
+                    self.handle_std_import(module_path, spec, stmt.span, files)?;
                     return Ok(());
                 }
 
@@ -4341,7 +4558,15 @@ impl SemanticAnalyzer {
                     }
                     return Ok(());
                 }
-                if !self.symbol_table.exists(name) {
+                if let Some((module_name, type_name)) = name.split_once('.') {
+                    let module_symbols =
+                        self.imported_symbols.get(module_name).ok_or_else(|| {
+                            self.undefined_symbol_error("module", module_name, expr.span)
+                        })?;
+                    let _ = module_symbols
+                        .get(type_name)
+                        .ok_or_else(|| self.undefined_symbol_error("type", type_name, expr.span))?;
+                } else if !self.symbol_table.exists(name) {
                     return Err(self.undefined_symbol_error("type", name, expr.span));
                 }
                 Ok(())
@@ -4421,6 +4646,144 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    fn import_module_from_resolver(
+        &mut self,
+        module_path: &str,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+        files: &mut Files,
+    ) -> Result<(), SemanticError> {
+        use crate::ast::ImportSpec;
+
+        let resolver = self
+            .module_resolver
+            .clone()
+            .ok_or_else(|| SemanticError::new("Module resolver not available", span))?;
+
+        let (has_file, has_directory) = resolver.borrow().check_module_path(module_path);
+        if has_file && has_directory {
+            return Err(SemanticError::with_help(
+                format!("Ambiguous import: '{}'", module_path),
+                span,
+                format!(
+                    "Both {}.mux and {}/ directory exist. Please remove one.",
+                    module_path.replace('.', "/"),
+                    module_path.replace('.', "/")
+                ),
+            ));
+        }
+
+        if has_directory {
+            self.handle_directory_import(module_path, spec, span, resolver, files)?;
+            return Ok(());
+        }
+
+        let module_nodes = resolver
+            .borrow_mut()
+            .resolve_import_path(module_path, self.current_file.as_deref(), files)
+            .map_err(|e| {
+                SemanticError::with_help(
+                    format!("Failed to import module '{}'", module_path),
+                    span,
+                    e.to_string(),
+                )
+            })?;
+
+        let mut module_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+        module_analyzer.set_current_file(std::path::PathBuf::from(
+            module_path.replace('.', "/") + ".mux",
+        ));
+        let errors = module_analyzer.analyze(&module_nodes, Some(files));
+        if !errors.is_empty() {
+            resolver.borrow_mut().finish_import(module_path);
+            let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+            return Err(SemanticError::with_help(
+                format!("Errors in imported module '{}'", module_path),
+                span,
+                format!(
+                    "Fix the following errors in '{}':\n  {}",
+                    module_path,
+                    error_messages.join("\n  ")
+                ),
+            ));
+        }
+
+        let module_symbols = module_analyzer.symbol_table.all_symbols.clone();
+        let module_name_for_mangling = Self::sanitize_module_path(module_path);
+        for (name, symbol) in &module_symbols {
+            let is_unmangled_builtin_function = matches!(symbol.kind, SymbolKind::Function)
+                && (name.starts_with("print")
+                    || name.starts_with("read_line")
+                    || name.starts_with("range")
+                    || name.starts_with("some")
+                    || name.starts_with("none")
+                    || name.starts_with("ok")
+                    || name.starts_with("err"));
+
+            if !is_unmangled_builtin_function && !self.symbol_table.all_symbols.contains_key(name) {
+                let mut mangled_symbol = symbol.clone();
+                if matches!(symbol.kind, SymbolKind::Function) {
+                    mangled_symbol.llvm_name =
+                        Some(format!("{}!{}", module_name_for_mangling, name));
+                }
+                self.symbol_table
+                    .all_symbols
+                    .insert(name.clone(), mangled_symbol);
+            }
+        }
+
+        match spec {
+            ImportSpec::Module { alias } => {
+                if let Some(namespace) = alias {
+                    self.add_module_namespace(
+                        namespace,
+                        module_symbols.clone(),
+                        module_path,
+                        span,
+                    )?;
+                } else if module_path.contains('.') {
+                    let name = module_path
+                        .split('.')
+                        .next_back()
+                        .expect("module path should include at least one segment");
+                    self.add_module_namespace(name, module_symbols.clone(), module_path, span)?;
+                }
+            }
+            ImportSpec::Item { item, alias } => {
+                let symbol_name = alias.as_ref().unwrap_or(item);
+                self.import_single_symbol(&module_symbols, item, symbol_name, module_path, span)?;
+            }
+            ImportSpec::Items { items } => {
+                for (item, alias) in items {
+                    let symbol_name = alias.as_ref().unwrap_or(item);
+                    self.import_single_symbol(
+                        &module_symbols,
+                        item,
+                        symbol_name,
+                        module_path,
+                        span,
+                    )?;
+                }
+            }
+            ImportSpec::Wildcard => {
+                self.import_all_symbols(&module_symbols, module_path, span)?;
+            }
+        }
+
+        resolver
+            .borrow_mut()
+            .cache_module(module_path, module_nodes.clone());
+        resolver.borrow_mut().finish_import(module_path);
+        self.all_module_asts
+            .insert(module_path.to_string(), module_nodes);
+
+        if !self.module_dependencies.contains(&module_path.to_string()) {
+            self.module_dependencies.push(module_path.to_string());
+        }
+
+        Ok(())
+    }
+
     // Handle directory-based module import (e.g., import utils where utils/ is a directory)
     fn resolve_and_register_submodule(
         &mut self,
@@ -4447,6 +4810,7 @@ impl SemanticAnalyzer {
         ));
         let errors = submodule_analyzer.analyze(&submodule_nodes, Some(files));
         if !errors.is_empty() {
+            resolver.borrow_mut().finish_import(submodule_path);
             let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
             return Err(SemanticError::with_help(
                 format!("Errors in submodule '{}'", submodule_path),
@@ -4817,7 +5181,88 @@ impl SemanticAnalyzer {
         module_path: &str,
         spec: &crate::ast::ImportSpec,
         span: Span,
+        files: Option<&mut Files>,
     ) -> Result<(), SemanticError> {
+        if module_path == "std" {
+            use crate::ast::ImportSpec;
+            let mut files = files;
+            match spec {
+                ImportSpec::Item { item, alias } => {
+                    let full_module_path = format!("std.{}", item);
+                    if let Some(resolver) = &self.module_resolver {
+                        let (has_file, has_directory) =
+                            resolver.borrow().check_module_path(&full_module_path);
+                        if has_file || has_directory {
+                            let files = files.as_deref_mut().ok_or_else(|| {
+                                SemanticError::new(
+                                    "Files registry must be available for std imports",
+                                    span,
+                                )
+                            })?;
+                            return self.import_module_from_resolver(
+                                &full_module_path,
+                                &ImportSpec::Module {
+                                    alias: alias.clone(),
+                                },
+                                span,
+                                files,
+                            );
+                        }
+                    }
+                    return self.import_stdlib_module(
+                        item,
+                        &ImportSpec::Module {
+                            alias: alias.clone(),
+                        },
+                        span,
+                    );
+                }
+                ImportSpec::Items { items } => {
+                    for (item, alias) in items {
+                        let full_module_path = format!("std.{}", item);
+                        if let Some(resolver) = &self.module_resolver {
+                            let (has_file, has_directory) =
+                                resolver.borrow().check_module_path(&full_module_path);
+                            if has_file || has_directory {
+                                let files = files.as_deref_mut().ok_or_else(|| {
+                                    SemanticError::new(
+                                        "Files registry must be available for std imports",
+                                        span,
+                                    )
+                                })?;
+                                self.import_module_from_resolver(
+                                    &full_module_path,
+                                    &ImportSpec::Module {
+                                        alias: alias.clone(),
+                                    },
+                                    span,
+                                    files,
+                                )?;
+                                continue;
+                            }
+                        }
+                        self.import_stdlib_module(
+                            item,
+                            &ImportSpec::Module {
+                                alias: alias.clone(),
+                            },
+                            span,
+                        )?;
+                    }
+                    return Ok(());
+                }
+                _ => return self.handle_std_import_all(spec, span),
+            }
+        }
+
+        if let Some(resolver) = &self.module_resolver {
+            let (has_file, has_directory) = resolver.borrow().check_module_path(module_path);
+            if has_file || has_directory {
+                let files = files.expect("Files registry must be available for std imports");
+                return self.import_module_from_resolver(module_path, spec, span, files);
+            }
+        }
+
         // First, try exact matches like "std.data" -> module_name "data"
         if let Some(module_name) = Self::stdlib_modules()
             .iter()

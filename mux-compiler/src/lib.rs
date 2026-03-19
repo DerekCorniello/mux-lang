@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod codegen;
 pub mod diagnostic;
+pub mod embedded_std;
 pub mod lexer;
 pub mod module_resolver;
 pub mod parser;

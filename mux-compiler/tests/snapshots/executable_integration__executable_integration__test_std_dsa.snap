@@ -1,0 +1,18 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+embedded std test
+5
+stack len: 3
+stack peek: 9
+queue dequeue: 10
+heap pop: 1
+tree contains 8: true
+tree len: 3
+graph len: 4
+graph bfs: [A, B, C, D]
+sorted: [1, 3, 5, 9]
+binary search 5: -1
+max exists: true
+reverse stack: [9, 4, 2]

@@ -1,0 +1,31 @@
+import std.dsa.collection.Collection
+
+class BinaryTree<T is Comparable> is Collection<T> {
+    list<T> values
+
+    func len() returns int {
+        return self.values.size()
+    }
+
+    func is_empty() returns bool {
+        return self.values.is_empty()
+    }
+
+    func clear() returns void {
+        while !self.values.is_empty() {
+            self.values.pop_back()
+        }
+    }
+
+    func to_list() returns list<T> {
+        return self.values
+    }
+
+    func insert(T value) returns void {
+        self.values.push_back(value)
+    }
+
+    func contains(T value) returns bool {
+        return value in self.values
+    }
+}

@@ -1,4 +1,4 @@
-import std.csv
+import std.data.csv
 
 // Test 1: parse without headers (all rows treated as data)
 string csv1 = "a,b,c\n1,2,3\n4,5,6"

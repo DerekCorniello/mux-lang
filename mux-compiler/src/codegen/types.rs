@@ -8,6 +8,7 @@ use crate::lexer::Span;
 use crate::semantics::Type;
 use inkwell::AddressSpace;
 use inkwell::types::BasicTypeEnum;
+use std::collections::HashSet;
 
 /// Placeholder span for synthetically-constructed TypeNodes in codegen.
 const SYNTHETIC_SPAN: Span = Span {
@@ -47,7 +48,7 @@ impl<'a> CodeGenerator<'a> {
             Type::Primitive(PrimitiveType::Float) => Ok(self.context.f64_type().into()),
             Type::Primitive(PrimitiveType::Bool) => Ok(self.context.bool_type().into()),
             Type::Primitive(PrimitiveType::Str) => Ok(self.ptr_type()),
-            Type::Primitive(PrimitiveType::Char) => Ok(self.context.i8_type().into()),
+            Type::Primitive(PrimitiveType::Char) => Ok(self.context.i64_type().into()),
             Type::Primitive(PrimitiveType::Void) | Type::Void => {
                 Err("Void type not allowed here".to_string())
             }
@@ -107,7 +108,7 @@ impl<'a> CodeGenerator<'a> {
                 PrimitiveType::Float => Ok(self.context.f64_type().into()),
                 PrimitiveType::Bool => Ok(self.context.bool_type().into()),
                 PrimitiveType::Str => Ok(self.ptr_type()),
-                PrimitiveType::Char => Ok(self.context.i8_type().into()),
+                PrimitiveType::Char => Ok(self.context.i64_type().into()),
                 PrimitiveType::Void => Err("Void type not allowed in fields".to_string()),
                 PrimitiveType::Auto => Err("Auto type should be resolved".to_string()),
             },
@@ -134,7 +135,7 @@ impl<'a> CodeGenerator<'a> {
             TypeKind::Primitive(PrimitiveType::Float) => Ok(self.context.f64_type().into()),
             TypeKind::Primitive(PrimitiveType::Bool) => Ok(self.context.bool_type().into()),
             TypeKind::Primitive(PrimitiveType::Str) => Ok(self.ptr_type()),
-            TypeKind::Primitive(PrimitiveType::Char) => Ok(self.context.i8_type().into()),
+            TypeKind::Primitive(PrimitiveType::Char) => Ok(self.context.i64_type().into()),
             TypeKind::Named(name, _) => {
                 if let Some(concrete) = self.resolve_generic_param(name) {
                     return self.llvm_type_from_resolved_type(&concrete.clone());
@@ -234,14 +235,6 @@ impl<'a> CodeGenerator<'a> {
             TypeKind::Reference(inner) => Type::Reference(Box::new(self.type_node_to_type(inner))),
             TypeKind::Named(name, generics) => {
                 if generics.is_empty() {
-                    // special case for Pair.from method
-                    if self.current_function_name == Some("Pair.from".to_string()) {
-                        if name == "T" {
-                            return Type::Named("string".to_string(), vec![]);
-                        } else if name == "U" {
-                            return Type::Primitive(PrimitiveType::Bool);
-                        }
-                    }
                     if let Some(concrete_type) = self.resolve_generic_param(name) {
                         concrete_type.clone()
                     } else {
@@ -263,7 +256,11 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
-    pub(super) fn resolve_type(&self, type_: &Type) -> Result<Type, String> {
+    fn resolve_type_with_seen(
+        &self,
+        type_: &Type,
+        seen_generic_params: &mut HashSet<String>,
+    ) -> Result<Type, String> {
         match type_ {
             Type::Primitive(_)
             | Type::Void
@@ -272,21 +269,35 @@ impl<'a> CodeGenerator<'a> {
             | Type::EmptyMap
             | Type::EmptySet => Ok(type_.clone()),
             Type::Generic(name) | Type::Variable(name) => {
+                if seen_generic_params.contains(name) {
+                    return Err(format!("Cyclic generic resolution for '{}'", name));
+                }
                 if let Some(concrete) = self.resolve_generic_param(name) {
-                    return self.resolve_type(&concrete.clone());
+                    seen_generic_params.insert(name.clone());
+                    let resolved =
+                        self.resolve_type_with_seen(&concrete.clone(), seen_generic_params);
+                    seen_generic_params.remove(name);
+                    return resolved;
                 }
                 Err(format!("Unresolved generic: {}", name))
             }
             Type::Named(name, type_args) => {
                 if type_args.is_empty() {
+                    if seen_generic_params.contains(name) {
+                        return Err(format!("Cyclic generic resolution for '{}'", name));
+                    }
                     if let Some(concrete) = self.resolve_generic_param(name) {
-                        return self.resolve_type(&concrete.clone());
+                        seen_generic_params.insert(name.clone());
+                        let resolved =
+                            self.resolve_type_with_seen(&concrete.clone(), seen_generic_params);
+                        seen_generic_params.remove(name);
+                        return resolved;
                     }
                     Ok(Type::Named(name.clone(), vec![]))
                 } else {
                     let resolved_args = type_args
                         .iter()
-                        .map(|arg| self.resolve_type(arg))
+                        .map(|arg| self.resolve_type_with_seen(arg, seen_generic_params))
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok(Type::Named(name.clone(), resolved_args))
                 }
@@ -294,27 +305,35 @@ impl<'a> CodeGenerator<'a> {
             Type::Instantiated(name, type_args) => {
                 let resolved_args = type_args
                     .iter()
-                    .map(|arg| self.resolve_type(arg))
+                    .map(|arg| self.resolve_type_with_seen(arg, seen_generic_params))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Type::Instantiated(name.clone(), resolved_args))
             }
-            Type::List(inner) => Ok(Type::List(Box::new(self.resolve_type(inner)?))),
-            Type::Set(inner) => Ok(Type::Set(Box::new(self.resolve_type(inner)?))),
+            Type::List(inner) => Ok(Type::List(Box::new(
+                self.resolve_type_with_seen(inner, seen_generic_params)?,
+            ))),
+            Type::Set(inner) => Ok(Type::Set(Box::new(
+                self.resolve_type_with_seen(inner, seen_generic_params)?,
+            ))),
             Type::Map(k, v) => Ok(Type::Map(
-                Box::new(self.resolve_type(k)?),
-                Box::new(self.resolve_type(v)?),
+                Box::new(self.resolve_type_with_seen(k, seen_generic_params)?),
+                Box::new(self.resolve_type_with_seen(v, seen_generic_params)?),
             )),
             Type::Tuple(l, r) => Ok(Type::Tuple(
-                Box::new(self.resolve_type(l)?),
-                Box::new(self.resolve_type(r)?),
+                Box::new(self.resolve_type_with_seen(l, seen_generic_params)?),
+                Box::new(self.resolve_type_with_seen(r, seen_generic_params)?),
             )),
 
-            Type::Optional(inner) => Ok(Type::Optional(Box::new(self.resolve_type(inner)?))),
+            Type::Optional(inner) => Ok(Type::Optional(Box::new(
+                self.resolve_type_with_seen(inner, seen_generic_params)?,
+            ))),
             Type::Result(ok, err) => Ok(Type::Result(
-                Box::new(self.resolve_type(ok)?),
-                Box::new(self.resolve_type(err)?),
+                Box::new(self.resolve_type_with_seen(ok, seen_generic_params)?),
+                Box::new(self.resolve_type_with_seen(err, seen_generic_params)?),
             )),
-            Type::Reference(inner) => Ok(Type::Reference(Box::new(self.resolve_type(inner)?))),
+            Type::Reference(inner) => Ok(Type::Reference(Box::new(
+                self.resolve_type_with_seen(inner, seen_generic_params)?,
+            ))),
             Type::Function {
                 params,
                 returns,
@@ -323,15 +342,20 @@ impl<'a> CodeGenerator<'a> {
             } => Ok(Type::Function {
                 params: params
                     .iter()
-                    .map(|p| self.resolve_type(p))
+                    .map(|p| self.resolve_type_with_seen(p, seen_generic_params))
                     .collect::<Result<Vec<_>, _>>()?,
-                returns: Box::new(self.resolve_type(returns)?),
+                returns: Box::new(self.resolve_type_with_seen(returns, seen_generic_params)?),
                 default_count: *default_count,
             }),
             Type::Module(_) => {
                 panic!("Module types should not appear in codegen - they are compile-time only")
             }
         }
+    }
+
+    pub(super) fn resolve_type(&self, type_: &Type) -> Result<Type, String> {
+        let mut seen_generic_params = HashSet::new();
+        self.resolve_type_with_seen(type_, &mut seen_generic_params)
     }
 
     #[allow(clippy::only_used_in_recursion)]

@@ -32,25 +32,62 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         args: &[ExpressionNode],
         func_type: Option<&Type>,
+        llvm_func: Option<inkwell::values::FunctionValue<'a>>,
     ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
         let param_types = match func_type {
             Some(Type::Function { params, .. }) => Some(params.as_slice()),
             _ => None,
         };
+        let llvm_param_types = llvm_func.map(|f| f.get_type().get_param_types());
 
         let mut call_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
             let arg_val = self.generate_expression(arg)?;
+            let mut coerced = arg_val;
             if let Some(params) = param_types
                 && let Some(param_type) = params.get(idx)
             {
-                let coerced = self.coerce_import_arg(arg_val, param_type)?;
-                call_args.push(coerced.into());
-                continue;
+                coerced = self.coerce_import_arg(coerced, param_type)?;
             }
-            call_args.push(arg_val.into());
+
+            if let Some(ref param_types) = llvm_param_types
+                && let Some(expected) = param_types.get(idx)
+            {
+                coerced = self.coerce_to_llvm_param_type(coerced, *expected)?;
+            }
+            call_args.push(coerced.into());
         }
         Ok(call_args)
+    }
+
+    fn coerce_to_llvm_param_type(
+        &self,
+        value: BasicValueEnum<'a>,
+        expected: BasicMetadataTypeEnum<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if value.is_int_value()
+            && let BasicMetadataTypeEnum::IntType(expected_int) = expected
+        {
+            let actual_int = value.into_int_value();
+            let actual_width = actual_int.get_type().get_bit_width();
+            let expected_width = expected_int.get_bit_width();
+
+            if actual_width < expected_width {
+                let widened = self
+                    .builder
+                    .build_int_z_extend(actual_int, expected_int, "ffi_int_widen")
+                    .map_err(|e| e.to_string())?;
+                return Ok(widened.into());
+            }
+            if actual_width > expected_width {
+                let narrowed = self
+                    .builder
+                    .build_int_truncate(actual_int, expected_int, "ffi_int_narrow")
+                    .map_err(|e| e.to_string())?;
+                return Ok(narrowed.into());
+            }
+        }
+        Ok(value)
     }
 
     /// Coerce arguments for FFI/calling convention compatibility.
@@ -1498,10 +1535,8 @@ impl<'a> CodeGenerator<'a> {
                                     Ok(right_val)
                                 } else {
                                     // Simple (non-nested) assignment
-                                    let target_type = self
-                                        .analyzer
-                                        .get_expression_type(target_expr)
-                                        .map_err(|e| e.message)?;
+                                    let target_type =
+                                        self.resolve_expression_type_with_fallback(target_expr)?;
 
                                     match target_type {
                                         crate::semantics::Type::List(_) => {
@@ -1823,6 +1858,7 @@ impl<'a> CodeGenerator<'a> {
                                                     let call_args = self.build_import_call_args(
                                                         args,
                                                         func_type.as_ref(),
+                                                        Some(func),
                                                     )?;
                                                     let call = self
                                                         .builder
@@ -1914,8 +1950,11 @@ impl<'a> CodeGenerator<'a> {
                                         if let Some(func) =
                                             self.module.get_function(&llvm_function_name)
                                         {
-                                            let call_args = self
-                                                .build_import_call_args(args, func_type.as_ref())?;
+                                            let call_args = self.build_import_call_args(
+                                                args,
+                                                func_type.as_ref(),
+                                                Some(func),
+                                            )?;
                                             let call = self
                                                 .builder
                                                 .build_call(
@@ -1933,6 +1972,13 @@ impl<'a> CodeGenerator<'a> {
                                                     .into()),
                                             };
                                         } else {
+                                            if let Some(generic_func) =
+                                                self.function_nodes.get(field)
+                                                && !generic_func.type_params.is_empty()
+                                            {
+                                                return self
+                                                    .generate_generic_function_call(field, args);
+                                            }
                                             return Err(format!(
                                                 "Function {} not found in module {}",
                                                 field, name
@@ -2051,6 +2097,12 @@ impl<'a> CodeGenerator<'a> {
                             }
                         }
                         ExpressionKind::GenericType(class_name, type_args) => {
+                            let resolved_class_name = class_name
+                                .split('.')
+                                .next_back()
+                                .unwrap_or(class_name.as_str())
+                                .to_string();
+
                             // convert type arguments to Type
                             let resolved_type_args = type_args
                                 .iter()
@@ -2066,7 +2118,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map(|arg| self.resolve_type(arg))
                                     .collect::<Result<Vec<_>, _>>()?;
                                 return self.generate_constructor_call_with_types(
-                                    class_name,
+                                    &resolved_class_name,
                                     &concrete_type_args,
                                     args,
                                 );
@@ -2074,14 +2126,14 @@ impl<'a> CodeGenerator<'a> {
 
                             // check for static methods on the class
                             if let Some(class_symbol) =
-                                self.analyzer.symbol_table().lookup(class_name)
+                                self.analyzer.symbol_table().lookup(&resolved_class_name)
                             {
                                 if let Some(method) = class_symbol.methods.get(field) {
                                     if method.is_static {
                                         // set up generic context for static method call
                                         let context = GenericContext {
                                             type_params: self.build_type_param_map(
-                                                class_name,
+                                                &resolved_class_name,
                                                 &resolved_type_args,
                                             )?,
                                         };
@@ -2094,7 +2146,7 @@ impl<'a> CodeGenerator<'a> {
                                         // generate specialized methods for this class variant if not already generated
                                         if !resolved_type_args.is_empty() {
                                             self.generate_specialized_methods(
-                                                class_name,
+                                                &resolved_class_name,
                                                 &resolved_type_args,
                                             )?;
                                         }
@@ -2261,6 +2313,21 @@ impl<'a> CodeGenerator<'a> {
                             let arg_type = self
                                 .analyzer
                                 .get_expression_type(arg_expr)
+                                .or_else(|_| {
+                                    if let ExpressionKind::Identifier(name) = &arg_expr.kind {
+                                        if let Some((_, _, ty)) = self
+                                            .variables
+                                            .get(name)
+                                            .or_else(|| self.global_variables.get(name))
+                                        {
+                                            return Ok(ty.clone());
+                                        }
+                                    }
+                                    Err(crate::semantics::SemanticError::new(
+                                        "Type inference failed for Some() argument",
+                                        arg_expr.span,
+                                    ))
+                                })
                                 .map_err(|e| format!("Type inference failed: {}", e))?;
                             let arg_val = self.generate_expression(arg_expr)?;
                             let func_name = match arg_type {
@@ -2273,6 +2340,8 @@ impl<'a> CodeGenerator<'a> {
                                 | Type::Map(_, _)
                                 | Type::Set(_)
                                 | Type::Named(_, _)
+                                | Type::Variable(_)
+                                | Type::Generic(_)
                                 | Type::Instantiated(_, _) => "mux_optional_some_value",
                                 _ => {
                                     return Err(format!(
@@ -2625,6 +2694,12 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             } else {
                                 // check if this is a generic function that needs instantiation
+                                if let Some(func_node) = self.function_nodes.get(name)
+                                    && !func_node.type_params.is_empty()
+                                {
+                                    return self.generate_generic_function_call(name, args);
+                                }
+
                                 if let Some(func_symbol) = self.analyzer.symbol_table().lookup(name)
                                 {
                                     if let SymbolKind::Function = func_symbol.kind {
@@ -2974,13 +3049,10 @@ impl<'a> CodeGenerator<'a> {
                 let index_val = self.generate_expression(index)?;
 
                 // Get the target type to determine if it's a list or map
-                let target_type = self
-                    .analyzer
-                    .get_expression_type(target_expr)
-                    .map_err(|e| e.message)?;
+                let target_type = self.resolve_expression_type_with_fallback(target_expr)?;
 
-                match target_type {
-                    crate::semantics::Type::List(_) => {
+                match &target_type {
+                    crate::semantics::Type::List(element_type) => {
                         // List access: use mux_list_get_value
                         // extract raw List pointer from Value
                         let raw_list = self
@@ -3072,18 +3144,12 @@ impl<'a> CodeGenerator<'a> {
                         // continue block: extract the value based on its actual type
                         self.builder.position_at_end(continue_bb);
 
-                        // Get the element type from the semantic analyzer
-                        let element_type = self
-                            .analyzer
-                            .get_expression_type(expr)
-                            .map_err(|e| e.message)?;
-
                         // Use extract_value_from_ptr to properly extract based on type
                         let (extracted_val, _) =
-                            self.extract_value_from_ptr(result_ptr, &element_type, "list_element")?;
+                            self.extract_value_from_ptr(result_ptr, element_type, "list_element")?;
                         Ok(extracted_val)
                     }
-                    crate::semantics::Type::Map(_, _) => {
+                    crate::semantics::Type::Map(_, value_type) => {
                         // Map access: use mux_map_get (returns Optional)
                         // extract raw Map pointer from Value
                         let raw_map = self
@@ -3205,15 +3271,9 @@ impl<'a> CodeGenerator<'a> {
                             .expect("mux_optional_get_value should return a basic value")
                             .into_pointer_value();
 
-                        // Get the value type from the semantic analyzer
-                        let value_type = self
-                            .analyzer
-                            .get_expression_type(expr)
-                            .map_err(|e| e.message)?;
-
                         // Use extract_value_from_ptr to properly extract based on type
                         let (extracted_val, _) =
-                            self.extract_value_from_ptr(value_ptr, &value_type, "map_element")?;
+                            self.extract_value_from_ptr(value_ptr, value_type, "map_element")?;
                         Ok(extracted_val)
                     }
                     _ => Err(format!(

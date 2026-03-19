@@ -2,6 +2,7 @@ mod ast;
 mod build_config;
 mod codegen;
 mod diagnostic;
+mod embedded_std;
 mod lexer;
 mod module_resolver;
 mod parser;

@@ -713,22 +713,39 @@ impl<'a> CodeGenerator<'a> {
             .or_else(|| self.global_variables.get("self"))
             .ok_or("Self not found in method call")?;
 
-        // get class name from self type
-        let class_name = if let Some((_, _, Type::Named(class_name, _))) = self
+        // get class name and type args from self type
+        let (class_name, type_args) = if let Some((_, _, Type::Named(class_name, type_args))) = self
             .variables
             .get("self")
             .or_else(|| self.global_variables.get("self"))
         {
-            class_name
+            (class_name.clone(), type_args.clone())
         } else {
             return Err("Self type not found".to_string());
         };
 
-        // build method function name: {class_name}.{method_name}
-        let method_func_name = format!("{}.{}", class_name, method_name);
+        // resolve method function name, preferring specialized names in generic contexts
+        let mut method_func_name =
+            self.create_specialized_method_name(&class_name, &type_args, method_name);
+        if !self.functions.contains_key(&method_func_name) {
+            if type_args.is_empty()
+                && let Some(current_fn) = &self.current_function_name
+                && let Some((current_class_part, _)) = current_fn.split_once('.')
+                && current_class_part.starts_with(&format!("{}$", class_name))
+            {
+                let contextual_name = format!("{}.{}", current_class_part, method_name);
+                if self.functions.contains_key(&contextual_name) {
+                    method_func_name = contextual_name;
+                } else {
+                    method_func_name = format!("{}.{}", class_name, method_name);
+                }
+            } else {
+                method_func_name = format!("{}.{}", class_name, method_name);
+            }
+        }
 
         // check if method is static
-        if let Some(class) = self.analyzer.symbol_table().lookup(class_name)
+        if let Some(class) = self.analyzer.symbol_table().lookup(&class_name)
             && let Some(method) = class.methods.get(method_name)
             && method.is_static
         {
@@ -755,8 +772,14 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?;
         let mut call_args = vec![self_loaded.into()];
+        let is_specialized = method_func_name.contains('$');
         for arg in args {
-            call_args.push(self.generate_expression(arg)?.into());
+            let arg_val = self.generate_expression(arg)?;
+            if is_specialized {
+                call_args.push(self.box_value(arg_val).into());
+            } else {
+                call_args.push(arg_val.into());
+            }
         }
 
         // call the method
@@ -765,9 +788,13 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func_val, &call_args, &format!("call_{}", method_name))
             .map_err(|e| e.to_string())?;
 
-        Ok(call
-            .try_as_basic_value()
-            .left()
-            .expect("method call should return a basic value"))
+        if let Some(value) = call.try_as_basic_value().left() {
+            Ok(value)
+        } else {
+            // Void-returning self-method calls can appear as expression statements.
+            // Return a dummy value for the expression path; callers that require a
+            // real value should have been rejected by semantic analysis.
+            Ok(self.context.i64_type().const_zero().into())
+        }
     }
 }

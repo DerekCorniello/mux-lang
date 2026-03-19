@@ -1,0 +1,61 @@
+import std.test
+import std.dsa.stack
+import std.dsa.queue
+import std.dsa.heap
+import std.dsa.bintree
+import std.dsa.graph
+import std.dsa.algorithm
+
+print(test.ping())
+print(test.add(2, 3).to_string())
+
+auto s = stack.Stack<int>.new()
+s.push(4)
+s.push(2)
+s.push(9)
+print("stack len: " + s.len().to_string())
+match s.peek() {
+    some(v) { print("stack peek: " + v.to_string()) }
+    none { print("stack empty") }
+}
+
+auto q = queue.Queue<int>.new()
+q.enqueue(10)
+q.enqueue(20)
+q.enqueue(30)
+match q.dequeue() {
+    some(v) { print("queue dequeue: " + v.to_string()) }
+    none { print("queue empty") }
+}
+
+auto h = heap.Heap<int>.new()
+h.push(7)
+h.push(1)
+h.push(5)
+match h.pop() {
+    some(v) { print("heap pop: " + v.to_string()) }
+    none { print("heap empty") }
+}
+
+auto tree = bintree.BinaryTree<int>.new()
+tree.insert(5)
+tree.insert(1)
+tree.insert(8)
+print("tree contains 8: " + tree.contains(8).to_string())
+print("tree len: " + tree.len().to_string())
+
+auto g = graph.Graph<string>.new()
+g.add_edge("A", "B")
+g.add_edge("A", "C")
+g.add_edge("B", "D")
+print("graph len: " + g.len().to_string())
+print("graph bfs: " + g.bfs("A").to_string())
+
+auto sorted = algorithm.sort([9, 3, 5, 1])
+print("sorted: " + sorted.to_string())
+print("binary search 5: " + algorithm.binary_search(s, 5).to_string())
+match algorithm.max(s) {
+    some(v) { print("max exists: " + (v == v).to_string()) }
+    none { print("max: none") }
+}
+print("reverse stack: " + algorithm.reverse(s).to_string())

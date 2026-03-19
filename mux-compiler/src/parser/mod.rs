@@ -326,8 +326,10 @@ impl<'a> Parser<'a> {
                 if self.matches(&[TokenType::Is]) {
                     loop {
                         let bound_name = self.consume_identifier("Expected trait name in bound")?;
-                        let type_args = if self.matches(&[TokenType::OpenBracket]) {
-                            self.parse_type_arguments()?
+                        let type_args = if self.matches(&[TokenType::Lt]) {
+                            let args = self.parse_type_arguments()?;
+                            self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
+                            args
                         } else {
                             Vec::new()
                         };
@@ -359,12 +361,9 @@ impl<'a> Parser<'a> {
             let mut traits_list = Vec::new();
             loop {
                 let trait_name = self.consume_identifier("Expected trait name")?;
-                let type_args = if self.matches(&[TokenType::OpenBracket]) {
+                let type_args = if self.matches(&[TokenType::Lt]) {
                     let args = self.parse_type_arguments()?;
-                    self.consume_token(
-                        TokenType::CloseBracket,
-                        "Expected ']' after type arguments",
-                    )?;
+                    self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
                     args
                 } else {
                     Vec::new()
@@ -866,8 +865,13 @@ impl<'a> Parser<'a> {
                         loop {
                             let bound_name =
                                 self.consume_identifier("Expected trait name in bound")?;
-                            let type_args = if self.matches(&[TokenType::OpenBracket]) {
-                                self.parse_type_arguments()?
+                            let type_args = if self.matches(&[TokenType::Lt]) {
+                                let args = self.parse_type_arguments()?;
+                                self.consume_token(
+                                    TokenType::Gt,
+                                    "Expected '>' after type arguments",
+                                )?;
+                                args
                             } else {
                                 Vec::new()
                             };
@@ -1723,8 +1727,53 @@ impl<'a> Parser<'a> {
                     });
                 }
 
-                let type_args = if self.matches(&[TokenType::OpenBracket]) {
-                    self.parse_type_arguments()?
+                if name == "list" && self.matches(&[TokenType::Lt]) {
+                    let element_type = self.parse_type()?;
+                    self.consume_token(TokenType::Gt, "Expected '>' after list element type")?;
+                    return Ok(TypeNode {
+                        kind: TypeKind::List(Box::new(element_type)),
+                        span: start_span,
+                    });
+                }
+
+                if name == "map" && self.matches(&[TokenType::Lt]) {
+                    let key_type = self.parse_type()?;
+                    self.consume_token(
+                        TokenType::Comma,
+                        "Expected ',' between key and value types in map",
+                    )?;
+                    let value_type = self.parse_type()?;
+                    self.consume_token(TokenType::Gt, "Expected '>' after map value type")?;
+                    return Ok(TypeNode {
+                        kind: TypeKind::Map(Box::new(key_type), Box::new(value_type)),
+                        span: start_span,
+                    });
+                }
+
+                if name == "set" && self.matches(&[TokenType::Lt]) {
+                    let element_type = self.parse_type()?;
+                    self.consume_token(TokenType::Gt, "Expected '>' after set element type")?;
+                    return Ok(TypeNode {
+                        kind: TypeKind::Set(Box::new(element_type)),
+                        span: start_span,
+                    });
+                }
+
+                if name == "tuple" && self.matches(&[TokenType::Lt]) {
+                    let left_type = self.parse_type()?;
+                    self.consume_token(TokenType::Comma, "Expected ',' in tuple type")?;
+                    let right_type = self.parse_type()?;
+                    self.consume_token(TokenType::Gt, "Expected '>' after tuple type")?;
+                    return Ok(TypeNode {
+                        kind: TypeKind::Tuple(Box::new(left_type), Box::new(right_type)),
+                        span: start_span,
+                    });
+                }
+
+                let type_args = if self.matches(&[TokenType::Lt]) {
+                    let args = self.parse_type_arguments()?;
+                    self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
+                    args
                 } else {
                     Vec::new()
                 };
@@ -1736,73 +1785,8 @@ impl<'a> Parser<'a> {
                     });
                 }
 
-                let next_is_gt = !self.is_at_end()
-                    && self
-                        .tokens
-                        .get(self.current)
-                        .is_some_and(|t| t.token_type == TokenType::Lt);
-
-                if name == "list" && next_is_gt {
-                    self.consume_token(TokenType::Lt, "Expected '<' for list element type")?;
-                    let element_type = self.parse_type()?;
-                    self.consume_token(TokenType::Gt, "Expected '>' after list element type")?;
-                    return Ok(TypeNode {
-                        kind: TypeKind::List(Box::new(element_type)),
-                        span: start_span,
-                    });
-                }
-
-                if name == "map" && next_is_gt {
-                    self.consume_token(TokenType::Lt, "Expected '<' for map key type")?;
-                    let key_type = self.parse_type()?;
-                    self.consume_token(
-                        TokenType::Comma,
-                        "Expected ',' between key and value types in map",
-                    )?;
-                    let value_type = self.parse_type()?;
-                    self.consume_token(TokenType::Gt, "Expected '>' after map value type")?;
-
-                    return Ok(TypeNode {
-                        kind: TypeKind::Map(Box::new(key_type), Box::new(value_type)),
-                        span: start_span,
-                    });
-                }
-
-                if name == "set" && next_is_gt {
-                    self.consume_token(TokenType::Lt, "Expected '<' for set element type")?;
-                    let element_type = self.parse_type()?;
-                    self.consume_token(TokenType::Gt, "Expected '>' after set element type")?;
-
-                    return Ok(TypeNode {
-                        kind: TypeKind::Set(Box::new(element_type)),
-                        span: start_span,
-                    });
-                }
-
-                if name == "tuple" && next_is_gt {
-                    self.consume_token(TokenType::Lt, "Expected '<' for tuple type")?;
-                    let left_type = self.parse_type()?;
-                    self.consume_token(TokenType::Comma, "Expected ',' in tuple type")?;
-                    let right_type = self.parse_type()?;
-                    self.consume_token(TokenType::Gt, "Expected '>' after tuple type")?;
-
-                    return Ok(TypeNode {
-                        kind: TypeKind::Tuple(Box::new(left_type), Box::new(right_type)),
-                        span: start_span,
-                    });
-                }
-
-                let name_clone = name.clone();
-                let type_args = if self.matches(&[TokenType::Lt]) {
-                    let args = self.parse_type_arguments()?;
-                    self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
-                    args
-                } else {
-                    Vec::new()
-                };
-
                 Ok(TypeNode {
-                    kind: TypeKind::Named(name_clone, type_args),
+                    kind: TypeKind::Named(name.clone(), type_args),
                     span: start_span,
                 })
             }
@@ -2486,7 +2470,19 @@ impl<'a> Parser<'a> {
                 // - and the token immediately following '>' is either:
                 //   - '.' or '(' (method/constructor call)
                 //   - statement terminators (NewLine, Eof, CloseBrace, CloseParen, Eq)
-                let should_consume_generics = if let ExpressionKind::Identifier(id) = &expr.kind {
+                let generic_target_name = match &expr.kind {
+                    ExpressionKind::Identifier(id) => Some(id.clone()),
+                    ExpressionKind::FieldAccess { expr, field } => {
+                        if let ExpressionKind::Identifier(base) = &expr.kind {
+                            Some(format!("{}.{}", base, field))
+                        } else {
+                            Some(field.clone())
+                        }
+                    }
+                    _ => None,
+                };
+
+                let should_consume_generics = if let Some(target_name) = &generic_target_name {
                     let mut i = self.current + 1; // after '<'
                     let mut depth = 1usize;
                     let mut gt_idx: Option<usize> = None;
@@ -2520,7 +2516,10 @@ impl<'a> Parser<'a> {
                                     | TokenType::Eq
                                     | TokenType::NewLine
                                     | TokenType::Eof
-                            ) || id.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                            ) || target_name
+                                .chars()
+                                .next()
+                                .is_some_and(|c| c.is_ascii_uppercase())
                         } else {
                             true // end of file, treat as generic
                         }
@@ -2537,7 +2536,7 @@ impl<'a> Parser<'a> {
                     let type_args = self.parse_type_arguments()?;
                     let end_span =
                         self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
-                    if let ExpressionKind::Identifier(name) = expr.kind {
+                    if let Some(name) = generic_target_name {
                         expr = ExpressionNode {
                             kind: ExpressionKind::GenericType(name, type_args),
                             span: expr.span.combine(&end_span),

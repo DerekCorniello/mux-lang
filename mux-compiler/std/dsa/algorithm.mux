@@ -1,0 +1,96 @@
+import std.dsa.collection.Collection
+
+func sort<T is Comparable>(list<T> items) returns list<T> {
+    auto out = items
+    int n = out.size()
+    int i = 0
+
+    while i < n {
+        int j = 0
+        while j + 1 < n - i {
+            if out[j + 1] < out[j] {
+                auto tmp = out[j]
+                out[j] = out[j + 1]
+                out[j + 1] = tmp
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+
+    return out
+}
+
+func binary_search<T is Comparable, E is Collection<T>>(E items, T target) returns int {
+    auto values = sort(items.to_list())
+    int left = 0
+    int right = values.size() - 1
+
+    while left <= right {
+        int mid = (left + right) / 2
+        auto value = values[mid]
+
+        if value == target {
+            return mid
+        }
+
+        if value < target {
+            left = mid + 1
+        } else {
+            right = mid - 1
+        }
+    }
+
+    return -1
+}
+
+func max<T is Comparable & Stringable, E is Collection<T>>(E collection) returns optional<T> {
+    if collection.is_empty() {
+        return none
+    }
+
+    auto values = collection.to_list()
+    auto best = values[0]
+
+    int i = 1
+    while i < values.size() {
+        if best < values[i] {
+            best = values[i]
+        }
+        i = i + 1
+    }
+
+    return some(best)
+}
+
+func min<T is Comparable & Stringable, E is Collection<T>>(E collection) returns optional<T> {
+    if collection.is_empty() {
+        return none
+    }
+
+    auto values = collection.to_list()
+    auto best = values[0]
+
+    int i = 1
+    while i < values.size() {
+        if values[i] < best {
+            best = values[i]
+        }
+        i = i + 1
+    }
+
+    return some(best)
+}
+
+func reverse<T, E is Collection<T>>(E collection) returns list<T> {
+    auto values = collection.to_list()
+    list<T> out = []
+
+    int i = values.size() - 1
+    while i >= 0 {
+        out.push_back(values[i])
+        i = i - 1
+    }
+
+    return out
+}

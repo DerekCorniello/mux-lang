@@ -55,7 +55,9 @@ impl CodeGenerator<'_> {
             return_type.fn_type(&param_types, false)
         };
 
-        let llvm_name = if let Some(symbol) = self.analyzer.symbol_table().lookup(&func.name) {
+        let llvm_name = if func.name.contains('$') {
+            func.name.clone()
+        } else if let Some(symbol) = self.analyzer.symbol_table().lookup(&func.name) {
             if let Some(mangled_name) = &symbol.llvm_name {
                 mangled_name.clone()
             } else {

@@ -256,6 +256,17 @@ impl<'a> CodeGenerator<'a> {
         type_args: &[Type],
         method_name: &str,
     ) -> Result<String, String> {
+        if type_args.is_empty()
+            && let Some(current_fn) = &self.current_function_name
+            && let Some((current_class_part, _)) = current_fn.split_once('.')
+            && current_class_part.starts_with(&format!("{}$", class_name))
+        {
+            let contextual_name = format!("{}.{}", current_class_part, method_name);
+            if self.module.get_function(&contextual_name).is_some() {
+                return Ok(contextual_name);
+            }
+        }
+
         let specialized_method_name =
             self.create_specialized_method_name(class_name, type_args, method_name);
 
