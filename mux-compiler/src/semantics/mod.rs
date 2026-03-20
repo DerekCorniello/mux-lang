@@ -1933,7 +1933,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn get_method_sig(&self, type_: &Type, method_name: &str) -> Option<MethodSig> {
+    pub(crate) fn get_method_sig(&self, type_: &Type, method_name: &str) -> Option<MethodSig> {
         match type_ {
             Type::Named(name, args) => {
                 let symbol = self.symbol_table.lookup(name)?;
