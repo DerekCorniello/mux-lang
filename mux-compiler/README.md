@@ -2088,6 +2088,106 @@ Current provider support:
 - MySQL/MariaDB: supported (`mysql://...`, `mariadb://...`)
 - SQL Server: URI recognized, currently unsupported
 
+### 17.12 dsa
+
+`dsa` provides data structures and algorithms: stack, queue, heap, bintree, graph, and utility functions.
+
+Import styles:
+
+```mux
+import std.dsa                       // use dsa.stack, dsa.queue, etc.
+import std.dsa.stack                 // use stack.*
+import std.dsa.algorithm             // use algorithm.*
+import std.dsa.collection.Collection // import the interface
+```
+
+#### Collection Interface
+
+The `Collection<T>` interface is implemented by all DSA data structures:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `len() returns int` | Number of elements |
+| `is_empty() returns bool` | True if empty |
+| `clear() returns void` | Remove all elements |
+| `to_list() returns list<T>` | Elements as a list |
+
+#### stack.Stack<T>
+
+A LIFO (last-in, first-out) collection.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Stack<T>.new() returns Stack<T>` | Create empty stack |
+| `push(T value) returns void` | Add element to top |
+| `pop() returns optional<T>` | Remove and return top element |
+| `peek() returns optional<T>` | View top element without removing |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()`.
+
+#### queue.Queue<T>
+
+A FIFO (first-in, first-out) collection.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Queue<T>.new() returns Queue<T>` | Create empty queue |
+| `enqueue(T value) returns void` | Add element to back |
+| `dequeue() returns optional<T>` | Remove and return front element |
+| `peek() returns optional<T>` | View front element without removing |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()`.
+
+#### heap.Heap<T is Comparable>
+
+A min-heap collection where the smallest element is always at the top.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Heap<T>.new() returns Heap<T>` | Create empty heap |
+| `push(T value) returns void` | Add element |
+| `pop() returns optional<T>` | Remove and return minimum |
+| `peek() returns optional<T>` | View minimum without removing |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()`.
+
+#### bintree.BinaryTree<T is Comparable>
+
+A binary search tree with set semantics (duplicates ignored).
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `BinaryTree<T>.new() returns BinaryTree<T>` | Create empty tree |
+| `insert(T value) returns void` | Add element |
+| `remove(T value) returns void` | Remove element |
+| `contains(T value) returns bool` | Check if element exists |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()` (inorder traversal).
+
+#### graph.Graph<T is Hashable & Stringable>
+
+A directed graph using adjacency lists.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Graph<T>.new() returns Graph<T>` | Create empty graph |
+| `add_vertex(T value) returns void` | Add a vertex |
+| `add_edge(T from, T to) returns void` | Add directed edge |
+| `neighbors(T value) returns list<T>` | Get neighbors of vertex |
+| `bfs(T start) returns list<T>` | Breadth-first search traversal |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()` (vertices in insertion order).
+
+#### algorithm Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `sort` | `<T is Comparable>(list<T> items) returns list<T>` | Quicksort |
+| `binary_search` | `<T is Comparable, E is Collection<T>>(E items, T target) returns int` | Returns index or -1 |
+| `max` | `<T is Comparable & Stringable, E is Collection<T>>(E collection) returns optional<T>` | Maximum element |
+| `min` | `<T is Comparable & Stringable, E is Collection<T>>(E collection) returns optional<T>` | Minimum element |
+| `reverse` | `<T, E is Collection<T>>(E collection) returns list<T>` | Reversed list |
+
 
 
 

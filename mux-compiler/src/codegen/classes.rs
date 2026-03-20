@@ -4,7 +4,7 @@
 
 use super::CodeGenerator;
 use crate::ast::{AstNode, EnumVariant, Field, PrimitiveType, TypeKind, TypeNode};
-use crate::semantics::MethodSig;
+use crate::semantics::{MethodSig, Type};
 use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, IntValue};
@@ -41,7 +41,7 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         name: &str,
         fields: &[Field],
-        interfaces: &HashMap<String, HashMap<String, MethodSig>>,
+        interfaces: &HashMap<String, (Vec<Type>, HashMap<String, MethodSig>)>,
     ) -> Result<(), String> {
         let mut field_types = Vec::new();
         let mut field_indices = HashMap::new();
@@ -105,9 +105,9 @@ impl<'a> CodeGenerator<'a> {
     pub(super) fn generate_class_vtables(
         &mut self,
         class_name: &str,
-        interfaces: &HashMap<String, HashMap<String, MethodSig>>,
+        interfaces: &HashMap<String, (Vec<Type>, HashMap<String, MethodSig>)>,
     ) -> Result<(), String> {
-        for (interface_name, interface_methods) in interfaces {
+        for (interface_name, (_, interface_methods)) in interfaces {
             let mut vtable_values = Vec::new();
             for method_name in interface_methods.keys() {
                 let class_method_name = format!("{}.{}", class_name, method_name);
@@ -147,7 +147,7 @@ impl<'a> CodeGenerator<'a> {
             .all_symbols()
             .get(name)
             .ok_or_else(|| format!("Interface symbol '{}' not found in symbol table", name))?;
-        let interface_methods = symbol
+        let (_, interface_methods) = symbol
             .interfaces
             .get(name)
             .ok_or_else(|| format!("Interface methods for '{}' not found", name))?;

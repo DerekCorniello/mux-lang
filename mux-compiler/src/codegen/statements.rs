@@ -90,9 +90,8 @@ impl<'a> CodeGenerator<'a> {
             StatementKind::AutoDecl(name, _, expr) => {
                 let value = self.generate_expression(expr)?;
                 let resolved_type = self
-                    .analyzer
-                    .get_expression_type(expr)
-                    .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
+                    .resolve_expression_type_with_fallback(expr)
+                    .map_err(|e| format!("Failed to get type for {}: {}", name, e))?;
                 let concrete_type = self
                     .resolve_type(&resolved_type)
                     .unwrap_or_else(|_| resolved_type.clone());
@@ -113,9 +112,8 @@ impl<'a> CodeGenerator<'a> {
                 let boxed = self.box_value(value);
                 let ptr_type = self.context.ptr_type(AddressSpace::default());
                 let resolved_type = self
-                    .analyzer
-                    .get_expression_type(expr)
-                    .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
+                    .resolve_expression_type_with_fallback(expr)
+                    .map_err(|e| format!("Failed to get type for {}: {}", name, e))?;
                 let existing_ptr = self.variables.get(name).map(|(p, _, _)| *p);
                 if let Some(existing_ptr) = existing_ptr {
                     self.builder
@@ -1047,6 +1045,11 @@ impl<'a> CodeGenerator<'a> {
             .builder
             .get_insert_block()
             .expect("Builder should have an insertion block");
+        let all_arms_return = arms.iter().all(|arm| {
+            arm.body
+                .last()
+                .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)))
+        });
         let match_id = self.label_counter;
         self.label_counter += 1;
         let end_bb = self
@@ -1065,6 +1068,10 @@ impl<'a> CodeGenerator<'a> {
             };
 
             self.builder.position_at_end(current_bb);
+            if current_bb.get_terminator().is_some() {
+                current_bb = next_bb;
+                continue;
+            }
 
             let pattern_matches = match &arm.pattern {
                 PatternNode::EnumVariant { name, args: _ } => {
@@ -1242,14 +1249,26 @@ impl<'a> CodeGenerator<'a> {
             for stmt in &arm.body {
                 self.generate_statement(stmt, Some(function))?;
             }
-            self.builder
-                .build_unconditional_branch(end_bb)
-                .map_err(|e| e.to_string())?;
+            if self
+                .builder
+                .get_insert_block()
+                .and_then(|bb| bb.get_terminator())
+                .is_none()
+            {
+                self.builder
+                    .build_unconditional_branch(end_bb)
+                    .map_err(|e| e.to_string())?;
+            }
 
             current_bb = next_bb;
         }
 
         self.builder.position_at_end(end_bb);
+        if all_arms_return && end_bb.get_terminator().is_none() {
+            self.builder
+                .build_unreachable()
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
@@ -1265,6 +1284,11 @@ impl<'a> CodeGenerator<'a> {
             .builder
             .get_insert_block()
             .expect("Builder should have an insertion block");
+        let all_arms_return = arms.iter().all(|arm| {
+            arm.body
+                .last()
+                .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)))
+        });
         let match_id = self.label_counter;
         self.label_counter += 1;
         let end_bb = self
@@ -1283,6 +1307,10 @@ impl<'a> CodeGenerator<'a> {
             };
 
             self.builder.position_at_end(current_bb);
+            if current_bb.get_terminator().is_some() {
+                current_bb = next_bb;
+                continue;
+            }
 
             let condition = match &arm.pattern {
                 PatternNode::Literal(lit) => {
@@ -1396,14 +1424,26 @@ impl<'a> CodeGenerator<'a> {
             for stmt in &arm.body {
                 self.generate_statement(stmt, Some(function))?;
             }
-            self.builder
-                .build_unconditional_branch(end_bb)
-                .map_err(|e| e.to_string())?;
+            if self
+                .builder
+                .get_insert_block()
+                .and_then(|bb| bb.get_terminator())
+                .is_none()
+            {
+                self.builder
+                    .build_unconditional_branch(end_bb)
+                    .map_err(|e| e.to_string())?;
+            }
 
             current_bb = next_bb;
         }
 
         self.builder.position_at_end(end_bb);
+        if all_arms_return && end_bb.get_terminator().is_none() {
+            self.builder
+                .build_unreachable()
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 

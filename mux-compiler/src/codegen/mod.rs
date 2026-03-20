@@ -25,6 +25,8 @@ use std::collections::HashMap;
 use crate::ast::{AstNode, Field, FunctionNode, StatementKind, StatementNode, TypeNode};
 use crate::semantics::{GenericContext, SemanticAnalyzer, Type, Type as ResolvedType};
 
+type ClassTypeParamBounds = Vec<(String, Vec<(String, Vec<Type>)>)>;
+
 pub struct CodeGenerator<'a> {
     context: &'a Context,
     module: Module<'a>,
@@ -161,7 +163,19 @@ impl<'a> CodeGenerator<'a> {
             None => builder.position_at_end(entry),
         }
 
-        builder.build_alloca(ty, name).map_err(|e| e.to_string())
+        let alloca = builder.build_alloca(ty, name).map_err(|e| e.to_string())?;
+
+        // Pointer locals can be hoisted to the entry block even when their
+        // declaration is inside conditional control flow. Initialize them to
+        // null so cleanup paths never decrement uninitialized memory.
+        if matches!(ty, BasicTypeEnum::PointerType(_)) {
+            let null_ptr = self.context.ptr_type(AddressSpace::default()).const_null();
+            builder
+                .build_store(alloca, null_ptr)
+                .map_err(|e| e.to_string())?;
+        }
+
+        Ok(alloca)
     }
 
     /// Create an alloca in the entry block of the current function (inferred from builder position).
@@ -214,11 +228,7 @@ impl<'a> CodeGenerator<'a> {
                     .iter()
                     .filter_map(|node| {
                         if let AstNode::Function(func) = node {
-                            if func.type_params.is_empty() {
-                                Some((module_name_for_mangling.clone(), func.clone()))
-                            } else {
-                                None
-                            }
+                            Some((module_name_for_mangling.clone(), func.clone()))
                         } else {
                             None
                         }
@@ -232,9 +242,11 @@ impl<'a> CodeGenerator<'a> {
             // Store function nodes
             self.function_nodes.insert(func.name.clone(), func.clone());
 
-            // Declare with mangled name
-            let mangled_name = format!("{}!{}", module_name, func.name);
-            self.declare_function_with_name(func, &mangled_name)?;
+            if func.type_params.is_empty() {
+                // Declare with mangled name
+                let mangled_name = format!("{}!{}", module_name, func.name);
+                self.declare_function_with_name(func, &mangled_name)?;
+            }
         }
 
         // Declare functions from main module (no mangling needed)
@@ -360,9 +372,8 @@ impl<'a> CodeGenerator<'a> {
                     // for auto declarations, get the inferred type from the expression
                     // (not from symbol table, since variables are not stored there to avoid collisions)
                     let resolved_type = self
-                        .analyzer
-                        .get_expression_type(expr)
-                        .map_err(|e| format!("Failed to get type for {}: {}", name, e.message))?;
+                        .resolve_expression_type_with_fallback(expr)
+                        .map_err(|e| format!("Failed to get type for {}: {}", name, e))?;
 
                     // determine correct LLVM type based on whether value is boxed
                     let llvm_type = match &resolved_type {
@@ -425,8 +436,10 @@ impl<'a> CodeGenerator<'a> {
 
         // Generate user-defined functions for imported modules
         for (module_name_mangled, func) in imported_functions {
-            let mangled_name = format!("{}!{}", module_name_mangled, func.name);
-            self.generate_function_with_llvm_name(&func, &mangled_name)?;
+            if func.type_params.is_empty() {
+                let mangled_name = format!("{}!{}", module_name_mangled, func.name);
+                self.generate_function_with_llvm_name(&func, &mangled_name)?;
+            }
         }
 
         // Generate user-defined functions for main module (no mangling except for "main")
@@ -449,9 +462,14 @@ impl<'a> CodeGenerator<'a> {
             {
                 // Set class-level type parameter bounds for method generation
                 if !type_params.is_empty() {
-                    let bounds: Vec<(String, Vec<String>)> = type_params
+                    let bounds: ClassTypeParamBounds = type_params
                         .iter()
-                        .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
+                        .map(|(p, b)| {
+                            (
+                                p.clone(),
+                                b.iter().map(|tb| (tb.name.clone(), Vec::new())).collect(),
+                            )
+                        })
                         .collect();
                     self.analyzer.set_class_type_params(bounds);
                 }
@@ -490,6 +508,9 @@ impl<'a> CodeGenerator<'a> {
     }
 
     pub fn emit_ir_to_file(&self, filename: &str) -> Result<(), String> {
+        self.module
+            .verify()
+            .map_err(|e| format!("LLVM module verification failed: {}", e.to_string()))?;
         self.module
             .print_to_file(filename)
             .map_err(|e| format!("Failed to write IR: {}", e))

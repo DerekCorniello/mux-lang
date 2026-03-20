@@ -161,7 +161,6 @@ fn test_executable_all_mux_files_in_dir() {
             // and IPv6 addresses like [::1]:12345 -> [::1]:PORT
             let normalized = ipv4_re.replace_all(&output_to_snapshot, "$host:PORT");
             let normalized = ipv6_re.replace_all(&normalized, "[$host]:PORT");
-
             assert_snapshot!(
                 format!("executable_integration__{}", snapshot_name),
                 normalized

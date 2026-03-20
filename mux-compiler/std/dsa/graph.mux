@@ -1,0 +1,92 @@
+import std.dsa.collection.Collection
+
+class Graph<T is Hashable & Stringable> is Collection<T> {
+    map<T, list<T> > adjacency
+    // Stores vertices in first-seen order for deterministic to_list output.
+    list<T> vertices
+
+    func len() returns int {
+        return self.adjacency.size()
+    }
+
+    func is_empty() returns bool {
+        return self.adjacency.is_empty()
+    }
+
+    func clear() returns void {
+        auto keys = self.vertices
+        int i = 0
+        while i < keys.size() {
+            auto key = keys[i]
+            self.adjacency.remove(key)
+            i = i + 1
+        }
+
+        while !self.vertices.is_empty() {
+            self.vertices.pop_back()
+        }
+    }
+
+    func to_list() returns list<T> {
+        // Deterministic contract: returns vertices in insertion order.
+        return self.vertices
+    }
+
+    func add_vertex(T value) returns void {
+        if !self.adjacency.contains(value) {
+            list<T> empty = []
+            self.adjacency.put(value, empty)
+            self.vertices.push_back(value)
+        }
+    }
+
+    func add_edge(T from, T to) returns void {
+        self.add_vertex(from)
+        self.add_vertex(to)
+        list<T> neighbors = self.adjacency[from]
+        neighbors.push_back(to)
+        self.adjacency.put(from, neighbors)
+    }
+
+    func neighbors(T value) returns list<T> {
+        if self.adjacency.contains(value) {
+            return self.adjacency[value]
+        }
+        list<T> empty = []
+        return empty
+    }
+
+    func bfs(T start) returns list<T> {
+        list<T> order = []
+        if !self.adjacency.contains(start) {
+            return order
+        }
+
+        set<T> visited = {}
+        list<T> queue = []
+        int head = 0
+
+        queue.push_back(start)
+        visited.add(start)
+
+        while head < queue.size() {
+            auto current = queue[head]
+            head = head + 1
+            order.push_back(current)
+
+            auto next_nodes = self.neighbors(current)
+            int i = 0
+            while i < next_nodes.size() {
+                auto next = next_nodes[i]
+                if !visited.contains(next) {
+                    visited.add(next)
+                    queue.push_back(next)
+                }
+                i = i + 1
+            }
+        }
+
+        return order
+    }
+
+}

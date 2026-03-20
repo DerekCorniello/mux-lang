@@ -287,6 +287,9 @@ pub extern "C" fn mux_free_result(_val: *mut Value) {}
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_get_int(val: *const Value) -> i64 {
+    if val.is_null() {
+        return 0;
+    }
     unsafe {
         match &*val {
             Value::Int(i) => *i,
@@ -298,6 +301,9 @@ pub extern "C" fn mux_value_get_int(val: *const Value) -> i64 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_get_float(val: *const Value) -> f64 {
+    if val.is_null() {
+        return 0.0;
+    }
     unsafe {
         match &*val {
             Value::Float(f) => f.into_inner(),
@@ -309,6 +315,9 @@ pub extern "C" fn mux_value_get_float(val: *const Value) -> f64 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_get_bool(val: *const Value) -> i32 {
+    if val.is_null() {
+        return 0;
+    }
     unsafe {
         match &*val {
             Value::Bool(b) => i32::from(*b),
@@ -320,6 +329,9 @@ pub extern "C" fn mux_value_get_bool(val: *const Value) -> i32 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_get_type_tag(val: *const Value) -> i32 {
+    if val.is_null() {
+        return -1;
+    }
     unsafe {
         match &*val {
             Value::Unit => 11,

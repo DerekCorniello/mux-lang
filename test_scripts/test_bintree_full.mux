@@ -1,0 +1,52 @@
+import std.dsa.*
+import std.dsa.collection.Collection
+
+print("=== BinaryTree Full Test ===")
+
+auto tree = bintree.BinaryTree<int>.new()
+print("empty: " + tree.is_empty().to_string())
+print("len: " + tree.len().to_string())
+
+tree.insert(5)
+tree.insert(3)
+tree.insert(7)
+tree.insert(2)
+tree.insert(4)
+tree.insert(6)
+tree.insert(8)
+tree.insert(7)
+tree.insert(3)
+
+print("len after inserts (duplicates ignored): " + tree.len().to_string())
+print("contains 6: " + tree.contains(6).to_string())
+print("contains 99: " + tree.contains(99).to_string())
+print("sorted list: " + tree.to_list().to_string())
+
+match algorithm.min(tree) {
+    some(v) { print("min: " + v.to_string()) }
+    none { print("min: none") }
+}
+
+match algorithm.max(tree) {
+    some(v) { print("max: " + v.to_string()) }
+    none { print("max: none") }
+}
+
+tree.remove(2)
+print("after remove leaf 2: " + tree.to_list().to_string())
+
+tree.remove(7)
+print("after remove node with children 7: " + tree.to_list().to_string())
+
+tree.remove(5)
+print("after remove root 5: " + tree.to_list().to_string())
+
+tree.remove(42)
+print("after remove missing 42: " + tree.to_list().to_string())
+print("len final: " + tree.len().to_string())
+
+tree.clear()
+print("after clear len: " + tree.len().to_string())
+print("after clear empty: " + tree.is_empty().to_string())
+
+print("=== BinaryTree Full Test Complete ===")

@@ -7,7 +7,7 @@ use crate::ast::{EnumVariant, ExpressionNode, Field, PrimitiveType, TypeKind};
 use crate::semantics::{GenericContext, MethodSig, Type};
 use inkwell::AddressSpace;
 use inkwell::types::BasicType;
-use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
 use std::collections::HashMap;
 
 impl<'a> CodeGenerator<'a> {
@@ -105,7 +105,7 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         name: &str,
         fields: &[Field],
-        interfaces: &HashMap<String, HashMap<String, MethodSig>>,
+        interfaces: &HashMap<String, (Vec<Type>, HashMap<String, MethodSig>)>,
     ) -> Result<(), String> {
         let full_name = format!("{}.new", name);
 
@@ -359,6 +359,29 @@ impl<'a> CodeGenerator<'a> {
                 let val = self.create_empty_collection_value("mux_new_set", "mux_set_value");
                 self.builder
                     .build_store(field_ptr, val)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Optional(_) => {
+                let optional_ptr = self
+                    .generate_runtime_call("mux_optional_none", &[])
+                    .expect("mux_optional_none should always return a value");
+                self.builder
+                    .build_store(field_ptr, optional_ptr)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Result(ok_type, _) => {
+                let ok_value = self.create_default_value_ptr(&ok_type)?;
+                let result_ptr = self
+                    .generate_runtime_call("mux_result_ok_value", &[ok_value.into()])
+                    .expect("mux_result_ok_value should always return a value");
+                self.builder
+                    .build_store(field_ptr, result_ptr)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Tuple(left_type, right_type) => {
+                let tuple_value = self.generate_tuple_constructor(&left_type, &right_type)?;
+                self.builder
+                    .build_store(field_ptr, tuple_value)
                     .map_err(|e| e.to_string())?;
             }
             Type::Named(class_name, type_args) => {
@@ -701,11 +724,7 @@ impl<'a> CodeGenerator<'a> {
         Ok(obj_value_ptr.into())
     }
 
-    pub(super) fn generate_method_call_on_self(
-        &mut self,
-        method_name: &str,
-        args: &[ExpressionNode],
-    ) -> Result<BasicValueEnum<'a>, String> {
+    fn get_self_class_info(&mut self) -> Result<(PointerValue<'a>, String, Vec<Type>), String> {
         // get self pointer
         let (self_ptr, _, _) = self
             .variables
@@ -713,21 +732,51 @@ impl<'a> CodeGenerator<'a> {
             .or_else(|| self.global_variables.get("self"))
             .ok_or("Self not found in method call")?;
 
-        // get class name from self type
-        let class_name = if let Some((_, _, Type::Named(class_name, _))) = self
+        // get class name and type args from self type
+        if let Some((_, _, Type::Named(class_name, type_args))) = self
             .variables
             .get("self")
             .or_else(|| self.global_variables.get("self"))
         {
-            class_name
+            Ok((*self_ptr, class_name.clone(), type_args.clone()))
         } else {
-            return Err("Self type not found".to_string());
-        };
+            Err("Self type not found".to_string())
+        }
+    }
 
-        // build method function name: {class_name}.{method_name}
-        let method_func_name = format!("{}.{}", class_name, method_name);
+    fn resolve_method_function_name(
+        &mut self,
+        class_name: &str,
+        type_args: &[Type],
+        method_name: &str,
+    ) -> Result<String, String> {
+        // resolve method function name, preferring specialized names in generic contexts
+        let mut method_func_name =
+            self.create_specialized_method_name(class_name, type_args, method_name);
+        if !self.functions.contains_key(&method_func_name) {
+            if type_args.is_empty()
+                && let Some(current_fn) = &self.current_function_name
+                && let Some((current_class_part, _)) = current_fn.split_once('.')
+                && current_class_part.starts_with(&format!("{}$", class_name))
+            {
+                let contextual_name = format!("{}.{}", current_class_part, method_name);
+                if self.functions.contains_key(&contextual_name) {
+                    method_func_name = contextual_name;
+                } else {
+                    method_func_name = format!("{}.{}", class_name, method_name);
+                }
+            } else {
+                method_func_name = format!("{}.{}", class_name, method_name);
+            }
+        }
+        Ok(method_func_name)
+    }
 
-        // check if method is static
+    fn check_method_is_static(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Result<(), String> {
         if let Some(class) = self.analyzer.symbol_table().lookup(class_name)
             && let Some(method) = class.methods.get(method_name)
             && method.is_static
@@ -737,6 +786,47 @@ impl<'a> CodeGenerator<'a> {
                 method_name
             ));
         }
+        Ok(())
+    }
+
+    fn build_call_arguments_for_method(
+        &mut self,
+        self_ptr: PointerValue<'a>,
+        args: &[ExpressionNode],
+        is_specialized: bool,
+    ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
+        // load the actual object pointer from the alloca first
+        let self_loaded = self
+            .builder
+            .build_load(
+                self.context.ptr_type(AddressSpace::default()),
+                self_ptr,
+                "load_self_for_method_call",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut call_args: Vec<BasicMetadataValueEnum> = vec![self_loaded.into()];
+        for arg in args {
+            let arg_val = self.generate_expression(arg)?;
+            if is_specialized {
+                call_args.push(self.box_value(arg_val).into());
+            } else {
+                call_args.push(arg_val.into());
+            }
+        }
+        Ok(call_args)
+    }
+
+    pub(super) fn generate_method_call_on_self(
+        &mut self,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let (self_ptr, class_name, type_args) = self.get_self_class_info()?;
+
+        let method_func_name =
+            self.resolve_method_function_name(&class_name, &type_args, method_name)?;
+
+        self.check_method_is_static(&class_name, method_name)?;
 
         // get the function
         let func_val = *self
@@ -744,20 +834,8 @@ impl<'a> CodeGenerator<'a> {
             .get(&method_func_name)
             .ok_or(format!("Method {} not found", method_func_name))?;
 
-        // build call arguments: self + args
-        // load the actual object pointer from the alloca first
-        let self_loaded = self
-            .builder
-            .build_load(
-                self.context.ptr_type(AddressSpace::default()),
-                *self_ptr,
-                "load_self_for_method_call",
-            )
-            .map_err(|e| e.to_string())?;
-        let mut call_args = vec![self_loaded.into()];
-        for arg in args {
-            call_args.push(self.generate_expression(arg)?.into());
-        }
+        let is_specialized = method_func_name.contains('$');
+        let call_args = self.build_call_arguments_for_method(self_ptr, args, is_specialized)?;
 
         // call the method
         let call = self
@@ -765,9 +843,13 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func_val, &call_args, &format!("call_{}", method_name))
             .map_err(|e| e.to_string())?;
 
-        Ok(call
-            .try_as_basic_value()
-            .left()
-            .expect("method call should return a basic value"))
+        if let Some(value) = call.try_as_basic_value().left() {
+            Ok(value)
+        } else {
+            // Void-returning self-method calls can appear as expression statements.
+            // Return a dummy value for the expression path; callers that require a
+            // real value should have been rejected by semantic analysis.
+            Ok(self.context.i64_type().const_zero().into())
+        }
     }
 }

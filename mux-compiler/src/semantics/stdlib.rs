@@ -715,7 +715,7 @@ static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
 
 /// List of all available stdlib modules for wildcard imports
 pub const STDLIB_MODULES: &[&str] = &[
-    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "data", "sql",
+    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "data", "dsa", "sql",
 ];
 
 lazy_static! {
