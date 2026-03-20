@@ -1,7 +1,9 @@
 pub mod ast;
 pub mod codegen;
 pub mod diagnostic;
-pub mod embedded_std;
+mod embedded_std {
+    include!(concat!(env!("OUT_DIR"), "/embedded_std.rs"));
+}
 pub mod lexer;
 pub mod module_resolver;
 pub mod parser;

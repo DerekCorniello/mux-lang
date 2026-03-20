@@ -2,7 +2,9 @@ mod ast;
 mod build_config;
 mod codegen;
 mod diagnostic;
-mod embedded_std;
+mod embedded_std {
+    include!(concat!(env!("OUT_DIR"), "/embedded_std.rs"));
+}
 mod lexer;
 mod module_resolver;
 mod parser;
