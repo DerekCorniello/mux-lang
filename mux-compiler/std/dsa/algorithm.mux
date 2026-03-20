@@ -3,19 +3,54 @@ import std.dsa.collection.Collection
 func sort<T is Comparable>(list<T> items) returns list<T> {
     auto out = items
     int n = out.size()
-    int i = 0
 
-    while i < n {
-        int j = 0
-        while j + 1 < n - i {
-            if out[j + 1] < out[j] {
-                auto tmp = out[j]
-                out[j] = out[j + 1]
-                out[j + 1] = tmp
+    if n <= 1 {
+        return out
+    }
+
+    int low = 0
+    int high = n - 1
+
+    list<int> stack = []
+    stack.push_back(low)
+    stack.push_back(high)
+
+    while stack.size() > 0 {
+        int h = stack[stack.size() - 1]
+        stack.pop_back()
+        int l = stack[stack.size() - 1]
+        stack.pop_back()
+
+        if l < h {
+            auto pivot = out[h]
+            int i = l - 1
+
+            int j = l
+            while j < h {
+                if out[j] <= pivot {
+                    i = i + 1
+                    auto tmp = out[i]
+                    out[i] = out[j]
+                    out[j] = tmp
+                }
+                j = j + 1
             }
-            j = j + 1
+
+            auto tmp = out[i + 1]
+            out[i + 1] = out[h]
+            out[h] = tmp
+
+            int p = i + 1
+
+            if p - 1 > l {
+                stack.push_back(l)
+                stack.push_back(p - 1)
+            }
+            if p + 1 < h {
+                stack.push_back(p + 1)
+                stack.push_back(h)
+            }
         }
-        i = i + 1
     }
 
     return out
