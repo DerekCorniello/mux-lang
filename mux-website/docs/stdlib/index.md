@@ -19,7 +19,7 @@ func main() returns void {
 You can import stdlib in multiple forms:
 
 ```mux title="stdlib_import_forms.mux"
-import std                      // namespace import: std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net, std.env, std.data, std.sql
+import std                      // namespace import: std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net, std.env, std.data, std.dsa, std.sql
 import std.math                 // single module namespace
 import std.(math, random as r)  // qualified and selective imports with aliasing
 import std.*                    // flat import of all stdlib items
@@ -40,6 +40,7 @@ import std.*                    // flat import of all stdlib items
 | [random](./random) | Pseudorandom number generation | Available |
 | [sync](./sync) | Threading, locks, condition variables, and sleep helpers | Available |
 | [datetime](./datetime) | Time retrieval, formatting, and sleep helpers | Available |
+| [dsa](./dsa) | Data structures and algorithms (stack, queue, heap, bintree, graph) | Available |
 
 ## Module Stability
 
@@ -50,7 +51,6 @@ The standard library is actively being developed. While the core functionality i
 Planned additions include:
 
 - `string` - String manipulation utilities
-- `collections` - Additional collection types and algorithms
 
 ## Contributing
 

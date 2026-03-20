@@ -2,8 +2,6 @@
 source: mux-compiler/tests/executable_integration.rs
 expression: normalized
 ---
-embedded std test
-5
 === STACK TESTS ===
 stack is_empty: true
 stack len: 4

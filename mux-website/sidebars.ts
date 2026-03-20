@@ -71,6 +71,7 @@ const sidebars: SidebarsConfig = {
         'stdlib/sql',
         'stdlib/random',
         'stdlib/datetime',
+        'stdlib/dsa',
       ],
     },
     {

@@ -1,9 +1,5 @@
-import std.test
 import std.dsa.*
 import std.dsa.collection.Collection
-
-print(test.ping())
-print(test.add(2, 3).to_string())
 
 print("=== STACK TESTS ===")
 auto s = stack.Stack<int>.new()
