@@ -54,7 +54,8 @@ graph neighbors of B: [D]
 graph neighbors of Z: []
 graph bfs from A: [A, B, C, D, E]
 graph bfs from D: [D, E]
-graph to_list: [A, B, C, D, E, X]
+graph to_list: [X, A, B, C, D, E]
+graph to_list deterministic: true
 graph len after clear: 0
 graph is_empty after clear: true
 === ALGORITHM TESTS ===

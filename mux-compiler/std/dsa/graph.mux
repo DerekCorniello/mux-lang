@@ -2,6 +2,8 @@ import std.dsa.collection.Collection
 
 class Graph<T is Hashable & Stringable> is Collection<T> {
     map<T, list<T> > adjacency
+    // Stores vertices in first-seen order for deterministic to_list output.
+    list<T> vertices
 
     func len() returns int {
         return self.adjacency.size()
@@ -12,23 +14,29 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
     }
 
     func clear() returns void {
-        auto keys = self.adjacency.get_keys()
+        auto keys = self.vertices
         int i = 0
         while i < keys.size() {
             auto key = keys[i]
             self.adjacency.remove(key)
             i = i + 1
         }
+
+        while !self.vertices.is_empty() {
+            self.vertices.pop_back()
+        }
     }
 
     func to_list() returns list<T> {
-        return self.adjacency.get_keys()
+        // Deterministic contract: returns vertices in insertion order.
+        return self.vertices
     }
 
     func add_vertex(T value) returns void {
         if !self.adjacency.contains(value) {
             list<T> empty = []
             self.adjacency.put(value, empty)
+            self.vertices.push_back(value)
         }
     }
 
