@@ -47,19 +47,17 @@ impl ModuleResolver {
         self.resolve_embedded_key(module_path).is_some()
     }
 
-    // Resolve import path relative to current file (for relative imports)
-    pub fn resolve_import_path(
+    fn resolve_embedded_module_if_any(
         &mut self,
         module_path: &str,
-        current_file: Option<&Path>,
         files: &mut Files,
-    ) -> Result<Vec<AstNode>, String> {
-        if self.resolve_embedded_key(module_path).is_some() {
-            let embedded_key = self.resolve_embedded_key(module_path).unwrap().to_string();
+    ) -> Result<Option<Vec<AstNode>>, String> {
+        if let Some(embedded_key) = self.resolve_embedded_key(module_path) {
+            let embedded_key = embedded_key.to_string();
             let cache_key = self.normalize_module_key(module_path).to_string();
 
             if let Some(nodes) = self.compiled_modules.get(&cache_key) {
-                return Ok(nodes.clone());
+                return Ok(Some(nodes.clone()));
             }
 
             if self.being_imported.contains(&cache_key) {
@@ -81,11 +79,17 @@ impl ModuleResolver {
             let virtual_path =
                 PathBuf::from(format!("<embedded>/{}.mux", embedded_key.replace('.', "/")));
             let nodes = self.parse_module(&virtual_path, files, Some(source.as_str()))?;
-            return Ok(nodes);
+            return Ok(Some(nodes));
         }
+        Ok(None)
+    }
 
-        // Determine the actual file path based on import type
-        let file_path = if module_path.starts_with("./") || module_path.starts_with("../") {
+    fn determine_file_path(
+        &self,
+        module_path: &str,
+        current_file: Option<&Path>,
+    ) -> Result<PathBuf, String> {
+        if module_path.starts_with("./") || module_path.starts_with("../") {
             // Relative import - resolve relative to current file
             let current_dir = current_file
                 .and_then(|p| p.parent())
@@ -103,16 +107,30 @@ impl ModuleResolver {
                 }
             }
             path.set_extension("mux");
-            path
+            Ok(path)
         } else if module_path.starts_with('/') {
             // Absolute import
             let mut path = PathBuf::from(module_path);
             path.set_extension("mux");
-            path
+            Ok(path)
         } else {
             // Project-relative import (utils.logger)
-            self.module_path_to_file(module_path)?
-        };
+            self.module_path_to_file(module_path)
+        }
+    }
+
+    // Resolve import path relative to current file (for relative imports)
+    pub fn resolve_import_path(
+        &mut self,
+        module_path: &str,
+        current_file: Option<&Path>,
+        files: &mut Files,
+    ) -> Result<Vec<AstNode>, String> {
+        if let Some(nodes) = self.resolve_embedded_module_if_any(module_path, files)? {
+            return Ok(nodes);
+        }
+
+        let file_path = self.determine_file_path(module_path, current_file)?;
 
         // Canonicalize for cache key
         let canonical_path = file_path

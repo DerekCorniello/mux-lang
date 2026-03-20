@@ -212,70 +212,9 @@ impl<'a> CodeGenerator<'a> {
             .cloned()
             .ok_or(format!("Generic function {} not found", func_name))?;
 
-        // infer concrete types by matching function signature against arguments
-        let mut type_map = std::collections::HashMap::new();
-
-        // for each parameter in the function signature, match against the corresponding argument
-        for (param_idx, param) in func_node.params.iter().enumerate() {
-            if param_idx >= args.len() {
-                break;
-            }
-
-            let arg_type = self
-                .resolve_expression_type_with_fallback(&args[param_idx])
-                .map_err(|e| format!("Failed to get argument type: {}", e))?;
-
-            // recursively match the parameter type against the argument type to infer generic parameters
-            self.infer_types_from_signature(&param.type_, &arg_type, &mut type_map)?;
-        }
-        // Infer missing type params from already-inferred params' bounds
-        infer_missing_type_params_from_bounds(&func_node.type_params, &mut type_map);
-
-        // convert to concrete types list in the order of type parameters
-        let mut concrete_types = Vec::new();
-        for (type_param_name, _) in &func_node.type_params {
-            if let Some(concrete_type) = type_map.get(type_param_name) {
-                concrete_types.push(concrete_type.clone());
-                continue;
-            }
-
-            // If a type parameter was not directly inferred from arguments, try to infer it
-            // from already-inferred parameters via their trait bound type arguments.
-            // Example: in `max<T, E is Collection<T>>(E collection)`, inferring `E = Stack<int>`
-            // lets us infer `T = int`.
-            let inferred_from_bounds: Option<Type> = None;
-
-            if let Some(concrete_type) = inferred_from_bounds {
-                concrete_types.push(concrete_type);
-            } else if let Some(context) = &self.generic_context {
-                if let Some(concrete_type) = context.type_params.get(type_param_name) {
-                    concrete_types.push(concrete_type.clone());
-                    continue;
-                }
-                return Err(format!(
-                    "Could not infer concrete type for generic parameter {} in function {}",
-                    type_param_name, func_name
-                ));
-            } else {
-                return Err(format!(
-                    "Could not infer concrete type for generic parameter {} in function {}",
-                    type_param_name, func_name
-                ));
-            }
-        }
-
-        // create instantiation key
-        let type_names: Vec<String> = concrete_types
-            .iter()
-            .map(|t| self.type_to_string(t))
-            .collect();
-        let instance_name = format!("{}_{}", func_name, type_names.join("_"));
-
-        // check if already instantiated
-        if self.module.get_function(&instance_name).is_none() {
-            // instantiate the generic function
-            self.instantiate_generic_function(func_name, &concrete_types, &instance_name)?;
-        }
+        let concrete_types = self.infer_concrete_types_for_generic_function(&func_node, args)?;
+        let instance_name =
+            self.ensure_generic_function_instantiated(func_name, &concrete_types)?;
 
         // call the instantiated function
         let func = self
@@ -714,5 +653,83 @@ impl<'a> CodeGenerator<'a> {
             }
         }
         Ok(())
+    }
+
+    fn infer_concrete_types_for_generic_function(
+        &mut self,
+        func_node: &crate::ast::FunctionNode,
+        args: &[ExpressionNode],
+    ) -> Result<Vec<Type>, String> {
+        let mut type_map = std::collections::HashMap::new();
+
+        // for each parameter in the function signature, match against the corresponding argument
+        for (param_idx, param) in func_node.params.iter().enumerate() {
+            if param_idx >= args.len() {
+                break;
+            }
+
+            let arg_type = self
+                .resolve_expression_type_with_fallback(&args[param_idx])
+                .map_err(|e| format!("Failed to get argument type: {}", e))?;
+
+            // recursively match the parameter type against the argument type to infer generic parameters
+            self.infer_types_from_signature(&param.type_, &arg_type, &mut type_map)?;
+        }
+        // Infer missing type params from already-inferred params' bounds
+        infer_missing_type_params_from_bounds(&func_node.type_params, &mut type_map);
+
+        // convert to concrete types list in the order of type parameters
+        let mut concrete_types = Vec::new();
+        for (type_param_name, _) in &func_node.type_params {
+            if let Some(concrete_type) = type_map.get(type_param_name) {
+                concrete_types.push(concrete_type.clone());
+                continue;
+            }
+
+            // If a type parameter was not directly inferred from arguments, try to infer it
+            // from already-inferred parameters via their trait bound type arguments.
+            // Example: in `max<T, E is Collection<T>>(E collection)`, inferring `E = Stack<int>`
+            // lets us infer `T = int`.
+            let inferred_from_bounds: Option<Type> = None;
+
+            if let Some(concrete_type) = inferred_from_bounds {
+                concrete_types.push(concrete_type);
+            } else if let Some(context) = &self.generic_context {
+                if let Some(concrete_type) = context.type_params.get(type_param_name) {
+                    concrete_types.push(concrete_type.clone());
+                    continue;
+                }
+                return Err(format!(
+                    "Could not infer concrete type for generic parameter {} in function {}",
+                    type_param_name, func_node.name
+                ));
+            } else {
+                return Err(format!(
+                    "Could not infer concrete type for generic parameter {} in function {}",
+                    type_param_name, func_node.name
+                ));
+            }
+        }
+        Ok(concrete_types)
+    }
+
+    fn ensure_generic_function_instantiated(
+        &mut self,
+        func_name: &str,
+        concrete_types: &[Type],
+    ) -> Result<String, String> {
+        // create instantiation key
+        let type_names: Vec<String> = concrete_types
+            .iter()
+            .map(|t| self.type_to_string(t))
+            .collect();
+        let instance_name = format!("{}_{}", func_name, type_names.join("_"));
+
+        // check if already instantiated
+        if self.module.get_function(&instance_name).is_none() {
+            // instantiate the generic function
+            self.instantiate_generic_function(func_name, concrete_types, &instance_name)?;
+        }
+        Ok(instance_name)
     }
 }

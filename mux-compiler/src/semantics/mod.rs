@@ -19,6 +19,7 @@ use crate::ast::*;
 use crate::diagnostic::Files;
 use crate::lexer::Span;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 type GenericBound = (String, Vec<Type>);
@@ -1818,68 +1819,96 @@ impl SemanticAnalyzer {
     ) -> bool {
         match type_ {
             Type::Named(name, _) => {
-                if let Some(symbol) = self.symbol_table.lookup(name) {
-                    if let Some((stored_args, _)) = symbol.interfaces.get(interface_name) {
-                        if interface_args.is_empty() {
-                            return true;
-                        }
-                        // Verify the interface exists and arity matches
-                        if let Some(interface_symbol) = self.symbol_table.lookup(interface_name)
-                            && interface_symbol.type_params.len() != interface_args.len()
-                        {
-                            return false;
-                        }
-                        // Compare stored concrete type arguments with provided interface_args
-                        stored_args == interface_args
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
+                self.type_implements_interface_with_named(name, interface_name, interface_args)
             }
-            Type::Primitive(prim) => match prim {
-                PrimitiveType::Str => {
-                    interface_name == "Stringable"
-                        || interface_name == "Equatable"
-                        || interface_name == "Comparable"
-                        || interface_name == "Hashable"
-                        || interface_name == "Error"
-                }
-                PrimitiveType::Int => {
-                    matches!(
-                        interface_name,
-                        "Stringable" | "Equatable" | "Comparable" | "Hashable"
-                    )
-                }
-                PrimitiveType::Float => {
-                    matches!(
-                        interface_name,
-                        "Stringable" | "Equatable" | "Comparable" | "Hashable"
-                    )
-                }
-                PrimitiveType::Bool => {
-                    matches!(interface_name, "Stringable" | "Equatable" | "Hashable")
-                }
-                PrimitiveType::Char => {
-                    matches!(
-                        interface_name,
-                        "Stringable" | "Equatable" | "Comparable" | "Hashable"
-                    )
-                }
-                _ => false,
-            },
+            Type::Primitive(prim) => {
+                self.type_implements_interface_with_primitive(prim, interface_name)
+            }
             Type::Variable(var) | Type::Generic(var) => {
-                if let Some(bounds) = self.current_bounds.get(var) {
-                    bounds.iter().any(|(bound_name, bound_args)| {
-                        bound_name == interface_name
-                            && (interface_args.is_empty() || bound_args == interface_args)
-                    })
-                } else {
-                    false
-                }
+                self.type_implements_interface_with_variable(var, interface_name, interface_args)
             }
             _ => false,
+        }
+    }
+
+    fn type_implements_interface_with_named(
+        &self,
+        name: &str,
+        interface_name: &str,
+        interface_args: &[Type],
+    ) -> bool {
+        if let Some(symbol) = self.symbol_table.lookup(name) {
+            if let Some((stored_args, _)) = symbol.interfaces.get(interface_name) {
+                if interface_args.is_empty() {
+                    return true;
+                }
+                // Verify the interface exists and arity matches
+                if let Some(interface_symbol) = self.symbol_table.lookup(interface_name)
+                    && interface_symbol.type_params.len() != interface_args.len()
+                {
+                    return false;
+                }
+                // Compare stored concrete type arguments with provided interface_args
+                stored_args == interface_args
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn type_implements_interface_with_primitive(
+        &self,
+        prim: &PrimitiveType,
+        interface_name: &str,
+    ) -> bool {
+        match prim {
+            PrimitiveType::Str => {
+                interface_name == "Stringable"
+                    || interface_name == "Equatable"
+                    || interface_name == "Comparable"
+                    || interface_name == "Hashable"
+                    || interface_name == "Error"
+            }
+            PrimitiveType::Int => {
+                matches!(
+                    interface_name,
+                    "Stringable" | "Equatable" | "Comparable" | "Hashable"
+                )
+            }
+            PrimitiveType::Float => {
+                matches!(
+                    interface_name,
+                    "Stringable" | "Equatable" | "Comparable" | "Hashable"
+                )
+            }
+            PrimitiveType::Bool => {
+                matches!(interface_name, "Stringable" | "Equatable" | "Hashable")
+            }
+            PrimitiveType::Char => {
+                matches!(
+                    interface_name,
+                    "Stringable" | "Equatable" | "Comparable" | "Hashable"
+                )
+            }
+            _ => false,
+        }
+    }
+
+    fn type_implements_interface_with_variable(
+        &self,
+        var: &str,
+        interface_name: &str,
+        interface_args: &[Type],
+    ) -> bool {
+        if let Some(bounds) = self.current_bounds.get(var) {
+            bounds.iter().any(|(bound_name, bound_args)| {
+                bound_name == interface_name
+                    && (interface_args.is_empty() || bound_args == interface_args)
+            })
+        } else {
+            false
         }
     }
 
@@ -3445,8 +3474,6 @@ impl SemanticAnalyzer {
                 return Ok(());
             }
             StatementKind::Import { module_path, spec } => {
-                use crate::ast::ImportSpec;
-
                 // Handle std library specially
                 if module_path == "std" || module_path.starts_with("std.") {
                     self.handle_std_import(module_path, spec, stmt.span, files)?;
@@ -4598,6 +4625,112 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    fn analyze_imported_module(
+        &mut self,
+        module_nodes: &[AstNode],
+        module_path: &str,
+        resolver: &Rc<RefCell<crate::module_resolver::ModuleResolver>>,
+        files: &mut Files,
+        span: Span,
+    ) -> Result<HashMap<String, Symbol>, SemanticError> {
+        let mut module_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+        module_analyzer.set_current_file(std::path::PathBuf::from(
+            module_path.replace('.', "/") + ".mux",
+        ));
+        let errors = module_analyzer.analyze(module_nodes, Some(files));
+        if !errors.is_empty() {
+            resolver.borrow_mut().finish_import(module_path);
+            let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+            return Err(SemanticError::with_help(
+                format!("Errors in imported module '{}'", module_path),
+                span,
+                format!(
+                    "Fix the following errors in '{}':\n  {}",
+                    module_path,
+                    error_messages.join("\n  ")
+                ),
+            ));
+        }
+        Ok(module_analyzer.symbol_table.all_symbols.clone())
+    }
+
+    fn mangle_and_import_module_symbols(
+        &mut self,
+        module_symbols: &HashMap<String, Symbol>,
+        module_path: &str,
+    ) {
+        let module_name_for_mangling = Self::sanitize_module_path(module_path);
+        for (name, symbol) in module_symbols {
+            let name_str = name.as_str();
+            let is_unmangled_builtin_function = matches!(symbol.kind, SymbolKind::Function)
+                && (name_str.starts_with("print")
+                    || name_str.starts_with("read_line")
+                    || name_str.starts_with("range")
+                    || name_str.starts_with("some")
+                    || name_str.starts_with("none")
+                    || name_str.starts_with("ok")
+                    || name_str.starts_with("err"));
+
+            if !is_unmangled_builtin_function && !self.symbol_table.all_symbols.contains_key(name) {
+                let mut mangled_symbol = symbol.clone();
+                if matches!(symbol.kind, SymbolKind::Function) {
+                    mangled_symbol.llvm_name =
+                        Some(format!("{}!{}", module_name_for_mangling, name));
+                }
+                self.symbol_table
+                    .all_symbols
+                    .insert(name.clone(), mangled_symbol);
+            }
+        }
+    }
+
+    fn handle_import_spec(
+        &mut self,
+        spec: &crate::ast::ImportSpec,
+        module_symbols: &HashMap<String, Symbol>,
+        module_path: &str,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        match spec {
+            ImportSpec::Module { alias } => {
+                if let Some(namespace) = alias {
+                    self.add_module_namespace(
+                        namespace,
+                        module_symbols.clone(),
+                        module_path,
+                        span,
+                    )?;
+                } else if module_path.contains('.') {
+                    let name = module_path
+                        .split('.')
+                        .next_back()
+                        .expect("module path should include at least one segment");
+                    self.add_module_namespace(name, module_symbols.clone(), module_path, span)?;
+                }
+            }
+            ImportSpec::Item { item, alias } => {
+                let symbol_name = alias.as_ref().unwrap_or(item);
+                self.import_single_symbol(module_symbols, item, symbol_name, module_path, span)?;
+            }
+            ImportSpec::Items { items } => {
+                for (item, alias) in items {
+                    let symbol_name = alias.as_ref().unwrap_or(item);
+                    self.import_single_symbol(
+                        module_symbols,
+                        item,
+                        symbol_name,
+                        module_path,
+                        span,
+                    )?;
+                }
+            }
+            ImportSpec::Wildcard => {
+                self.import_all_symbols(module_symbols, module_path, span)?;
+            }
+        }
+        Ok(())
+    }
+
     fn import_module_from_resolver(
         &mut self,
         module_path: &str,
@@ -4605,8 +4738,6 @@ impl SemanticAnalyzer {
         span: Span,
         files: &mut Files,
     ) -> Result<(), SemanticError> {
-        use crate::ast::ImportSpec;
-
         let resolver = self
             .module_resolver
             .clone()
@@ -4641,86 +4772,11 @@ impl SemanticAnalyzer {
                 )
             })?;
 
-        let mut module_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
-        module_analyzer.set_current_file(std::path::PathBuf::from(
-            module_path.replace('.', "/") + ".mux",
-        ));
-        let errors = module_analyzer.analyze(&module_nodes, Some(files));
-        if !errors.is_empty() {
-            resolver.borrow_mut().finish_import(module_path);
-            let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
-            return Err(SemanticError::with_help(
-                format!("Errors in imported module '{}'", module_path),
-                span,
-                format!(
-                    "Fix the following errors in '{}':\n  {}",
-                    module_path,
-                    error_messages.join("\n  ")
-                ),
-            ));
-        }
+        let module_symbols =
+            self.analyze_imported_module(&module_nodes, module_path, &resolver, files, span)?;
+        self.mangle_and_import_module_symbols(&module_symbols, module_path);
 
-        let module_symbols = module_analyzer.symbol_table.all_symbols.clone();
-        let module_name_for_mangling = Self::sanitize_module_path(module_path);
-        for (name, symbol) in &module_symbols {
-            let is_unmangled_builtin_function = matches!(symbol.kind, SymbolKind::Function)
-                && (name.starts_with("print")
-                    || name.starts_with("read_line")
-                    || name.starts_with("range")
-                    || name.starts_with("some")
-                    || name.starts_with("none")
-                    || name.starts_with("ok")
-                    || name.starts_with("err"));
-
-            if !is_unmangled_builtin_function && !self.symbol_table.all_symbols.contains_key(name) {
-                let mut mangled_symbol = symbol.clone();
-                if matches!(symbol.kind, SymbolKind::Function) {
-                    mangled_symbol.llvm_name =
-                        Some(format!("{}!{}", module_name_for_mangling, name));
-                }
-                self.symbol_table
-                    .all_symbols
-                    .insert(name.clone(), mangled_symbol);
-            }
-        }
-
-        match spec {
-            ImportSpec::Module { alias } => {
-                if let Some(namespace) = alias {
-                    self.add_module_namespace(
-                        namespace,
-                        module_symbols.clone(),
-                        module_path,
-                        span,
-                    )?;
-                } else if module_path.contains('.') {
-                    let name = module_path
-                        .split('.')
-                        .next_back()
-                        .expect("module path should include at least one segment");
-                    self.add_module_namespace(name, module_symbols.clone(), module_path, span)?;
-                }
-            }
-            ImportSpec::Item { item, alias } => {
-                let symbol_name = alias.as_ref().unwrap_or(item);
-                self.import_single_symbol(&module_symbols, item, symbol_name, module_path, span)?;
-            }
-            ImportSpec::Items { items } => {
-                for (item, alias) in items {
-                    let symbol_name = alias.as_ref().unwrap_or(item);
-                    self.import_single_symbol(
-                        &module_symbols,
-                        item,
-                        symbol_name,
-                        module_path,
-                        span,
-                    )?;
-                }
-            }
-            ImportSpec::Wildcard => {
-                self.import_all_symbols(&module_symbols, module_path, span)?;
-            }
-        }
+        self.handle_import_spec(spec, &module_symbols, module_path, span)?;
 
         resolver
             .borrow_mut()
@@ -5128,18 +5184,47 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn handle_std_import(
+    fn handle_std_import_with_std_prefix(
         &mut self,
-        module_path: &str,
         spec: &crate::ast::ImportSpec,
         span: Span,
         files: Option<&mut Files>,
     ) -> Result<(), SemanticError> {
-        if module_path == "std" {
-            use crate::ast::ImportSpec;
-            let mut files = files;
-            match spec {
-                ImportSpec::Item { item, alias } => {
+        use crate::ast::ImportSpec;
+        let mut files = files;
+        match spec {
+            ImportSpec::Item { item, alias } => {
+                let full_module_path = format!("std.{}", item);
+                if let Some(resolver) = &self.module_resolver {
+                    let (has_file, has_directory) =
+                        resolver.borrow().check_module_path(&full_module_path);
+                    if has_file || has_directory {
+                        let files = files.as_deref_mut().ok_or_else(|| {
+                            SemanticError::new(
+                                "Files registry must be available for std imports",
+                                span,
+                            )
+                        })?;
+                        return self.import_module_from_resolver(
+                            &full_module_path,
+                            &ImportSpec::Module {
+                                alias: alias.clone(),
+                            },
+                            span,
+                            files,
+                        );
+                    }
+                }
+                self.import_stdlib_module(
+                    item,
+                    &ImportSpec::Module {
+                        alias: alias.clone(),
+                    },
+                    span,
+                )
+            }
+            ImportSpec::Items { items } => {
+                for (item, alias) in items {
                     let full_module_path = format!("std.{}", item);
                     if let Some(resolver) = &self.module_resolver {
                         let (has_file, has_directory) =
@@ -5151,60 +5236,40 @@ impl SemanticAnalyzer {
                                     span,
                                 )
                             })?;
-                            return self.import_module_from_resolver(
+                            self.import_module_from_resolver(
                                 &full_module_path,
                                 &ImportSpec::Module {
                                     alias: alias.clone(),
                                 },
                                 span,
                                 files,
-                            );
+                            )?;
+                            continue;
                         }
                     }
-                    return self.import_stdlib_module(
+                    self.import_stdlib_module(
                         item,
                         &ImportSpec::Module {
                             alias: alias.clone(),
                         },
                         span,
-                    );
+                    )?;
                 }
-                ImportSpec::Items { items } => {
-                    for (item, alias) in items {
-                        let full_module_path = format!("std.{}", item);
-                        if let Some(resolver) = &self.module_resolver {
-                            let (has_file, has_directory) =
-                                resolver.borrow().check_module_path(&full_module_path);
-                            if has_file || has_directory {
-                                let files = files.as_deref_mut().ok_or_else(|| {
-                                    SemanticError::new(
-                                        "Files registry must be available for std imports",
-                                        span,
-                                    )
-                                })?;
-                                self.import_module_from_resolver(
-                                    &full_module_path,
-                                    &ImportSpec::Module {
-                                        alias: alias.clone(),
-                                    },
-                                    span,
-                                    files,
-                                )?;
-                                continue;
-                            }
-                        }
-                        self.import_stdlib_module(
-                            item,
-                            &ImportSpec::Module {
-                                alias: alias.clone(),
-                            },
-                            span,
-                        )?;
-                    }
-                    return Ok(());
-                }
-                _ => return self.handle_std_import_all(spec, span),
+                Ok(())
             }
+            _ => self.handle_std_import_all(spec, span),
+        }
+    }
+
+    fn handle_std_import(
+        &mut self,
+        module_path: &str,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+        files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        if module_path == "std" {
+            return self.handle_std_import_with_std_prefix(spec, span, files);
         }
 
         if let Some(resolver) = &self.module_resolver {
@@ -5811,53 +5876,50 @@ pub(crate) fn infer_missing_type_params_from_bounds(
             continue;
         }
 
-        let mut inferred: Option<Type> = None;
-
-        for (owner_param_name, owner_bounds) in type_params {
-            let Some(owner_concrete_type) = substitutions.get(owner_param_name) else {
-                continue;
-            };
-
-            let owner_type_args = match owner_concrete_type {
-                Type::Named(_, args) => args,
-                Type::Reference(inner) => {
-                    if let Type::Named(_, args) = inner.as_ref() {
-                        args
-                    } else {
-                        continue;
-                    }
-                }
-                _ => continue,
-            };
-
-            if owner_type_args.is_empty() {
-                continue;
-            }
-
-            for bound in owner_bounds {
-                for (idx, bound_type_arg) in bound.type_params.iter().enumerate() {
-                    if let TypeKind::Named(bound_name, _) = &bound_type_arg.kind
-                        && bound_name == missing_param_name
-                        && let Some(concrete_arg) = owner_type_args.get(idx)
-                    {
-                        inferred = Some(concrete_arg.clone());
-                        break;
-                    }
-                }
-                if inferred.is_some() {
-                    break;
-                }
-            }
-
-            if inferred.is_some() {
-                break;
-            }
-        }
-
-        if let Some(inferred_type) = inferred {
+        if let Some(inferred_type) =
+            infer_missing_param_from_bounds(missing_param_name, type_params, substitutions)
+        {
             substitutions.insert(missing_param_name.clone(), inferred_type);
         }
     }
+}
+
+fn infer_missing_param_from_bounds(
+    missing_param_name: &str,
+    type_params: &[(String, Vec<crate::ast::TraitBound>)],
+    substitutions: &std::collections::HashMap<String, Type>,
+) -> Option<Type> {
+    for (owner_param_name, owner_bounds) in type_params {
+        let owner_concrete_type = match substitutions.get(owner_param_name) {
+            Some(t) => t,
+            None => continue,
+        };
+        let owner_type_args = match owner_concrete_type {
+            Type::Named(_, args) => args,
+            Type::Reference(inner) => {
+                if let Type::Named(_, args) = inner.as_ref() {
+                    args
+                } else {
+                    continue;
+                }
+            }
+            _ => continue,
+        };
+        if owner_type_args.is_empty() {
+            continue;
+        }
+        for bound in owner_bounds {
+            for (idx, bound_type_arg) in bound.type_params.iter().enumerate() {
+                if let TypeKind::Named(bound_name, _) = &bound_type_arg.kind
+                    && bound_name == missing_param_name
+                    && let Some(concrete_arg) = owner_type_args.get(idx)
+                {
+                    return Some(concrete_arg.clone());
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Compute the Levenshtein edit distance between two strings.

@@ -7,7 +7,7 @@ use crate::ast::{EnumVariant, ExpressionNode, Field, PrimitiveType, TypeKind};
 use crate::semantics::{GenericContext, MethodSig, Type};
 use inkwell::AddressSpace;
 use inkwell::types::BasicType;
-use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
 use std::collections::HashMap;
 
 impl<'a> CodeGenerator<'a> {
@@ -724,11 +724,7 @@ impl<'a> CodeGenerator<'a> {
         Ok(obj_value_ptr.into())
     }
 
-    pub(super) fn generate_method_call_on_self(
-        &mut self,
-        method_name: &str,
-        args: &[ExpressionNode],
-    ) -> Result<BasicValueEnum<'a>, String> {
+    fn get_self_class_info(&mut self) -> Result<(PointerValue<'a>, String, Vec<Type>), String> {
         // get self pointer
         let (self_ptr, _, _) = self
             .variables
@@ -737,19 +733,26 @@ impl<'a> CodeGenerator<'a> {
             .ok_or("Self not found in method call")?;
 
         // get class name and type args from self type
-        let (class_name, type_args) = if let Some((_, _, Type::Named(class_name, type_args))) = self
+        if let Some((_, _, Type::Named(class_name, type_args))) = self
             .variables
             .get("self")
             .or_else(|| self.global_variables.get("self"))
         {
-            (class_name.clone(), type_args.clone())
+            Ok((*self_ptr, class_name.clone(), type_args.clone()))
         } else {
-            return Err("Self type not found".to_string());
-        };
+            Err("Self type not found".to_string())
+        }
+    }
 
+    fn resolve_method_function_name(
+        &mut self,
+        class_name: &str,
+        type_args: &[Type],
+        method_name: &str,
+    ) -> Result<String, String> {
         // resolve method function name, preferring specialized names in generic contexts
         let mut method_func_name =
-            self.create_specialized_method_name(&class_name, &type_args, method_name);
+            self.create_specialized_method_name(class_name, type_args, method_name);
         if !self.functions.contains_key(&method_func_name) {
             if type_args.is_empty()
                 && let Some(current_fn) = &self.current_function_name
@@ -766,9 +769,15 @@ impl<'a> CodeGenerator<'a> {
                 method_func_name = format!("{}.{}", class_name, method_name);
             }
         }
+        Ok(method_func_name)
+    }
 
-        // check if method is static
-        if let Some(class) = self.analyzer.symbol_table().lookup(&class_name)
+    fn check_method_is_static(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Result<(), String> {
+        if let Some(class) = self.analyzer.symbol_table().lookup(class_name)
             && let Some(method) = class.methods.get(method_name)
             && method.is_static
         {
@@ -777,25 +786,25 @@ impl<'a> CodeGenerator<'a> {
                 method_name
             ));
         }
+        Ok(())
+    }
 
-        // get the function
-        let func_val = *self
-            .functions
-            .get(&method_func_name)
-            .ok_or(format!("Method {} not found", method_func_name))?;
-
-        // build call arguments: self + args
+    fn build_call_arguments_for_method(
+        &mut self,
+        self_ptr: PointerValue<'a>,
+        args: &[ExpressionNode],
+        is_specialized: bool,
+    ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
         // load the actual object pointer from the alloca first
         let self_loaded = self
             .builder
             .build_load(
                 self.context.ptr_type(AddressSpace::default()),
-                *self_ptr,
+                self_ptr,
                 "load_self_for_method_call",
             )
             .map_err(|e| e.to_string())?;
-        let mut call_args = vec![self_loaded.into()];
-        let is_specialized = method_func_name.contains('$');
+        let mut call_args: Vec<BasicMetadataValueEnum> = vec![self_loaded.into()];
         for arg in args {
             let arg_val = self.generate_expression(arg)?;
             if is_specialized {
@@ -804,6 +813,29 @@ impl<'a> CodeGenerator<'a> {
                 call_args.push(arg_val.into());
             }
         }
+        Ok(call_args)
+    }
+
+    pub(super) fn generate_method_call_on_self(
+        &mut self,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let (self_ptr, class_name, type_args) = self.get_self_class_info()?;
+
+        let method_func_name =
+            self.resolve_method_function_name(&class_name, &type_args, method_name)?;
+
+        self.check_method_is_static(&class_name, method_name)?;
+
+        // get the function
+        let func_val = *self
+            .functions
+            .get(&method_func_name)
+            .ok_or(format!("Method {} not found", method_func_name))?;
+
+        let is_specialized = method_func_name.contains('$');
+        let call_args = self.build_call_arguments_for_method(self_ptr, args, is_specialized)?;
 
         // call the method
         let call = self

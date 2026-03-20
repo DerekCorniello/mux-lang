@@ -6,7 +6,7 @@
 //! - Comparison operators (==, !=, <, >, <=, >=)
 //! - The 'in' operator for containment checks
 
-use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::values::{BasicValueEnum, IntValue, PointerValue};
 
 use crate::ast::{BinaryOp, ExpressionKind, ExpressionNode, LiteralNode, PrimitiveType};
 use crate::semantics::Type;
@@ -81,9 +81,13 @@ impl<'a> CodeGenerator<'a> {
             .ok_or("Call returned no value")?;
 
         let result_i32 = result.into_int_value();
+        self.i32_to_bool(result_i32)
+    }
+
+    fn i32_to_bool(&self, int_val: IntValue<'a>) -> Result<BasicValueEnum<'a>, String> {
         let zero = self.context.i32_type().const_zero();
         self.builder
-            .build_int_compare(inkwell::IntPredicate::NE, result_i32, zero, "to_bool")
+            .build_int_compare(inkwell::IntPredicate::NE, int_val, zero, "to_bool")
             .map_err(|e| e.to_string())
             .map(|v| v.into())
     }
@@ -95,47 +99,65 @@ impl<'a> CodeGenerator<'a> {
         expr: &ExpressionNode,
     ) -> Result<Type, String> {
         match &expr.kind {
-            ExpressionKind::Identifier(name) => {
-                if let Some((_, _, ty)) = self
-                    .variables
-                    .get(name)
-                    .or_else(|| self.global_variables.get(name))
-                {
-                    return Ok(ty.clone());
-                }
+            ExpressionKind::Identifier(_) => self.resolve_identifier_type(expr),
+            ExpressionKind::ListAccess { .. } => self.resolve_list_access_type(expr),
+            ExpressionKind::Call { .. } => self.resolve_call_type(expr),
+            ExpressionKind::Binary { .. } => self.resolve_binary_type(expr),
+            _ => self
+                .analyzer
+                .get_expression_type(expr)
+                .map_err(|e| e.to_string()),
+        }
+    }
 
-                if let Ok(ty) = self.analyzer.get_expression_type(expr) {
-                    return Ok(ty);
-                }
+    fn resolve_identifier_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
+        let name = match &expr.kind {
+            ExpressionKind::Identifier(name) => name,
+            _ => return Err("Expected identifier expression".to_string()),
+        };
+        if let Some((_, _, ty)) = self
+            .variables
+            .get(name)
+            .or_else(|| self.global_variables.get(name))
+        {
+            return Ok(ty.clone());
+        }
 
-                if let Some(func_node) = self.function_nodes.get(name) {
-                    let mut param_types = Vec::with_capacity(func_node.params.len());
-                    for param in &func_node.params {
-                        let param_type = self
-                            .analyzer
-                            .resolve_type(&param.type_)
-                            .map_err(|e| e.to_string())?;
-                        param_types.push(param_type);
-                    }
-                    let return_type = self
-                        .analyzer
-                        .resolve_type(&func_node.return_type)
-                        .map_err(|e| e.to_string())?;
-                    return Ok(Type::Function {
-                        params: param_types,
-                        returns: Box::new(return_type),
-                        default_count: 0,
-                    });
-                }
+        if let Ok(ty) = self.analyzer.get_expression_type(expr) {
+            return Ok(ty);
+        }
 
-                if let Some(symbol) = self.analyzer.symbol_table().lookup(name)
-                    && let Some(ty) = &symbol.type_
-                {
-                    return Ok(ty.clone());
-                }
-
-                Err(format!("Undefined variable '{}'", name))
+        if let Some(func_node) = self.function_nodes.get(name) {
+            let mut param_types = Vec::with_capacity(func_node.params.len());
+            for param in &func_node.params {
+                let param_type = self
+                    .analyzer
+                    .resolve_type(&param.type_)
+                    .map_err(|e| e.to_string())?;
+                param_types.push(param_type);
             }
+            let return_type = self
+                .analyzer
+                .resolve_type(&func_node.return_type)
+                .map_err(|e| e.to_string())?;
+            return Ok(Type::Function {
+                params: param_types,
+                returns: Box::new(return_type),
+                default_count: 0,
+            });
+        }
+
+        if let Some(symbol) = self.analyzer.symbol_table().lookup(name)
+            && let Some(ty) = &symbol.type_
+        {
+            return Ok(ty.clone());
+        }
+
+        Err(format!("Undefined variable '{}'", name))
+    }
+
+    fn resolve_list_access_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
+        match &expr.kind {
             ExpressionKind::ListAccess {
                 expr: container,
                 index,
@@ -152,6 +174,12 @@ impl<'a> CodeGenerator<'a> {
                     _ => Err(format!("Cannot index into type: {:?}", container_type)),
                 }
             }
+            _ => Err("Expected list access expression".to_string()),
+        }
+    }
+
+    fn resolve_call_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
+        match &expr.kind {
             ExpressionKind::Call { func, .. } => {
                 if let Ok(ty) = self.analyzer.get_expression_type(expr) {
                     return Ok(ty);
@@ -176,6 +204,12 @@ impl<'a> CodeGenerator<'a> {
                     other => Err(format!("Cannot call non-function type: {:?}", other)),
                 }
             }
+            _ => Err("Expected call expression".to_string()),
+        }
+    }
+
+    fn resolve_binary_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
+        match &expr.kind {
             ExpressionKind::Binary {
                 left, op, right, ..
             } => {
@@ -213,10 +247,7 @@ impl<'a> CodeGenerator<'a> {
                     | BinaryOp::ModuloAssign => Ok(left_type),
                 }
             }
-            _ => self
-                .analyzer
-                .get_expression_type(expr)
-                .map_err(|e| e.to_string()),
+            _ => Err("Expected binary expression".to_string()),
         }
     }
 
