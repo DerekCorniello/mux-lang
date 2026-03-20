@@ -469,58 +469,7 @@ impl SemanticAnalyzer {
             return;
         };
 
-        for (missing_param_name, _) in &func_node.type_params {
-            if substitutions.contains_key(missing_param_name) {
-                continue;
-            }
-
-            let mut inferred: Option<Type> = None;
-
-            for (owner_param_name, owner_bounds) in &func_node.type_params {
-                let Some(owner_concrete_type) = substitutions.get(owner_param_name) else {
-                    continue;
-                };
-
-                let owner_type_args = match owner_concrete_type {
-                    Type::Named(_, args) => args,
-                    Type::Reference(inner) => {
-                        if let Type::Named(_, args) = inner.as_ref() {
-                            args
-                        } else {
-                            continue;
-                        }
-                    }
-                    _ => continue,
-                };
-
-                if owner_type_args.is_empty() {
-                    continue;
-                }
-
-                for bound in owner_bounds {
-                    for (idx, bound_type_arg) in bound.type_params.iter().enumerate() {
-                        if let TypeKind::Named(bound_name, _) = &bound_type_arg.kind
-                            && bound_name == missing_param_name
-                            && let Some(concrete_arg) = owner_type_args.get(idx)
-                        {
-                            inferred = Some(concrete_arg.clone());
-                            break;
-                        }
-                    }
-                    if inferred.is_some() {
-                        break;
-                    }
-                }
-
-                if inferred.is_some() {
-                    break;
-                }
-            }
-
-            if let Some(inferred_type) = inferred {
-                substitutions.insert(missing_param_name.clone(), inferred_type);
-            }
-        }
+        infer_missing_type_params_from_bounds(&func_node.type_params, substitutions);
     }
 
     fn get_builtin_sig(&self, name: &str) -> Option<&BuiltInSig> {
@@ -5841,6 +5790,70 @@ impl SemanticAnalyzer {
             }
         }
         Ok(())
+    }
+}
+
+/// Infer missing type parameters from already-inferred parameters' trait bounds.
+///
+/// This implements the three-level nested loop that scans each missing type parameter's
+/// bounds to see if one of the already-inferred type parameters' bounds contains a
+/// reference to the missing parameter at a specific position, allowing inference of the
+/// concrete type argument at that position.
+pub(crate) fn infer_missing_type_params_from_bounds(
+    type_params: &[(String, Vec<crate::ast::TraitBound>)],
+    substitutions: &mut std::collections::HashMap<String, Type>,
+) {
+    for (missing_param_name, _) in type_params {
+        if substitutions.contains_key(missing_param_name) {
+            continue;
+        }
+
+        let mut inferred: Option<Type> = None;
+
+        for (owner_param_name, owner_bounds) in type_params {
+            let Some(owner_concrete_type) = substitutions.get(owner_param_name) else {
+                continue;
+            };
+
+            let owner_type_args = match owner_concrete_type {
+                Type::Named(_, args) => args,
+                Type::Reference(inner) => {
+                    if let Type::Named(_, args) = inner.as_ref() {
+                        args
+                    } else {
+                        continue;
+                    }
+                }
+                _ => continue,
+            };
+
+            if owner_type_args.is_empty() {
+                continue;
+            }
+
+            for bound in owner_bounds {
+                for (idx, bound_type_arg) in bound.type_params.iter().enumerate() {
+                    if let TypeKind::Named(bound_name, _) = &bound_type_arg.kind
+                        && bound_name == missing_param_name
+                        && let Some(concrete_arg) = owner_type_args.get(idx)
+                    {
+                        inferred = Some(concrete_arg.clone());
+                        break;
+                    }
+                }
+                if inferred.is_some() {
+                    break;
+                }
+            }
+
+            if inferred.is_some() {
+                break;
+            }
+        }
+
+        if let Some(inferred_type) = inferred {
+            substitutions.insert(missing_param_name.clone(), inferred_type);
+        }
     }
 }
 

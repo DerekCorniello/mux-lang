@@ -12,12 +12,11 @@ use crate::ast::{
     TypeNode,
 };
 use crate::lexer::Span;
-use crate::semantics::Type;
+use crate::semantics::{Type, infer_missing_type_params_from_bounds};
 
+use super::ClassTypeParamBounds;
 use super::CodeGenerator;
 use super::GenericContext;
-
-type ClassTypeParamBounds = Vec<(String, Vec<(String, Vec<Type>)>)>;
 
 impl<'a> CodeGenerator<'a> {
     fn lookup_class_symbol(&self, class_name: &str) -> Option<crate::semantics::Symbol> {
@@ -229,6 +228,8 @@ impl<'a> CodeGenerator<'a> {
             // recursively match the parameter type against the argument type to infer generic parameters
             self.infer_types_from_signature(&param.type_, &arg_type, &mut type_map)?;
         }
+        // Infer missing type params from already-inferred params' bounds
+        infer_missing_type_params_from_bounds(&func_node.type_params, &mut type_map);
 
         // convert to concrete types list in the order of type parameters
         let mut concrete_types = Vec::new();
@@ -242,45 +243,7 @@ impl<'a> CodeGenerator<'a> {
             // from already-inferred parameters via their trait bound type arguments.
             // Example: in `max<T, E is Collection<T>>(E collection)`, inferring `E = Stack<int>`
             // lets us infer `T = int`.
-            let mut inferred_from_bounds: Option<Type> = None;
-            for (owner_param_name, owner_bounds) in &func_node.type_params {
-                let Some(owner_concrete_type) = type_map.get(owner_param_name) else {
-                    continue;
-                };
-                let owner_type_args = match owner_concrete_type {
-                    Type::Named(_, args) => args,
-                    Type::Reference(inner) => {
-                        if let Type::Named(_, args) = inner.as_ref() {
-                            args
-                        } else {
-                            continue;
-                        }
-                    }
-                    _ => continue,
-                };
-
-                if owner_type_args.is_empty() {
-                    continue;
-                }
-
-                for bound in owner_bounds {
-                    for (idx, bound_type_arg) in bound.type_params.iter().enumerate() {
-                        if let TypeKind::Named(bound_name, _) = &bound_type_arg.kind
-                            && bound_name == type_param_name
-                            && let Some(concrete_arg) = owner_type_args.get(idx)
-                        {
-                            inferred_from_bounds = Some(concrete_arg.clone());
-                            break;
-                        }
-                    }
-                    if inferred_from_bounds.is_some() {
-                        break;
-                    }
-                }
-                if inferred_from_bounds.is_some() {
-                    break;
-                }
-            }
+            let inferred_from_bounds: Option<Type> = None;
 
             if let Some(concrete_type) = inferred_from_bounds {
                 concrete_types.push(concrete_type);
