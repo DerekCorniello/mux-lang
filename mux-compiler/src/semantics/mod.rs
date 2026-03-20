@@ -1962,419 +1962,451 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn get_named_method_sig(
+        &self,
+        name: &str,
+        args: &[Type],
+        method_name: &str,
+    ) -> Option<MethodSig> {
+        let symbol = self.symbol_table.lookup(name)?;
+        if let Some(sig) = symbol.methods.get(method_name) {
+            return Some(if args.is_empty() {
+                sig.clone()
+            } else {
+                self.substitute_method_sig(sig, &symbol.type_params, args)
+            });
+        }
+        self.find_interface_method(&symbol, method_name)
+    }
+
+    fn get_variable_generic_method_sig(&self, var: &str, method_name: &str) -> Option<MethodSig> {
+        let bounds = self.current_bounds.get(var)?;
+        for (bound_name, bound_args) in bounds {
+            if let Some(sig) = self.get_builtin_interface_method(bound_name, method_name) {
+                return Some(sig);
+            }
+            if let Some(interface_symbol) = self.symbol_table.lookup(bound_name)
+                && let Some(sig) = self.find_interface_method(&interface_symbol, method_name)
+            {
+                if bound_args.is_empty() {
+                    return Some(sig);
+                }
+
+                return Some(self.substitute_method_sig(
+                    &sig,
+                    &interface_symbol.type_params,
+                    bound_args,
+                ));
+            }
+        }
+        None
+    }
+
+    fn get_primitive_method_sig(
+        &self,
+        prim: &PrimitiveType,
+        method_name: &str,
+    ) -> Option<MethodSig> {
+        match prim {
+            PrimitiveType::Int => match method_name {
+                "to_string" | "to_float" | "to_int" => Some(MethodSig {
+                    params: vec![],
+                    return_type: if method_name == "to_string" {
+                        Type::Primitive(PrimitiveType::Str)
+                    } else if method_name == "to_float" {
+                        Type::Primitive(PrimitiveType::Float)
+                    } else {
+                        Type::Primitive(PrimitiveType::Int)
+                    },
+                    is_static: false,
+                }),
+                "eq" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Int)],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "cmp" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Int)],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                "hash" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            PrimitiveType::Float => match method_name {
+                "to_string" | "to_int" | "to_float" => Some(MethodSig {
+                    params: vec![],
+                    return_type: if method_name == "to_string" {
+                        Type::Primitive(PrimitiveType::Str)
+                    } else if method_name == "to_int" {
+                        Type::Primitive(PrimitiveType::Int)
+                    } else {
+                        Type::Primitive(PrimitiveType::Float)
+                    },
+                    is_static: false,
+                }),
+                "eq" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Float)],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "cmp" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Float)],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                "hash" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            PrimitiveType::Str => match method_name {
+                "to_string" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
+                "message" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
+                "length" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                "to_int" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Named(
+                        "result".to_string(),
+                        vec![
+                            Type::Primitive(PrimitiveType::Int),
+                            Type::Primitive(PrimitiveType::Str),
+                        ],
+                    ),
+                    is_static: false,
+                }),
+                "to_float" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Named(
+                        "result".to_string(),
+                        vec![
+                            Type::Primitive(PrimitiveType::Float),
+                            Type::Primitive(PrimitiveType::Str),
+                        ],
+                    ),
+                    is_static: false,
+                }),
+                "eq" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Str)],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "cmp" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Str)],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                "hash" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            PrimitiveType::Bool => match method_name {
+                "to_string" | "to_int" | "to_float" => Some(MethodSig {
+                    params: vec![],
+                    return_type: if method_name == "to_string" {
+                        Type::Primitive(PrimitiveType::Str)
+                    } else if method_name == "to_int" {
+                        Type::Primitive(PrimitiveType::Int)
+                    } else {
+                        Type::Primitive(PrimitiveType::Float)
+                    },
+                    is_static: false,
+                }),
+                "eq" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Bool)],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "hash" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            PrimitiveType::Char => match method_name {
+                "to_string" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Str),
+                    is_static: false,
+                }),
+                "to_int" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Named(
+                        "result".to_string(),
+                        vec![
+                            Type::Primitive(PrimitiveType::Int),
+                            Type::Primitive(PrimitiveType::Str),
+                        ],
+                    ),
+                    is_static: false,
+                }),
+                "eq" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Char)],
+                    return_type: Type::Primitive(PrimitiveType::Bool),
+                    is_static: false,
+                }),
+                "cmp" => Some(MethodSig {
+                    params: vec![Type::Primitive(PrimitiveType::Char)],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                "hash" => Some(MethodSig {
+                    params: vec![],
+                    return_type: Type::Primitive(PrimitiveType::Int),
+                    is_static: false,
+                }),
+                _ => None,
+            },
+            PrimitiveType::Void => None,
+            PrimitiveType::Auto => None,
+        }
+    }
+
+    fn get_list_method_sig(&self, elem_type: &Type, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "push_back" => Some(MethodSig {
+                params: vec![elem_type.clone()],
+                return_type: Type::Void,
+                is_static: false,
+            }),
+            "pop_back" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Optional(Box::new(elem_type.clone())),
+                is_static: false,
+            }),
+            "push" => Some(MethodSig {
+                params: vec![elem_type.clone()],
+                return_type: Type::Void,
+                is_static: false,
+            }),
+            "pop" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Optional(Box::new(elem_type.clone())),
+                is_static: false,
+            }),
+            "get" => Some(MethodSig {
+                params: vec![Type::Primitive(PrimitiveType::Int)],
+                return_type: Type::Optional(Box::new(elem_type.clone())),
+                is_static: false,
+            }),
+            "is_empty" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            "size" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Int),
+                is_static: false,
+            }),
+            "to_string" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Str),
+                is_static: false,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_map_method_sig(
+        &self,
+        key_type: &Type,
+        value_type: &Type,
+        method_name: &str,
+    ) -> Option<MethodSig> {
+        match method_name {
+            "put" => Some(MethodSig {
+                params: vec![key_type.clone(), value_type.clone()],
+                return_type: Type::Void,
+                is_static: false,
+            }),
+            "get" => Some(MethodSig {
+                params: vec![key_type.clone()],
+                return_type: Type::Optional(Box::new(value_type.clone())),
+                is_static: false,
+            }),
+            "get_keys" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::List(Box::new(key_type.clone())),
+                is_static: false,
+            }),
+            "get_values" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::List(Box::new(value_type.clone())),
+                is_static: false,
+            }),
+            "get_pairs" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::List(Box::new(Type::Tuple(
+                    Box::new(key_type.clone()),
+                    Box::new(value_type.clone()),
+                ))),
+                is_static: false,
+            }),
+            "contains" => Some(MethodSig {
+                params: vec![key_type.clone()],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            "remove" => Some(MethodSig {
+                params: vec![key_type.clone()],
+                return_type: Type::Optional(Box::new(value_type.clone())),
+                is_static: false,
+            }),
+            "size" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Int),
+                is_static: false,
+            }),
+            "is_empty" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            "to_string" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Str),
+                is_static: false,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_set_method_sig(&self, elem_type: &Type, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "add" => Some(MethodSig {
+                params: vec![elem_type.clone()],
+                return_type: Type::Void,
+                is_static: false,
+            }),
+            "remove" => Some(MethodSig {
+                params: vec![elem_type.clone()],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            "contains" => Some(MethodSig {
+                params: vec![elem_type.clone()],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            "size" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Int),
+                is_static: false,
+            }),
+            "is_empty" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            "to_string" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Str),
+                is_static: false,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_optional_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "to_string" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Str),
+                is_static: false,
+            }),
+            "is_some" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            "is_none" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_result_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "to_string" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Str),
+                is_static: false,
+            }),
+            "is_ok" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            "is_err" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_tuple_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "to_string" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Str),
+                is_static: false,
+            }),
+            "new" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::Tuple(
+                    Box::new(Type::Primitive(PrimitiveType::Int)),
+                    Box::new(Type::Primitive(PrimitiveType::Str)),
+                ),
+                is_static: true,
+            }),
+            _ => None,
+        }
+    }
+
     pub(crate) fn get_method_sig(&self, type_: &Type, method_name: &str) -> Option<MethodSig> {
         match type_ {
-            Type::Named(name, args) => {
-                let symbol = self.symbol_table.lookup(name)?;
-                if let Some(sig) = symbol.methods.get(method_name) {
-                    return Some(if args.is_empty() {
-                        sig.clone()
-                    } else {
-                        self.substitute_method_sig(sig, &symbol.type_params, args)
-                    });
-                }
-                self.find_interface_method(&symbol, method_name)
-            }
+            Type::Named(name, args) => self.get_named_method_sig(name, args, method_name),
             Type::Variable(var) | Type::Generic(var) => {
-                let bounds = self.current_bounds.get(var)?;
-                for (bound_name, bound_args) in bounds {
-                    if let Some(sig) = self.get_builtin_interface_method(bound_name, method_name) {
-                        return Some(sig);
-                    }
-                    if let Some(interface_symbol) = self.symbol_table.lookup(bound_name)
-                        && let Some(sig) =
-                            self.find_interface_method(&interface_symbol, method_name)
-                    {
-                        if bound_args.is_empty() {
-                            return Some(sig);
-                        }
-
-                        return Some(self.substitute_method_sig(
-                            &sig,
-                            &interface_symbol.type_params,
-                            bound_args,
-                        ));
-                    }
-                }
-                None
+                self.get_variable_generic_method_sig(var, method_name)
             }
-            Type::Primitive(prim) => {
-                match prim {
-                    PrimitiveType::Int => match method_name {
-                        "to_string" | "to_float" | "to_int" => Some(MethodSig {
-                            params: vec![],
-                            return_type: if method_name == "to_string" {
-                                Type::Primitive(PrimitiveType::Str)
-                            } else if method_name == "to_float" {
-                                Type::Primitive(PrimitiveType::Float)
-                            } else {
-                                Type::Primitive(PrimitiveType::Int)
-                            },
-                            is_static: false,
-                        }),
-                        // Equatable interface
-                        "eq" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Int)],
-                            return_type: Type::Primitive(PrimitiveType::Bool),
-                            is_static: false,
-                        }),
-                        // Comparable interface
-                        "cmp" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Int)],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        // Hashable interface
-                        "hash" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        _ => None,
-                    },
-                    PrimitiveType::Float => match method_name {
-                        "to_string" | "to_int" | "to_float" => Some(MethodSig {
-                            params: vec![],
-                            return_type: if method_name == "to_string" {
-                                Type::Primitive(PrimitiveType::Str)
-                            } else if method_name == "to_int" {
-                                Type::Primitive(PrimitiveType::Int)
-                            } else {
-                                Type::Primitive(PrimitiveType::Float)
-                            },
-                            is_static: false,
-                        }),
-                        // Equatable interface
-                        "eq" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Float)],
-                            return_type: Type::Primitive(PrimitiveType::Bool),
-                            is_static: false,
-                        }),
-                        // Comparable interface
-                        "cmp" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Float)],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        // Hashable interface
-                        "hash" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        _ => None,
-                    },
-                    PrimitiveType::Str => match method_name {
-                        "to_string" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Primitive(PrimitiveType::Str),
-                            is_static: false,
-                        }),
-                        "message" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Primitive(PrimitiveType::Str),
-                            is_static: false,
-                        }),
-                        "length" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        "to_int" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Named(
-                                "result".to_string(),
-                                vec![
-                                    Type::Primitive(PrimitiveType::Int),
-                                    Type::Primitive(PrimitiveType::Str),
-                                ],
-                            ),
-                            is_static: false,
-                        }),
-                        "to_float" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Named(
-                                "result".to_string(),
-                                vec![
-                                    Type::Primitive(PrimitiveType::Float),
-                                    Type::Primitive(PrimitiveType::Str),
-                                ],
-                            ),
-                            is_static: false,
-                        }),
-                        // Equatable interface
-                        "eq" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Str)],
-                            return_type: Type::Primitive(PrimitiveType::Bool),
-                            is_static: false,
-                        }),
-                        // Comparable interface (lexicographic comparison)
-                        "cmp" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Str)],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        // Hashable interface
-                        "hash" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        _ => None,
-                    },
-                    PrimitiveType::Bool => match method_name {
-                        "to_string" | "to_int" | "to_float" => Some(MethodSig {
-                            params: vec![],
-                            return_type: if method_name == "to_string" {
-                                Type::Primitive(PrimitiveType::Str)
-                            } else if method_name == "to_int" {
-                                Type::Primitive(PrimitiveType::Int)
-                            } else {
-                                Type::Primitive(PrimitiveType::Float)
-                            },
-                            is_static: false,
-                        }),
-                        // Equatable interface
-                        "eq" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Bool)],
-                            return_type: Type::Primitive(PrimitiveType::Bool),
-                            is_static: false,
-                        }),
-                        // Hashable interface
-                        "hash" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        _ => None,
-                    },
-                    PrimitiveType::Char => match method_name {
-                        "to_string" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Primitive(PrimitiveType::Str),
-                            is_static: false,
-                        }),
-                        "to_int" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Named(
-                                "result".to_string(),
-                                vec![
-                                    Type::Primitive(PrimitiveType::Int),
-                                    Type::Primitive(PrimitiveType::Str),
-                                ],
-                            ),
-                            is_static: false,
-                        }),
-                        // Equatable interface
-                        "eq" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Char)],
-                            return_type: Type::Primitive(PrimitiveType::Bool),
-                            is_static: false,
-                        }),
-                        // Comparable interface
-                        "cmp" => Some(MethodSig {
-                            params: vec![Type::Primitive(PrimitiveType::Char)],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        // Hashable interface
-                        "hash" => Some(MethodSig {
-                            params: vec![],
-                            return_type: Type::Primitive(PrimitiveType::Int),
-                            is_static: false,
-                        }),
-                        _ => None,
-                    },
-                    PrimitiveType::Void => None,
-                    PrimitiveType::Auto => None,
-                }
+            Type::Primitive(prim) => self.get_primitive_method_sig(prim, method_name),
+            Type::List(elem_type) => self.get_list_method_sig(elem_type, method_name),
+            Type::Map(key_type, value_type) => {
+                self.get_map_method_sig(key_type, value_type, method_name)
             }
-            Type::List(elem_type) => match method_name {
-                "push_back" => Some(MethodSig {
-                    params: vec![*elem_type.clone()],
-                    return_type: Type::Void,
-                    is_static: false,
-                }),
-                "pop_back" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Optional(elem_type.clone()),
-                    is_static: false,
-                }),
-                "push" => Some(MethodSig {
-                    params: vec![*elem_type.clone()],
-                    return_type: Type::Void,
-                    is_static: false,
-                }),
-                "pop" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Optional(elem_type.clone()),
-                    is_static: false,
-                }),
-                "get" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Int)],
-                    return_type: Type::Optional(elem_type.clone()),
-                    is_static: false,
-                }),
-                "is_empty" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "size" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                "to_string" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            Type::Map(key_type, value_type) => match method_name {
-                "put" => Some(MethodSig {
-                    params: vec![*key_type.clone(), *value_type.clone()],
-                    return_type: Type::Void,
-                    is_static: false,
-                }),
-                "get" => Some(MethodSig {
-                    params: vec![*key_type.clone()],
-                    return_type: Type::Optional(value_type.clone()),
-                    is_static: false,
-                }),
-                "get_keys" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::List(key_type.clone()),
-                    is_static: false,
-                }),
-                "get_values" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::List(value_type.clone()),
-                    is_static: false,
-                }),
-                "get_pairs" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::List(Box::new(Type::Tuple(
-                        Box::new(*key_type.clone()),
-                        Box::new(*value_type.clone()),
-                    ))),
-                    is_static: false,
-                }),
-                "contains" => Some(MethodSig {
-                    params: vec![*key_type.clone()],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "remove" => Some(MethodSig {
-                    params: vec![*key_type.clone()],
-                    return_type: Type::Optional(value_type.clone()),
-                    is_static: false,
-                }),
-                "size" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                "is_empty" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "to_string" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            Type::Set(elem_type) => match method_name {
-                "add" => Some(MethodSig {
-                    params: vec![*elem_type.clone()],
-                    return_type: Type::Void,
-                    is_static: false,
-                }),
-                "remove" => Some(MethodSig {
-                    params: vec![*elem_type.clone()],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "contains" => Some(MethodSig {
-                    params: vec![*elem_type.clone()],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "size" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                "is_empty" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "to_string" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            Type::Optional(_) => match method_name {
-                "to_string" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                }),
-                "is_some" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "is_none" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            Type::Result(_, _) => match method_name {
-                "to_string" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                }),
-                "is_ok" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "is_err" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            Type::Tuple(_, _) => match method_name {
-                "to_string" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                }),
-                "new" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Tuple(
-                        Box::new(Type::Primitive(PrimitiveType::Int)),
-                        Box::new(Type::Primitive(PrimitiveType::Str)),
-                    ),
-                    is_static: true,
-                }),
-                _ => None,
-            },
+            Type::Set(elem_type) => self.get_set_method_sig(elem_type, method_name),
+            Type::Optional(_) => self.get_optional_method_sig(method_name),
+            Type::Result(_, _) => self.get_result_method_sig(method_name),
+            Type::Tuple(_, _) => self.get_tuple_method_sig(method_name),
             Type::Reference(inner) => self.get_method_sig(inner, method_name),
-
             _ => None,
         }
     }
@@ -5184,6 +5216,40 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn import_std_item_with_resolver_check(
+        &mut self,
+        item: &str,
+        alias: &Option<String>,
+        span: Span,
+        files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        use crate::ast::ImportSpec;
+        let full_module_path = format!("std.{}", item);
+        if let Some(resolver) = &self.module_resolver {
+            let (has_file, has_directory) = resolver.borrow().check_module_path(&full_module_path);
+            if has_file || has_directory {
+                let files = files.ok_or_else(|| {
+                    SemanticError::new("Files registry must be available for std imports", span)
+                })?;
+                return self.import_module_from_resolver(
+                    &full_module_path,
+                    &ImportSpec::Module {
+                        alias: alias.clone(),
+                    },
+                    span,
+                    files,
+                );
+            }
+        }
+        self.import_stdlib_module(
+            item,
+            &ImportSpec::Module {
+                alias: alias.clone(),
+            },
+            span,
+        )
+    }
+
     fn handle_std_import_with_std_prefix(
         &mut self,
         spec: &crate::ast::ImportSpec,
@@ -5194,65 +5260,15 @@ impl SemanticAnalyzer {
         let mut files = files;
         match spec {
             ImportSpec::Item { item, alias } => {
-                let full_module_path = format!("std.{}", item);
-                if let Some(resolver) = &self.module_resolver {
-                    let (has_file, has_directory) =
-                        resolver.borrow().check_module_path(&full_module_path);
-                    if has_file || has_directory {
-                        let files = files.as_deref_mut().ok_or_else(|| {
-                            SemanticError::new(
-                                "Files registry must be available for std imports",
-                                span,
-                            )
-                        })?;
-                        return self.import_module_from_resolver(
-                            &full_module_path,
-                            &ImportSpec::Module {
-                                alias: alias.clone(),
-                            },
-                            span,
-                            files,
-                        );
-                    }
-                }
-                self.import_stdlib_module(
-                    item,
-                    &ImportSpec::Module {
-                        alias: alias.clone(),
-                    },
-                    span,
-                )
+                self.import_std_item_with_resolver_check(item, alias, span, files.as_deref_mut())
             }
             ImportSpec::Items { items } => {
                 for (item, alias) in items {
-                    let full_module_path = format!("std.{}", item);
-                    if let Some(resolver) = &self.module_resolver {
-                        let (has_file, has_directory) =
-                            resolver.borrow().check_module_path(&full_module_path);
-                        if has_file || has_directory {
-                            let files = files.as_deref_mut().ok_or_else(|| {
-                                SemanticError::new(
-                                    "Files registry must be available for std imports",
-                                    span,
-                                )
-                            })?;
-                            self.import_module_from_resolver(
-                                &full_module_path,
-                                &ImportSpec::Module {
-                                    alias: alias.clone(),
-                                },
-                                span,
-                                files,
-                            )?;
-                            continue;
-                        }
-                    }
-                    self.import_stdlib_module(
+                    self.import_std_item_with_resolver_check(
                         item,
-                        &ImportSpec::Module {
-                            alias: alias.clone(),
-                        },
+                        alias,
                         span,
+                        files.as_deref_mut(),
                     )?;
                 }
                 Ok(())
