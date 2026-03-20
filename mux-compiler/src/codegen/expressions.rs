@@ -3661,36 +3661,92 @@ impl<'a> CodeGenerator<'a> {
                                             ..
                                         } = &field_def.type_
                                         {
-                                            // Try to resolve the generic parameter
+                                            // Try to resolve the generic parameter from current context
+                                            let mut concrete_type_opt = None;
                                             if let Some(context) = &self.generic_context {
-                                                if let Some(concrete_type) =
-                                                    context.type_params.get(param_name)
+                                                concrete_type_opt =
+                                                    context.type_params.get(param_name).cloned();
+                                            }
+
+                                            // If no generic context, try to infer from the object's type
+                                            if concrete_type_opt.is_none() {
+                                                if let ExpressionKind::Identifier(obj_name) =
+                                                    &expr.kind
                                                 {
-                                                    // Match on the CONCRETE type to decide unboxing
-                                                    match concrete_type {
-                                                        Type::Primitive(PrimitiveType::Int) => {
-                                                            let raw_int =
-                                                                self.get_raw_int_value(loaded)?;
-                                                            return Ok(raw_int.into());
+                                                    if let Some((
+                                                        _,
+                                                        _,
+                                                        Type::Named(_, type_args)
+                                                        | Type::Instantiated(_, type_args),
+                                                    )) =
+                                                        self.variables.get(obj_name).or_else(|| {
+                                                            self.global_variables.get(obj_name)
+                                                        })
+                                                    {
+                                                        if !type_args.is_empty() {
+                                                            // Map type parameters from class definition to concrete types
+                                                            if let Some(class_symbol) = self
+                                                                .analyzer
+                                                                .all_symbols()
+                                                                .get(class_name.as_str())
+                                                            {
+                                                                if let Some(param_index) =
+                                                                    class_symbol
+                                                                        .type_params
+                                                                        .iter()
+                                                                        .position(|(p, _)| {
+                                                                            p == param_name
+                                                                        })
+                                                                {
+                                                                    if param_index < type_args.len()
+                                                                    {
+                                                                        concrete_type_opt = Some(
+                                                                            type_args[param_index]
+                                                                                .clone(),
+                                                                        );
+                                                                    }
+                                                                }
+                                                            }
                                                         }
-                                                        Type::Primitive(PrimitiveType::Float) => {
-                                                            let raw_float =
-                                                                self.get_raw_float_value(loaded)?;
-                                                            return Ok(raw_float.into());
-                                                        }
-                                                        Type::Primitive(PrimitiveType::Bool) => {
-                                                            let raw_bool =
-                                                                self.get_raw_bool_value(loaded)?;
-                                                            return Ok(raw_bool.into());
-                                                        }
-                                                        Type::Named(_type_name, _) => {
-                                                            // For both enums and classes, return pointer directly (no unboxing)
-                                                            return Ok(loaded);
-                                                        }
-                                                        _ => {
-                                                            // Other types: return loaded pointer as-is
-                                                            return Ok(loaded);
-                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // If we resolved the concrete type, perform unboxing
+                                            if let Some(concrete_type) = concrete_type_opt {
+                                                match concrete_type {
+                                                    Type::Primitive(PrimitiveType::Int) => {
+                                                        let raw_int =
+                                                            self.get_raw_int_value(loaded)?;
+                                                        return Ok(raw_int.into());
+                                                    }
+                                                    Type::Primitive(PrimitiveType::Float) => {
+                                                        let raw_float =
+                                                            self.get_raw_float_value(loaded)?;
+                                                        return Ok(raw_float.into());
+                                                    }
+                                                    Type::Primitive(PrimitiveType::Bool) => {
+                                                        let raw_bool =
+                                                            self.get_raw_bool_value(loaded)?;
+                                                        return Ok(raw_bool.into());
+                                                    }
+                                                    Type::Primitive(PrimitiveType::Str) => {
+                                                        // String is already a pointer
+                                                        return Ok(loaded);
+                                                    }
+                                                    Type::Primitive(PrimitiveType::Char) => {
+                                                        // Char is stored as i64
+                                                        let raw_int =
+                                                            self.get_raw_int_value(loaded)?;
+                                                        return Ok(raw_int.into());
+                                                    }
+                                                    Type::Named(_type_name, _) => {
+                                                        // For both enums and classes, return pointer directly (no unboxing)
+                                                        return Ok(loaded);
+                                                    }
+                                                    _ => {
+                                                        // Other types: return loaded pointer as-is
+                                                        return Ok(loaded);
                                                     }
                                                 }
                                             }

@@ -42,7 +42,7 @@ tree len: 5
 tree is_empty: false
 tree contains 8: true
 tree contains 99: false
-tree to_list: [5, 1, 8, 3, 12]
+tree to_list: [1, 3, 5, 8, 12]
 tree len after clear: 0
 tree is_empty after clear: true
 === GRAPH TESTS ===

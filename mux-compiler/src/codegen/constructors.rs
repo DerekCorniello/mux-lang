@@ -361,6 +361,29 @@ impl<'a> CodeGenerator<'a> {
                     .build_store(field_ptr, val)
                     .map_err(|e| e.to_string())?;
             }
+            Type::Optional(_) => {
+                let optional_ptr = self
+                    .generate_runtime_call("mux_optional_none", &[])
+                    .expect("mux_optional_none should always return a value");
+                self.builder
+                    .build_store(field_ptr, optional_ptr)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Result(ok_type, _) => {
+                let ok_value = self.create_default_value_ptr(&ok_type)?;
+                let result_ptr = self
+                    .generate_runtime_call("mux_result_ok_value", &[ok_value.into()])
+                    .expect("mux_result_ok_value should always return a value");
+                self.builder
+                    .build_store(field_ptr, result_ptr)
+                    .map_err(|e| e.to_string())?;
+            }
+            Type::Tuple(left_type, right_type) => {
+                let tuple_value = self.generate_tuple_constructor(&left_type, &right_type)?;
+                self.builder
+                    .build_store(field_ptr, tuple_value)
+                    .map_err(|e| e.to_string())?;
+            }
             Type::Named(class_name, type_args) => {
                 // handle built-in types
                 if class_name == "string" && type_args.is_empty() {

@@ -241,10 +241,20 @@ impl<'a> CodeGenerator<'a> {
                         Type::Named(name.clone(), vec![])
                     }
                 } else {
-                    Type::Named(
-                        name.clone(),
-                        generics.iter().map(|g| self.type_node_to_type(g)).collect(),
-                    )
+                    // special handling for optional and result
+                    if name == "optional" && generics.len() == 1 {
+                        Type::Optional(Box::new(self.type_node_to_type(&generics[0])))
+                    } else if name == "result" && generics.len() == 2 {
+                        Type::Result(
+                            Box::new(self.type_node_to_type(&generics[0])),
+                            Box::new(self.type_node_to_type(&generics[1])),
+                        )
+                    } else {
+                        Type::Named(
+                            name.clone(),
+                            generics.iter().map(|g| self.type_node_to_type(g)).collect(),
+                        )
+                    }
                 }
             }
             TypeKind::Function { params, returns } => Type::Function {
