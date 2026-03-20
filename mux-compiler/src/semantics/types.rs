@@ -19,7 +19,7 @@ pub struct Symbol {
     pub kind: SymbolKind,
     pub span: Span,
     pub type_: Option<Type>,
-    pub interfaces: HashMap<String, HashMap<String, MethodSig>>,
+    pub interfaces: HashMap<String, (Vec<Type>, HashMap<String, MethodSig>)>,
     pub methods: HashMap<String, MethodSig>,
     pub fields: HashMap<String, (Type, bool)>, // (Type, is_const)
     pub type_params: Vec<(String, Vec<String>)>,

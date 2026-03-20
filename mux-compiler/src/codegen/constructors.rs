@@ -105,7 +105,7 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         name: &str,
         fields: &[Field],
-        interfaces: &HashMap<String, HashMap<String, MethodSig>>,
+        interfaces: &HashMap<String, (Vec<Type>, HashMap<String, MethodSig>)>,
     ) -> Result<(), String> {
         let full_name = format!("{}.new", name);
 

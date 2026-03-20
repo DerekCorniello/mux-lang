@@ -1819,20 +1819,21 @@ impl SemanticAnalyzer {
         match type_ {
             Type::Named(name, _) => {
                 if let Some(symbol) = self.symbol_table.lookup(name) {
-                    if !symbol.interfaces.contains_key(interface_name) {
-                        return false;
+                    if let Some((stored_args, _)) = symbol.interfaces.get(interface_name) {
+                        if interface_args.is_empty() {
+                            return true;
+                        }
+                        // Verify the interface exists and arity matches
+                        if let Some(interface_symbol) = self.symbol_table.lookup(interface_name)
+                            && interface_symbol.type_params.len() != interface_args.len()
+                        {
+                            return false;
+                        }
+                        // Compare stored concrete type arguments with provided interface_args
+                        stored_args == interface_args
+                    } else {
+                        false
                     }
-
-                    if interface_args.is_empty() {
-                        return true;
-                    }
-
-                    if let Some(interface_symbol) = self.symbol_table.lookup(interface_name)
-                        && interface_symbol.type_params.len() != interface_args.len()
-                    {
-                        return false;
-                    }
-                    true
                 } else {
                     false
                 }
@@ -2354,7 +2355,7 @@ impl SemanticAnalyzer {
         symbol: &crate::semantics::Symbol,
         method_name: &str,
     ) -> Option<MethodSig> {
-        for interface_methods in symbol.interfaces.values() {
+        for (_, interface_methods) in symbol.interfaces.values() {
             if let Some(sig) = interface_methods.get(method_name) {
                 return Some(sig.clone());
             }
@@ -2565,7 +2566,7 @@ impl SemanticAnalyzer {
                     for trait_ref in traits {
                         // lookup the interface and get its methods
                         if let Some(interface_symbol) = self.symbol_table.lookup(&trait_ref.name)
-                            && let Some(interface_methods) =
+                            && let Some((_, interface_methods)) =
                                 interface_symbol.interfaces.get(&trait_ref.name)
                         {
                             // Substitute type_args into interface methods
@@ -2602,8 +2603,10 @@ impl SemanticAnalyzer {
                                     },
                                 );
                             }
-                            implemented_interfaces
-                                .insert(trait_ref.name.clone(), substituted_methods);
+                            implemented_interfaces.insert(
+                                trait_ref.name.clone(),
+                                (resolved_args, substituted_methods),
+                            );
                         }
                     }
                     let type_param_bounds: Vec<(String, Vec<String>)> = type_params
@@ -2692,7 +2695,7 @@ impl SemanticAnalyzer {
                     methods_map.insert("new".to_string(), new_sig);
 
                     // Validate interface implementations
-                    for (interface_name, interface_methods) in &implemented_interfaces {
+                    for (interface_name, (_, interface_methods)) in &implemented_interfaces {
                         for (method_name, interface_sig) in interface_methods {
                             if let Some(class_sig) = methods_map.get(method_name) {
                                 if let Err(e) = self.check_method_compatibility(
@@ -2875,7 +2878,7 @@ impl SemanticAnalyzer {
                     }
 
                     let mut interfaces_map = std::collections::HashMap::new();
-                    interfaces_map.insert(name.clone(), interface_methods);
+                    interfaces_map.insert(name.clone(), (vec![], interface_methods));
                     if let Err(e) = self.symbol_table.add_symbol(
                         name,
                         Symbol {
