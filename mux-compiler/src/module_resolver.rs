@@ -38,6 +38,11 @@ impl ModuleResolver {
             .filter(|short| self.embedded_sources.contains_key(*short))
     }
 
+    fn normalize_module_key<'a>(&'a self, module_path: &'a str) -> &'a str {
+        self.resolve_embedded_key(module_path)
+            .unwrap_or(module_path)
+    }
+
     pub fn has_embedded_module(&self, module_path: &str) -> bool {
         self.resolve_embedded_key(module_path).is_some()
     }
@@ -49,21 +54,24 @@ impl ModuleResolver {
         current_file: Option<&Path>,
         files: &mut Files,
     ) -> Result<Vec<AstNode>, String> {
-        if let Some(embedded_key) = self.resolve_embedded_key(module_path).map(str::to_string) {
-            if let Some(nodes) = self.compiled_modules.get(module_path) {
+        if self.resolve_embedded_key(module_path).is_some() {
+            let embedded_key = self.resolve_embedded_key(module_path).unwrap().to_string();
+            let cache_key = self.normalize_module_key(module_path).to_string();
+
+            if let Some(nodes) = self.compiled_modules.get(&cache_key) {
                 return Ok(nodes.clone());
             }
 
-            if self.being_imported.contains(module_path) {
+            if self.being_imported.contains(&cache_key) {
                 return Err(format!(
                     "Circular import detected: {} -> {}",
                     self.import_stack.join(" -> "),
-                    module_path
+                    cache_key
                 ));
             }
 
-            self.being_imported.insert(module_path.to_string());
-            self.import_stack.push(module_path.to_string());
+            self.being_imported.insert(cache_key.clone());
+            self.import_stack.push(cache_key.clone());
 
             let source = self
                 .embedded_sources
@@ -142,13 +150,14 @@ impl ModuleResolver {
     }
 
     pub fn finish_import(&mut self, module_path: &str) {
-        // Remove from tracking after module is fully analyzed
+        let cache_key = self.normalize_module_key(module_path).to_string();
         self.import_stack.pop();
-        self.being_imported.remove(module_path);
+        self.being_imported.remove(&cache_key);
     }
 
     pub fn cache_module(&mut self, module_path: &str, nodes: Vec<AstNode>) {
-        self.compiled_modules.insert(module_path.to_string(), nodes);
+        let cache_key = self.normalize_module_key(module_path).to_string();
+        self.compiled_modules.insert(cache_key, nodes);
     }
 
     /// Check if a module path resolves to a file, directory, both, or neither.
