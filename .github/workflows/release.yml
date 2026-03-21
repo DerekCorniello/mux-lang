@@ -174,15 +174,55 @@ jobs:
 
           $llvmPrefix = $env:LLVM_MINGW_ROOT
           $llvmBin = "$llvmPrefix\bin"
-          $llvmConfigPath = "$llvmBin\llvm-config.exe"
-          $gnuLinker = "$llvmBin\x86_64-w64-mingw32-gcc.exe"
-
-          if (-not (Test-Path $llvmConfigPath)) {
-            throw "llvm-config.exe not found at $llvmConfigPath"
+          if (-not (Test-Path $llvmBin)) {
+            throw "LLVM bin directory not found at $llvmBin"
           }
 
-          if (-not (Test-Path $gnuLinker)) {
-            throw "GNU linker not found at $gnuLinker"
+          $llvmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          $llvmConfigPath = $null
+          $whereLlvmConfig = (& where.exe llvm-config 2>$null)
+          if ($whereLlvmConfig) {
+            $llvmConfigPath = $whereLlvmConfig.Split([Environment]::NewLine)[0].Trim()
+          }
+
+          if (-not $llvmConfigPath) {
+            $wherePrefixed = (& where.exe x86_64-w64-mingw32-llvm-config 2>$null)
+            if ($wherePrefixed) {
+              $llvmConfigPath = $wherePrefixed.Split([Environment]::NewLine)[0].Trim()
+            }
+          }
+
+          if (-not $llvmConfigPath) {
+            $llvmConfigFile = Get-ChildItem -Path $llvmBin -Filter "*llvm-config*" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($llvmConfigFile) {
+              $llvmConfigPath = $llvmConfigFile.FullName
+            }
+          }
+
+          $gnuLinker = $null
+          $whereGcc = (& where.exe x86_64-w64-mingw32-gcc 2>$null)
+          if ($whereGcc) {
+            $gnuLinker = $whereGcc.Split([Environment]::NewLine)[0].Trim()
+          }
+
+          if (-not $gnuLinker) {
+            $gccFile = Get-ChildItem -Path $llvmBin -Filter "*mingw32-gcc*" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($gccFile) {
+              $gnuLinker = $gccFile.FullName
+            }
+          }
+
+          if (-not $llvmConfigPath) {
+            Write-Host "Contents of LLVM bin directory:"
+            Get-ChildItem -Path $llvmBin -File | Select-Object -ExpandProperty Name
+            throw "llvm-config binary not found in $llvmBin"
+          }
+
+          if (-not $gnuLinker) {
+            Write-Host "Contents of LLVM bin directory:"
+            Get-ChildItem -Path $llvmBin -File | Select-Object -ExpandProperty Name
+            throw "GNU linker not found in $llvmBin"
           }
 
           $llvmVersion = & $llvmConfigPath --version
@@ -196,7 +236,6 @@ jobs:
           "CXX=$llvmBin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "AR=$llvmBin\llvm-ar.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$gnuLinker" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $llvmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Validate LLVM tools on Windows
         if: runner.os == 'Windows'
