@@ -30,4 +30,4 @@ paste = "1.0"
 chrono = "0.4"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Kernel", "Win32_System_Threading"] }
