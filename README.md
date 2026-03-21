@@ -26,6 +26,41 @@ By Derek Corniello
 
 Check out the [docs](https://mux-lang.dev)!
 
+## Installation
+
+### Install Mux (recommended)
+
+Use a prebuilt binary installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh
+```
+
+PowerShell (Windows):
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.ps1 | iex
+```
+
+After install:
+
+```bash
+mux --version
+mux doctor
+mux doctor --dev
+```
+
+### Build From Source (contributors)
+
+This path requires LLVM 17 and clang, but no manual environment setup.
+
+Arch Linux:
+
+```bash
+./scripts/bootstrap-dev.sh
+./scripts/dev-cargo.sh build
+```
+
 ### Runtime Setup
 
 Mux builds a small runtime library the first time you compile or run a program. If you want to do this up front, run:

@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-artifacts:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+            archive_ext: tar.gz
+          - os: macos-13
+            target: macos-x86_64
+            archive_ext: tar.gz
+          - os: macos-14
+            target: macos-aarch64
+            archive_ext: tar.gz
+          - os: windows-latest
+            target: windows-x86_64
+            archive_ext: zip
+
+    env:
+      MUX_RUNTIME_SRC: ${{ github.workspace }}/mux-runtime
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: 1.93.1
+
+      - name: Install LLVM 17 (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y llvm-17-dev clang-17 lld-17 libpolly-17-dev
+
+      - name: Configure LLVM 17 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "LLVM_SYS_170_PREFIX=/usr/lib/llvm-17" >> "$GITHUB_ENV"
+          echo "CC=clang-17" >> "$GITHUB_ENV"
+          echo "CXX=clang++-17" >> "$GITHUB_ENV"
+
+      - name: Install LLVM 17 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install llvm@17
+
+      - name: Configure LLVM 17 (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          LLVM_PREFIX="$(brew --prefix llvm@17)"
+          echo "LLVM_SYS_170_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
+          echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
+
+      - name: Install LLVM 17 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install llvm --version=17.0.6 -y --no-progress
+          "LLVM_SYS_170_PREFIX=C:\Program Files\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CC=C:\Program Files\LLVM\bin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CXX=C:\Program Files\LLVM\bin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build runtime
+        run: cargo build -p mux-runtime --release
+
+      - name: Build compiler
+        run: cargo build -p mux-lang --release
+
+      - name: Package artifact (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          mkdir -p dist/mux-${{ matrix.target }}/bin
+          mkdir -p dist/mux-${{ matrix.target }}/lib
+          cp target/release/mux dist/mux-${{ matrix.target }}/bin/
+          for lib in target/release/libmux_runtime.a target/release/libmux_runtime.so target/release/libmux_runtime.dylib; do
+            if [ -f "$lib" ]; then
+              cp "$lib" dist/mux-${{ matrix.target }}/lib/
+            fi
+          done
+          tar -C dist -czf dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }} mux-${{ matrix.target }}
+          shasum -a 256 dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }} > dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
+
+      - name: Package artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist/mux-${{ matrix.target }}/bin" | Out-Null
+          New-Item -ItemType Directory -Force -Path "dist/mux-${{ matrix.target }}/lib" | Out-Null
+          Copy-Item "target/release/mux.exe" "dist/mux-${{ matrix.target }}/bin/"
+          foreach ($lib in @("target/release/mux_runtime.lib", "target/release/mux_runtime.dll")) {
+            if (Test-Path $lib) {
+              Copy-Item $lib "dist/mux-${{ matrix.target }}/lib/"
+            }
+          }
+          Compress-Archive -Path "dist/mux-${{ matrix.target }}/*" -DestinationPath "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}" -Force
+          $hash = (Get-FileHash -Algorithm SHA256 "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}").Hash.ToLower()
+          "$hash  mux-${{ matrix.target }}.${{ matrix.archive_ext }}" | Out-File -FilePath "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256" -Encoding ascii
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mux-${{ matrix.target }}
+          path: |
+            dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}
+            dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
+
+  publish-release:
+    name: Publish Release
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/**/*.tar.gz
+            dist/**/*.zip
+            dist/**/*.sha256

@@ -6,15 +6,28 @@ Get up and running with Mux in just a few minutes.
 
 Before you begin, make sure you have the following installed:
 
-- **Rust** (1.85 or later) - [Install Rust](https://rustup.rs/)
-- **LLVM** (17) - Required for code generation
-- **clang** - Required for linking compiled programs
+- **For prebuilt install**: no Rust or LLVM toolchain needed
+- **For source install**: Rust is required; use the bootstrap script to install LLVM 17 and clang 17
 
 ## Installation
 
-### Option 1: Install from crates.io (Recommended)
+### Option 1: Install prebuilt binaries (Recommended)
 
-The easiest way to install Mux is using cargo:
+Install with the official script:
+
+```bash title="bash"
+curl -fsSL https://raw.githubusercontent.com/derekcorniello/mux-lang/main/scripts/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell title="powershell"
+iwr -useb https://raw.githubusercontent.com/derekcorniello/mux-lang/main/scripts/install.ps1 | iex
+```
+
+### Option 2: Install from crates.io (Advanced)
+
+If you want to build from source with cargo:
 
 ```bash title="bash"
 cargo install mux-lang
@@ -23,9 +36,16 @@ cargo install mux-lang
 This installs the Mux compiler to your cargo bin directory.
 The runtime library is built on first use or by running `mux doctor`.
 
-**Note:** Make sure LLVM and clang are installed on your system first, as they are required for compilation and linking.
+**Note:** Make sure LLVM 17 and clang are installed first for source builds.
 
-### Option 2: Build from Source
+Use bootstrap helpers for contributor source builds:
+
+```bash title="bash"
+./scripts/bootstrap-dev.sh
+./scripts/dev-cargo.sh install --path mux-compiler
+```
+
+### Option 3: Build from Source
 
 If you prefer to build from source, maybe to even help [contribute](https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md) to the project:
 
@@ -49,9 +69,10 @@ Use the built-in doctor command to check your setup:
 
 ```bash title="bash"
 mux doctor
+mux doctor --dev
 ```
 
-The `mux doctor` command verifies LLVM and clang, and builds the Mux runtime library if it is missing.
+`mux doctor` validates runtime dependencies for end users. `mux doctor --dev` validates LLVM 17 and clang for source development.
 
 ## Your First Mux Program
 
