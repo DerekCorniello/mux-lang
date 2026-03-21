@@ -14,7 +14,7 @@ if (!(Test-Path $LibDir)) {
 }
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "aarch64" } else { "x86_64" }
-$target = "windows-$arch"
+$target = if ($arch -eq "x86_64") { "windows-x86_64" } else { "windows-$arch" }
 $archive = "mux-$target.zip"
 $archiveUrl = "$BaseUrl/$archive"
 $checksumUrl = "$archiveUrl.sha256"

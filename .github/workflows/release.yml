@@ -18,6 +18,7 @@ jobs:
     env:
       LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
       LLVM_CONFIG_PATH: /usr/bin/llvm-config-17
+      LLVM_SYS_170_STRICT_VERSIONING: "1"
       CC: clang-17
       CXX: clang++-17
       MUX_RUNTIME_SRC: ${{ github.workspace }}/mux-runtime
@@ -84,12 +85,13 @@ jobs:
             archive_ext: tar.gz
             publish: true
           - os: windows-latest
-            target: windows-x86_64-gnu
+            target: windows-x86_64
             archive_ext: zip
             publish: true
 
     env:
       MUX_RUNTIME_SRC: ${{ github.workspace }}/mux-runtime
+      LLVM_SYS_170_STRICT_VERSIONING: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -138,30 +140,49 @@ jobs:
           echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
 
-      - name: Setup MSYS2 toolchain (Windows)
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-
-      - name: Install LLVM 17 (Windows)
+      - name: Install LLVM mingw 17 (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install llvm --version=17.0.6 --allow-downgrade --force -y --no-progress
+          $version = "20231128"
+          $archive = "llvm-mingw-$version-ucrt-x86_64.zip"
+          $url = "https://github.com/mstorsjo/llvm-mingw/releases/download/$version/$archive"
+          $tmpArchive = Join-Path $env:RUNNER_TEMP $archive
+          $extractRoot = "C:\llvm-mingw-17"
+
+          if (Test-Path $extractRoot) {
+            Remove-Item -Path $extractRoot -Recurse -Force
+          }
+
+          Invoke-WebRequest -Uri $url -OutFile $tmpArchive
+          Expand-Archive -Path $tmpArchive -DestinationPath $extractRoot -Force
+
+          $toolchainRoot = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
+          if (-not $toolchainRoot) {
+            throw "Failed to extract llvm-mingw toolchain"
+          }
+
+          "LLVM_MINGW_ROOT=$($toolchainRoot.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Configure LLVM toolchain (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $llvmPrefix = "C:\Program Files\LLVM"
+          if (-not $env:LLVM_MINGW_ROOT) {
+            throw "LLVM_MINGW_ROOT is not set"
+          }
+
+          $llvmPrefix = $env:LLVM_MINGW_ROOT
           $llvmBin = "$llvmPrefix\bin"
           $llvmConfigPath = "$llvmBin\llvm-config.exe"
+          $gnuLinker = "$llvmBin\x86_64-w64-mingw32-gcc.exe"
 
           if (-not (Test-Path $llvmConfigPath)) {
             throw "llvm-config.exe not found at $llvmConfigPath"
+          }
+
+          if (-not (Test-Path $gnuLinker)) {
+            throw "GNU linker not found at $gnuLinker"
           }
 
           $llvmVersion = & $llvmConfigPath --version
@@ -174,7 +195,7 @@ jobs:
           "CC=$llvmBin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CXX=$llvmBin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "AR=$llvmBin\llvm-ar.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=C:\msys64\mingw64\bin\gcc.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$gnuLinker" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $llvmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Validate LLVM tools on Windows
@@ -238,20 +259,19 @@ jobs:
             }
           }
 
-          $mingwBin = "C:\msys64\mingw64\bin"
-          foreach ($dll in @("libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll")) {
-            $candidate = Join-Path $mingwBin $dll
+          $toolchainBin = "$env:LLVM_MINGW_ROOT\bin"
+          foreach ($dll in @("libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll", "libunwind.dll")) {
+            $candidate = Join-Path $toolchainBin $dll
             if (Test-Path $candidate) {
               Copy-Item $candidate "dist/mux-${{ matrix.target }}/bin/"
             }
           }
 
-          $llvmBin = "C:\Program Files\LLVM\bin"
-          Get-ChildItem -Path $llvmBin -Filter "LLVM*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
+          Get-ChildItem -Path $toolchainBin -Filter "LLVM*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item $_.FullName "dist/mux-${{ matrix.target }}/bin/"
           }
 
-          Get-ChildItem -Path $llvmBin -Filter "clang*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
+          Get-ChildItem -Path $toolchainBin -Filter "clang*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item $_.FullName "dist/mux-${{ matrix.target }}/bin/"
           }
 
