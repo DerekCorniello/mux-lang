@@ -61,6 +61,13 @@ Arch Linux:
 ./scripts/dev-cargo.sh build
 ```
 
+Debian and Ubuntu:
+
+```bash
+./scripts/bootstrap-dev.sh
+./scripts/dev-cargo.sh build
+```
+
 ### Runtime Setup
 
 Mux builds a small runtime library the first time you compile or run a program. If you want to do this up front, run:

@@ -45,6 +45,8 @@ Use bootstrap helpers for contributor source builds:
 ./scripts/dev-cargo.sh install --path mux-compiler
 ```
 
+This works on Arch Linux, Debian, and Ubuntu. The bootstrap script installs LLVM 17 and clang 17 for your platform.
+
 ### Option 3: Build from Source
 
 If you prefer to build from source, maybe to even help [contribute](https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md) to the project:
