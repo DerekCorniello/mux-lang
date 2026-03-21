@@ -146,27 +146,56 @@ jobs:
           install: >-
             mingw-w64-x86_64-clang
             mingw-w64-x86_64-llvm
+            mingw-w64-x86_64-llvm-tools
             mingw-w64-x86_64-gcc
 
       - name: Configure LLVM toolchain (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $llvmBin = "C:\msys64\mingw64\bin"
-          $llvmConfigPath = Join-Path $llvmBin "llvm-config.exe"
-          if (-not (Test-Path $llvmConfigPath)) {
-            throw "llvm-config.exe not found at $llvmConfigPath"
+          $candidates = @(
+            "C:\msys64\mingw64\bin",
+            "C:\msys64\ucrt64\bin",
+            "C:\msys64\clang64\bin"
+          )
+
+          $llvmConfigPath = $null
+          foreach ($binDir in $candidates) {
+            if (-not (Test-Path $binDir)) {
+              continue
+            }
+
+            $hit = Get-ChildItem -Path $binDir -Filter "llvm-config*" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) {
+              $llvmConfigPath = $hit.FullName
+              break
+            }
+          }
+
+          if (-not $llvmConfigPath) {
+            $hit = Get-ChildItem -Path "C:\msys64" -Filter "llvm-config*" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) {
+              $llvmConfigPath = $hit.FullName
+            }
+          }
+
+          if (-not $llvmConfigPath) {
+            Write-Host "Contents of C:\msys64 for debugging:"
+            Get-ChildItem -Path "C:\msys64" -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+            throw "llvm-config not found under C:\\msys64 after MSYS2 package install"
           }
 
           $llvmVersion = & $llvmConfigPath --version
           Write-Host "Found llvm-config version: $llvmVersion"
 
-          $llvmPrefix = "C:\msys64\mingw64"
+          $llvmBin = Split-Path -Parent $llvmConfigPath
+          $llvmPrefix = Split-Path -Parent $llvmBin
           "LLVM_CONFIG_PATH=$llvmConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "LLVM_SYS_170_PREFIX=$llvmPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CC=$llvmBin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CXX=$llvmBin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "AR=$llvmBin\llvm-ar.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$llvmBin\gcc.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $llvmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Validate LLVM tools on Windows
