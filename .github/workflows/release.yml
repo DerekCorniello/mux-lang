@@ -20,7 +20,7 @@ jobs:
           - os: ubuntu-latest
             target: linux-x86_64
             archive_ext: tar.gz
-          - os: macos-13
+          - os: macos-15-intel
             target: macos-x86_64
             archive_ext: tar.gz
           - os: macos-14
@@ -68,8 +68,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install llvm --version=17.0.6 -y --no-progress
+          choco install llvm --version=17.0.6 --allow-downgrade --force -y --no-progress
+          $llvmVersion = & "C:\Program Files\LLVM\bin\llvm-config.exe" --version
+          if (-not $llvmVersion.StartsWith("17.")) {
+            throw "Expected LLVM 17.x on Windows runner, found $llvmVersion"
+          }
           "LLVM_SYS_170_PREFIX=C:\Program Files\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LLVM_CONFIG_PATH=C:\Program Files\LLVM\bin\llvm-config.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CC=C:\Program Files\LLVM\bin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CXX=C:\Program Files\LLVM\bin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
