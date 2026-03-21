@@ -84,7 +84,7 @@ jobs:
             archive_ext: tar.gz
             publish: true
           - os: windows-latest
-            target: windows-x86_64
+            target: windows-x86_64-gnu
             archive_ext: zip
             publish: true
 
@@ -98,6 +98,10 @@ jobs:
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
           toolchain: 1.93.1
+
+      - name: Install Rust Windows GNU target
+        if: runner.os == 'Windows'
+        run: rustup target add x86_64-pc-windows-gnu
 
       - name: Install LLVM 17 (Linux latest)
         if: runner.os == 'Linux' && matrix.os == 'ubuntu-latest'
@@ -134,54 +138,35 @@ jobs:
           echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
 
-      - name: Install LLVM 17 (Windows)
+      - name: Setup MSYS2 toolchain (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-llvm
+            mingw-w64-x86_64-gcc
+
+      - name: Configure LLVM toolchain (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install llvm --version=17.0.6 --allow-downgrade --force -y --no-progress
-
-          $roots = @(
-            "C:\Program Files\LLVM\bin",
-            "C:\Program Files\LLVM",
-            "C:\ProgramData\chocolatey\lib\llvm\tools\LLVM\bin",
-            "C:\ProgramData\chocolatey\lib\llvm\tools\LLVM",
-            "C:\ProgramData\chocolatey\bin"
-          )
-
-          $llvmConfigPath = $null
-          foreach ($root in $roots) {
-            if (Test-Path $root) {
-              $hit = Get-ChildItem -Path $root -Filter "llvm-config*" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($hit) {
-                $llvmConfigPath = $hit.FullName
-                break
-              }
-            }
-          }
-
-          if (-not $llvmConfigPath) {
-            $whereOut = (& where.exe llvm-config 2>$null)
-            if ($whereOut) {
-              $llvmConfigPath = $whereOut.Split([Environment]::NewLine)[0].Trim()
-            }
-          }
-
-          if (-not $llvmConfigPath) {
-            throw "llvm-config.exe not found after LLVM install. Cannot build llvm-sys."
+          $llvmBin = "C:\msys64\mingw64\bin"
+          $llvmConfigPath = Join-Path $llvmBin "llvm-config.exe"
+          if (-not (Test-Path $llvmConfigPath)) {
+            throw "llvm-config.exe not found at $llvmConfigPath"
           }
 
           $llvmVersion = & $llvmConfigPath --version
-          if (-not $llvmVersion.StartsWith("17.")) {
-            throw "Expected LLVM 17.x on Windows runner, found $llvmVersion at $llvmConfigPath"
-          }
+          Write-Host "Found llvm-config version: $llvmVersion"
 
-          $llvmBin = Split-Path -Parent $llvmConfigPath
-          $llvmPrefix = Split-Path -Parent $llvmBin
-
+          $llvmPrefix = "C:\msys64\mingw64"
           "LLVM_CONFIG_PATH=$llvmConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "LLVM_SYS_170_PREFIX=$llvmPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CC=$llvmBin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CXX=$llvmBin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AR=$llvmBin\llvm-ar.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $llvmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Validate LLVM tools on Windows
@@ -194,10 +179,20 @@ jobs:
           & $env:LLVM_CONFIG_PATH --version
           & "$env:CC" --version
 
-      - name: Build runtime
+      - name: Build runtime (Windows GNU)
+        if: runner.os == 'Windows'
+        run: cargo build -p mux-runtime --release --target x86_64-pc-windows-gnu
+
+      - name: Build compiler (Windows GNU)
+        if: runner.os == 'Windows'
+        run: cargo build -p mux-lang --release --target x86_64-pc-windows-gnu
+
+      - name: Build runtime (Non-Windows)
+        if: runner.os != 'Windows'
         run: cargo build -p mux-runtime --release
 
-      - name: Build compiler
+      - name: Build compiler (Non-Windows)
+        if: runner.os != 'Windows'
         run: cargo build -p mux-lang --release
 
       - name: Package artifact (Unix)
@@ -221,12 +216,34 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "dist/mux-${{ matrix.target }}/bin" | Out-Null
           New-Item -ItemType Directory -Force -Path "dist/mux-${{ matrix.target }}/lib" | Out-Null
-          Copy-Item "target/release/mux.exe" "dist/mux-${{ matrix.target }}/bin/"
-          foreach ($lib in @("target/release/mux_runtime.lib", "target/release/mux_runtime.dll")) {
+          Copy-Item "target/x86_64-pc-windows-gnu/release/mux.exe" "dist/mux-${{ matrix.target }}/bin/"
+          foreach ($lib in @(
+            "target/x86_64-pc-windows-gnu/release/mux_runtime.dll",
+            "target/x86_64-pc-windows-gnu/release/mux_runtime.dll.a",
+            "target/x86_64-pc-windows-gnu/release/mux_runtime.lib"
+          )) {
             if (Test-Path $lib) {
               Copy-Item $lib "dist/mux-${{ matrix.target }}/lib/"
             }
           }
+
+          $mingwBin = "C:\msys64\mingw64\bin"
+          foreach ($dll in @("libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll")) {
+            $candidate = Join-Path $mingwBin $dll
+            if (Test-Path $candidate) {
+              Copy-Item $candidate "dist/mux-${{ matrix.target }}/bin/"
+            }
+          }
+
+          Get-ChildItem -Path $mingwBin -Filter "libLLVM*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "dist/mux-${{ matrix.target }}/bin/"
+          }
+
+          Get-ChildItem -Path $mingwBin -Filter "libclang-cpp*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "dist/mux-${{ matrix.target }}/bin/"
+          }
+
+          & "dist/mux-${{ matrix.target }}/bin/mux.exe" --version
           Compress-Archive -Path "dist/mux-${{ matrix.target }}/*" -DestinationPath "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}" -Force
           $hash = (Get-FileHash -Algorithm SHA256 "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}").Hash.ToLower()
           "$hash  mux-${{ matrix.target }}.${{ matrix.archive_ext }}" | Out-File -FilePath "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256" -Encoding ascii

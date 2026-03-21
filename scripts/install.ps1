@@ -53,6 +53,10 @@ try {
     if (Test-Path $bundleLibDir) {
         Get-ChildItem -Path $bundleLibDir -File | ForEach-Object {
             Copy-Item $_.FullName (Join-Path $LibDir $_.Name) -Force
+
+            if ($_.Name -match "\.dll$") {
+                Copy-Item $_.FullName (Join-Path $InstallDir $_.Name) -Force
+            }
         }
     }
 
