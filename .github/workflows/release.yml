@@ -140,36 +140,43 @@ jobs:
         run: |
           choco install llvm --version=17.0.6 --allow-downgrade --force -y --no-progress
 
-          $llvmConfigCmd = Get-Command llvm-config* -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $llvmConfigCmd) {
-            $candidates = Get-ChildItem -Path "C:\Program Files\LLVM\bin" -Filter "llvm-config*.exe" -ErrorAction SilentlyContinue
-            $llvmConfigCmd = $candidates | Select-Object -First 1
-          }
+          $roots = @(
+            "C:\Program Files\LLVM\bin",
+            "C:\ProgramData\chocolatey\lib\llvm\tools\LLVM\bin",
+            "C:\ProgramData\chocolatey\bin"
+          )
 
-          $llvmBin = "C:\Program Files\LLVM\bin"
-          $llvmPrefix = "C:\Program Files\LLVM"
-          $llvmConfigPath = ""
-
-          if ($llvmConfigCmd) {
-            $llvmConfigPath = $llvmConfigCmd.Source
-            if (-not $llvmConfigPath) {
-              $llvmConfigPath = $llvmConfigCmd.FullName
+          $llvmConfigPath = $null
+          foreach ($root in $roots) {
+            if (Test-Path $root) {
+              $hit = Get-ChildItem -Path $root -Filter "llvm-config*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($hit) {
+                $llvmConfigPath = $hit.FullName
+                break
+              }
             }
+          }
 
-            $llvmVersion = & $llvmConfigPath --version
-            if (-not $llvmVersion.StartsWith("17.")) {
-              throw "Expected LLVM 17.x on Windows runner, found $llvmVersion at $llvmConfigPath"
+          if (-not $llvmConfigPath) {
+            $whereOut = (& where.exe llvm-config 2>$null)
+            if ($whereOut) {
+              $llvmConfigPath = $whereOut.Split([Environment]::NewLine)[0].Trim()
             }
-
-            $llvmBin = Split-Path -Parent $llvmConfigPath
-            $llvmPrefix = Split-Path -Parent $llvmBin
-          } else {
-            Write-Host "llvm-config was not found on PATH; continuing with default LLVM prefix"
           }
 
-          if ($llvmConfigPath) {
-            "LLVM_CONFIG_PATH=$llvmConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if (-not $llvmConfigPath) {
+            throw "llvm-config.exe not found after LLVM install. Cannot build llvm-sys."
           }
+
+          $llvmVersion = & $llvmConfigPath --version
+          if (-not $llvmVersion.StartsWith("17.")) {
+            throw "Expected LLVM 17.x on Windows runner, found $llvmVersion at $llvmConfigPath"
+          }
+
+          $llvmBin = Split-Path -Parent $llvmConfigPath
+          $llvmPrefix = Split-Path -Parent $llvmBin
+
+          "LLVM_CONFIG_PATH=$llvmConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "LLVM_SYS_170_PREFIX=$llvmPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CC=$llvmBin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CXX=$llvmBin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
