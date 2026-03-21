@@ -13,6 +13,8 @@ jobs:
   verify-release-commit:
     name: Verify Release Commit
     runs-on: ubuntu-latest
+    outputs:
+      on_main: ${{ steps.branch_policy.outputs.on_main }}
     env:
       LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
       LLVM_CONFIG_PATH: /usr/bin/llvm-config-17
@@ -24,13 +26,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Ensure tag commit is on main
+      - name: Check whether tag commit is on main
+        id: branch_policy
         run: |
           git fetch origin main --depth=1
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "Release tags must point to a commit on main."
-            echo "Tagged commit: $GITHUB_SHA"
-            exit 1
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "on_main=true" >> "$GITHUB_OUTPUT"
+            echo "Tag commit is on main."
+          else
+            echo "on_main=false" >> "$GITHUB_OUTPUT"
+            echo "Tag commit is not on main. Build checks and artifacts will run, release publish will be skipped."
           fi
 
       - name: Install Rust toolchain
@@ -221,6 +226,7 @@ jobs:
     needs:
       - verify-release-commit
       - build-artifacts
+    if: ${{ needs.verify-release-commit.outputs.on_main == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
