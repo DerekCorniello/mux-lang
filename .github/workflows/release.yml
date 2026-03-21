@@ -84,10 +84,11 @@ jobs:
             target: macos-aarch64
             archive_ext: tar.gz
             publish: true
-          - os: windows-latest
+          - os: ubuntu-latest
             target: windows-x86_64
             archive_ext: zip
             publish: true
+            cross_windows: true
 
     env:
       MUX_RUNTIME_SRC: ${{ github.workspace }}/mux-runtime
@@ -102,7 +103,7 @@ jobs:
           toolchain: 1.93.1
 
       - name: Install Rust Windows GNU target
-        if: runner.os == 'Windows'
+        if: matrix.cross_windows
         run: rustup target add x86_64-pc-windows-gnu
 
       - name: Install LLVM 17 (Linux latest)
@@ -140,134 +141,109 @@ jobs:
           echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
 
-      - name: Install LLVM mingw 17 (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Install LLVM mingw 17 (Cross Windows)
+        if: matrix.cross_windows
+        shell: bash
         run: |
-          $version = "20231128"
-          $archive = "llvm-mingw-$version-ucrt-x86_64.zip"
-          $url = "https://github.com/mstorsjo/llvm-mingw/releases/download/$version/$archive"
-          $tmpArchive = Join-Path $env:RUNNER_TEMP $archive
-          $extractRoot = "C:\llvm-mingw-17"
+          set -euo pipefail
+          version="20231128"
+          archive="llvm-mingw-${version}-ucrt-ubuntu-20.04-x86_64.tar.xz"
+          url="https://github.com/mstorsjo/llvm-mingw/releases/download/${version}/${archive}"
+          extract_root="$RUNNER_TEMP/llvm-mingw-17"
+          mkdir -p "$extract_root"
+          curl -fsSL "$url" -o "$RUNNER_TEMP/$archive"
+          tar -xJf "$RUNNER_TEMP/$archive" -C "$extract_root"
+          toolchain_root="$(ls -d "$extract_root"/* | head -n 1)"
+          if [ ! -d "$toolchain_root/bin" ]; then
+            echo "Failed to extract llvm-mingw toolchain"
+            exit 1
+          fi
+          echo "LLVM_MINGW_ROOT=$toolchain_root" >> "$GITHUB_ENV"
 
-          if (Test-Path $extractRoot) {
-            Remove-Item -Path $extractRoot -Recurse -Force
-          }
-
-          Invoke-WebRequest -Uri $url -OutFile $tmpArchive
-          Expand-Archive -Path $tmpArchive -DestinationPath $extractRoot -Force
-
-          $toolchainRoot = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
-          if (-not $toolchainRoot) {
-            throw "Failed to extract llvm-mingw toolchain"
-          }
-
-          "LLVM_MINGW_ROOT=$($toolchainRoot.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Configure LLVM toolchain (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Configure LLVM toolchain (Cross Windows)
+        if: matrix.cross_windows
+        shell: bash
         run: |
-          if (-not $env:LLVM_MINGW_ROOT) {
-            throw "LLVM_MINGW_ROOT is not set"
-          }
+          set -euo pipefail
+          if [ -z "${LLVM_MINGW_ROOT:-}" ]; then
+            echo "LLVM_MINGW_ROOT is not set"
+            exit 1
+          fi
 
-          $llvmPrefix = $env:LLVM_MINGW_ROOT
-          $llvmBin = "$llvmPrefix\bin"
-          if (-not (Test-Path $llvmBin)) {
-            throw "LLVM bin directory not found at $llvmBin"
-          }
+          llvm_bin="$LLVM_MINGW_ROOT/bin"
+          if [ ! -d "$llvm_bin" ]; then
+            echo "LLVM bin directory not found at $llvm_bin"
+            exit 1
+          fi
 
-          $llvmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          llvm_config_path=""
+          if [ -x "$llvm_bin/llvm-config" ]; then
+            llvm_config_path="$llvm_bin/llvm-config"
+          elif [ -x "$llvm_bin/llvm-config-17" ]; then
+            llvm_config_path="$llvm_bin/llvm-config-17"
+          fi
 
-          $llvmConfigPath = $null
-          $whereLlvmConfig = (& where.exe llvm-config 2>$null)
-          if ($whereLlvmConfig) {
-            $llvmConfigPath = $whereLlvmConfig.Split([Environment]::NewLine)[0].Trim()
-          }
+          if [ -z "$llvm_config_path" ]; then
+            ls -1 "$llvm_bin"
+            echo "llvm-config not found in toolchain bin"
+            exit 1
+          fi
 
-          if (-not $llvmConfigPath) {
-            $wherePrefixed = (& where.exe x86_64-w64-mingw32-llvm-config 2>$null)
-            if ($wherePrefixed) {
-              $llvmConfigPath = $wherePrefixed.Split([Environment]::NewLine)[0].Trim()
-            }
-          }
+          gnu_linker="$llvm_bin/x86_64-w64-mingw32-gcc"
+          if [ ! -x "$gnu_linker" ]; then
+            ls -1 "$llvm_bin"
+            echo "GNU linker not found in toolchain bin"
+            exit 1
+          fi
 
-          if (-not $llvmConfigPath) {
-            $llvmConfigFile = Get-ChildItem -Path $llvmBin -Filter "*llvm-config*" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($llvmConfigFile) {
-              $llvmConfigPath = $llvmConfigFile.FullName
-            }
-          }
+          llvm_version="$($llvm_config_path --version)"
+          case "$llvm_version" in
+            17.*) ;;
+            *)
+              echo "Expected LLVM 17.x, found $llvm_version"
+              exit 1
+              ;;
+          esac
 
-          $gnuLinker = $null
-          $whereGcc = (& where.exe x86_64-w64-mingw32-gcc 2>$null)
-          if ($whereGcc) {
-            $gnuLinker = $whereGcc.Split([Environment]::NewLine)[0].Trim()
-          }
+          echo "LLVM_CONFIG_PATH=$llvm_config_path" >> "$GITHUB_ENV"
+          echo "LLVM_SYS_170_PREFIX=$LLVM_MINGW_ROOT" >> "$GITHUB_ENV"
+          echo "CC=$llvm_bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=$llvm_bin/clang++" >> "$GITHUB_ENV"
+          echo "AR=$llvm_bin/llvm-ar" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$gnu_linker" >> "$GITHUB_ENV"
+          echo "$llvm_bin" >> "$GITHUB_PATH"
 
-          if (-not $gnuLinker) {
-            $gccFile = Get-ChildItem -Path $llvmBin -Filter "*mingw32-gcc*" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($gccFile) {
-              $gnuLinker = $gccFile.FullName
-            }
-          }
-
-          if (-not $llvmConfigPath) {
-            Write-Host "Contents of LLVM bin directory:"
-            Get-ChildItem -Path $llvmBin -File | Select-Object -ExpandProperty Name
-            throw "llvm-config binary not found in $llvmBin"
-          }
-
-          if (-not $gnuLinker) {
-            Write-Host "Contents of LLVM bin directory:"
-            Get-ChildItem -Path $llvmBin -File | Select-Object -ExpandProperty Name
-            throw "GNU linker not found in $llvmBin"
-          }
-
-          $llvmVersion = & $llvmConfigPath --version
-          if (-not $llvmVersion.StartsWith("17.")) {
-            throw "Expected LLVM 17.x on Windows runner, found $llvmVersion at $llvmConfigPath"
-          }
-
-          "LLVM_CONFIG_PATH=$llvmConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "LLVM_SYS_170_PREFIX=$llvmPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CC=$llvmBin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CXX=$llvmBin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "AR=$llvmBin\llvm-ar.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$gnuLinker" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Validate LLVM tools on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Validate LLVM tools (Cross Windows)
+        if: matrix.cross_windows
+        shell: bash
         run: |
-          if (-not $env:LLVM_CONFIG_PATH) {
-            throw "LLVM_CONFIG_PATH is not set"
-          }
-          if (-not (Test-Path $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER)) {
-            throw "GNU linker not found: $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER"
-          }
-          & $env:LLVM_CONFIG_PATH --version
-          & "$env:CC" --version
+          set -euo pipefail
+          [ -n "${LLVM_CONFIG_PATH:-}" ]
+          [ -x "$LLVM_CONFIG_PATH" ]
+          [ -x "$CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER" ]
+          "$LLVM_CONFIG_PATH" --version
+          "$CC" --version
 
       - name: Build runtime (Windows GNU)
-        if: runner.os == 'Windows'
+        if: matrix.cross_windows
+        shell: bash
         run: cargo build -p mux-runtime --release --target x86_64-pc-windows-gnu
 
       - name: Build compiler (Windows GNU)
-        if: runner.os == 'Windows'
+        if: matrix.cross_windows
+        shell: bash
         run: cargo build -p mux-lang --release --target x86_64-pc-windows-gnu
 
       - name: Build runtime (Non-Windows)
-        if: runner.os != 'Windows'
+        if: ${{ !matrix.cross_windows }}
         run: cargo build -p mux-runtime --release
 
       - name: Build compiler (Non-Windows)
-        if: runner.os != 'Windows'
+        if: ${{ !matrix.cross_windows }}
         run: cargo build -p mux-lang --release
 
       - name: Package artifact (Unix)
-        if: runner.os != 'Windows' && matrix.publish
+        if: runner.os != 'Windows' && matrix.publish && !matrix.cross_windows
         run: |
           set -euo pipefail
           mkdir -p dist/mux-${{ matrix.target }}/bin
@@ -281,43 +257,32 @@ jobs:
           tar -C dist -czf dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }} mux-${{ matrix.target }}
           shasum -a 256 dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }} > dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
 
-      - name: Package artifact (Windows)
-        if: runner.os == 'Windows' && matrix.publish
-        shell: pwsh
+      - name: Package artifact (Cross Windows)
+        if: matrix.cross_windows && matrix.publish
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Force -Path "dist/mux-${{ matrix.target }}/bin" | Out-Null
-          New-Item -ItemType Directory -Force -Path "dist/mux-${{ matrix.target }}/lib" | Out-Null
-          Copy-Item "target/x86_64-pc-windows-gnu/release/mux.exe" "dist/mux-${{ matrix.target }}/bin/"
-          foreach ($lib in @(
-            "target/x86_64-pc-windows-gnu/release/mux_runtime.dll",
-            "target/x86_64-pc-windows-gnu/release/mux_runtime.dll.a",
-            "target/x86_64-pc-windows-gnu/release/mux_runtime.lib"
-          )) {
-            if (Test-Path $lib) {
-              Copy-Item $lib "dist/mux-${{ matrix.target }}/lib/"
-            }
-          }
+          set -euo pipefail
+          mkdir -p "dist/mux-${{ matrix.target }}/bin"
+          mkdir -p "dist/mux-${{ matrix.target }}/lib"
+          cp "target/x86_64-pc-windows-gnu/release/mux.exe" "dist/mux-${{ matrix.target }}/bin/"
+          for lib in "target/x86_64-pc-windows-gnu/release/mux_runtime.dll" "target/x86_64-pc-windows-gnu/release/mux_runtime.dll.a" "target/x86_64-pc-windows-gnu/release/mux_runtime.lib"; do
+            if [ -f "$lib" ]; then
+              cp "$lib" "dist/mux-${{ matrix.target }}/lib/"
+            fi
+          done
 
-          $toolchainBin = "$env:LLVM_MINGW_ROOT\bin"
-          foreach ($dll in @("libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll", "libunwind.dll")) {
-            $candidate = Join-Path $toolchainBin $dll
-            if (Test-Path $candidate) {
-              Copy-Item $candidate "dist/mux-${{ matrix.target }}/bin/"
-            }
-          }
+          toolchain_bin="$LLVM_MINGW_ROOT/bin"
+          for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll libunwind.dll; do
+            if [ -f "$toolchain_bin/$dll" ]; then
+              cp "$toolchain_bin/$dll" "dist/mux-${{ matrix.target }}/bin/"
+            fi
+          done
 
-          Get-ChildItem -Path $toolchainBin -Filter "LLVM*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
-            Copy-Item $_.FullName "dist/mux-${{ matrix.target }}/bin/"
-          }
+          cp "$toolchain_bin"/libLLVM*.dll "dist/mux-${{ matrix.target }}/bin/" 2>/dev/null || true
+          cp "$toolchain_bin"/libclang*.dll "dist/mux-${{ matrix.target }}/bin/" 2>/dev/null || true
 
-          Get-ChildItem -Path $toolchainBin -Filter "clang*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
-            Copy-Item $_.FullName "dist/mux-${{ matrix.target }}/bin/"
-          }
-
-          & "dist/mux-${{ matrix.target }}/bin/mux.exe" --version
-          Compress-Archive -Path "dist/mux-${{ matrix.target }}/*" -DestinationPath "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}" -Force
-          $hash = (Get-FileHash -Algorithm SHA256 "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}").Hash.ToLower()
-          "$hash  mux-${{ matrix.target }}.${{ matrix.archive_ext }}" | Out-File -FilePath "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256" -Encoding ascii
+          cd dist && zip -r "mux-${{ matrix.target }}.${{ matrix.archive_ext }}" "mux-${{ matrix.target }}"
+          sha256sum "mux-${{ matrix.target }}.${{ matrix.archive_ext }}" > "mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256"
 
       - name: Upload build artifacts
         if: matrix.publish
