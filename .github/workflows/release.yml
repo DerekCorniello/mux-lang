@@ -160,17 +160,24 @@ jobs:
           $llvmLib = Join-Path $envRoot "Library\lib"
           $llvmInclude = Join-Path $envRoot "Library\include"
           $llvmConfigPath = Join-Path $llvmBin "llvm-config.exe"
+          $clangPath = Join-Path $llvmBin "clang.exe"
+          $clangxxPath = Join-Path $llvmBin "clang++.exe"
+          $clangClPath = Join-Path $llvmBin "clang-cl.exe"
 
           if (-not (Test-Path $llvmConfigPath)) {
             throw "llvm-config.exe not found at $llvmConfigPath"
           }
 
-          if (-not (Test-Path (Join-Path $llvmBin "clang.exe"))) {
+          if (-not (Test-Path $clangPath)) {
             throw "clang.exe not found in $llvmBin"
           }
 
-          if (-not (Test-Path (Join-Path $llvmBin "clang++.exe"))) {
-            throw "clang++.exe not found in $llvmBin"
+          if (-not (Test-Path $clangxxPath)) {
+            if (Test-Path $clangClPath) {
+              $clangxxPath = $clangClPath
+            } else {
+              $clangxxPath = $clangPath
+            }
           }
 
           $llvmVersion = & $llvmConfigPath --version
@@ -180,8 +187,8 @@ jobs:
 
           "LLVM_SYS_170_PREFIX=$envRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "LLVM_CONFIG_PATH=$llvmConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CC=$(Join-Path $llvmBin "clang.exe")" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CXX=$(Join-Path $llvmBin "clang++.exe")" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CC=$clangPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CXX=$clangxxPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "AR=$(Join-Path $llvmBin "llvm-ar.exe")" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "LIB=$llvmLib;$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "INCLUDE=$llvmInclude;$env:INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
