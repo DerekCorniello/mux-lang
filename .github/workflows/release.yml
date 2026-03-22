@@ -84,11 +84,10 @@ jobs:
             target: macos-aarch64
             archive_ext: tar.gz
             publish: true
-          - os: ubuntu-latest
+          - os: windows-latest
             target: windows-x86_64
             archive_ext: zip
             publish: true
-            cross_windows: true
 
     env:
       MUX_RUNTIME_SRC: ${{ github.workspace }}/mux-runtime
@@ -102,9 +101,9 @@ jobs:
         with:
           toolchain: 1.93.1
 
-      - name: Install Rust Windows GNU target
-        if: matrix.cross_windows
-        run: rustup target add x86_64-pc-windows-gnu
+      - name: Install Rust Windows MSVC target
+        if: runner.os == 'Windows'
+        run: rustup target add x86_64-pc-windows-msvc
 
       - name: Install LLVM 17 (Linux latest)
         if: runner.os == 'Linux' && matrix.os == 'ubuntu-latest'
@@ -138,112 +137,84 @@ jobs:
         run: |
           LLVM_PREFIX="$(brew --prefix llvm@17)"
           echo "LLVM_SYS_170_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=${LLVM_PREFIX}/bin/llvm-config" >> "$GITHUB_ENV"
           echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
 
-      - name: Install LLVM mingw 17 (Cross Windows)
-        if: matrix.cross_windows
-        shell: bash
+      - name: Setup Miniconda (Windows)
+        if: runner.os == 'Windows'
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          channels: conda-forge
+          channel-priority: strict
+
+      - name: Install LLVM 17 with conda (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          set -euo pipefail
-          version="20231128"
-          archive="llvm-mingw-${version}-ucrt-ubuntu-20.04-x86_64.tar.xz"
-          url="https://github.com/mstorsjo/llvm-mingw/releases/download/${version}/${archive}"
-          extract_root="$RUNNER_TEMP/llvm-mingw-17"
-          mkdir -p "$extract_root"
-          curl -fsSL "$url" -o "$RUNNER_TEMP/$archive"
-          tar -xJf "$RUNNER_TEMP/$archive" -C "$extract_root"
-          toolchain_root="$(ls -d "$extract_root"/* | head -n 1)"
-          if [ ! -d "$toolchain_root/bin" ]; then
-            echo "Failed to extract llvm-mingw toolchain"
-            exit 1
-          fi
-          echo "LLVM_MINGW_ROOT=$toolchain_root" >> "$GITHUB_ENV"
+          conda create -y -n mux-llvm -c conda-forge llvmdev=17 clang=17
+          $condaBase = & conda info --base
+          $envRoot = Join-Path $condaBase "envs\mux-llvm"
+          $llvmBin = Join-Path $envRoot "Library\bin"
+          $llvmLib = Join-Path $envRoot "Library\lib"
+          $llvmInclude = Join-Path $envRoot "Library\include"
+          $llvmConfigPath = Join-Path $llvmBin "llvm-config.exe"
 
-      - name: Configure LLVM toolchain (Cross Windows)
-        if: matrix.cross_windows
-        shell: bash
+          if (-not (Test-Path $llvmConfigPath)) {
+            throw "llvm-config.exe not found at $llvmConfigPath"
+          }
+
+          if (-not (Test-Path (Join-Path $llvmBin "clang.exe"))) {
+            throw "clang.exe not found in $llvmBin"
+          }
+
+          if (-not (Test-Path (Join-Path $llvmBin "clang++.exe"))) {
+            throw "clang++.exe not found in $llvmBin"
+          }
+
+          $llvmVersion = & $llvmConfigPath --version
+          if (-not $llvmVersion.StartsWith("17.")) {
+            throw "Expected LLVM 17.x on Windows runner, found $llvmVersion at $llvmConfigPath"
+          }
+
+          "LLVM_SYS_170_PREFIX=$envRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LLVM_CONFIG_PATH=$llvmConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CC=$(Join-Path $llvmBin "clang.exe")" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CXX=$(Join-Path $llvmBin "clang++.exe")" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AR=$(Join-Path $llvmBin "llvm-ar.exe")" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LIB=$llvmLib;$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "INCLUDE=$llvmInclude;$env:INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $llvmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Validate LLVM toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          set -euo pipefail
-          if [ -z "${LLVM_MINGW_ROOT:-}" ]; then
-            echo "LLVM_MINGW_ROOT is not set"
-            exit 1
-          fi
+          if (-not $env:LLVM_CONFIG_PATH) {
+            throw "LLVM_CONFIG_PATH is not set"
+          }
+          & $env:LLVM_CONFIG_PATH --version
+          & "$env:CC" --version
 
-          llvm_bin="$LLVM_MINGW_ROOT/bin"
-          if [ ! -d "$llvm_bin" ]; then
-            echo "LLVM bin directory not found at $llvm_bin"
-            exit 1
-          fi
+      - name: Build runtime (Windows MSVC)
+        if: runner.os == 'Windows'
+        run: cargo build -p mux-runtime --release --target x86_64-pc-windows-msvc
 
-          llvm_config_path=""
-          if [ -x "$llvm_bin/llvm-config" ]; then
-            llvm_config_path="$llvm_bin/llvm-config"
-          elif [ -x "$llvm_bin/llvm-config-17" ]; then
-            llvm_config_path="$llvm_bin/llvm-config-17"
-          fi
-
-          if [ -z "$llvm_config_path" ]; then
-            ls -1 "$llvm_bin"
-            echo "llvm-config not found in toolchain bin"
-            exit 1
-          fi
-
-          gnu_linker="$llvm_bin/x86_64-w64-mingw32-gcc"
-          if [ ! -x "$gnu_linker" ]; then
-            ls -1 "$llvm_bin"
-            echo "GNU linker not found in toolchain bin"
-            exit 1
-          fi
-
-          llvm_version="$($llvm_config_path --version)"
-          case "$llvm_version" in
-            17.*) ;;
-            *)
-              echo "Expected LLVM 17.x, found $llvm_version"
-              exit 1
-              ;;
-          esac
-
-          echo "LLVM_CONFIG_PATH=$llvm_config_path" >> "$GITHUB_ENV"
-          echo "LLVM_SYS_170_PREFIX=$LLVM_MINGW_ROOT" >> "$GITHUB_ENV"
-          echo "CC=$llvm_bin/clang" >> "$GITHUB_ENV"
-          echo "CXX=$llvm_bin/clang++" >> "$GITHUB_ENV"
-          echo "AR=$llvm_bin/llvm-ar" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$gnu_linker" >> "$GITHUB_ENV"
-          echo "$llvm_bin" >> "$GITHUB_PATH"
-
-      - name: Validate LLVM tools (Cross Windows)
-        if: matrix.cross_windows
-        shell: bash
-        run: |
-          set -euo pipefail
-          [ -n "${LLVM_CONFIG_PATH:-}" ]
-          [ -x "$LLVM_CONFIG_PATH" ]
-          [ -x "$CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER" ]
-          "$LLVM_CONFIG_PATH" --version
-          "$CC" --version
-
-      - name: Build runtime (Windows GNU)
-        if: matrix.cross_windows
-        shell: bash
-        run: cargo build -p mux-runtime --release --target x86_64-pc-windows-gnu
-
-      - name: Build compiler (Windows GNU)
-        if: matrix.cross_windows
-        shell: bash
-        run: cargo build -p mux-lang --release --target x86_64-pc-windows-gnu
+      - name: Build compiler (Windows MSVC)
+        if: runner.os == 'Windows'
+        run: cargo build -p mux-lang --release --target x86_64-pc-windows-msvc
 
       - name: Build runtime (Non-Windows)
-        if: ${{ !matrix.cross_windows }}
+        if: runner.os != 'Windows'
         run: cargo build -p mux-runtime --release
 
       - name: Build compiler (Non-Windows)
-        if: ${{ !matrix.cross_windows }}
+        if: runner.os != 'Windows'
         run: cargo build -p mux-lang --release
 
       - name: Package artifact (Unix)
-        if: runner.os != 'Windows' && matrix.publish && !matrix.cross_windows
+        if: runner.os != 'Windows' && matrix.publish
         run: |
           set -euo pipefail
           mkdir -p dist/mux-${{ matrix.target }}/bin
@@ -257,32 +228,44 @@ jobs:
           tar -C dist -czf dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }} mux-${{ matrix.target }}
           shasum -a 256 dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }} > dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
 
-      - name: Package artifact (Cross Windows)
-        if: matrix.cross_windows && matrix.publish
-        shell: bash
+      - name: Package artifact (Windows)
+        if: runner.os == 'Windows' && matrix.publish
+        shell: pwsh
         run: |
-          set -euo pipefail
-          mkdir -p "dist/mux-${{ matrix.target }}/bin"
-          mkdir -p "dist/mux-${{ matrix.target }}/lib"
-          cp "target/x86_64-pc-windows-gnu/release/mux.exe" "dist/mux-${{ matrix.target }}/bin/"
-          for lib in "target/x86_64-pc-windows-gnu/release/mux_runtime.dll" "target/x86_64-pc-windows-gnu/release/mux_runtime.dll.a" "target/x86_64-pc-windows-gnu/release/mux_runtime.lib"; do
-            if [ -f "$lib" ]; then
-              cp "$lib" "dist/mux-${{ matrix.target }}/lib/"
-            fi
-          done
+          New-Item -ItemType Directory -Force -Path "dist/mux-${{ matrix.target }}/bin" | Out-Null
+          New-Item -ItemType Directory -Force -Path "dist/mux-${{ matrix.target }}/lib" | Out-Null
+          Copy-Item "target/x86_64-pc-windows-msvc/release/mux.exe" "dist/mux-${{ matrix.target }}/bin/"
 
-          toolchain_bin="$LLVM_MINGW_ROOT/bin"
-          for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll libunwind.dll; do
-            if [ -f "$toolchain_bin/$dll" ]; then
-              cp "$toolchain_bin/$dll" "dist/mux-${{ matrix.target }}/bin/"
-            fi
-          done
+          foreach ($lib in @("target/x86_64-pc-windows-msvc/release/mux_runtime.dll", "target/x86_64-pc-windows-msvc/release/mux_runtime.lib")) {
+            if (Test-Path $lib) {
+              Copy-Item $lib "dist/mux-${{ matrix.target }}/lib/"
+              if ($lib.EndsWith('.dll')) {
+                Copy-Item $lib "dist/mux-${{ matrix.target }}/bin/"
+              }
+            }
+          }
 
-          cp "$toolchain_bin"/libLLVM*.dll "dist/mux-${{ matrix.target }}/bin/" 2>/dev/null || true
-          cp "$toolchain_bin"/libclang*.dll "dist/mux-${{ matrix.target }}/bin/" 2>/dev/null || true
+          $condaBase = & conda info --base
+          $envRoot = Join-Path $condaBase "envs\mux-llvm"
+          $llvmBin = Join-Path $envRoot "Library\bin"
 
-          cd dist && zip -r "mux-${{ matrix.target }}.${{ matrix.archive_ext }}" "mux-${{ matrix.target }}"
-          sha256sum "mux-${{ matrix.target }}.${{ matrix.archive_ext }}" > "mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256"
+          foreach ($pattern in @("LLVM*.dll", "libclang*.dll", "clang*.dll")) {
+            Get-ChildItem -Path $llvmBin -Filter $pattern -File -ErrorAction SilentlyContinue | ForEach-Object {
+              Copy-Item $_.FullName "dist/mux-${{ matrix.target }}/bin/"
+            }
+          }
+
+          foreach ($dll in @("libxml2.dll", "zlib.dll", "zstd.dll")) {
+            $candidate = Join-Path $llvmBin $dll
+            if (Test-Path $candidate) {
+              Copy-Item $candidate "dist/mux-${{ matrix.target }}/bin/"
+            }
+          }
+
+          & "dist/mux-${{ matrix.target }}/bin/mux.exe" --version
+          Compress-Archive -Path "dist/mux-${{ matrix.target }}/*" -DestinationPath "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}" -Force
+          $hash = (Get-FileHash -Algorithm SHA256 "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}").Hash.ToLower()
+          "$hash  mux-${{ matrix.target }}.${{ matrix.archive_ext }}" | Out-File -FilePath "dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256" -Encoding ascii
 
       - name: Upload build artifacts
         if: matrix.publish

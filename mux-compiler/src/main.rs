@@ -78,7 +78,14 @@ enum Commands {
 }
 
 fn find_clang_command() -> Option<String> {
-    let candidates = ["clang-17", "clang"];
+    if let Ok(cc) = env::var("CC") {
+        let output = Command::new(&cc).arg("--version").output();
+        if output.is_ok_and(|o| o.status.success()) {
+            return Some(cc);
+        }
+    }
+
+    let candidates = ["clang", "clang-17"];
     for candidate in candidates {
         let output = match Command::new(candidate).arg("--version").output() {
             Ok(output) => output,
