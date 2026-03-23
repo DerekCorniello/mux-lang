@@ -220,23 +220,85 @@ jobs:
             throw "Expected LLVM 17.x on Windows runner, found $llvmVersion at $llvmConfigPath"
           }
 
-          $zLibPath = Join-Path $llvmLib "z.lib"
-          if (-not (Test-Path $zLibPath)) {
-            $zCandidates = @(
-              (Join-Path $llvmLib "zlib.lib"),
-              (Join-Path $llvmLib "zlibstatic.lib"),
-              (Join-Path $llvmLib "zdll.lib")
-            )
-            $zSource = $zCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-            if ($zSource) {
-              Copy-Item $zSource $zLibPath
-              Write-Host "Created z.lib shim from $zSource"
-            } else {
-              Write-Host "Available z-related libs in ${llvmLib}:"
-              Get-ChildItem -Path $llvmLib -Filter "z*.lib" -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-              throw "Could not find a zlib import/static library to create z.lib"
+          $requiredTokens = @()
+          foreach ($args in @(@("--system-libs", "--link-static"), @("--libs", "--link-static"))) {
+            $out = & $llvmConfigPath @args
+            if ($LASTEXITCODE -ne 0) {
+              throw "llvm-config $($args -join ' ') failed"
             }
+            $requiredTokens += ($out -split "\s+")
+          }
+
+          $requiredLibNames = New-Object System.Collections.Generic.HashSet[string]
+          foreach ($tok in $requiredTokens) {
+            if ([string]::IsNullOrWhiteSpace($tok)) {
+              continue
+            }
+            $name = $tok.Trim('"')
+            if ($name.StartsWith("-l")) {
+              $name = $name.Substring(2) + ".lib"
+            } elseif ($name.StartsWith("/DEFAULTLIB:")) {
+              $name = $name.Substring(12)
+            }
+            if ($name -match "\.lib$") {
+              [void]$requiredLibNames.Add($name)
+            }
+          }
+
+          $aliases = @{
+            "z.lib" = @("zlib.lib", "zlibstatic.lib", "zdll.lib")
+            "zstd.dll.lib" = @("zstd.lib", "zstd_static.lib", "libzstd.lib")
+            "xml2.lib" = @("libxml2.lib")
+          }
+
+          foreach ($libName in $requiredLibNames) {
+            $targetPath = Join-Path $llvmLib $libName
+            if (Test-Path $targetPath) {
+              continue
+            }
+
+            $candidateNames = New-Object System.Collections.Generic.List[string]
+            if ($aliases.ContainsKey($libName)) {
+              foreach ($n in $aliases[$libName]) {
+                [void]$candidateNames.Add($n)
+              }
+            }
+            if ($libName.EndsWith(".dll.lib")) {
+              [void]$candidateNames.Add($libName.Replace(".dll.lib", ".lib"))
+            }
+            if ($libName.StartsWith("lib") -and $libName.EndsWith(".lib")) {
+              [void]$candidateNames.Add($libName.Substring(3))
+            } else {
+              [void]$candidateNames.Add("lib$libName")
+            }
+
+            $sourcePath = $null
+            foreach ($candidate in $candidateNames) {
+              $p = Join-Path $llvmLib $candidate
+              if (Test-Path $p) {
+                $sourcePath = $p
+                break
+              }
+            }
+
+            if ($sourcePath) {
+              Copy-Item $sourcePath $targetPath
+              Write-Host "Created $libName shim from $(Split-Path -Leaf $sourcePath)"
+            }
+          }
+
+          $missingLibs = @()
+          foreach ($libName in $requiredLibNames) {
+            if (-not (Test-Path (Join-Path $llvmLib $libName))) {
+              $missingLibs += $libName
+            }
+          }
+          if ($missingLibs.Count -gt 0) {
+            Write-Host "Missing required LLVM/system libs after shimming:"
+            $missingLibs | ForEach-Object { Write-Host "  - $_" }
+            Write-Host "Available .lib files in ${llvmLib}:"
+            Get-ChildItem -Path $llvmLib -Filter "*.lib" -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+            throw "Could not satisfy required Windows link libraries"
           }
 
           "LLVM_SYS_170_PREFIX=$llvmPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -262,10 +324,6 @@ jobs:
           }
           if (-not (Test-Path (Join-Path $env:LLVM_SYS_170_PREFIX "bin\llvm-config.exe"))) {
             throw "Expected llvm-config at LLVM_SYS_170_PREFIX\\bin\\llvm-config.exe"
-          }
-          $zLibPath = Join-Path $env:LLVM_SYS_170_PREFIX "lib\z.lib"
-          if (-not (Test-Path $zLibPath)) {
-            throw "Expected z.lib at $zLibPath"
           }
           & $env:LLVM_CONFIG_PATH --version
           & (Join-Path $env:LLVM_SYS_170_PREFIX "bin\llvm-config.exe") --version
