@@ -153,7 +153,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          conda create -y -n mux-llvm -c conda-forge llvmdev=17 clang=17
+          conda create -y -n mux-llvm -c conda-forge llvmdev=17 clang=17 zlib zstd libxml2
           $condaBase = & conda info --base
           $envRoot = Join-Path $condaBase "envs\mux-llvm"
           $llvmPrefix = Join-Path $envRoot "Library"
@@ -187,9 +187,22 @@ jobs:
           }
 
           $zLibPath = Join-Path $llvmLib "z.lib"
-          $zlibLibPath = Join-Path $llvmLib "zlib.lib"
-          if (-not (Test-Path $zLibPath) -and (Test-Path $zlibLibPath)) {
-            Copy-Item $zlibLibPath $zLibPath
+          if (-not (Test-Path $zLibPath)) {
+            $zCandidates = @(
+              (Join-Path $llvmLib "zlib.lib"),
+              (Join-Path $llvmLib "zlibstatic.lib"),
+              (Join-Path $llvmLib "zdll.lib")
+            )
+            $zSource = $zCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+            if ($zSource) {
+              Copy-Item $zSource $zLibPath
+              Write-Host "Created z.lib shim from $zSource"
+            } else {
+              Write-Host "Available z-related libs in $llvmLib:"
+              Get-ChildItem -Path $llvmLib -Filter "z*.lib" -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+              throw "Could not find a zlib import/static library to create z.lib"
+            }
           }
 
           "LLVM_SYS_170_PREFIX=$llvmPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -215,6 +228,10 @@ jobs:
           }
           if (-not (Test-Path (Join-Path $env:LLVM_SYS_170_PREFIX "bin\llvm-config.exe"))) {
             throw "Expected llvm-config at LLVM_SYS_170_PREFIX\\bin\\llvm-config.exe"
+          }
+          $zLibPath = Join-Path $env:LLVM_SYS_170_PREFIX "lib\z.lib"
+          if (-not (Test-Path $zLibPath)) {
+            throw "Expected z.lib at $zLibPath"
           }
           & $env:LLVM_CONFIG_PATH --version
           & (Join-Path $env:LLVM_SYS_170_PREFIX "bin\llvm-config.exe") --version
