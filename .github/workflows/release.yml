@@ -146,6 +146,7 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
+          use-mamba: true
           channels: conda-forge
           channel-priority: strict
 
@@ -153,7 +154,40 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          conda create -y -n mux-llvm -c conda-forge llvmdev=17 clang=17 zlib zstd libxml2
+          conda config --set remote_connect_timeout_secs 60
+          conda config --set remote_read_timeout_secs 300
+          conda config --set remote_max_retries 10
+          conda config --set remote_backoff_factor 2
+
+          $solver = if (Get-Command mamba -ErrorAction SilentlyContinue) { "mamba" } else { "conda" }
+          $createArgsFast = "create -y -n mux-llvm -c conda-forge --repodata-fn current_repodata.json llvmdev=17 clang=17 zlib zstd libxml2"
+          $createArgsFull = "create -y -n mux-llvm -c conda-forge llvmdev=17 clang=17 zlib zstd libxml2"
+          $maxAttempts = 5
+          $attempt = 1
+
+          while ($true) {
+            Write-Host "[$attempt/$maxAttempts] Installing LLVM toolchain with $solver (current_repodata)"
+            cmd /c "$solver $createArgsFast"
+            if ($LASTEXITCODE -eq 0) {
+              break
+            }
+
+            Write-Host "Fast repodata attempt failed, trying full repodata"
+            cmd /c "$solver $createArgsFull"
+            if ($LASTEXITCODE -eq 0) {
+              break
+            }
+
+            if ($attempt -ge $maxAttempts) {
+              throw "Failed to install conda packages after $maxAttempts attempts"
+            }
+
+            $sleepSeconds = 10 * $attempt
+            Write-Host "Package install failed. Retrying in $sleepSeconds seconds..."
+            Start-Sleep -Seconds $sleepSeconds
+            $attempt += 1
+          }
+
           $condaBase = & conda info --base
           $envRoot = Join-Path $condaBase "envs\mux-llvm"
           $llvmPrefix = Join-Path $envRoot "Library"
