@@ -233,7 +233,7 @@ jobs:
               Copy-Item $zSource $zLibPath
               Write-Host "Created z.lib shim from $zSource"
             } else {
-              Write-Host "Available z-related libs in $llvmLib:"
+              Write-Host "Available z-related libs in ${llvmLib}:"
               Get-ChildItem -Path $llvmLib -Filter "z*.lib" -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
               throw "Could not find a zlib import/static library to create z.lib"
             }
