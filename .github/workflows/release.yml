@@ -6,6 +6,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
 
@@ -61,7 +64,7 @@ jobs:
         run: cargo build
 
   build-artifacts:
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.runner_name }}
     needs: verify-release-commit
     runs-on: ${{ matrix.os }}
     strategy:
@@ -69,22 +72,27 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            runner_name: linux-ubuntu-latest-x86_64
             target: linux-x86_64
             archive_ext: tar.gz
             publish: true
           - os: ubuntu-22.04
+            runner_name: linux-ubuntu-22.04-x86_64
             target: linux-x86_64-ubuntu22
             archive_ext: tar.gz
             publish: false
           - os: macos-15-intel
+            runner_name: macos-15-intel-x86_64
             target: macos-x86_64
             archive_ext: tar.gz
             publish: true
           - os: macos-14
+            runner_name: macos-14-arm64
             target: macos-aarch64
             archive_ext: tar.gz
             publish: true
           - os: windows-latest
+            runner_name: windows-latest-x86_64
             target: windows-x86_64
             archive_ext: zip
             publish: true
