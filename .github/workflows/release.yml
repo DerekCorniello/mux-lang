@@ -252,24 +252,25 @@ jobs:
           }
 
           foreach ($libName in $requiredLibNames) {
-            $targetPath = Join-Path $llvmLib $libName
+            $baseName = if ([System.IO.Path]::IsPathRooted($libName)) { [System.IO.Path]::GetFileName($libName) } else { $libName }
+            $targetPath = Join-Path $llvmLib $baseName
             if (Test-Path $targetPath) {
               continue
             }
 
             $candidateNames = New-Object System.Collections.Generic.List[string]
-            if ($aliases.ContainsKey($libName)) {
-              foreach ($n in $aliases[$libName]) {
+            if ($aliases.ContainsKey($baseName)) {
+              foreach ($n in $aliases[$baseName]) {
                 [void]$candidateNames.Add($n)
               }
             }
-            if ($libName.EndsWith(".dll.lib")) {
-              [void]$candidateNames.Add($libName.Replace(".dll.lib", ".lib"))
+            if ($baseName.EndsWith(".dll.lib")) {
+              [void]$candidateNames.Add($baseName.Replace(".dll.lib", ".lib"))
             }
-            if ($libName.StartsWith("lib") -and $libName.EndsWith(".lib")) {
-              [void]$candidateNames.Add($libName.Substring(3))
+            if ($baseName.StartsWith("lib") -and $baseName.EndsWith(".lib")) {
+              [void]$candidateNames.Add($baseName.Substring(3))
             } else {
-              [void]$candidateNames.Add("lib$libName")
+              [void]$candidateNames.Add("lib$baseName")
             }
 
             $sourcePath = $null
@@ -283,7 +284,7 @@ jobs:
 
             if ($sourcePath) {
               Copy-Item $sourcePath $targetPath
-              Write-Host "Created $libName shim from $(Split-Path -Leaf $sourcePath)"
+              Write-Host "Created $baseName shim from $(Split-Path -Leaf $sourcePath)"
             }
           }
 
@@ -295,7 +296,8 @@ jobs:
 
           $missingLibs = @()
           foreach ($libName in $requiredLibNames) {
-            if ($systemLibAllowlist -contains $libName.ToLowerInvariant()) {
+            $baseName = if ([System.IO.Path]::IsPathRooted($libName)) { [System.IO.Path]::GetFileName($libName) } else { $libName }
+            if ($systemLibAllowlist -contains $baseName.ToLowerInvariant()) {
               continue
             }
 
@@ -306,7 +308,7 @@ jobs:
               continue
             }
 
-            if (-not (Test-Path (Join-Path $llvmLib $libName))) {
+            if (-not (Test-Path (Join-Path $llvmLib $baseName))) {
               $missingLibs += $libName
             }
           }
