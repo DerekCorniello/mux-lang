@@ -6,11 +6,243 @@ use crate::result::MuxResult;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::mem::MaybeUninit;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::thread;
 use std::time::Duration;
+
+#[cfg(unix)]
+mod sync_backend {
+    use std::mem::MaybeUninit;
+
+    pub type MuxMutex = libc::pthread_mutex_t;
+    pub type MuxRwLock = libc::pthread_rwlock_t;
+    pub type MuxCondVar = libc::pthread_cond_t;
+
+    pub fn init_mutex() -> Result<*mut MuxMutex, String> {
+        let mut mutex = Box::new(MaybeUninit::<MuxMutex>::uninit());
+        let rc = unsafe { libc::pthread_mutex_init(mutex.as_mut_ptr(), std::ptr::null()) };
+        if rc != 0 {
+            return Err(format!("pthread_mutex_init failed with error code {}", rc));
+        }
+        let initialized = unsafe { Box::<MaybeUninit<MuxMutex>>::assume_init(mutex) };
+        Ok(Box::into_raw(initialized))
+    }
+
+    pub fn destroy_mutex(ptr: *mut MuxMutex) {
+        unsafe {
+            let _ = libc::pthread_mutex_destroy(ptr);
+            drop(Box::from_raw(ptr));
+        }
+    }
+
+    pub fn lock_mutex(ptr: *mut MuxMutex) -> i32 {
+        unsafe { libc::pthread_mutex_lock(ptr) }
+    }
+
+    pub fn unlock_mutex(ptr: *mut MuxMutex) -> i32 {
+        unsafe { libc::pthread_mutex_unlock(ptr) }
+    }
+
+    pub fn init_rwlock() -> Result<*mut MuxRwLock, String> {
+        let mut rwlock = Box::new(MaybeUninit::<MuxRwLock>::uninit());
+        let rc = unsafe { libc::pthread_rwlock_init(rwlock.as_mut_ptr(), std::ptr::null()) };
+        if rc != 0 {
+            return Err(format!("pthread_rwlock_init failed with error code {}", rc));
+        }
+        let initialized = unsafe { Box::<MaybeUninit<MuxRwLock>>::assume_init(rwlock) };
+        Ok(Box::into_raw(initialized))
+    }
+
+    pub fn destroy_rwlock(ptr: *mut MuxRwLock) {
+        unsafe {
+            let _ = libc::pthread_rwlock_destroy(ptr);
+            drop(Box::from_raw(ptr));
+        }
+    }
+
+    pub fn rwlock_read_lock(ptr: *mut MuxRwLock) -> i32 {
+        unsafe { libc::pthread_rwlock_rdlock(ptr) }
+    }
+
+    pub fn rwlock_write_lock(ptr: *mut MuxRwLock) -> i32 {
+        unsafe { libc::pthread_rwlock_wrlock(ptr) }
+    }
+
+    pub fn rwlock_unlock(ptr: *mut MuxRwLock) -> i32 {
+        unsafe { libc::pthread_rwlock_unlock(ptr) }
+    }
+
+    pub fn init_condvar() -> Result<*mut MuxCondVar, String> {
+        let mut condvar = Box::new(MaybeUninit::<MuxCondVar>::uninit());
+        let rc = unsafe { libc::pthread_cond_init(condvar.as_mut_ptr(), std::ptr::null()) };
+        if rc != 0 {
+            return Err(format!("pthread_cond_init failed with error code {}", rc));
+        }
+        let initialized = unsafe { Box::<MaybeUninit<MuxCondVar>>::assume_init(condvar) };
+        Ok(Box::into_raw(initialized))
+    }
+
+    pub fn destroy_condvar(ptr: *mut MuxCondVar) {
+        unsafe {
+            let _ = libc::pthread_cond_destroy(ptr);
+            drop(Box::from_raw(ptr));
+        }
+    }
+
+    pub fn condvar_wait(cond_ptr: *mut MuxCondVar, mutex_ptr: *mut MuxMutex) -> i32 {
+        unsafe { libc::pthread_cond_wait(cond_ptr, mutex_ptr) }
+    }
+
+    pub fn condvar_signal(cond_ptr: *mut MuxCondVar) -> i32 {
+        unsafe { libc::pthread_cond_signal(cond_ptr) }
+    }
+
+    pub fn condvar_broadcast(cond_ptr: *mut MuxCondVar) -> i32 {
+        unsafe { libc::pthread_cond_broadcast(cond_ptr) }
+    }
+}
+
+#[cfg(windows)]
+mod sync_backend {
+    use lazy_static::lazy_static;
+    use std::collections::HashMap;
+    use std::mem::MaybeUninit;
+    use std::sync::{Mutex, MutexGuard};
+    use windows_sys::Win32::Foundation::GetLastError;
+    use windows_sys::Win32::System::Threading::{
+        AcquireSRWLockExclusive, AcquireSRWLockShared, CONDITION_VARIABLE, CRITICAL_SECTION,
+        DeleteCriticalSection, EnterCriticalSection, GetCurrentThreadId, INFINITE,
+        InitializeConditionVariable, InitializeCriticalSection, InitializeSRWLock,
+        LeaveCriticalSection, ReleaseSRWLockExclusive, ReleaseSRWLockShared, SRWLOCK,
+        SleepConditionVariableCS, WakeAllConditionVariable, WakeConditionVariable,
+    };
+
+    lazy_static! {
+        static ref RWLOCK_HOLD_MODES: Mutex<HashMap<(u32, usize), bool>> =
+            Mutex::new(HashMap::new());
+    }
+
+    fn rwlock_modes_lock() -> MutexGuard<'static, HashMap<(u32, usize), bool>> {
+        match RWLOCK_HOLD_MODES.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    pub type MuxMutex = CRITICAL_SECTION;
+    pub type MuxRwLock = SRWLOCK;
+    pub type MuxCondVar = CONDITION_VARIABLE;
+
+    pub fn init_mutex() -> Result<*mut MuxMutex, String> {
+        let mut mutex = Box::new(MaybeUninit::<MuxMutex>::uninit());
+        unsafe { InitializeCriticalSection(mutex.as_mut_ptr()) };
+        let initialized = unsafe { Box::<MaybeUninit<MuxMutex>>::assume_init(mutex) };
+        Ok(Box::into_raw(initialized))
+    }
+
+    pub fn destroy_mutex(ptr: *mut MuxMutex) {
+        unsafe {
+            DeleteCriticalSection(ptr);
+            drop(Box::from_raw(ptr));
+        }
+    }
+
+    pub fn lock_mutex(ptr: *mut MuxMutex) -> i32 {
+        unsafe { EnterCriticalSection(ptr) };
+        0
+    }
+
+    pub fn unlock_mutex(ptr: *mut MuxMutex) -> i32 {
+        unsafe { LeaveCriticalSection(ptr) };
+        0
+    }
+
+    pub fn init_rwlock() -> Result<*mut MuxRwLock, String> {
+        let mut rwlock = Box::new(MaybeUninit::<MuxRwLock>::uninit());
+        unsafe { InitializeSRWLock(rwlock.as_mut_ptr()) };
+        let initialized = unsafe { Box::<MaybeUninit<MuxRwLock>>::assume_init(rwlock) };
+        Ok(Box::into_raw(initialized))
+    }
+
+    pub fn destroy_rwlock(ptr: *mut MuxRwLock) {
+        let lock_addr = ptr as usize;
+        let mut hold_modes = rwlock_modes_lock();
+        hold_modes.retain(|(_, addr), _| *addr != lock_addr);
+        unsafe {
+            drop(Box::from_raw(ptr));
+        }
+    }
+
+    pub fn rwlock_read_lock(ptr: *mut MuxRwLock) -> i32 {
+        let thread_id = unsafe { GetCurrentThreadId() };
+        let key = (thread_id, ptr as usize);
+        {
+            let mut hold_modes = rwlock_modes_lock();
+            hold_modes.insert(key, false);
+        }
+        unsafe { AcquireSRWLockShared(ptr) };
+        0
+    }
+
+    pub fn rwlock_write_lock(ptr: *mut MuxRwLock) -> i32 {
+        let thread_id = unsafe { GetCurrentThreadId() };
+        let key = (thread_id, ptr as usize);
+        {
+            let mut hold_modes = rwlock_modes_lock();
+            hold_modes.insert(key, true);
+        }
+        unsafe { AcquireSRWLockExclusive(ptr) };
+        0
+    }
+
+    pub fn rwlock_unlock(ptr: *mut MuxRwLock) -> i32 {
+        let thread_id = unsafe { GetCurrentThreadId() };
+        let key = (thread_id, ptr as usize);
+        let mode = {
+            let mut hold_modes = rwlock_modes_lock();
+            hold_modes.remove(&key)
+        };
+
+        match mode {
+            Some(true) => unsafe { ReleaseSRWLockExclusive(ptr) },
+            Some(false) => unsafe { ReleaseSRWLockShared(ptr) },
+            None => panic!("rwlock_unlock called without tracked hold mode: {:?}", key),
+        }
+        0
+    }
+
+    pub fn init_condvar() -> Result<*mut MuxCondVar, String> {
+        let mut condvar = Box::new(MaybeUninit::<MuxCondVar>::uninit());
+        unsafe { InitializeConditionVariable(condvar.as_mut_ptr()) };
+        let initialized = unsafe { Box::<MaybeUninit<MuxCondVar>>::assume_init(condvar) };
+        Ok(Box::into_raw(initialized))
+    }
+
+    pub fn destroy_condvar(ptr: *mut MuxCondVar) {
+        unsafe {
+            drop(Box::from_raw(ptr));
+        }
+    }
+
+    pub fn condvar_wait(cond_ptr: *mut MuxCondVar, mutex_ptr: *mut MuxMutex) -> i32 {
+        let ok = unsafe { SleepConditionVariableCS(cond_ptr, mutex_ptr, INFINITE) };
+        if ok == 0 {
+            return unsafe { GetLastError() as i32 };
+        }
+        0
+    }
+
+    pub fn condvar_signal(cond_ptr: *mut MuxCondVar) -> i32 {
+        unsafe { WakeConditionVariable(cond_ptr) };
+        0
+    }
+
+    pub fn condvar_broadcast(cond_ptr: *mut MuxCondVar) -> i32 {
+        unsafe { WakeAllConditionVariable(cond_ptr) };
+        0
+    }
+}
 
 /// Closure representation as produced by the Mux compiler.
 ///
@@ -78,13 +310,12 @@ fn destroy_mutex_object(ptr: *mut c_void) {
     let id = unsafe { *(ptr as *mut i64) };
     let mutex_ptr = {
         let mut mutexes = MUTEXES.lock().expect("MUTEXES lock should not be poisoned");
-        mutexes.remove(&id).map(|p| p as *mut libc::pthread_mutex_t)
+        mutexes
+            .remove(&id)
+            .map(|p| p as *mut sync_backend::MuxMutex)
     };
     if let Some(mutex_ptr) = mutex_ptr {
-        unsafe {
-            let _ = libc::pthread_mutex_destroy(mutex_ptr);
-            drop(Box::from_raw(mutex_ptr));
-        }
+        sync_backend::destroy_mutex(mutex_ptr);
     }
 }
 
@@ -97,13 +328,10 @@ fn destroy_rwlock_object(ptr: *mut c_void) {
         let mut rwlocks = RWLOCKS.lock().expect("RWLOCKS lock should not be poisoned");
         rwlocks
             .remove(&id)
-            .map(|p| p as *mut libc::pthread_rwlock_t)
+            .map(|p| p as *mut sync_backend::MuxRwLock)
     };
     if let Some(rwlock_ptr) = rwlock_ptr {
-        unsafe {
-            let _ = libc::pthread_rwlock_destroy(rwlock_ptr);
-            drop(Box::from_raw(rwlock_ptr));
-        }
+        sync_backend::destroy_rwlock(rwlock_ptr);
     }
 }
 
@@ -116,13 +344,12 @@ fn destroy_condvar_object(ptr: *mut c_void) {
         let mut condvars = CONDVARS
             .lock()
             .expect("CONDVARS lock should not be poisoned");
-        condvars.remove(&id).map(|p| p as *mut libc::pthread_cond_t)
+        condvars
+            .remove(&id)
+            .map(|p| p as *mut sync_backend::MuxCondVar)
     };
     if let Some(condvar_ptr) = condvar_ptr {
-        unsafe {
-            let _ = libc::pthread_cond_destroy(condvar_ptr);
-            drop(Box::from_raw(condvar_ptr));
-        }
+        sync_backend::destroy_condvar(condvar_ptr);
     }
 }
 
@@ -251,34 +478,16 @@ pub extern "C" fn mux_thread_detach(thread_handle: *mut Value) -> *mut MuxResult
     ok_unit()
 }
 
-fn init_pthread_mutex() -> Result<*mut libc::pthread_mutex_t, String> {
-    let mut mutex = Box::new(MaybeUninit::<libc::pthread_mutex_t>::uninit());
-    let rc = unsafe { libc::pthread_mutex_init(mutex.as_mut_ptr(), std::ptr::null()) };
-    if rc != 0 {
-        return Err(format!("pthread_mutex_init failed with error code {}", rc));
-    }
-    let initialized = unsafe { Box::<MaybeUninit<libc::pthread_mutex_t>>::assume_init(mutex) };
-    Ok(Box::into_raw(initialized))
+fn init_pthread_mutex() -> Result<*mut sync_backend::MuxMutex, String> {
+    sync_backend::init_mutex()
 }
 
-fn init_pthread_rwlock() -> Result<*mut libc::pthread_rwlock_t, String> {
-    let mut rwlock = Box::new(MaybeUninit::<libc::pthread_rwlock_t>::uninit());
-    let rc = unsafe { libc::pthread_rwlock_init(rwlock.as_mut_ptr(), std::ptr::null()) };
-    if rc != 0 {
-        return Err(format!("pthread_rwlock_init failed with error code {}", rc));
-    }
-    let initialized = unsafe { Box::<MaybeUninit<libc::pthread_rwlock_t>>::assume_init(rwlock) };
-    Ok(Box::into_raw(initialized))
+fn init_pthread_rwlock() -> Result<*mut sync_backend::MuxRwLock, String> {
+    sync_backend::init_rwlock()
 }
 
-fn init_pthread_condvar() -> Result<*mut libc::pthread_cond_t, String> {
-    let mut condvar = Box::new(MaybeUninit::<libc::pthread_cond_t>::uninit());
-    let rc = unsafe { libc::pthread_cond_init(condvar.as_mut_ptr(), std::ptr::null()) };
-    if rc != 0 {
-        return Err(format!("pthread_cond_init failed with error code {}", rc));
-    }
-    let initialized = unsafe { Box::<MaybeUninit<libc::pthread_cond_t>>::assume_init(condvar) };
-    Ok(Box::into_raw(initialized))
+fn init_pthread_condvar() -> Result<*mut sync_backend::MuxCondVar, String> {
+    sync_backend::init_condvar()
 }
 
 #[unsafe(no_mangle)]
@@ -356,14 +565,14 @@ pub extern "C" fn mux_mutex_lock(mutex_handle: *mut Value) -> *mut MuxResult {
     let mutex_ptr = {
         let mutexes = MUTEXES.lock().expect("MUTEXES lock should not be poisoned");
         match mutexes.get(&id) {
-            Some(ptr) => *ptr as *mut libc::pthread_mutex_t,
+            Some(ptr) => *ptr as *mut sync_backend::MuxMutex,
             None => return err_string(format!("Mutex handle {} not found", id)),
         }
     };
 
-    let rc = unsafe { libc::pthread_mutex_lock(mutex_ptr) };
+    let rc = sync_backend::lock_mutex(mutex_ptr);
     if rc != 0 {
-        return err_string(format!("pthread_mutex_lock failed with error code {}", rc));
+        return err_string(format!("mux_mutex_lock failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -378,17 +587,14 @@ pub extern "C" fn mux_mutex_unlock(mutex_handle: *mut Value) -> *mut MuxResult {
     let mutex_ptr = {
         let mutexes = MUTEXES.lock().expect("MUTEXES lock should not be poisoned");
         match mutexes.get(&id) {
-            Some(ptr) => *ptr as *mut libc::pthread_mutex_t,
+            Some(ptr) => *ptr as *mut sync_backend::MuxMutex,
             None => return err_string(format!("Mutex handle {} not found", id)),
         }
     };
 
-    let rc = unsafe { libc::pthread_mutex_unlock(mutex_ptr) };
+    let rc = sync_backend::unlock_mutex(mutex_ptr);
     if rc != 0 {
-        return err_string(format!(
-            "pthread_mutex_unlock failed with error code {}",
-            rc
-        ));
+        return err_string(format!("mux_mutex_unlock failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -403,15 +609,15 @@ pub extern "C" fn mux_rwlock_read_lock(rwlock_handle: *mut Value) -> *mut MuxRes
     let rwlock_ptr = {
         let rwlocks = RWLOCKS.lock().expect("RWLOCKS lock should not be poisoned");
         match rwlocks.get(&id) {
-            Some(ptr) => *ptr as *mut libc::pthread_rwlock_t,
+            Some(ptr) => *ptr as *mut sync_backend::MuxRwLock,
             None => return err_string(format!("RwLock handle {} not found", id)),
         }
     };
 
-    let rc = unsafe { libc::pthread_rwlock_rdlock(rwlock_ptr) };
+    let rc = sync_backend::rwlock_read_lock(rwlock_ptr);
     if rc != 0 {
         return err_string(format!(
-            "pthread_rwlock_rdlock failed with error code {}",
+            "mux_rwlock_read_lock failed with error code {}",
             rc
         ));
     }
@@ -428,15 +634,15 @@ pub extern "C" fn mux_rwlock_write_lock(rwlock_handle: *mut Value) -> *mut MuxRe
     let rwlock_ptr = {
         let rwlocks = RWLOCKS.lock().expect("RWLOCKS lock should not be poisoned");
         match rwlocks.get(&id) {
-            Some(ptr) => *ptr as *mut libc::pthread_rwlock_t,
+            Some(ptr) => *ptr as *mut sync_backend::MuxRwLock,
             None => return err_string(format!("RwLock handle {} not found", id)),
         }
     };
 
-    let rc = unsafe { libc::pthread_rwlock_wrlock(rwlock_ptr) };
+    let rc = sync_backend::rwlock_write_lock(rwlock_ptr);
     if rc != 0 {
         return err_string(format!(
-            "pthread_rwlock_wrlock failed with error code {}",
+            "mux_rwlock_write_lock failed with error code {}",
             rc
         ));
     }
@@ -453,17 +659,14 @@ pub extern "C" fn mux_rwlock_unlock(rwlock_handle: *mut Value) -> *mut MuxResult
     let rwlock_ptr = {
         let rwlocks = RWLOCKS.lock().expect("RWLOCKS lock should not be poisoned");
         match rwlocks.get(&id) {
-            Some(ptr) => *ptr as *mut libc::pthread_rwlock_t,
+            Some(ptr) => *ptr as *mut sync_backend::MuxRwLock,
             None => return err_string(format!("RwLock handle {} not found", id)),
         }
     };
 
-    let rc = unsafe { libc::pthread_rwlock_unlock(rwlock_ptr) };
+    let rc = sync_backend::rwlock_unlock(rwlock_ptr);
     if rc != 0 {
-        return err_string(format!(
-            "pthread_rwlock_unlock failed with error code {}",
-            rc
-        ));
+        return err_string(format!("mux_rwlock_unlock failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -488,21 +691,21 @@ pub extern "C" fn mux_condvar_wait(
             .lock()
             .expect("CONDVARS lock should not be poisoned");
         match condvars.get(&cond_id) {
-            Some(ptr) => *ptr as *mut libc::pthread_cond_t,
+            Some(ptr) => *ptr as *mut sync_backend::MuxCondVar,
             None => return err_string(format!("CondVar handle {} not found", cond_id)),
         }
     };
     let mutex_ptr = {
         let mutexes = MUTEXES.lock().expect("MUTEXES lock should not be poisoned");
         match mutexes.get(&mutex_id) {
-            Some(ptr) => *ptr as *mut libc::pthread_mutex_t,
+            Some(ptr) => *ptr as *mut sync_backend::MuxMutex,
             None => return err_string(format!("Mutex handle {} not found", mutex_id)),
         }
     };
 
-    let rc = unsafe { libc::pthread_cond_wait(cond_ptr, mutex_ptr) };
+    let rc = sync_backend::condvar_wait(cond_ptr, mutex_ptr);
     if rc != 0 {
-        return err_string(format!("pthread_cond_wait failed with error code {}", rc));
+        return err_string(format!("mux_condvar_wait failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -519,14 +722,14 @@ pub extern "C" fn mux_condvar_signal(condvar_handle: *mut Value) -> *mut MuxResu
             .lock()
             .expect("CONDVARS lock should not be poisoned");
         match condvars.get(&id) {
-            Some(ptr) => *ptr as *mut libc::pthread_cond_t,
+            Some(ptr) => *ptr as *mut sync_backend::MuxCondVar,
             None => return err_string(format!("CondVar handle {} not found", id)),
         }
     };
 
-    let rc = unsafe { libc::pthread_cond_signal(cond_ptr) };
+    let rc = sync_backend::condvar_signal(cond_ptr);
     if rc != 0 {
-        return err_string(format!("pthread_cond_signal failed with error code {}", rc));
+        return err_string(format!("mux_condvar_signal failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -543,15 +746,15 @@ pub extern "C" fn mux_condvar_broadcast(condvar_handle: *mut Value) -> *mut MuxR
             .lock()
             .expect("CONDVARS lock should not be poisoned");
         match condvars.get(&id) {
-            Some(ptr) => *ptr as *mut libc::pthread_cond_t,
+            Some(ptr) => *ptr as *mut sync_backend::MuxCondVar,
             None => return err_string(format!("CondVar handle {} not found", id)),
         }
     };
 
-    let rc = unsafe { libc::pthread_cond_broadcast(cond_ptr) };
+    let rc = sync_backend::condvar_broadcast(cond_ptr);
     if rc != 0 {
         return err_string(format!(
-            "pthread_cond_broadcast failed with error code {}",
+            "mux_condvar_broadcast failed with error code {}",
             rc
         ));
     }

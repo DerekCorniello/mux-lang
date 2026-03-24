@@ -1,0 +1,14 @@
+$ErrorActionPreference = "Stop"
+
+if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+    Write-Host "Chocolatey is required on Windows to run this bootstrap script."
+    Write-Host "Install from https://chocolatey.org/install and rerun this script."
+    exit 1
+}
+
+Write-Host "Installing LLVM 17 and clang toolchain"
+choco install llvm --version=17.0.6 -y --no-progress
+
+Write-Host "Installed contributor dependencies."
+Write-Host "Use .\scripts\dev-cargo.ps1 for source builds without manual env vars."
+Write-Host "Example: .\scripts\dev-cargo.ps1 build"
