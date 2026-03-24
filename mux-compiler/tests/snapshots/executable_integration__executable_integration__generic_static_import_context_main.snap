@@ -1,0 +1,7 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+after static call
+set complete
+value: 42

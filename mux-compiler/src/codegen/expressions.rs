@@ -121,6 +121,25 @@ impl<'a> CodeGenerator<'a> {
     /// Helper function to resolve the class/struct name from any expression
     /// Uses the semantic analyzer to get the expression type
     fn resolve_expression_class_name(&mut self, expr: &ExpressionNode) -> Option<String> {
+        if let ExpressionKind::Identifier(name) = &expr.kind
+            && let Some((_, _, var_type)) = self
+                .variables
+                .get(name)
+                .or_else(|| self.global_variables.get(name))
+        {
+            return match var_type {
+                Type::Named(type_name, _) => Some(type_name.clone()),
+                Type::Reference(inner) => {
+                    if let Type::Named(type_name, _) = inner.as_ref() {
+                        Some(type_name.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+        }
+
         let expr_type = self.analyzer.get_expression_type(expr).ok()?;
         match expr_type {
             Type::Named(name, _) => Some(name.clone()),
@@ -2137,70 +2156,79 @@ impl<'a> CodeGenerator<'a> {
                                                 &resolved_type_args,
                                             )?,
                                         };
+                                        let old_context = self.generic_context.take();
                                         self.generic_context = Some(context);
 
-                                        // save variables and current builder state before generating specialized methods
-                                        let saved_variables = self.variables.clone();
-                                        let saved_insert_block = self.builder.get_insert_block();
+                                        let call_result = (|| {
+                                            // save variables and current builder state before generating specialized methods
+                                            let saved_variables = self.variables.clone();
+                                            let saved_insert_block =
+                                                self.builder.get_insert_block();
 
-                                        // generate specialized methods for this class variant if not already generated
-                                        if !resolved_type_args.is_empty() {
-                                            self.generate_specialized_methods(
-                                                &resolved_class_name,
-                                                &resolved_type_args,
-                                            )?;
-                                        }
+                                            // generate specialized methods for this class variant if not already generated
+                                            if !resolved_type_args.is_empty() {
+                                                self.generate_specialized_methods(
+                                                    &resolved_class_name,
+                                                    &resolved_type_args,
+                                                )?;
+                                            }
 
-                                        // restore variables and builder state after generating specialized methods
-                                        self.variables = saved_variables;
-                                        if let Some(block) = saved_insert_block {
-                                            self.builder.position_at_end(block);
-                                        }
+                                            // restore variables and builder state after generating specialized methods
+                                            self.variables = saved_variables;
+                                            if let Some(block) = saved_insert_block {
+                                                self.builder.position_at_end(block);
+                                            }
 
-                                        // generate static method call - prioritize specialized methods
-                                        let mut call_args = vec![];
-                                        for arg in args.iter() {
-                                            let arg_val = self.generate_expression(arg)?;
-                                            call_args.push(arg_val.into());
-                                        }
+                                            // generate static method call - prioritize specialized methods
+                                            let mut call_args = vec![];
+                                            for arg in args.iter() {
+                                                let arg_val = self.generate_expression(arg)?;
+                                                call_args.push(arg_val.into());
+                                            }
 
-                                        // try specialized method first
-                                        let specialized_method_name = self
-                                            .create_specialized_method_name(
-                                                class_name,
-                                                &resolved_type_args,
-                                                field,
-                                            );
-                                        let function_name = if self
-                                            .module
-                                            .get_function(&specialized_method_name)
-                                            .is_some()
-                                        {
-                                            specialized_method_name
-                                        } else {
-                                            format!("{}.{}", class_name, field)
-                                        };
+                                            // try specialized method first
+                                            let specialized_method_name = self
+                                                .create_specialized_method_name(
+                                                    class_name,
+                                                    &resolved_type_args,
+                                                    field,
+                                                );
+                                            let function_name = if self
+                                                .module
+                                                .get_function(&specialized_method_name)
+                                                .is_some()
+                                            {
+                                                specialized_method_name
+                                            } else {
+                                                format!("{}.{}", class_name, field)
+                                            };
 
-                                        let call = self
-                                            .builder
-                                            .build_call(
-                                                self.module.get_function(&function_name).ok_or(
-                                                    format!("Method '{}' not found", function_name),
-                                                )?,
-                                                &call_args,
-                                                &format!(
-                                                    "{}_call",
-                                                    function_name.replace('.', "_")
-                                                ),
-                                            )
-                                            .map_err(|e| e.to_string())?;
+                                            let call = self
+                                                .builder
+                                                .build_call(
+                                                    self.module
+                                                        .get_function(&function_name)
+                                                        .ok_or(format!(
+                                                            "Method '{}' not found",
+                                                            function_name
+                                                        ))?,
+                                                    &call_args,
+                                                    &format!(
+                                                        "{}_call",
+                                                        function_name.replace('.', "_")
+                                                    ),
+                                                )
+                                                .map_err(|e| e.to_string())?;
 
-                                        // clear generic context after call
-                                        self.generic_context = None;
+                                            Ok(call.try_as_basic_value().left().expect(
+                                                "generic method call should return a basic value",
+                                            ))
+                                        })(
+                                        );
 
-                                        return Ok(call.try_as_basic_value().left().expect(
-                                            "generic method call should return a basic value",
-                                        ));
+                                        self.generic_context = old_context;
+
+                                        return call_result;
                                     } else {
                                         return Err(format!(
                                             "Method {} on class {} is not static",

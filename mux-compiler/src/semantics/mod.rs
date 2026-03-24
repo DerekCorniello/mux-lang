@@ -3572,39 +3572,9 @@ impl SemanticAnalyzer {
                     ));
                 }
 
-                // Get all symbols from the module
-                let module_symbols = module_analyzer.symbol_table.all_symbols.clone();
-
-                // Compute mangled LLVM names for functions in this module
-                let module_name_for_mangling = Self::sanitize_module_path(module_path);
-
-                // Merge ALL symbols from the imported module into the main symbol table
-                // This is needed for codegen to work properly
-                for (name, symbol) in &module_symbols {
-                    // Skip built-in functions to avoid conflicts
-                    if !matches!(symbol.kind, SymbolKind::Function)
-                        || !name.starts_with("print")
-                            && !name.starts_with("read_line")
-                            && !name.starts_with("range")
-                            && !name.starts_with("some")
-                            && !name.starts_with("none")
-                            && !name.starts_with("ok")
-                            && !name.starts_with("err")
-                    {
-                        // Add symbol to main symbol table if it doesn't already exist
-                        if !self.symbol_table.all_symbols.contains_key(name) {
-                            let mut mangled_symbol = symbol.clone();
-                            // For functions, set the mangled LLVM name
-                            if matches!(symbol.kind, SymbolKind::Function) {
-                                mangled_symbol.llvm_name =
-                                    Some(format!("{}!{}", module_name_for_mangling, name));
-                            }
-                            self.symbol_table
-                                .all_symbols
-                                .insert(name.clone(), mangled_symbol);
-                        }
-                    }
-                }
+                // Get exportable symbols from the imported module
+                let module_symbols =
+                    self.filter_module_export_symbols(&module_analyzer.symbol_table.all_symbols);
 
                 // Process import specification
                 match spec {
@@ -4657,6 +4627,69 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    fn filter_module_export_symbols(
+        &self,
+        symbols: &HashMap<String, Symbol>,
+    ) -> HashMap<String, Symbol> {
+        symbols
+            .iter()
+            .filter(|(_, symbol)| {
+                matches!(
+                    symbol.kind,
+                    SymbolKind::Function
+                        | SymbolKind::Class
+                        | SymbolKind::Interface
+                        | SymbolKind::Enum
+                        | SymbolKind::Constant
+                )
+            })
+            .map(|(name, symbol)| (name.clone(), symbol.clone()))
+            .collect()
+    }
+
+    fn collect_declared_module_symbols(
+        &self,
+        module_nodes: &[AstNode],
+        module_analyzer: &SemanticAnalyzer,
+    ) -> HashMap<String, Symbol> {
+        let global_symbols = module_analyzer.symbol_table.global_scope_symbols();
+        let mut declared = HashMap::new();
+
+        for node in module_nodes {
+            match node {
+                AstNode::Function(func) => {
+                    if let Some(symbol) = global_symbols.get(&func.name) {
+                        declared.insert(func.name.clone(), symbol.clone());
+                    }
+                }
+                AstNode::Class { name, .. }
+                | AstNode::Interface { name, .. }
+                | AstNode::Enum { name, .. } => {
+                    if let Some(symbol) = global_symbols.get(name) {
+                        declared.insert(name.clone(), symbol.clone());
+                    }
+                }
+                AstNode::Statement(stmt) => match &stmt.kind {
+                    StatementKind::AutoDecl(name, _, _)
+                    | StatementKind::TypedDecl(name, _, _)
+                    | StatementKind::ConstDecl(name, _, _) => {
+                        if let Some(symbol) = global_symbols.get(name) {
+                            declared.insert(name.clone(), symbol.clone());
+                        }
+                    }
+                    StatementKind::Function(func) => {
+                        if let Some(symbol) = global_symbols.get(&func.name) {
+                            declared.insert(func.name.clone(), symbol.clone());
+                        }
+                    }
+                    _ => {}
+                },
+            }
+        }
+
+        self.filter_module_export_symbols(&declared)
+    }
+
     fn analyze_imported_module(
         &mut self,
         module_nodes: &[AstNode],
@@ -4683,14 +4716,14 @@ impl SemanticAnalyzer {
                 ),
             ));
         }
-        Ok(module_analyzer.symbol_table.all_symbols.clone())
+        Ok(self.collect_declared_module_symbols(module_nodes, &module_analyzer))
     }
 
     fn mangle_and_import_module_symbols(
         &mut self,
         module_symbols: &HashMap<String, Symbol>,
         module_path: &str,
-    ) {
+    ) -> Result<(), SemanticError> {
         let module_name_for_mangling = Self::sanitize_module_path(module_path);
         for (name, symbol) in module_symbols {
             let name_str = name.as_str();
@@ -4714,6 +4747,8 @@ impl SemanticAnalyzer {
                     .insert(name.clone(), mangled_symbol);
             }
         }
+
+        Ok(())
     }
 
     fn handle_import_spec(
@@ -4806,7 +4841,7 @@ impl SemanticAnalyzer {
 
         let module_symbols =
             self.analyze_imported_module(&module_nodes, module_path, &resolver, files, span)?;
-        self.mangle_and_import_module_symbols(&module_symbols, module_path);
+        self.mangle_and_import_module_symbols(&module_symbols, module_path)?;
 
         self.handle_import_spec(spec, &module_symbols, module_path, span)?;
 
@@ -4863,7 +4898,10 @@ impl SemanticAnalyzer {
             ));
         }
 
-        let submodule_symbols = submodule_analyzer.symbol_table.all_symbols.clone();
+        let submodule_symbols =
+            self.collect_declared_module_symbols(&submodule_nodes, &submodule_analyzer);
+
+        self.mangle_and_import_module_symbols(&submodule_symbols, submodule_path)?;
 
         let mangled_submodule_symbols =
             self.mangle_module_symbols(&submodule_symbols, submodule_path);
@@ -5156,7 +5194,8 @@ impl SemanticAnalyzer {
             imported_symbol.llvm_name = Some(format!("{}!{}", module_name_for_mangling, item_name));
         }
 
-        self.symbol_table.add_symbol(local_name, imported_symbol)?;
+        self.symbol_table
+            .add_imported_symbol(local_name, imported_symbol)?;
         Ok(())
     }
 
@@ -5182,7 +5221,7 @@ impl SemanticAnalyzer {
                 }
 
                 // Try to add, but ignore duplicate errors since we already checked
-                let _ = self.symbol_table.add_symbol(name, imported_symbol);
+                let _ = self.symbol_table.add_imported_symbol(name, imported_symbol);
             }
         }
         Ok(())

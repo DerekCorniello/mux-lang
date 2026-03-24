@@ -1,5 +1,4 @@
 import std.dsa.*
-import std.dsa.collection.Collection
 
 print("=== BinaryTree Full Test ===")
 
