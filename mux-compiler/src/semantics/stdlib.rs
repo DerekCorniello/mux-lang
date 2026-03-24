@@ -312,7 +312,7 @@ macro_rules! insert_items {
 }
 
 fn tcp_stream_methods() -> HashMap<String, MethodSig> {
-    define_methods! {
+    let mut methods = define_methods! {
         "connect" => {
             params: [str_()],
             return_type: io_result(tcp_stream_type()),
@@ -327,32 +327,14 @@ fn tcp_stream_methods() -> HashMap<String, MethodSig> {
             params: [net_bytes_type()],
             return_type: io_result(int()),
             is_static: false
-        },
-        "close" => {
-            params: [],
-            return_type: Type::Void,
-            is_static: false
-        },
-        "set_nonblocking" => {
-            params: [bool_()],
-            return_type: io_result(Type::Void),
-            is_static: false
-        },
-        "peer_addr" => {
-            params: [],
-            return_type: io_result(str_()),
-            is_static: false
-        },
-        "local_addr" => {
-            params: [],
-            return_type: io_result(str_()),
-            is_static: false
         }
-    }
+    };
+    insert_socket_common_methods(&mut methods);
+    methods
 }
 
 fn udp_socket_methods() -> HashMap<String, MethodSig> {
-    define_methods! {
+    let mut methods = define_methods! {
         "bind" => {
             params: [str_()],
             return_type: io_result(udp_socket_type()),
@@ -367,7 +349,14 @@ fn udp_socket_methods() -> HashMap<String, MethodSig> {
             params: [int()],
             return_type: io_result(net_tuple_bytes_addr_type()),
             is_static: false
-        },
+        }
+    };
+    insert_socket_common_methods(&mut methods);
+    methods
+}
+
+fn insert_socket_common_methods(methods: &mut HashMap<String, MethodSig>) {
+    methods.extend(define_methods! {
         "close" => {
             params: [],
             return_type: Type::Void,
@@ -388,7 +377,7 @@ fn udp_socket_methods() -> HashMap<String, MethodSig> {
             return_type: io_result(str_()),
             is_static: false
         }
-    }
+    });
 }
 
 fn tcp_listener_methods() -> HashMap<String, MethodSig> {
@@ -443,30 +432,10 @@ pub fn net_module_class_symbols(span: Span) -> HashMap<String, Symbol> {
 }
 
 fn sql_connection_methods() -> HashMap<String, MethodSig> {
-    define_methods! {
+    let mut methods = define_methods! {
         "close" => {
             params: [],
             return_type: Type::Void,
-            is_static: false
-        },
-        "execute" => {
-            params: [str_()],
-            return_type: io_result(int()),
-            is_static: false
-        },
-        "execute_params" => {
-            params: [str_(), Type::List(Box::new(sql_value_type()))],
-            return_type: io_result(int()),
-            is_static: false
-        },
-        "query" => {
-            params: [str_()],
-            return_type: io_result(sql_result_set_type()),
-            is_static: false
-        },
-        "query_params" => {
-            params: [str_(), Type::List(Box::new(sql_value_type()))],
-            return_type: io_result(sql_result_set_type()),
             is_static: false
         },
         "begin_transaction" => {
@@ -474,11 +443,13 @@ fn sql_connection_methods() -> HashMap<String, MethodSig> {
             return_type: io_result(sql_transaction_type()),
             is_static: false
         }
-    }
+    };
+    insert_sql_query_methods(&mut methods);
+    methods
 }
 
 fn sql_transaction_methods() -> HashMap<String, MethodSig> {
-    define_methods! {
+    let mut methods = define_methods! {
         "commit" => {
             params: [],
             return_type: io_result(Type::Void),
@@ -488,7 +459,14 @@ fn sql_transaction_methods() -> HashMap<String, MethodSig> {
             params: [],
             return_type: io_result(Type::Void),
             is_static: false
-        },
+        }
+    };
+    insert_sql_query_methods(&mut methods);
+    methods
+}
+
+fn insert_sql_query_methods(methods: &mut HashMap<String, MethodSig>) {
+    methods.extend(define_methods! {
         "execute" => {
             params: [str_()],
             return_type: io_result(int()),
@@ -509,7 +487,7 @@ fn sql_transaction_methods() -> HashMap<String, MethodSig> {
             return_type: io_result(sql_result_set_type()),
             is_static: false
         }
-    }
+    });
 }
 
 fn sql_result_set_methods() -> HashMap<String, MethodSig> {
@@ -634,7 +612,7 @@ fn condvar_methods() -> HashMap<String, MethodSig> {
 }
 
 fn rwlock_methods() -> HashMap<String, MethodSig> {
-    define_methods! {
+    let mut methods = define_methods! {
         "new" => {
             params: [],
             return_type: Type::Named("RwLock".to_string(), Vec::new()),
@@ -642,24 +620,21 @@ fn rwlock_methods() -> HashMap<String, MethodSig> {
         },
         "read_lock" => {
             params: [],
-            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            return_type: io_result(Type::Void),
             is_static: false
         },
         "write_lock" => {
             params: [],
-            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false
-        },
-        "unlock" => {
-            params: [],
-            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            return_type: io_result(Type::Void),
             is_static: false
         }
-    }
+    };
+    insert_sync_unlock_method(&mut methods);
+    methods
 }
 
 fn mutex_methods() -> HashMap<String, MethodSig> {
-    define_methods! {
+    let mut methods = define_methods! {
         "new" => {
             params: [],
             return_type: Type::Named("Mutex".to_string(), Vec::new()),
@@ -667,15 +642,22 @@ fn mutex_methods() -> HashMap<String, MethodSig> {
         },
         "lock" => {
             params: [],
-            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
-            is_static: false
-        },
-        "unlock" => {
-            params: [],
-            return_type: Type::Result(Box::new(Type::Void), Box::new(str_())),
+            return_type: io_result(Type::Void),
             is_static: false
         }
-    }
+    };
+    insert_sync_unlock_method(&mut methods);
+    methods
+}
+
+fn insert_sync_unlock_method(methods: &mut HashMap<String, MethodSig>) {
+    methods.extend(define_methods! {
+        "unlock" => {
+            params: [],
+            return_type: io_result(Type::Void),
+            is_static: false
+        }
+    });
 }
 
 pub fn sync_module_class_symbols(span: Span) -> HashMap<String, Symbol> {

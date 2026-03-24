@@ -3,50 +3,72 @@ use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-#[allow(clippy::mutable_key_type)]
-pub extern "C" fn mux_csv_parse(input: *const c_char) -> *mut Value {
+fn err_result(message: &str) -> *mut Value {
+    let msg = CString::new(message).expect("error messages should not contain interior null bytes");
+    unsafe { crate::result::mux_result_err_str(msg.as_ptr()) }
+}
+
+fn csv_parse_error_result(error: impl std::fmt::Display) -> *mut Value {
+    err_result(&format!("CSV parse error: {}", error))
+}
+
+fn read_input_string(input: *const c_char) -> Result<String, *mut Value> {
     if input.is_null() {
-        let msg = CString::new("null input").unwrap();
-        unsafe {
-            return crate::result::mux_result_err_str(msg.as_ptr());
-        }
+        return Err(err_result("null input"));
     }
+
     let s = unsafe { CStr::from_ptr(input) }
         .to_string_lossy()
         .into_owned();
+    Ok(s)
+}
 
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(s.as_bytes());
+fn record_to_value_list(record: &csv::StringRecord) -> Value {
+    let row: Vec<Value> = record
+        .iter()
+        .map(|field| Value::String(field.to_string()))
+        .collect();
+    Value::List(row)
+}
+
+fn collect_rows(reader: &mut csv::Reader<&[u8]>) -> Result<Vec<Value>, *mut Value> {
     let mut rows = Vec::new();
 
     for result in reader.records() {
         match result {
-            Ok(record) => {
-                let row: Vec<Value> = record
-                    .iter()
-                    .map(|field| Value::String(field.to_string()))
-                    .collect();
-                rows.push(Value::List(row));
-            }
-            Err(e) => {
-                let msg = CString::new(format!("CSV parse error: {}", e)).unwrap();
-                unsafe {
-                    return crate::result::mux_result_err_str(msg.as_ptr());
-                }
-            }
+            Ok(record) => rows.push(record_to_value_list(&record)),
+            Err(error) => return Err(csv_parse_error_result(error)),
         }
     }
 
-    let headers = Value::List(Vec::new());
-    let rows_value = Value::List(rows);
+    Ok(rows)
+}
 
+fn csv_value(headers: Value, rows: Vec<Value>) -> Value {
     let mut map = BTreeMap::new();
     map.insert(Value::String("headers".to_string()), headers);
-    map.insert(Value::String("rows".to_string()), rows_value);
-    let csv_value = Value::Map(map);
+    map.insert(Value::String("rows".to_string()), Value::List(rows));
+    Value::Map(map)
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+#[allow(clippy::mutable_key_type)]
+pub extern "C" fn mux_csv_parse(input: *const c_char) -> *mut Value {
+    let s = match read_input_string(input) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
+
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(s.as_bytes());
+    let rows = match collect_rows(&mut reader) {
+        Ok(rows) => rows,
+        Err(error) => return error,
+    };
+
+    let csv_value = csv_value(Value::List(Vec::new()), rows);
 
     let v_ptr = crate::refcount::mux_rc_alloc(csv_value);
     crate::result::mux_result_ok_value(v_ptr)
@@ -56,62 +78,30 @@ pub extern "C" fn mux_csv_parse(input: *const c_char) -> *mut Value {
 #[unsafe(no_mangle)]
 #[allow(clippy::mutable_key_type)]
 pub extern "C" fn mux_csv_parse_with_headers(input: *const c_char) -> *mut Value {
-    if input.is_null() {
-        let msg = CString::new("null input").unwrap();
-        unsafe {
-            return crate::result::mux_result_err_str(msg.as_ptr());
-        }
-    }
-    let s = unsafe { CStr::from_ptr(input) }
-        .to_string_lossy()
-        .into_owned();
+    let s = match read_input_string(input) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
 
     let mut reader = csv::Reader::from_reader(s.as_bytes());
 
-    // Extract headers using reader.headers(); this reads the header record
-    // so that reader.records() yields only the data rows.
     let headers = match reader.headers() {
         Ok(hdr) => {
-            let header_list: Vec<Value> = hdr
+            let header_values: Vec<Value> = hdr
                 .iter()
                 .map(|field| Value::String(field.to_string()))
                 .collect();
-            Value::List(header_list)
+            Value::List(header_values)
         }
-        Err(e) => {
-            let msg = CString::new(format!("CSV parse error: {}", e)).unwrap();
-            unsafe {
-                return crate::result::mux_result_err_str(msg.as_ptr());
-            }
-        }
+        Err(error) => return csv_parse_error_result(error),
     };
 
-    // Collect remaining rows from reader.records()
-    let mut rows = Vec::new();
-    for result in reader.records() {
-        match result {
-            Ok(record) => {
-                let row: Vec<Value> = record
-                    .iter()
-                    .map(|field| Value::String(field.to_string()))
-                    .collect();
-                rows.push(Value::List(row));
-            }
-            Err(e) => {
-                let msg = CString::new(format!("CSV parse error: {}", e)).unwrap();
-                unsafe {
-                    return crate::result::mux_result_err_str(msg.as_ptr());
-                }
-            }
-        }
-    }
+    let rows = match collect_rows(&mut reader) {
+        Ok(rows) => rows,
+        Err(error) => return error,
+    };
 
-    let rows_value = Value::List(rows);
-
-    let mut map = BTreeMap::new();
-    map.insert(Value::String("headers".to_string()), headers);
-    map.insert(Value::String("rows".to_string()), rows_value);
-    let csv_value = Value::Map(map);
+    let csv_value = csv_value(headers, rows);
 
     let v_ptr = crate::refcount::mux_rc_alloc(csv_value);
     crate::result::mux_result_ok_value(v_ptr)

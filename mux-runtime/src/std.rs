@@ -332,22 +332,8 @@ pub extern "C" fn mux_value_get_type_tag(val: *const Value) -> i32 {
     if val.is_null() {
         return -1;
     }
-    unsafe {
-        match &*val {
-            Value::Unit => 11,
-            Value::Bool(_) => 0,
-            Value::Int(_) => 1,
-            Value::Float(_) => 2,
-            Value::String(_) => 3,
-            Value::List(_) => 4,
-            Value::Map(_) => 5,
-            Value::Set(_) => 6,
-            Value::Tuple(_) => 10,
-            Value::Optional(_) => 7,
-            Value::Result(_) => 8,
-            Value::Object(_) => 9,
-        }
-    }
+    let value = unsafe { &*val };
+    value.type_tag()
 }
 
 /// Compare two Value pointers for equality
