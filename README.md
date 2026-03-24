@@ -28,31 +28,56 @@ Check out the [docs](https://mux-lang.dev)!
 
 ## Installation
 
-### Install Mux (recommended)
+Mux provides multiple installation methods to suit different needs.
 
-Use a prebuilt binary installer:
+### Option 1: Prebuilt Binaries (Recommended)
+
+Use the official installer script:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh
 ```
 
-PowerShell (Windows):
+Windows PowerShell:
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.ps1 | iex
 ```
 
-After install:
+#### Installation Directory (Optional)
+
+By default, the installer places the binary in `~/.local/bin` and libraries in `~/.local/lib`. You can customize this with environment variables if needed:
+
+```bash
+# Custom installation directory
+MUX_INSTALL_DIR=/usr/local/bin MUX_LIB_DIR=/usr/local/lib sh install.sh
+
+# Or on Windows (PowerShell)
+$env:MUX_INSTALL_DIR = "C:\Program Files\mux"
+$env:MUX_LIB_DIR = "C:\Program Files\mux\lib"
+```
+
+After installation, verify your setup:
 
 ```bash
 mux --version
-mux doctor
-mux doctor --dev
+mux doctor       # Validate runtime dependencies
+mux doctor --dev  # Validate LLVM 17 and clang for development
 ```
 
-### Build From Source (contributors)
+### Option 2: Install from crates.io
 
-This path requires LLVM 17 and clang, but no manual environment setup.
+If you prefer installing via cargo:
+
+```bash
+cargo install mux-lang
+```
+
+Note: LLVM 17 and clang must be installed first for source builds.
+
+### Option 3: Build from Source (Contributors)
+
+For contributing to Mux, use the bootstrap scripts which automatically set up LLVM 17:
 
 Arch Linux:
 
@@ -67,6 +92,15 @@ Debian and Ubuntu:
 ./scripts/bootstrap-dev.sh
 ./scripts/dev-cargo.sh build
 ```
+
+macOS:
+
+```bash
+./scripts/bootstrap-dev.sh
+./scripts/dev-cargo.sh build
+```
+
+The bootstrap scripts detect your OS and install LLVM 17 automatically. The `dev-cargo.sh` script wraps cargo calls with the correct LLVM environment variables set.
 
 ### Runtime Setup
 

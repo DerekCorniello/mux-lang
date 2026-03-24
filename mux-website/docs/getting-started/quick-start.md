@@ -11,7 +11,9 @@ Before you begin, make sure you have the following installed:
 
 ## Installation
 
-### Option 1: Install prebuilt binaries (Recommended)
+Mux provides multiple installation methods to suit different needs.
+
+### Option 1: Prebuilt Binaries (Recommended)
 
 Install with the official script:
 
@@ -24,6 +26,40 @@ Windows PowerShell:
 ```powershell title="powershell"
 iwr -useb https://raw.githubusercontent.com/derekcorniello/mux-lang/main/scripts/install.ps1 | iex
 ```
+
+#### Custom Installation Directory (Optional)
+
+By default, the installer places the binary in `~/.local/bin` and libraries in `~/.local/lib`. You can customize this with environment variables if needed:
+
+```bash title="bash"
+# Custom installation directory (bash)
+MUX_INSTALL_DIR=/usr/local/bin MUX_LIB_DIR=/usr/local/lib sh install.sh
+```
+
+```powershell title="powershell"
+# Custom installation directory (PowerShell)
+$env:MUX_INSTALL_DIR = "C:\Program Files\mux"
+$env:MUX_LIB_DIR = "C:\Program Files\mux\lib"
+iwr -useb https://raw.githubusercontent.com/derekcorniello/mux-lang/main/scripts/install.ps1 | iex
+```
+
+#### Verifying Your Installation
+
+After installation, verify everything is working:
+
+```bash title="bash"
+mux --version
+```
+
+Use the built-in doctor command to check your setup:
+
+```bash title="bash"
+mux doctor       # Validate runtime dependencies
+mux doctor --dev  # Validate LLVM 17 and clang for development
+```
+
+- `mux doctor` - For end users to verify runtime dependencies
+- `mux doctor --dev` - For contributors to verify LLVM 17 and clang
 
 ### Option 2: Install from crates.io (Advanced)
 
@@ -38,43 +74,48 @@ The runtime library is built on first use or by running `mux doctor`.
 
 **Note:** Make sure LLVM 17 and clang are installed first for source builds.
 
-Use bootstrap helpers for contributor source builds:
+### Option 3: Build from Source (Contributors)
+
+If you prefer to build from source, maybe to even help [contribute](https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md) to the project:
+
+1. Clone the repository:
+
+   ```bash title="bash"
+   git clone https://github.com/derekcorniello/mux-lang
+   cd mux-lang
+   ```
+
+2. Run the bootstrap script to install LLVM 17 automatically:
+
+   ```bash title="bash"
+   ./scripts/bootstrap-dev.sh
+   ```
+
+   This script detects your OS and installs LLVM 17, clang, and lld. It supports:
+   - Arch Linux (via yay)
+   - Debian/Ubuntu (via apt)
+   - macOS (via Homebrew)
+
+3. Build using the dev wrapper:
+
+   ```bash title="bash"
+   ./scripts/dev-cargo.sh build
+   ```
+
+   The `dev-cargo.sh` script wraps cargo calls with the correct LLVM environment variables set automatically.
+
+The compiler will be built in `target/release/mux-compiler`.
+
+### Option 4: Install via Bootstrap Scripts
+
+For contributors who want the easiest setup:
 
 ```bash title="bash"
 ./scripts/bootstrap-dev.sh
 ./scripts/dev-cargo.sh install --path mux-compiler
 ```
 
-This works on Arch Linux, Debian, and Ubuntu. The bootstrap script installs LLVM 17 and clang 17 for your platform.
-
-### Option 3: Build from Source
-
-If you prefer to build from source, maybe to even help [contribute](https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md) to the project:
-
-```bash title="bash"
-git clone https://github.com/derekcorniello/mux-lang
-cd mux-lang
-cargo build --release
-```
-
-The compiler will be built in `target/release/mux-compiler`.
-
-## Verify Installation
-
-After installation, verify everything is working:
-
-```bash title="bash"
-mux --version
-```
-
-Use the built-in doctor command to check your setup:
-
-```bash title="bash"
-mux doctor
-mux doctor --dev
-```
-
-`mux doctor` validates runtime dependencies for end users. `mux doctor --dev` validates LLVM 17 and clang for source development.
+This installs the `mux` binary to your cargo bin directory.
 
 ## Your First Mux Program
 
