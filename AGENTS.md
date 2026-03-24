@@ -71,6 +71,7 @@ When testing a feature, the agent should:
 
 3. Run `cargo fmt` to ensure consistent formatting
 4. Run `cargo clippy` to ensure no warnings or errors
+5. Use your sonarqube mcp tool to check for code quality issues
 
 The user will separately run `cargo test` and insta testing for comprehensive validation.
 

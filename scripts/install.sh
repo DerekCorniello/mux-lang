@@ -43,6 +43,7 @@ detect_target() {
   esac
 
   echo "${os}-${arch}"
+  return 0
 }
 
 require_cmd() {
