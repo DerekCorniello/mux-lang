@@ -9,18 +9,46 @@ Thanks for your interest! This guide explains how to contribute to Mux.
 1. Fork the repository.
 2. Clone your fork locally.
 3. Install Rust (edition 2024 required): `rustup install stable`
-4. Install LLVM 17: `brew install llvm@17` (macOS) or your distro's package manager
-5. Run the tests (`cargo test`) to make sure everything is working.
-6. Running your code should be done via `cargo run -- `, followed by the command you want to run, e.g. `cargo run -- run test_file.mux`. So `mux` is substituted by `cargo run -- `.
-7. Always run `cargo fmt` and `cargo clippy` before committing changes.
-8. Configure git hooks: `git config core.hooksPath .github/hooks`.
-9. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
-10. Make your changes.
-11. Run tests again to ensure nothing is broken.
-12. Commit your changes with clear messages.
-13. Push your branch to your fork.
-14. Open a Pull Request against the `main` branch of the original repository.
-15. AI agents should follow the guidelines in [AGENTS.md](AGENTS.md).
+4. Run the bootstrap script to install LLVM 17 automatically:
+
+   ```bash
+   ./scripts/bootstrap-dev.sh
+   ```
+
+   This script detects your OS and installs LLVM 17 and clang. It supports:
+   - Arch Linux (via yay)
+   - Debian/Ubuntu (via apt)
+   - macOS (via Homebrew)
+
+5. Build the compiler using the dev wrapper:
+
+   ```bash
+   ./scripts/dev-cargo.sh build
+   ```
+
+   The `dev-cargo.sh` script automatically sets the correct LLVM environment variables.
+
+6. Run tests to make sure everything is working:
+
+   ```bash
+   ./scripts/dev-cargo.sh test
+   ```
+
+7. Running Mux programs during development:
+
+   ```bash
+   ./scripts/dev-cargo.sh run test_scripts/your_file.mux
+   ```
+
+8. Always run `cargo fmt` and `cargo clippy` before committing changes.
+9. Configure git hooks: `git config core.hooksPath .github/hooks`.
+10. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
+11. Make your changes.
+12. Run tests again to ensure nothing is broken.
+13. Commit your changes with clear messages.
+14. Push your branch to your fork.
+15. Open a Pull Request against the `main` branch of the original repository.
+16. AI agents should follow the guidelines in [AGENTS.md](AGENTS.md).
 
 ---
 

@@ -35,3 +35,6 @@ httparse = "1.10"
 rusqlite = { version = "0.31", features = ["bundled"] }
 postgres = "0.19"
 mysql = "26"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Kernel", "Win32_System_Threading"] }

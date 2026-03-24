@@ -6,38 +6,44 @@ Get up and running with Mux in just a few minutes.
 
 Before you begin, make sure you have the following installed:
 
-- **Rust** (1.85 or later) - [Install Rust](https://rustup.rs/)
-- **LLVM** (17) - Required for code generation
-- **clang** - Required for linking compiled programs
+- **For prebuilt install**: no Rust or LLVM toolchain needed
+- **For source install**: Rust is required; use the bootstrap script to install LLVM 17 and clang 17
 
 ## Installation
 
-### Option 1: Install from crates.io (Recommended)
+Mux provides multiple installation methods to suit different needs.
 
-The easiest way to install Mux is using cargo:
+### Option 1: Prebuilt Binaries (Recommended)
 
-```bash title="bash"
-cargo install mux-lang
-```
-
-This installs the Mux compiler to your cargo bin directory.
-The runtime library is built on first use or by running `mux doctor`.
-
-**Note:** Make sure LLVM and clang are installed on your system first, as they are required for compilation and linking.
-
-### Option 2: Build from Source
-
-If you prefer to build from source, maybe to even help [contribute](https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md) to the project:
+Install with the official script:
 
 ```bash title="bash"
-git clone https://github.com/derekcorniello/mux-lang
-cd mux-lang
-cargo build --release
+curl -fsSL https://raw.githubusercontent.com/derekcorniello/mux-lang/main/scripts/install.sh | sh
 ```
 
-The compiler will be built in `target/release/mux-compiler`.
+Windows PowerShell:
 
-## Verify Installation
+```powershell title="powershell"
+iwr -useb https://raw.githubusercontent.com/derekcorniello/mux-lang/main/scripts/install.ps1 | iex
+```
+
+#### Custom Installation Directory (Optional)
+
+By default, the installer places the binary in `~/.local/bin` and libraries in `~/.local/lib`. You can customize this with environment variables if needed:
+
+```bash title="bash"
+# Custom installation directory (bash)
+MUX_INSTALL_DIR=/usr/local/bin MUX_LIB_DIR=/usr/local/lib sh install.sh
+```
+
+```powershell title="powershell"
+# Custom installation directory (PowerShell)
+$env:MUX_INSTALL_DIR = "C:\Program Files\mux"
+$env:MUX_LIB_DIR = "C:\Program Files\mux\lib"
+iwr -useb https://raw.githubusercontent.com/derekcorniello/mux-lang/main/scripts/install.ps1 | iex
+```
+
+#### Verifying Your Installation
 
 After installation, verify everything is working:
 
@@ -48,10 +54,68 @@ mux --version
 Use the built-in doctor command to check your setup:
 
 ```bash title="bash"
-mux doctor
+mux doctor       # Validate runtime dependencies
+mux doctor --dev  # Validate LLVM 17 and clang for development
 ```
 
-The `mux doctor` command verifies LLVM and clang, and builds the Mux runtime library if it is missing.
+- `mux doctor` - For end users to verify runtime dependencies
+- `mux doctor --dev` - For contributors to verify LLVM 17 and clang
+
+### Option 2: Install from crates.io (Advanced)
+
+If you want to build from source with cargo:
+
+```bash title="bash"
+cargo install mux-lang
+```
+
+This installs the Mux compiler to your cargo bin directory.
+The runtime library is built on first use or by running `mux doctor`.
+
+**Note:** Make sure LLVM 17 and clang are installed first for source builds.
+
+### Option 3: Build from Source (Contributors)
+
+If you prefer to build from source, maybe to even help [contribute](https://github.com/derekcorniello/mux-lang/blob/main/CONTRIBUTING.md) to the project:
+
+1. Clone the repository:
+
+   ```bash title="bash"
+   git clone https://github.com/derekcorniello/mux-lang
+   cd mux-lang
+   ```
+
+2. Run the bootstrap script to install LLVM 17 automatically:
+
+   ```bash title="bash"
+   ./scripts/bootstrap-dev.sh
+   ```
+
+   This script detects your OS and installs LLVM 17, clang, and lld. It supports:
+   - Arch Linux (via yay)
+   - Debian/Ubuntu (via apt)
+   - macOS (via Homebrew)
+
+3. Build using the dev wrapper:
+
+   ```bash title="bash"
+   ./scripts/dev-cargo.sh build
+   ```
+
+   The `dev-cargo.sh` script wraps cargo calls with the correct LLVM environment variables set automatically.
+
+The compiler will be built in `target/release/mux-compiler`.
+
+### Option 4: Install via Bootstrap Scripts
+
+For contributors who want the easiest setup:
+
+```bash title="bash"
+./scripts/bootstrap-dev.sh
+./scripts/dev-cargo.sh install --path mux-compiler
+```
+
+This installs the `mux` binary to your cargo bin directory.
 
 ## Your First Mux Program
 
