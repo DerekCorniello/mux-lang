@@ -122,14 +122,13 @@ fn collect_mux_files(base: &Path, current: &Path, out: &mut Vec<(String, String)
     }
 }
 
-#[cfg(target_family = "unix")]
-fn detect_runtime_library(
+fn runtime_search_candidates(
     workspace_root: &Path,
     debug_path: &Path,
     release_path: &Path,
     profile_path: &Path,
-) -> (PathBuf, PathBuf) {
-    let candidates: Vec<(PathBuf, &str)> = vec![
+) -> Vec<(PathBuf, &'static str)> {
+    vec![
         (
             profile_path.to_path_buf(),
             "profile-specific (release or debug)",
@@ -144,7 +143,42 @@ fn detect_runtime_library(
             workspace_root.join("target").join("debug"),
             "workspace/target/debug",
         ),
-    ];
+    ]
+}
+
+fn emit_missing_runtime_warning(
+    runtime_name: &str,
+    profile_path: &Path,
+    release_path: &Path,
+    debug_path: &Path,
+    workspace_root: &Path,
+) {
+    println!(
+        "cargo:warning=Could not find {} yet. Expected locations:\n\
+         - {} (profile-specific)\n\
+         - {}\n\
+         - {}\n\
+         - {}\n\
+         - {}\n\
+         The mux CLI will request a runtime build if needed.",
+        runtime_name,
+        profile_path.display(),
+        release_path.display(),
+        debug_path.display(),
+        workspace_root.join("target").join("release").display(),
+        workspace_root.join("target").join("debug").display()
+    );
+}
+
+#[cfg(target_family = "unix")]
+fn detect_runtime_library(
+    workspace_root: &Path,
+    debug_path: &Path,
+    release_path: &Path,
+    profile_path: &Path,
+) -> (PathBuf, PathBuf) {
+    let candidates =
+        runtime_search_candidates(workspace_root, debug_path, release_path, profile_path);
 
     for (path, _) in &candidates {
         let static_lib = path.join("libmux_runtime.a");
@@ -159,19 +193,12 @@ fn detect_runtime_library(
     let dynamic_lib = profile_path.join("libmux_runtime.so");
 
     if !static_lib.exists() && !dynamic_lib.exists() {
-        println!(
-            "cargo:warning=Could not find libmux_runtime yet. Expected locations:\n\
-             - {} (profile-specific)\n\
-             - {}\n\
-             - {}\n\
-             - {}\n\
-             - {}\n\
-             The mux CLI will request a runtime build if needed.",
-            profile_path.display(),
-            release_path.display(),
-            debug_path.display(),
-            workspace_root.join("target").join("release").display(),
-            workspace_root.join("target").join("debug").display()
+        emit_missing_runtime_warning(
+            "libmux_runtime",
+            profile_path,
+            release_path,
+            debug_path,
+            workspace_root,
         );
     }
 
@@ -188,31 +215,11 @@ fn detect_runtime_library(
     let check_path = |p: &Path| -> (PathBuf, PathBuf) {
         let static_lib = p.join("mux_runtime.lib");
         let dynamic_lib = p.join("mux_runtime.dll");
-        if static_lib.exists() {
-            (static_lib, dynamic_lib)
-        } else if dynamic_lib.exists() {
-            (static_lib, dynamic_lib)
-        } else {
-            (static_lib, dynamic_lib)
-        }
+        (static_lib, dynamic_lib)
     };
 
-    let candidates: Vec<(PathBuf, &str)> = vec![
-        (
-            profile_path.to_path_buf(),
-            "profile-specific (release or debug)",
-        ),
-        (release_path.to_path_buf(), "release"),
-        (debug_path.to_path_buf(), "debug"),
-        (
-            workspace_root.join("target").join("release"),
-            "workspace/target/release",
-        ),
-        (
-            workspace_root.join("target").join("debug"),
-            "workspace/target/debug",
-        ),
-    ];
+    let candidates =
+        runtime_search_candidates(workspace_root, debug_path, release_path, profile_path);
 
     for (path, description) in &candidates {
         let (static_lib, dynamic_lib) = check_path(path);
@@ -230,19 +237,12 @@ fn detect_runtime_library(
     let dynamic_lib = profile_path.join("mux_runtime.dll");
 
     if !static_lib.exists() && !dynamic_lib.exists() {
-        println!(
-            "cargo:warning=Could not find mux_runtime yet. Expected locations:\n\
-             - {} (profile-specific)\n\
-             - {}\n\
-             - {}\n\
-             - {}\n\
-             - {}\n\
-             The mux CLI will request a runtime build if needed.",
-            profile_path.display(),
-            release_path.display(),
-            debug_path.display(),
-            workspace_root.join("target").join("release").display(),
-            workspace_root.join("target").join("debug").display()
+        emit_missing_runtime_warning(
+            "mux_runtime",
+            profile_path,
+            release_path,
+            debug_path,
+            workspace_root,
         );
     }
 

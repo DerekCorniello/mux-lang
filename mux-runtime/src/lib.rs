@@ -1,11 +1,13 @@
-use ::std::cmp;
-use ::std::collections::{BTreeMap, BTreeSet};
-use ::std::ffi::c_void;
-use ::std::fmt;
-use ::std::hash;
-use ::std::mem;
-use ::std::rc::Rc;
-use ::std::sync::atomic::{AtomicUsize, Ordering};
+extern crate std as rust_std;
+
+use rust_std::cmp;
+use rust_std::collections::{BTreeMap, BTreeSet};
+use rust_std::ffi::c_void;
+use rust_std::fmt;
+use rust_std::hash;
+use rust_std::mem;
+use rust_std::rc::Rc;
+use rust_std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type TypeId = u32;
 
@@ -164,20 +166,8 @@ impl PartialOrd for Value {
 
 impl Value {
     pub fn type_tag(&self) -> i32 {
-        match self {
-            Value::Unit => 11,
-            Value::Bool(_) => 0,
-            Value::Int(_) => 1,
-            Value::Float(_) => 2,
-            Value::String(_) => 3,
-            Value::List(_) => 4,
-            Value::Map(_) => 5,
-            Value::Set(_) => 6,
-            Value::Tuple(_) => 10,
-            Value::Optional(_) => 7,
-            Value::Result(_) => 8,
-            Value::Object(_) => 9,
-        }
+        const TAG_BY_ORDER: [i32; 12] = [11, 0, 1, 2, 3, 4, 5, 6, 10, 7, 8, 9];
+        TAG_BY_ORDER[self.variant_order() as usize]
     }
 
     fn variant_order(&self) -> u8 {
