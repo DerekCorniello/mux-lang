@@ -417,22 +417,24 @@ fn resolve_runtime_lib_dir(profile: &str) -> Option<PathBuf> {
         .or_else(|| build_runtime_in_cache(profile))
 }
 
-fn run_doctor(dev_mode: bool) {
-    let clang = find_clang_command();
-    let llvm_versions = collect_llvm_versions();
-    let selected_dev_llvm = pick_llvm_for_dev(&llvm_versions);
-
+fn print_detected_llvm_versions(llvm_versions: &[(String, String, u32)]) {
     if llvm_versions.is_empty() {
         println!("No llvm-config command found on PATH.");
-    } else {
-        println!("Detected llvm-config versions:");
-        for (tool, version, major) in &llvm_versions {
-            println!("  - {} => {} (major {})", tool, version, major);
-        }
+        return;
     }
 
-    let llvm_ok = if dev_mode {
-        match selected_dev_llvm {
+    println!("Detected llvm-config versions:");
+    for (tool, version, major) in llvm_versions {
+        println!("  - {} => {} (major {})", tool, version, major);
+    }
+}
+
+fn validate_llvm_for_doctor(
+    dev_mode: bool,
+    selected_dev_llvm: Option<(String, String, u32)>,
+) -> bool {
+    if dev_mode {
+        return match selected_dev_llvm {
             Some((tool, version, _)) => {
                 println!(
                     "LLVM development requirement satisfied with {} ({}).",
@@ -448,26 +450,33 @@ fn run_doctor(dev_mode: bool) {
                 print_llvm_install_help();
                 false
             }
-        }
-    } else {
-        if let Some((tool, version, _)) = selected_dev_llvm {
-            println!("Using LLVM {} from {}.", version, tool);
-        } else {
-            println!(
-                "LLVM {} was not detected. This is okay for prebuilt installs, but source builds need LLVM {}.",
-                REQUIRED_LLVM_MAJOR, REQUIRED_LLVM_MAJOR
-            );
-        }
-        true
-    };
-
-    if let Some(clang_cmd) = &clang {
-        println!("Clang is installed: {}.", clang_cmd);
-    } else {
-        println!("Clang is not installed.");
-        print_llvm_install_help();
+        };
     }
 
+    if let Some((tool, version, _)) = selected_dev_llvm {
+        println!("Using LLVM {} from {}.", version, tool);
+    } else {
+        println!(
+            "LLVM {} was not detected. This is okay for prebuilt installs, but source builds need LLVM {}.",
+            REQUIRED_LLVM_MAJOR, REQUIRED_LLVM_MAJOR
+        );
+    }
+
+    true
+}
+
+fn report_clang_for_doctor(clang: Option<&str>) -> bool {
+    if let Some(clang_cmd) = clang {
+        println!("Clang is installed: {}.", clang_cmd);
+        return true;
+    }
+
+    println!("Clang is not installed.");
+    print_llvm_install_help();
+    false
+}
+
+fn ensure_runtime_for_doctor() -> bool {
     let profile = runtime_profile();
     let runtime_ok = if resolve_runtime_lib_dir(profile).is_some() {
         true
@@ -482,7 +491,20 @@ fn run_doctor(dev_mode: bool) {
         println!("Mux runtime is not available.");
     }
 
-    if llvm_ok && clang.is_some() && runtime_ok {
+    runtime_ok
+}
+
+fn run_doctor(dev_mode: bool) {
+    let llvm_versions = collect_llvm_versions();
+    let selected_dev_llvm = pick_llvm_for_dev(&llvm_versions);
+
+    print_detected_llvm_versions(&llvm_versions);
+    let llvm_ok = validate_llvm_for_doctor(dev_mode, selected_dev_llvm);
+    let clang = find_clang_command();
+    let clang_ok = report_clang_for_doctor(clang.as_deref());
+    let runtime_ok = ensure_runtime_for_doctor();
+
+    if llvm_ok && clang_ok && runtime_ok {
         println!("Your system is ready to use the Mux compiler!");
     } else {
         println!("Please install the missing dependencies and try again.");

@@ -1,0 +1,18 @@
+{
+    "mcp": {
+        "sonarqube": {
+            "type": "local",
+            "command": [
+                "npx",
+                "-y",
+                "sonarqube-mcp-server"
+            ],
+            "environment": {
+                "SONARQUBE_TOKEN": "${SONARQUBE_TOKEN}",
+                "SONARQUBE_ORG": "${SONARQUBE_ORG}",
+                "SONARQUBE_URL": "https://sonarqube.us"
+            },
+            "enabled": true
+        }
+    }
+}
