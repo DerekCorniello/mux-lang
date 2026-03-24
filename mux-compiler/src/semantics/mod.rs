@@ -106,6 +106,36 @@ impl SemanticAnalyzer {
         )
     }
 
+    fn make_function_symbol(
+        &self,
+        span: Span,
+        function_type: Type,
+        type_params: &[(String, Vec<crate::ast::TraitBound>)],
+        default_param_count: usize,
+    ) -> Symbol {
+        Symbol {
+            kind: SymbolKind::Function,
+            span,
+            type_: Some(function_type),
+            interfaces: std::collections::HashMap::new(),
+            methods: std::collections::HashMap::new(),
+            fields: std::collections::HashMap::new(),
+            type_params: type_params
+                .iter()
+                .map(|(name, bounds)| {
+                    (
+                        name.clone(),
+                        bounds.iter().map(|bound| bound.name.clone()).collect(),
+                    )
+                })
+                .collect(),
+            original_name: None,
+            llvm_name: None,
+            default_param_count,
+            variants: None,
+        }
+    }
+
     fn stdlib_modules() -> Vec<(&'static str, &'static str)> {
         vec![
             ("std.assert", "assert"),
@@ -2007,180 +2037,138 @@ impl SemanticAnalyzer {
         prim: &PrimitiveType,
         method_name: &str,
     ) -> Option<MethodSig> {
-        match prim {
-            PrimitiveType::Int => match method_name {
-                "to_string" | "to_float" | "to_int" => Some(MethodSig {
-                    params: vec![],
-                    return_type: if method_name == "to_string" {
-                        Type::Primitive(PrimitiveType::Str)
-                    } else if method_name == "to_float" {
-                        Type::Primitive(PrimitiveType::Float)
-                    } else {
-                        Type::Primitive(PrimitiveType::Int)
-                    },
-                    is_static: false,
-                }),
-                "eq" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Int)],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "cmp" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Int)],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                "hash" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            PrimitiveType::Float => match method_name {
-                "to_string" | "to_int" | "to_float" => Some(MethodSig {
-                    params: vec![],
-                    return_type: if method_name == "to_string" {
-                        Type::Primitive(PrimitiveType::Str)
-                    } else if method_name == "to_int" {
-                        Type::Primitive(PrimitiveType::Int)
-                    } else {
-                        Type::Primitive(PrimitiveType::Float)
-                    },
-                    is_static: false,
-                }),
-                "eq" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Float)],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "cmp" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Float)],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                "hash" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            PrimitiveType::Str => match method_name {
-                "to_string" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                }),
-                "message" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                }),
-                "length" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                "to_int" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Named(
-                        "result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Int),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    is_static: false,
-                }),
-                "to_float" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Named(
-                        "result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Float),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    is_static: false,
-                }),
-                "eq" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Str)],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "cmp" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Str)],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                "hash" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            PrimitiveType::Bool => match method_name {
-                "to_string" | "to_int" | "to_float" => Some(MethodSig {
-                    params: vec![],
-                    return_type: if method_name == "to_string" {
-                        Type::Primitive(PrimitiveType::Str)
-                    } else if method_name == "to_int" {
-                        Type::Primitive(PrimitiveType::Int)
-                    } else {
-                        Type::Primitive(PrimitiveType::Float)
-                    },
-                    is_static: false,
-                }),
-                "eq" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Bool)],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "hash" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            PrimitiveType::Char => match method_name {
-                "to_string" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Str),
-                    is_static: false,
-                }),
-                "to_int" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Named(
-                        "result".to_string(),
-                        vec![
-                            Type::Primitive(PrimitiveType::Int),
-                            Type::Primitive(PrimitiveType::Str),
-                        ],
-                    ),
-                    is_static: false,
-                }),
-                "eq" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Char)],
-                    return_type: Type::Primitive(PrimitiveType::Bool),
-                    is_static: false,
-                }),
-                "cmp" => Some(MethodSig {
-                    params: vec![Type::Primitive(PrimitiveType::Char)],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                "hash" => Some(MethodSig {
-                    params: vec![],
-                    return_type: Type::Primitive(PrimitiveType::Int),
-                    is_static: false,
-                }),
-                _ => None,
-            },
-            PrimitiveType::Void => None,
-            PrimitiveType::Auto => None,
+        use PrimitiveType::{Bool, Char, Float, Int, Str};
+        let resolver = match prim {
+            Int => Some(Self::get_int_method_sig as fn(&Self, &str) -> Option<MethodSig>),
+            Float => Some(Self::get_float_method_sig as fn(&Self, &str) -> Option<MethodSig>),
+            Str => Some(Self::get_string_method_sig as fn(&Self, &str) -> Option<MethodSig>),
+            Bool => Some(Self::get_bool_method_sig as fn(&Self, &str) -> Option<MethodSig>),
+            Char => Some(Self::get_char_method_sig as fn(&Self, &str) -> Option<MethodSig>),
+            PrimitiveType::Void | PrimitiveType::Auto => None,
+        };
+        resolver.and_then(|resolve| resolve(self, method_name))
+    }
+
+    fn make_instance_method_sig(params: Vec<Type>, return_type: Type) -> MethodSig {
+        MethodSig {
+            params,
+            return_type,
+            is_static: false,
+        }
+    }
+
+    fn make_eq_method_sig(param_type: PrimitiveType) -> MethodSig {
+        Self::make_instance_method_sig(
+            vec![Type::Primitive(param_type)],
+            Type::Primitive(PrimitiveType::Bool),
+        )
+    }
+
+    fn make_cmp_method_sig(param_type: PrimitiveType) -> MethodSig {
+        Self::make_instance_method_sig(
+            vec![Type::Primitive(param_type)],
+            Type::Primitive(PrimitiveType::Int),
+        )
+    }
+
+    fn make_hash_method_sig() -> MethodSig {
+        Self::make_instance_method_sig(vec![], Type::Primitive(PrimitiveType::Int))
+    }
+
+    fn make_to_string_method_sig() -> MethodSig {
+        Self::make_instance_method_sig(vec![], Type::Primitive(PrimitiveType::Str))
+    }
+
+    fn make_str_parse_result_method_sig(value_type: PrimitiveType) -> MethodSig {
+        Self::make_instance_method_sig(
+            vec![],
+            Type::Named(
+                "result".to_string(),
+                vec![
+                    Type::Primitive(value_type),
+                    Type::Primitive(PrimitiveType::Str),
+                ],
+            ),
+        )
+    }
+
+    fn get_int_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "to_string" => Some(Self::make_to_string_method_sig()),
+            "to_float" => Some(Self::make_instance_method_sig(
+                vec![],
+                Type::Primitive(PrimitiveType::Float),
+            )),
+            "to_int" => Some(Self::make_instance_method_sig(
+                vec![],
+                Type::Primitive(PrimitiveType::Int),
+            )),
+            "eq" => Some(Self::make_eq_method_sig(PrimitiveType::Int)),
+            "cmp" => Some(Self::make_cmp_method_sig(PrimitiveType::Int)),
+            "hash" => Some(Self::make_hash_method_sig()),
+            _ => None,
+        }
+    }
+
+    fn get_float_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "to_string" => Some(Self::make_to_string_method_sig()),
+            "to_int" => Some(Self::make_instance_method_sig(
+                vec![],
+                Type::Primitive(PrimitiveType::Int),
+            )),
+            "to_float" => Some(Self::make_instance_method_sig(
+                vec![],
+                Type::Primitive(PrimitiveType::Float),
+            )),
+            "eq" => Some(Self::make_eq_method_sig(PrimitiveType::Float)),
+            "cmp" => Some(Self::make_cmp_method_sig(PrimitiveType::Float)),
+            "hash" => Some(Self::make_hash_method_sig()),
+            _ => None,
+        }
+    }
+
+    fn get_string_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "to_string" | "message" => Some(Self::make_to_string_method_sig()),
+            "length" => Some(Self::make_instance_method_sig(
+                vec![],
+                Type::Primitive(PrimitiveType::Int),
+            )),
+            "to_int" => Some(Self::make_str_parse_result_method_sig(PrimitiveType::Int)),
+            "to_float" => Some(Self::make_str_parse_result_method_sig(PrimitiveType::Float)),
+            "eq" => Some(Self::make_eq_method_sig(PrimitiveType::Str)),
+            "cmp" => Some(Self::make_cmp_method_sig(PrimitiveType::Str)),
+            "hash" => Some(Self::make_hash_method_sig()),
+            _ => None,
+        }
+    }
+
+    fn get_bool_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "to_string" => Some(Self::make_to_string_method_sig()),
+            "to_int" => Some(Self::make_instance_method_sig(
+                vec![],
+                Type::Primitive(PrimitiveType::Int),
+            )),
+            "to_float" => Some(Self::make_instance_method_sig(
+                vec![],
+                Type::Primitive(PrimitiveType::Float),
+            )),
+            "eq" => Some(Self::make_eq_method_sig(PrimitiveType::Bool)),
+            "hash" => Some(Self::make_hash_method_sig()),
+            _ => None,
+        }
+    }
+
+    fn get_char_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        match method_name {
+            "to_string" => Some(Self::make_to_string_method_sig()),
+            "to_int" => Some(Self::make_str_parse_result_method_sig(PrimitiveType::Int)),
+            "eq" => Some(Self::make_eq_method_sig(PrimitiveType::Char)),
+            "cmp" => Some(Self::make_cmp_method_sig(PrimitiveType::Char)),
+            "hash" => Some(Self::make_hash_method_sig()),
+            _ => None,
         }
     }
 
@@ -2331,43 +2319,41 @@ impl SemanticAnalyzer {
     }
 
     fn get_optional_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        fn bool_method_sig() -> MethodSig {
+            MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }
+        }
+
         match method_name {
             "to_string" => Some(MethodSig {
                 params: vec![],
                 return_type: Type::Primitive(PrimitiveType::Str),
                 is_static: false,
             }),
-            "is_some" => Some(MethodSig {
-                params: vec![],
-                return_type: Type::Primitive(PrimitiveType::Bool),
-                is_static: false,
-            }),
-            "is_none" => Some(MethodSig {
-                params: vec![],
-                return_type: Type::Primitive(PrimitiveType::Bool),
-                is_static: false,
-            }),
+            "is_some" | "is_none" => Some(bool_method_sig()),
             _ => None,
         }
     }
 
     fn get_result_method_sig(&self, method_name: &str) -> Option<MethodSig> {
+        fn bool_method_sig() -> MethodSig {
+            MethodSig {
+                params: vec![],
+                return_type: Type::Primitive(PrimitiveType::Bool),
+                is_static: false,
+            }
+        }
+
         match method_name {
             "to_string" => Some(MethodSig {
                 params: vec![],
                 return_type: Type::Primitive(PrimitiveType::Str),
                 is_static: false,
             }),
-            "is_ok" => Some(MethodSig {
-                params: vec![],
-                return_type: Type::Primitive(PrimitiveType::Bool),
-                is_static: false,
-            }),
-            "is_err" => Some(MethodSig {
-                params: vec![],
-                return_type: Type::Primitive(PrimitiveType::Bool),
-                is_static: false,
-            }),
+            "is_ok" | "is_err" => Some(bool_method_sig()),
             _ => None,
         }
     }
@@ -2592,25 +2578,12 @@ impl SemanticAnalyzer {
 
                     if let Err(e) = self.symbol_table.add_symbol(
                         &func.name,
-                        Symbol {
-                            kind: SymbolKind::Function,
-                            span: func.span,
-                            type_: Some(func_type),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: func
-                                .type_params
-                                .iter()
-                                .map(|(p, b)| {
-                                    (p.clone(), b.iter().map(|tb| tb.name.clone()).collect())
-                                })
-                                .collect::<Vec<(String, Vec<String>)>>(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: default_count,
-                            variants: None,
-                        },
+                        self.make_function_symbol(
+                            func.span,
+                            func_type,
+                            &func.type_params,
+                            default_count,
+                        ),
                     ) {
                         self.errors.push(e);
                     }
@@ -3241,23 +3214,12 @@ impl SemanticAnalyzer {
 
                 self.symbol_table.add_symbol(
                     &func.name,
-                    Symbol {
-                        kind: SymbolKind::Function,
-                        span: stmt.span,
-                        type_: Some(func_type),
-                        interfaces: std::collections::HashMap::new(),
-                        methods: std::collections::HashMap::new(),
-                        fields: std::collections::HashMap::new(),
-                        type_params: func
-                            .type_params
-                            .iter()
-                            .map(|(n, b)| (n.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
-                            .collect(),
-                        original_name: None,
-                        llvm_name: None,
-                        default_param_count: default_count,
-                        variants: None,
-                    },
+                    self.make_function_symbol(
+                        stmt.span,
+                        func_type,
+                        &func.type_params,
+                        default_count,
+                    ),
                 )?;
             }
         }
@@ -4653,41 +4615,38 @@ impl SemanticAnalyzer {
         module_analyzer: &SemanticAnalyzer,
     ) -> HashMap<String, Symbol> {
         let global_symbols = module_analyzer.symbol_table.global_scope_symbols();
-        let mut declared = HashMap::new();
-
-        for node in module_nodes {
-            match node {
-                AstNode::Function(func) => {
-                    if let Some(symbol) = global_symbols.get(&func.name) {
-                        declared.insert(func.name.clone(), symbol.clone());
-                    }
-                }
-                AstNode::Class { name, .. }
-                | AstNode::Interface { name, .. }
-                | AstNode::Enum { name, .. } => {
-                    if let Some(symbol) = global_symbols.get(name) {
-                        declared.insert(name.clone(), symbol.clone());
-                    }
-                }
-                AstNode::Statement(stmt) => match &stmt.kind {
-                    StatementKind::AutoDecl(name, _, _)
-                    | StatementKind::TypedDecl(name, _, _)
-                    | StatementKind::ConstDecl(name, _, _) => {
-                        if let Some(symbol) = global_symbols.get(name) {
-                            declared.insert(name.clone(), symbol.clone());
-                        }
-                    }
-                    StatementKind::Function(func) => {
-                        if let Some(symbol) = global_symbols.get(&func.name) {
-                            declared.insert(func.name.clone(), symbol.clone());
-                        }
-                    }
-                    _ => {}
-                },
-            }
-        }
+        let declared: HashMap<String, Symbol> = module_nodes
+            .iter()
+            .filter_map(Self::declared_symbol_name)
+            .filter_map(|symbol_name| {
+                global_symbols
+                    .get(symbol_name)
+                    .cloned()
+                    .map(|symbol| (symbol_name.to_string(), symbol))
+            })
+            .collect();
 
         self.filter_module_export_symbols(&declared)
+    }
+
+    fn declared_symbol_name(node: &AstNode) -> Option<&str> {
+        match node {
+            AstNode::Function(func) => Some(func.name.as_str()),
+            AstNode::Class { name, .. }
+            | AstNode::Interface { name, .. }
+            | AstNode::Enum { name, .. } => Some(name.as_str()),
+            AstNode::Statement(stmt) => Self::declared_statement_symbol_name(stmt),
+        }
+    }
+
+    fn declared_statement_symbol_name(stmt: &StatementNode) -> Option<&str> {
+        match &stmt.kind {
+            StatementKind::AutoDecl(name, _, _)
+            | StatementKind::TypedDecl(name, _, _)
+            | StatementKind::ConstDecl(name, _, _) => Some(name.as_str()),
+            StatementKind::Function(func) => Some(func.name.as_str()),
+            _ => None,
+        }
     }
 
     fn analyze_imported_module(
@@ -4908,19 +4867,7 @@ impl SemanticAnalyzer {
         self.imported_symbols
             .insert(namespace.to_string(), mangled_submodule_symbols);
 
-        let symbol = Symbol {
-            kind: SymbolKind::Import,
-            span,
-            type_: Some(Type::Module(namespace.to_string())),
-            interfaces: std::collections::HashMap::new(),
-            methods: std::collections::HashMap::new(),
-            fields: std::collections::HashMap::new(),
-            type_params: Vec::new(),
-            original_name: None,
-            llvm_name: None,
-            default_param_count: 0,
-            variants: None,
-        };
+        let symbol = self.make_module_symbol(namespace, span);
 
         resolver
             .borrow_mut()
@@ -5944,33 +5891,42 @@ fn infer_missing_param_from_bounds(
     type_params: &[(String, Vec<crate::ast::TraitBound>)],
     substitutions: &std::collections::HashMap<String, Type>,
 ) -> Option<Type> {
-    for (owner_param_name, owner_bounds) in type_params {
-        let owner_concrete_type = match substitutions.get(owner_param_name) {
-            Some(t) => t,
-            None => continue,
-        };
-        let owner_type_args = match owner_concrete_type {
-            Type::Named(_, args) => args,
-            Type::Reference(inner) => {
-                if let Type::Named(_, args) = inner.as_ref() {
-                    args
-                } else {
-                    continue;
-                }
-            }
-            _ => continue,
-        };
-        if owner_type_args.is_empty() {
-            continue;
-        }
-        for bound in owner_bounds {
-            for (idx, bound_type_arg) in bound.type_params.iter().enumerate() {
-                if let TypeKind::Named(bound_name, _) = &bound_type_arg.kind
-                    && bound_name == missing_param_name
-                    && let Some(concrete_arg) = owner_type_args.get(idx)
-                {
-                    return Some(concrete_arg.clone());
-                }
+    type_params
+        .iter()
+        .find_map(|(owner_param_name, owner_bounds)| {
+            substitutions
+                .get(owner_param_name)
+                .and_then(owner_concrete_type_args)
+                .filter(|owner_type_args| !owner_type_args.is_empty())
+                .and_then(|owner_type_args| {
+                    infer_bound_type_arg(missing_param_name, owner_bounds, owner_type_args)
+                })
+        })
+}
+
+fn owner_concrete_type_args(owner_concrete_type: &Type) -> Option<&[Type]> {
+    match owner_concrete_type {
+        Type::Named(_, args) => Some(args.as_slice()),
+        Type::Reference(inner) => match inner.as_ref() {
+            Type::Named(_, args) => Some(args.as_slice()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn infer_bound_type_arg(
+    missing_param_name: &str,
+    owner_bounds: &[crate::ast::TraitBound],
+    owner_type_args: &[Type],
+) -> Option<Type> {
+    for bound in owner_bounds {
+        for (idx, bound_type_arg) in bound.type_params.iter().enumerate() {
+            if let TypeKind::Named(bound_name, _) = &bound_type_arg.kind
+                && bound_name == missing_param_name
+                && let Some(concrete_arg) = owner_type_args.get(idx)
+            {
+                return Some(concrete_arg.clone());
             }
         }
     }
