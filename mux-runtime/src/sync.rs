@@ -108,7 +108,7 @@ mod sync_backend {
     use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::mem::MaybeUninit;
-    use std::sync::Mutex;
+    use std::sync::{Mutex, MutexGuard};
     use windows_sys::Win32::Foundation::GetLastError;
     use windows_sys::Win32::System::Threading::{
         AcquireSRWLockExclusive, AcquireSRWLockShared, CONDITION_VARIABLE, CRITICAL_SECTION,
@@ -121,6 +121,13 @@ mod sync_backend {
     lazy_static! {
         static ref RWLOCK_HOLD_MODES: Mutex<HashMap<(u32, usize), bool>> =
             Mutex::new(HashMap::new());
+    }
+
+    fn rwlock_modes_lock() -> MutexGuard<'static, HashMap<(u32, usize), bool>> {
+        match RWLOCK_HOLD_MODES.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
     }
 
     pub type MuxMutex = CRITICAL_SECTION;
@@ -160,9 +167,7 @@ mod sync_backend {
 
     pub fn destroy_rwlock(ptr: *mut MuxRwLock) {
         let lock_addr = ptr as usize;
-        let mut hold_modes = RWLOCK_HOLD_MODES
-            .lock()
-            .expect("RWLOCK_HOLD_MODES lock should not be poisoned");
+        let mut hold_modes = rwlock_modes_lock();
         hold_modes.retain(|(_, addr), _| *addr != lock_addr);
         unsafe {
             drop(Box::from_raw(ptr));
@@ -170,24 +175,24 @@ mod sync_backend {
     }
 
     pub fn rwlock_read_lock(ptr: *mut MuxRwLock) -> i32 {
-        unsafe { AcquireSRWLockShared(ptr) };
         let thread_id = unsafe { GetCurrentThreadId() };
         let key = (thread_id, ptr as usize);
-        let mut hold_modes = RWLOCK_HOLD_MODES
-            .lock()
-            .expect("RWLOCK_HOLD_MODES lock should not be poisoned");
-        hold_modes.insert(key, false);
+        {
+            let mut hold_modes = rwlock_modes_lock();
+            hold_modes.insert(key, false);
+        }
+        unsafe { AcquireSRWLockShared(ptr) };
         0
     }
 
     pub fn rwlock_write_lock(ptr: *mut MuxRwLock) -> i32 {
-        unsafe { AcquireSRWLockExclusive(ptr) };
         let thread_id = unsafe { GetCurrentThreadId() };
         let key = (thread_id, ptr as usize);
-        let mut hold_modes = RWLOCK_HOLD_MODES
-            .lock()
-            .expect("RWLOCK_HOLD_MODES lock should not be poisoned");
-        hold_modes.insert(key, true);
+        {
+            let mut hold_modes = rwlock_modes_lock();
+            hold_modes.insert(key, true);
+        }
+        unsafe { AcquireSRWLockExclusive(ptr) };
         0
     }
 
@@ -195,16 +200,14 @@ mod sync_backend {
         let thread_id = unsafe { GetCurrentThreadId() };
         let key = (thread_id, ptr as usize);
         let mode = {
-            let mut hold_modes = RWLOCK_HOLD_MODES
-                .lock()
-                .expect("RWLOCK_HOLD_MODES lock should not be poisoned");
+            let mut hold_modes = rwlock_modes_lock();
             hold_modes.remove(&key)
         };
 
         match mode {
             Some(true) => unsafe { ReleaseSRWLockExclusive(ptr) },
             Some(false) => unsafe { ReleaseSRWLockShared(ptr) },
-            None => return 1,
+            None => panic!("rwlock_unlock called without tracked hold mode: {:?}", key),
         }
         0
     }
@@ -569,7 +572,7 @@ pub extern "C" fn mux_mutex_lock(mutex_handle: *mut Value) -> *mut MuxResult {
 
     let rc = sync_backend::lock_mutex(mutex_ptr);
     if rc != 0 {
-        return err_string(format!("pthread_mutex_lock failed with error code {}", rc));
+        return err_string(format!("mux_mutex_lock failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -591,10 +594,7 @@ pub extern "C" fn mux_mutex_unlock(mutex_handle: *mut Value) -> *mut MuxResult {
 
     let rc = sync_backend::unlock_mutex(mutex_ptr);
     if rc != 0 {
-        return err_string(format!(
-            "pthread_mutex_unlock failed with error code {}",
-            rc
-        ));
+        return err_string(format!("mux_mutex_unlock failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -617,7 +617,7 @@ pub extern "C" fn mux_rwlock_read_lock(rwlock_handle: *mut Value) -> *mut MuxRes
     let rc = sync_backend::rwlock_read_lock(rwlock_ptr);
     if rc != 0 {
         return err_string(format!(
-            "pthread_rwlock_rdlock failed with error code {}",
+            "mux_rwlock_read_lock failed with error code {}",
             rc
         ));
     }
@@ -642,7 +642,7 @@ pub extern "C" fn mux_rwlock_write_lock(rwlock_handle: *mut Value) -> *mut MuxRe
     let rc = sync_backend::rwlock_write_lock(rwlock_ptr);
     if rc != 0 {
         return err_string(format!(
-            "pthread_rwlock_wrlock failed with error code {}",
+            "mux_rwlock_write_lock failed with error code {}",
             rc
         ));
     }
@@ -666,10 +666,7 @@ pub extern "C" fn mux_rwlock_unlock(rwlock_handle: *mut Value) -> *mut MuxResult
 
     let rc = sync_backend::rwlock_unlock(rwlock_ptr);
     if rc != 0 {
-        return err_string(format!(
-            "pthread_rwlock_unlock failed with error code {}",
-            rc
-        ));
+        return err_string(format!("mux_rwlock_unlock failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -708,7 +705,7 @@ pub extern "C" fn mux_condvar_wait(
 
     let rc = sync_backend::condvar_wait(cond_ptr, mutex_ptr);
     if rc != 0 {
-        return err_string(format!("pthread_cond_wait failed with error code {}", rc));
+        return err_string(format!("mux_condvar_wait failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -732,7 +729,7 @@ pub extern "C" fn mux_condvar_signal(condvar_handle: *mut Value) -> *mut MuxResu
 
     let rc = sync_backend::condvar_signal(cond_ptr);
     if rc != 0 {
-        return err_string(format!("pthread_cond_signal failed with error code {}", rc));
+        return err_string(format!("mux_condvar_signal failed with error code {}", rc));
     }
     ok_unit()
 }
@@ -757,7 +754,7 @@ pub extern "C" fn mux_condvar_broadcast(condvar_handle: *mut Value) -> *mut MuxR
     let rc = sync_backend::condvar_broadcast(cond_ptr);
     if rc != 0 {
         return err_string(format!(
-            "pthread_cond_broadcast failed with error code {}",
+            "mux_condvar_broadcast failed with error code {}",
             rc
         ));
     }

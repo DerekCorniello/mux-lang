@@ -162,7 +162,7 @@ fn print_llvm_install_help() {
             REQUIRED_LLVM_MAJOR
         );
         println!(
-            "  Arch Linux: sudo pacman -S llvm{0} clang{0} lld{0}",
+            "  Arch Linux (AUR, requires yay): yay -S llvm{0} llvm{0}-libs clang{0} lld{0}",
             REQUIRED_LLVM_MAJOR
         );
         println!(
@@ -642,7 +642,14 @@ fn main() {
         .to_str()
         .expect("library path should be valid Unicode");
 
-    let clang_cmd = find_clang_command().unwrap_or_else(|| "clang".to_string());
+    let clang_cmd = match find_clang_command() {
+        Some(cmd) => cmd,
+        None => {
+            eprintln!("clang is required to link Mux programs but was not found on PATH.");
+            print_llvm_install_help();
+            process::exit(1);
+        }
+    };
     let clang_output = Command::new(&clang_cmd)
         .args([
             &ir_file,

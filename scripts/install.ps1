@@ -39,9 +39,6 @@ try {
     Expand-Archive -Path $archivePath -DestinationPath $tmpDir -Force
     $bundleRoot = Join-Path $tmpDir "mux-$target"
     $muxExe = Join-Path $bundleRoot "bin/mux.exe"
-    if (-not $muxExe) {
-        throw "Could not find mux.exe in archive"
-    }
 
     if (!(Test-Path $muxExe)) {
         throw "Could not find mux.exe in archive"
