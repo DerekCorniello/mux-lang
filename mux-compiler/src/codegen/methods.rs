@@ -256,6 +256,17 @@ impl<'a> CodeGenerator<'a> {
         type_args: &[Type],
         method_name: &str,
     ) -> Result<String, String> {
+        if type_args.is_empty()
+            && let Some(current_fn) = &self.current_function_name
+            && let Some((current_class_part, _)) = current_fn.split_once('.')
+            && current_class_part.starts_with(&format!("{}$", class_name))
+        {
+            let contextual_name = format!("{}.{}", current_class_part, method_name);
+            if self.module.get_function(&contextual_name).is_some() {
+                return Ok(contextual_name);
+            }
+        }
+
         let specialized_method_name =
             self.create_specialized_method_name(class_name, type_args, method_name);
 
@@ -362,6 +373,11 @@ impl<'a> CodeGenerator<'a> {
         }
 
         match (class_name, method_name) {
+            ("TcpListener", "bind") => {
+                let addr = gen_one_arg(self, args)?;
+                let call = self.build_net_call("mux_net_tcp_listener_bind", &[addr])?;
+                Ok(Some(call))
+            }
             ("TcpStream", "connect") => {
                 let addr = gen_one_arg(self, args)?;
                 let call = self.build_net_call("mux_net_tcp_connect", &[addr])?;
@@ -445,6 +461,34 @@ impl<'a> CodeGenerator<'a> {
                 "local_addr" => {
                     self.ensure_no_args("local_addr", args)?;
                     let call = self.build_net_call("mux_net_tcp_local_addr", &[obj_value])?;
+                    Ok(Some(call))
+                }
+                _ => Ok(None),
+            },
+            "TcpListener" => match method_name {
+                "accept" => {
+                    self.ensure_no_args("accept", args)?;
+                    let call = self.build_net_call("mux_net_tcp_listener_accept", &[obj_value])?;
+                    Ok(Some(call))
+                }
+                "close" => {
+                    self.ensure_no_args("close", args)?;
+                    let call = self.build_net_call("mux_net_tcp_listener_close", &[obj_value])?;
+                    Ok(Some(call))
+                }
+                "set_nonblocking" => {
+                    let bool_val = gen_one(self, args)?;
+                    let converted = self.bool_to_i32(bool_val)?;
+                    let call = self.build_net_call(
+                        "mux_net_tcp_listener_set_nonblocking",
+                        &[obj_value, converted],
+                    )?;
+                    Ok(Some(call))
+                }
+                "local_addr" => {
+                    self.ensure_no_args("local_addr", args)?;
+                    let call =
+                        self.build_net_call("mux_net_tcp_listener_local_addr", &[obj_value])?;
                     Ok(Some(call))
                 }
                 _ => Ok(None),
@@ -568,6 +612,142 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    pub(super) fn try_generate_sql_instance_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        obj_type: &Type,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<Option<BasicValueEnum<'a>>, String> {
+        let type_name = if let Type::Named(name, _) = obj_type {
+            name
+        } else {
+            return Ok(None);
+        };
+
+        fn gen_one<'a>(
+            s: &mut CodeGenerator<'a>,
+            args: &[ExpressionNode],
+        ) -> Result<BasicValueEnum<'a>, String> {
+            if args.len() != 1 {
+                return Err("method takes exactly 1 argument".to_string());
+            }
+            s.generate_expression(&args[0])
+        }
+
+        fn gen_two<'a>(
+            s: &mut CodeGenerator<'a>,
+            args: &[ExpressionNode],
+        ) -> Result<(BasicValueEnum<'a>, BasicValueEnum<'a>), String> {
+            if args.len() != 2 {
+                return Err("method takes exactly 2 arguments".to_string());
+            }
+            let a = s.generate_expression(&args[0])?;
+            let b = s.generate_expression(&args[1])?;
+            Ok((a, b))
+        }
+
+        match type_name.as_str() {
+            "Connection" => match method_name {
+                "close" => {
+                    self.ensure_no_args("close", args)?;
+                    self.build_net_call("mux_sql_connection_close", &[obj_value])
+                        .map(Some)
+                }
+                "execute" => {
+                    let sql = gen_one(self, args)?;
+                    self.build_net_call("mux_sql_connection_execute", &[obj_value, sql])
+                        .map(Some)
+                }
+                "execute_params" => {
+                    let (sql, params) = gen_two(self, args)?;
+                    self.build_net_call(
+                        "mux_sql_connection_execute_params",
+                        &[obj_value, sql, params],
+                    )
+                    .map(Some)
+                }
+                "query" => {
+                    let sql = gen_one(self, args)?;
+                    self.build_net_call("mux_sql_connection_query", &[obj_value, sql])
+                        .map(Some)
+                }
+                "query_params" => {
+                    let (sql, params) = gen_two(self, args)?;
+                    self.build_net_call(
+                        "mux_sql_connection_query_params",
+                        &[obj_value, sql, params],
+                    )
+                    .map(Some)
+                }
+                "begin_transaction" => {
+                    self.ensure_no_args("begin_transaction", args)?;
+                    self.build_net_call("mux_sql_connection_begin_transaction", &[obj_value])
+                        .map(Some)
+                }
+                _ => Ok(None),
+            },
+            "Transaction" => match method_name {
+                "commit" => {
+                    self.ensure_no_args("commit", args)?;
+                    self.build_net_call("mux_sql_transaction_commit", &[obj_value])
+                        .map(Some)
+                }
+                "rollback" => {
+                    self.ensure_no_args("rollback", args)?;
+                    self.build_net_call("mux_sql_transaction_rollback", &[obj_value])
+                        .map(Some)
+                }
+                "execute" => {
+                    let sql = gen_one(self, args)?;
+                    self.build_net_call("mux_sql_transaction_execute", &[obj_value, sql])
+                        .map(Some)
+                }
+                "execute_params" => {
+                    let (sql, params) = gen_two(self, args)?;
+                    self.build_net_call(
+                        "mux_sql_transaction_execute_params",
+                        &[obj_value, sql, params],
+                    )
+                    .map(Some)
+                }
+                "query" => {
+                    let sql = gen_one(self, args)?;
+                    self.build_net_call("mux_sql_transaction_query", &[obj_value, sql])
+                        .map(Some)
+                }
+                "query_params" => {
+                    let (sql, params) = gen_two(self, args)?;
+                    self.build_net_call(
+                        "mux_sql_transaction_query_params",
+                        &[obj_value, sql, params],
+                    )
+                    .map(Some)
+                }
+                _ => Ok(None),
+            },
+            "ResultSet" => match method_name {
+                "rows" => {
+                    self.ensure_no_args("rows", args)?;
+                    self.build_net_call("mux_sql_resultset_rows", &[obj_value])
+                        .map(Some)
+                }
+                "next" => {
+                    self.ensure_no_args("next", args)?;
+                    self.build_net_call("mux_sql_resultset_next", &[obj_value])
+                        .map(Some)
+                }
+                "columns" => {
+                    self.ensure_no_args("columns", args)?;
+                    self.build_net_call("mux_sql_resultset_columns", &[obj_value])
+                        .map(Some)
+                }
+                _ => Ok(None),
+            },
+            _ => Ok(None),
+        }
+    }
+
     pub(super) fn generate_method_call(
         &mut self,
         obj_value: BasicValueEnum<'a>,
@@ -600,6 +780,15 @@ impl<'a> CodeGenerator<'a> {
             return Ok(call);
         }
 
+        if let Some(call) = self.try_generate_sql_instance_method_call(
+            obj_value,
+            &resolved_obj_type,
+            method_name,
+            args,
+        )? {
+            return Ok(call);
+        }
+
         match &resolved_obj_type {
             Type::Primitive(prim) => {
                 self.generate_primitive_method_call(obj_value, prim, method_name)
@@ -608,6 +797,15 @@ impl<'a> CodeGenerator<'a> {
             Type::Map(_, _) => self.generate_map_method_call(obj_value, method_name, args),
             Type::Set(_) => self.generate_set_method_call(obj_value, method_name, args),
             Type::Tuple(_, _) => self.generate_tuple_method_call(obj_value, method_name, args),
+            Type::Named(name, _type_args) if name == "Csv" => {
+                self.generate_csv_method_call(obj_value, method_name, args)
+            }
+            Type::Named(name, _type_args) if name == "Json" => {
+                self.generate_json_method_call(obj_value, method_name, args)
+            }
+            Type::Named(name, _type_args) if name == "SqlValue" => {
+                self.generate_sql_value_method_call(obj_value, method_name, args)
+            }
             Type::Named(name, type_args) => {
                 self.invoke_class_instance_method(name, type_args, obj_value, method_name, args)
             }
@@ -757,24 +955,10 @@ impl<'a> CodeGenerator<'a> {
                         "list_get",
                     )
                     .map_err(|e| e.to_string())?;
-                let boxed_call = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_optional_into_value")
-                            .expect("mux_optional_into_value must be declared in runtime"),
-                        &[call
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_list_get should return a basic value")
-                            .into()],
-                        "optional_as_value",
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(boxed_call
+                Ok(call
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_optional_into_value should return a basic value"))
+                    .expect("mux_list_get should return a basic value"))
             }
             "push_back" => {
                 self.ensure_arg_count("push_back", args, 1)?;
@@ -826,6 +1010,85 @@ impl<'a> CodeGenerator<'a> {
                 self.call_cstr_to_mux_string(cstr)
             }
             _ => Err(format!("Method {} not implemented for lists", method_name)),
+        }
+    }
+
+    fn generate_csv_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "stringify" => {
+                if !args.is_empty() {
+                    return Err("stringify() expects no arguments".to_string());
+                }
+                self.call_runtime_function("mux_csv_to_string", &[obj_value])
+            }
+            _ => Err(format!("Method {} not implemented for Csv", method_name)),
+        }
+    }
+
+    fn generate_json_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "stringify" => {
+                if args.len() != 1 {
+                    return Err(
+                        "stringify() expects exactly 1 argument (optional indent)".to_string()
+                    );
+                }
+                let indent_arg = self.generate_expression(&args[0])?;
+                self.call_runtime_function("mux_json_stringify", &[obj_value, indent_arg])
+            }
+            _ => Err(format!("Method {} not implemented for Json", method_name)),
+        }
+    }
+
+    fn generate_sql_value_method_call(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        method_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match method_name {
+            "is_null" => {
+                self.ensure_no_args("is_null", args)?;
+                self.call_runtime_function("mux_sql_value_is_null", &[obj_value])
+            }
+            "as_bool" => {
+                self.ensure_no_args("as_bool", args)?;
+                self.call_runtime_function("mux_sql_value_as_bool", &[obj_value])
+            }
+            "as_int" => {
+                self.ensure_no_args("as_int", args)?;
+                self.call_runtime_function("mux_sql_value_as_int", &[obj_value])
+            }
+            "as_float" => {
+                self.ensure_no_args("as_float", args)?;
+                self.call_runtime_function("mux_sql_value_as_float", &[obj_value])
+            }
+            "as_string" => {
+                self.ensure_no_args("as_string", args)?;
+                self.call_runtime_function("mux_sql_value_as_string", &[obj_value])
+            }
+            "as_bytes" => {
+                self.ensure_no_args("as_bytes", args)?;
+                self.call_runtime_function("mux_sql_value_as_bytes", &[obj_value])
+            }
+            "to_string" => {
+                self.ensure_no_args("to_string", args)?;
+                self.generate_to_string_call(obj_value)
+            }
+            _ => Err(format!(
+                "Method {} not implemented for SqlValue",
+                method_name
+            )),
         }
     }
 
@@ -881,20 +1144,7 @@ impl<'a> CodeGenerator<'a> {
                     .try_as_basic_value()
                     .left()
                     .expect("mux_map_get should return a basic value");
-                let optional_value = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_optional_into_value")
-                            .expect("mux_optional_into_value must be declared in runtime"),
-                        &[map_get_result.into()],
-                        "optional_value",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_optional_into_value should return a basic value");
-                Ok(optional_value)
+                Ok(map_get_result)
             }
             "get_keys" => {
                 self.ensure_no_args("get_keys", args)?;
@@ -960,20 +1210,7 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .ok_or("mux_map_remove_value should return a value")?;
 
-                let optional_value = self
-                    .builder
-                    .build_call(
-                        self.module
-                            .get_function("mux_optional_into_value")
-                            .expect("mux_optional_into_value must be declared in runtime"),
-                        &[optional_ptr.into()],
-                        "optional_value",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_optional_into_value should return a basic value");
-                Ok(optional_value)
+                Ok(optional_ptr)
             }
             _ => Err(format!("Method {} not implemented for maps", method_name)),
         }

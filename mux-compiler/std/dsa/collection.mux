@@ -1,0 +1,6 @@
+interface Collection<T> {
+    func len() returns int
+    func is_empty() returns bool
+    func clear() returns void
+    func to_list() returns list<T>
+}

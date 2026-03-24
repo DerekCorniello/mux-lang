@@ -1,0 +1,17 @@
+class Box<T> {
+    T value
+
+    common func from(T val) returns Box<T> {
+        auto box = Box<T>.new()
+        box.value = val
+        return box
+    }
+
+    func set(T val) returns void {
+        self.value = val
+    }
+
+    func get() returns T {
+        return self.value
+    }
+}

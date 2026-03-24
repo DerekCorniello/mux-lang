@@ -1,0 +1,8 @@
+import generic_static_import_context_lib.*
+
+auto box = Box<int>.from(10)
+print("after static call")
+
+box.set(42)
+print("set complete")
+print("value: " + box.get().to_string())

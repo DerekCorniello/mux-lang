@@ -1,0 +1,38 @@
+import std.dsa.collection.Collection
+
+class Stack<T> is Collection<T> {
+    list<T> items
+
+    func len() returns int {
+        return self.items.size()
+    }
+
+    func is_empty() returns bool {
+        return self.items.is_empty()
+    }
+
+    func clear() returns void {
+        while !self.items.is_empty() {
+            self.items.pop_back()
+        }
+    }
+
+    func to_list() returns list<T> {
+        return self.items
+    }
+
+    func push(T value) returns void {
+        self.items.push_back(value)
+    }
+
+    func pop() returns optional<T> {
+        return self.items.pop_back()
+    }
+
+    func peek() returns optional<T> {
+        if self.items.is_empty() {
+            return none
+        }
+        return self.items.get(self.items.size() - 1)
+    }
+}

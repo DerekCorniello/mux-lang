@@ -17,7 +17,7 @@
 //!     External *mut Value pointer
 //! ```
 
-use std::alloc::{Layout, alloc, dealloc};
+use std::alloc::{alloc, dealloc, Layout};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::Value;

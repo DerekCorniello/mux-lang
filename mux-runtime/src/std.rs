@@ -1,7 +1,5 @@
-use crate::{
-    Value, list::List, map::Map, optional::Optional, refcount::mux_rc_alloc, result::MuxResult,
-    set::Set,
-};
+use crate::{list::List, map::Map, refcount::mux_rc_alloc, set::Set, Value};
+use std::env as sys_env;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -17,9 +15,9 @@ pub extern "C" fn mux_range(start: i64, end: i64) -> *mut List {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_some(val: *mut Value) -> *mut Optional {
+pub extern "C" fn mux_some(val: *mut Value) -> *mut Value {
     let value = unsafe { (*val).clone() };
-    Box::into_raw(Box::new(Optional::some(value)))
+    mux_rc_alloc(Value::Optional(Some(Box::new(value))))
 }
 
 // Value creation functions for codegen - using reference counting
@@ -42,23 +40,23 @@ pub extern "C" fn mux_string_value(s: *const c_char) -> *mut Value {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_none() -> *mut Optional {
-    Box::into_raw(Box::new(Optional::none()))
+pub extern "C" fn mux_none() -> *mut Value {
+    mux_rc_alloc(Value::Optional(None))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_ok(val: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_ok(val: *mut Value) -> *mut Value {
     let value = unsafe { (*val).clone() };
-    Box::into_raw(Box::new(MuxResult::ok(value)))
+    mux_rc_alloc(Value::Result(Ok(Box::new(value))))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_err(msg: *const c_char) -> *mut MuxResult {
+pub extern "C" fn mux_err(msg: *const c_char) -> *mut Value {
     let c_str = unsafe { CStr::from_ptr(msg) };
     let msg_str = c_str.to_string_lossy().to_string();
-    Box::into_raw(Box::new(MuxResult::err(msg_str)))
+    mux_rc_alloc(Value::Result(Err(Box::new(Value::String(msg_str)))))
 }
 
 #[unsafe(no_mangle)]
@@ -252,30 +250,46 @@ pub extern "C" fn mux_free_set(set: *mut Set) {
     }
 }
 
-/// # Safety
-/// `opt` must be a valid pointer returned by a mux-runtime optional function.
+/// No-op: optional values are now *mut Value managed by reference counting.
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_free_optional(_val: *mut Value) {}
+
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_free_optional(opt: *mut Optional) {
-    if !opt.is_null() {
-        unsafe { drop(Box::from_raw(opt)) };
+pub extern "C" fn mux_env_get(key: *const c_char) -> *mut Value {
+    if key.is_null() {
+        return crate::optional::mux_optional_none();
+    }
+    // Convert C string to Rust String
+    let k = unsafe { CStr::from_ptr(key) }
+        .to_string_lossy()
+        .into_owned();
+    match sys_env::var(&k) {
+        Ok(val) => {
+            // If value contains interior NULs, CString::new will fail. Treat as None.
+            if let Ok(cstr) = CString::new(val) {
+                // mux_string_value clones the string, so passing as_ptr is safe while cstr is alive
+                let vptr = mux_string_value(cstr.as_ptr());
+                crate::optional::mux_optional_some_value(vptr)
+            } else {
+                crate::optional::mux_optional_none()
+            }
+        }
+        Err(_) => crate::optional::mux_optional_none(),
     }
 }
 
-/// # Safety
-/// `res` must be a valid pointer returned by a mux-runtime result function.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
+/// No-op: result values are now *mut Value managed by reference counting.
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_free_result(res: *mut MuxResult) {
-    if !res.is_null() {
-        unsafe { drop(Box::from_raw(res)) };
-    }
-}
+pub extern "C" fn mux_free_result(_val: *mut Value) {}
 
 // Safe value extraction functions - don't take ownership
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_get_int(val: *const Value) -> i64 {
+    if val.is_null() {
+        return 0;
+    }
     unsafe {
         match &*val {
             Value::Int(i) => *i,
@@ -287,6 +301,9 @@ pub extern "C" fn mux_value_get_int(val: *const Value) -> i64 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_get_float(val: *const Value) -> f64 {
+    if val.is_null() {
+        return 0.0;
+    }
     unsafe {
         match &*val {
             Value::Float(f) => f.into_inner(),
@@ -298,6 +315,9 @@ pub extern "C" fn mux_value_get_float(val: *const Value) -> f64 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_get_bool(val: *const Value) -> i32 {
+    if val.is_null() {
+        return 0;
+    }
     unsafe {
         match &*val {
             Value::Bool(b) => i32::from(*b),
@@ -309,22 +329,11 @@ pub extern "C" fn mux_value_get_bool(val: *const Value) -> i32 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_get_type_tag(val: *const Value) -> i32 {
-    unsafe {
-        match &*val {
-            Value::Unit => 11,
-            Value::Bool(_) => 0,
-            Value::Int(_) => 1,
-            Value::Float(_) => 2,
-            Value::String(_) => 3,
-            Value::List(_) => 4,
-            Value::Map(_) => 5,
-            Value::Set(_) => 6,
-            Value::Tuple(_) => 10,
-            Value::Optional(_) => 7,
-            Value::Result(_) => 8,
-            Value::Object(_) => 9,
-        }
+    if val.is_null() {
+        return -1;
     }
+    let value = unsafe { &*val };
+    value.type_tag()
 }
 
 /// Compare two Value pointers for equality
@@ -335,7 +344,13 @@ pub extern "C" fn mux_value_equal(a: *const Value, b: *const Value) -> i32 {
     if a.is_null() || b.is_null() {
         return if a == b { 1 } else { 0 };
     }
-    unsafe { if *a == *b { 1 } else { 0 } }
+    unsafe {
+        if *a == *b {
+            1
+        } else {
+            0
+        }
+    }
 }
 
 /// Compare two Value pointers for inequality
@@ -343,7 +358,11 @@ pub extern "C" fn mux_value_equal(a: *const Value, b: *const Value) -> i32 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_value_not_equal(a: *const Value, b: *const Value) -> i32 {
-    if mux_value_equal(a, b) == 1 { 0 } else { 1 }
+    if mux_value_equal(a, b) == 1 {
+        0
+    } else {
+        1
+    }
 }
 
 // Proper Value cleanup function

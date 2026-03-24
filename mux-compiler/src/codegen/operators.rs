@@ -6,14 +6,20 @@
 //! - Comparison operators (==, !=, <, >, <=, >=)
 //! - The 'in' operator for containment checks
 
-use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::values::{BasicValueEnum, IntValue, PointerValue};
 
-use crate::ast::{BinaryOp, ExpressionNode, PrimitiveType};
+use crate::ast::{BinaryOp, ExpressionKind, ExpressionNode, LiteralNode, PrimitiveType};
 use crate::semantics::Type;
 
 use super::CodeGenerator;
 
 impl<'a> CodeGenerator<'a> {
+    fn infer_method_return_type(&self, receiver_type: &Type, method_name: &str) -> Option<Type> {
+        self.analyzer
+            .get_method_sig(receiver_type, method_name)
+            .map(|sig| sig.return_type)
+    }
+
     /// Ensure a value is a pointer, boxing it if necessary.
     fn ensure_pointer(&mut self, val: BasicValueEnum<'a>) -> PointerValue<'a> {
         if val.is_pointer_value() {
@@ -75,11 +81,174 @@ impl<'a> CodeGenerator<'a> {
             .ok_or("Call returned no value")?;
 
         let result_i32 = result.into_int_value();
+        self.i32_to_bool(result_i32)
+    }
+
+    fn i32_to_bool(&self, int_val: IntValue<'a>) -> Result<BasicValueEnum<'a>, String> {
         let zero = self.context.i32_type().const_zero();
         self.builder
-            .build_int_compare(inkwell::IntPredicate::NE, result_i32, zero, "to_bool")
+            .build_int_compare(inkwell::IntPredicate::NE, int_val, zero, "to_bool")
             .map_err(|e| e.to_string())
             .map(|v| v.into())
+    }
+
+    /// Resolve an expression type during codegen.
+    /// Falls back to codegen variable tables when semantic scopes are no longer available.
+    pub(super) fn resolve_expression_type_with_fallback(
+        &mut self,
+        expr: &ExpressionNode,
+    ) -> Result<Type, String> {
+        match &expr.kind {
+            ExpressionKind::Identifier(_) => self.resolve_identifier_type(expr),
+            ExpressionKind::ListAccess { .. } => self.resolve_list_access_type(expr),
+            ExpressionKind::Call { .. } => self.resolve_call_type(expr),
+            ExpressionKind::Binary { .. } => self.resolve_binary_type(expr),
+            _ => self
+                .analyzer
+                .get_expression_type(expr)
+                .map_err(|e| e.to_string()),
+        }
+    }
+
+    fn resolve_identifier_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
+        let name = match &expr.kind {
+            ExpressionKind::Identifier(name) => name,
+            _ => return Err("Expected identifier expression".to_string()),
+        };
+        if let Some((_, _, ty)) = self
+            .variables
+            .get(name)
+            .or_else(|| self.global_variables.get(name))
+        {
+            return Ok(ty.clone());
+        }
+
+        if let Ok(ty) = self.analyzer.get_expression_type(expr) {
+            return Ok(ty);
+        }
+
+        if let Some(func_node) = self.function_nodes.get(name) {
+            let mut param_types = Vec::with_capacity(func_node.params.len());
+            for param in &func_node.params {
+                let param_type = self
+                    .analyzer
+                    .resolve_type(&param.type_)
+                    .map_err(|e| e.to_string())?;
+                param_types.push(param_type);
+            }
+            let return_type = self
+                .analyzer
+                .resolve_type(&func_node.return_type)
+                .map_err(|e| e.to_string())?;
+            return Ok(Type::Function {
+                params: param_types,
+                returns: Box::new(return_type),
+                default_count: 0,
+            });
+        }
+
+        if let Some(symbol) = self.analyzer.symbol_table().lookup(name)
+            && let Some(ty) = &symbol.type_
+        {
+            return Ok(ty.clone());
+        }
+
+        Err(format!("Undefined variable '{}'", name))
+    }
+
+    fn resolve_list_access_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
+        match &expr.kind {
+            ExpressionKind::ListAccess {
+                expr: container,
+                index,
+            } => {
+                let container_type = self.resolve_expression_type_with_fallback(container)?;
+                match container_type {
+                    Type::List(inner) => Ok(*inner),
+                    Type::Map(_, value) => Ok(*value),
+                    Type::Tuple(left, right) => match &index.kind {
+                        ExpressionKind::Literal(LiteralNode::Integer(0)) => Ok(*left),
+                        ExpressionKind::Literal(LiteralNode::Integer(1)) => Ok(*right),
+                        _ => Err("Tuple index must be a literal 0 or 1".to_string()),
+                    },
+                    _ => Err(format!("Cannot index into type: {:?}", container_type)),
+                }
+            }
+            _ => Err("Expected list access expression".to_string()),
+        }
+    }
+
+    fn resolve_call_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
+        match &expr.kind {
+            ExpressionKind::Call { func, .. } => {
+                if let Ok(ty) = self.analyzer.get_expression_type(expr) {
+                    return Ok(ty);
+                }
+
+                if let ExpressionKind::FieldAccess {
+                    expr: receiver_expr,
+                    field,
+                } = &func.kind
+                {
+                    let receiver_type =
+                        self.resolve_expression_type_with_fallback(receiver_expr)?;
+                    if let Some(return_type) = self.infer_method_return_type(&receiver_type, field)
+                    {
+                        return Ok(return_type);
+                    }
+                }
+
+                let func_type = self.resolve_expression_type_with_fallback(func)?;
+                match func_type {
+                    Type::Function { returns, .. } => Ok(*returns),
+                    other => Err(format!("Cannot call non-function type: {:?}", other)),
+                }
+            }
+            _ => Err("Expected call expression".to_string()),
+        }
+    }
+
+    fn resolve_binary_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
+        match &expr.kind {
+            ExpressionKind::Binary {
+                left, op, right, ..
+            } => {
+                let left_type = self.resolve_expression_type_with_fallback(left)?;
+                let right_type = self.resolve_expression_type_with_fallback(right)?;
+                match op {
+                    BinaryOp::Add
+                    | BinaryOp::Subtract
+                    | BinaryOp::Multiply
+                    | BinaryOp::Divide
+                    | BinaryOp::Modulo
+                    | BinaryOp::Exponent => {
+                        if left_type == Type::Primitive(PrimitiveType::Float)
+                            || right_type == Type::Primitive(PrimitiveType::Float)
+                        {
+                            Ok(Type::Primitive(PrimitiveType::Float))
+                        } else {
+                            Ok(left_type)
+                        }
+                    }
+                    BinaryOp::Less
+                    | BinaryOp::Greater
+                    | BinaryOp::LessEqual
+                    | BinaryOp::GreaterEqual
+                    | BinaryOp::Equal
+                    | BinaryOp::NotEqual
+                    | BinaryOp::LogicalAnd
+                    | BinaryOp::LogicalOr
+                    | BinaryOp::In => Ok(Type::Primitive(PrimitiveType::Bool)),
+                    BinaryOp::Assign
+                    | BinaryOp::AddAssign
+                    | BinaryOp::SubtractAssign
+                    | BinaryOp::MultiplyAssign
+                    | BinaryOp::DivideAssign
+                    | BinaryOp::ModuloAssign => Ok(left_type),
+                }
+            }
+            _ => Err("Expected binary expression".to_string()),
+        }
     }
 
     pub(super) fn generate_short_circuit_logical_op(
@@ -210,9 +379,8 @@ impl<'a> CodeGenerator<'a> {
             BinaryOp::Add => {
                 // Get the semantic type to determine what kind of addition to perform
                 let left_type = self
-                    .analyzer
-                    .get_expression_type(left_expr)
-                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+                    .resolve_expression_type_with_fallback(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type for '+': {}", e))?;
 
                 // Semantics already validated both types are the same, so just check left
                 match &left_type {
@@ -480,9 +648,8 @@ impl<'a> CodeGenerator<'a> {
             BinaryOp::Equal => {
                 // Get the semantic type to determine what kind of comparison to perform
                 let left_type = self
-                    .analyzer
-                    .get_expression_type(left_expr)
-                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+                    .resolve_expression_type_with_fallback(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type for '==': {}", e))?;
 
                 match &left_type {
                     Type::Primitive(PrimitiveType::Str) => {
@@ -584,9 +751,8 @@ impl<'a> CodeGenerator<'a> {
             BinaryOp::NotEqual => {
                 // Get the semantic type to determine what kind of comparison to perform
                 let left_type = self
-                    .analyzer
-                    .get_expression_type(left_expr)
-                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+                    .resolve_expression_type_with_fallback(left_expr)
+                    .map_err(|e| format!("Failed to get left operand type for '!=': {}", e))?;
 
                 match &left_type {
                     Type::Primitive(PrimitiveType::Str) => {
@@ -677,9 +843,8 @@ impl<'a> CodeGenerator<'a> {
             BinaryOp::In => {
                 // 'in' operator - check if left is contained in right
                 let right_type = self
-                    .analyzer
-                    .get_expression_type(_right_expr)
-                    .map_err(|e| format!("Failed to get right operand type: {}", e))?;
+                    .resolve_expression_type_with_fallback(_right_expr)
+                    .map_err(|e| format!("Failed to get right operand type for 'in': {}", e))?;
 
                 match right_type {
                     Type::List(_) | Type::EmptyList => {
@@ -709,9 +874,10 @@ impl<'a> CodeGenerator<'a> {
                     Type::Primitive(PrimitiveType::Str) => {
                         // String/char substring search
                         let left_type = self
-                            .analyzer
-                            .get_expression_type(left_expr)
-                            .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+                            .resolve_expression_type_with_fallback(left_expr)
+                            .map_err(|e| {
+                                format!("Failed to get left operand type for 'in': {}", e)
+                            })?;
 
                         // String is *const c_char
                         let string_ptr = right.into_pointer_value();

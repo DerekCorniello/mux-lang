@@ -1,0 +1,101 @@
+import std.dsa.collection.Collection
+
+class Heap<T is Comparable> is Collection<T> {
+    list<T> items
+
+    func len() returns int {
+        return self.items.size()
+    }
+
+    func is_empty() returns bool {
+        return self.items.is_empty()
+    }
+
+    func clear() returns void {
+        while !self.items.is_empty() {
+            self.items.pop_back()
+        }
+    }
+
+    func to_list() returns list<T> {
+        return self.items
+    }
+
+    func push(T value) returns void {
+        self.items.push_back(value)
+        self.sift_up(self.items.size() - 1)
+    }
+
+    func peek() returns optional<T> {
+        return self.items.get(0)
+    }
+
+    func pop() returns optional<T> {
+        if self.items.is_empty() {
+            return none
+        }
+
+        auto root = self.items[0]
+
+        if self.items.size() == 1 {
+            self.items.pop_back()
+            return some(root)
+        }
+
+        match self.items.pop_back() {
+            some(last) {
+                self.items[0] = last
+                self.sift_down(0)
+                return some(root)
+            }
+            none {
+                return none
+            }
+        }
+    }
+
+    func sift_up(int index) returns void {
+        int i = index
+        while i > 0 {
+            int parent = (i - 1) / 2
+            if self.items[i] < self.items[parent] {
+                self.swap(i, parent)
+                i = parent
+            } else {
+                return
+            }
+        }
+    }
+
+    func sift_down(int index) returns void {
+        int i = index
+        int n = self.items.size()
+
+        while true {
+            int left = i * 2 + 1
+            int right = i * 2 + 2
+            int smallest = i
+
+            if left < n && self.items[left] < self.items[smallest] {
+                smallest = left
+            }
+
+            if right < n && self.items[right] < self.items[smallest] {
+                smallest = right
+            }
+
+            if smallest == i {
+                return
+            }
+
+            self.swap(i, smallest)
+            i = smallest
+        }
+    }
+
+    func swap(int i, int j) returns void {
+        auto tmp = self.items[i]
+        self.items[i] = self.items[j]
+        self.items[j] = tmp
+    }
+}

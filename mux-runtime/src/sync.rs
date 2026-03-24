@@ -1,13 +1,12 @@
+use crate::object::{alloc_object, get_object_ptr, register_object_type};
+use crate::refcount::{mux_rc_alloc, mux_rc_dec};
 use crate::TypeId;
 use crate::Value;
-use crate::object::{alloc_object, get_object_ptr, register_object_type};
-use crate::refcount::mux_rc_dec;
-use crate::result::MuxResult;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -111,11 +110,11 @@ mod sync_backend {
     use std::sync::{Mutex, MutexGuard};
     use windows_sys::Win32::Foundation::GetLastError;
     use windows_sys::Win32::System::Threading::{
-        AcquireSRWLockExclusive, AcquireSRWLockShared, CONDITION_VARIABLE, CRITICAL_SECTION,
-        DeleteCriticalSection, EnterCriticalSection, GetCurrentThreadId, INFINITE,
-        InitializeConditionVariable, InitializeCriticalSection, InitializeSRWLock,
-        LeaveCriticalSection, ReleaseSRWLockExclusive, ReleaseSRWLockShared, SRWLOCK,
+        AcquireSRWLockExclusive, AcquireSRWLockShared, DeleteCriticalSection, EnterCriticalSection,
+        GetCurrentThreadId, InitializeConditionVariable, InitializeCriticalSection,
+        InitializeSRWLock, LeaveCriticalSection, ReleaseSRWLockExclusive, ReleaseSRWLockShared,
         SleepConditionVariableCS, WakeAllConditionVariable, WakeConditionVariable,
+        CONDITION_VARIABLE, CRITICAL_SECTION, INFINITE, SRWLOCK,
     };
 
     lazy_static! {
@@ -295,12 +294,12 @@ lazy_static! {
         register_object_type("Thread", 8, Some(destroy_thread_object as fn(*mut c_void)));
 }
 
-fn ok_unit() -> *mut MuxResult {
-    Box::into_raw(Box::new(MuxResult::ok(Value::Unit)))
+fn ok_unit() -> *mut Value {
+    mux_rc_alloc(Value::Result(Ok(Box::new(Value::Unit))))
 }
 
-fn err_string(message: impl Into<String>) -> *mut MuxResult {
-    Box::into_raw(Box::new(MuxResult::err(message.into())))
+fn err_string(message: impl Into<String>) -> *mut Value {
+    mux_rc_alloc(Value::Result(Err(Box::new(Value::String(message.into())))))
 }
 
 fn destroy_mutex_object(ptr: *mut c_void) {
@@ -365,7 +364,7 @@ fn destroy_thread_object(ptr: *mut c_void) {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-fn extract_handle_id(handle: *mut Value, _type_name: &str) -> Result<i64, *mut MuxResult> {
+fn extract_handle_id(handle: *mut Value, _type_name: &str) -> Result<i64, *mut Value> {
     if handle.is_null() {
         return Err(err_string("handle is null"));
     }
@@ -378,7 +377,7 @@ fn extract_handle_id(handle: *mut Value, _type_name: &str) -> Result<i64, *mut M
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut MuxResult {
+pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut Value {
     // SAFETY: `closure` must be a pointer to a ClosureRepr as produced by the Mux compiler.
     // The ClosureRepr struct documents the invariants that make this safe.
     if closure.is_null() {
@@ -427,12 +426,12 @@ pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut MuxResult {
     }
     let value = unsafe { (*obj_ptr).clone() };
     mux_rc_dec(obj_ptr);
-    Box::into_raw(Box::new(MuxResult::ok(value)))
+    mux_rc_alloc(Value::Result(Ok(Box::new(value))))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_thread_join(thread_handle: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_thread_join(thread_handle: *mut Value) -> *mut Value {
     let id = match extract_handle_id(thread_handle, "Thread") {
         Ok(id) => id,
         Err(e) => return e,
@@ -460,7 +459,7 @@ pub extern "C" fn mux_thread_join(thread_handle: *mut Value) -> *mut MuxResult {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_thread_detach(thread_handle: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_thread_detach(thread_handle: *mut Value) -> *mut Value {
     let id = match extract_handle_id(thread_handle, "Thread") {
         Ok(id) => id,
         Err(e) => return e,
@@ -557,7 +556,7 @@ pub extern "C" fn mux_condvar_new() -> *mut Value {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_mutex_lock(mutex_handle: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_mutex_lock(mutex_handle: *mut Value) -> *mut Value {
     let id = match extract_handle_id(mutex_handle, "Mutex") {
         Ok(id) => id,
         Err(e) => return e,
@@ -579,7 +578,7 @@ pub extern "C" fn mux_mutex_lock(mutex_handle: *mut Value) -> *mut MuxResult {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_mutex_unlock(mutex_handle: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_mutex_unlock(mutex_handle: *mut Value) -> *mut Value {
     let id = match extract_handle_id(mutex_handle, "Mutex") {
         Ok(id) => id,
         Err(e) => return e,
@@ -601,7 +600,7 @@ pub extern "C" fn mux_mutex_unlock(mutex_handle: *mut Value) -> *mut MuxResult {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_rwlock_read_lock(rwlock_handle: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_rwlock_read_lock(rwlock_handle: *mut Value) -> *mut Value {
     let id = match extract_handle_id(rwlock_handle, "RwLock") {
         Ok(id) => id,
         Err(e) => return e,
@@ -626,7 +625,7 @@ pub extern "C" fn mux_rwlock_read_lock(rwlock_handle: *mut Value) -> *mut MuxRes
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_rwlock_write_lock(rwlock_handle: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_rwlock_write_lock(rwlock_handle: *mut Value) -> *mut Value {
     let id = match extract_handle_id(rwlock_handle, "RwLock") {
         Ok(id) => id,
         Err(e) => return e,
@@ -651,7 +650,7 @@ pub extern "C" fn mux_rwlock_write_lock(rwlock_handle: *mut Value) -> *mut MuxRe
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_rwlock_unlock(rwlock_handle: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_rwlock_unlock(rwlock_handle: *mut Value) -> *mut Value {
     let id = match extract_handle_id(rwlock_handle, "RwLock") {
         Ok(id) => id,
         Err(e) => return e,
@@ -676,7 +675,7 @@ pub extern "C" fn mux_rwlock_unlock(rwlock_handle: *mut Value) -> *mut MuxResult
 pub extern "C" fn mux_condvar_wait(
     condvar_handle: *mut Value,
     mutex_handle: *mut Value,
-) -> *mut MuxResult {
+) -> *mut Value {
     let cond_id = match extract_handle_id(condvar_handle, "CondVar") {
         Ok(id) => id,
         Err(e) => return e,
@@ -712,7 +711,7 @@ pub extern "C" fn mux_condvar_wait(
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_condvar_signal(condvar_handle: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_condvar_signal(condvar_handle: *mut Value) -> *mut Value {
     let id = match extract_handle_id(condvar_handle, "CondVar") {
         Ok(id) => id,
         Err(e) => return e,
@@ -736,7 +735,7 @@ pub extern "C" fn mux_condvar_signal(condvar_handle: *mut Value) -> *mut MuxResu
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_condvar_broadcast(condvar_handle: *mut Value) -> *mut MuxResult {
+pub extern "C" fn mux_condvar_broadcast(condvar_handle: *mut Value) -> *mut Value {
     let id = match extract_handle_id(condvar_handle, "CondVar") {
         Ok(id) => id,
         Err(e) => return e,

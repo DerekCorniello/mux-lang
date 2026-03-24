@@ -1,0 +1,72 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+=== STACK TESTS ===
+stack is_empty: true
+stack len: 4
+stack is_empty: false
+stack peek: 15
+stack pop: 15
+stack len after pop: 3
+stack to_list: [4, 2, 9]
+stack len after clear: 0
+stack is_empty after clear: true
+=== QUEUE TESTS ===
+queue is_empty: true
+queue len: 4
+queue is_empty: false
+queue peek: 10
+queue dequeue: 10
+queue dequeue: 20
+queue len after dequeues: 2
+queue to_list: [30, 40]
+queue len after clear: 0
+queue is_empty after clear: true
+=== HEAP TESTS ===
+heap is_empty: true
+heap len: 5
+heap is_empty: false
+heap peek (min): 1
+heap pop (min): 1
+heap pop (min): 3
+heap len after pops: 3
+heap to_list: [5, 7, 10]
+heap len after clear: 0
+heap is_empty after clear: true
+=== BINARY TREE TESTS ===
+tree is_empty: true
+tree len: 5
+tree is_empty: false
+tree contains 8: true
+tree contains 99: false
+tree to_list: [1, 3, 5, 8, 12]
+tree len after clear: 0
+tree is_empty after clear: true
+=== GRAPH TESTS ===
+graph is_empty: true
+graph len: 6
+graph is_empty: false
+graph neighbors of A: [B, C]
+graph neighbors of B: [D]
+graph neighbors of Z: []
+graph bfs from A: [A, B, C, D, E]
+graph bfs from D: [D, E]
+graph to_list: [X, A, B, C, D, E]
+graph to_list deterministic: true
+graph len after clear: 0
+graph is_empty after clear: true
+=== ALGORITHM TESTS ===
+unsorted: [9, 3, 5, 1, 7, 2, 8, 4]
+sorted: [1, 2, 3, 4, 5, 7, 8, 9]
+search stack: [1, 3, 5, 7, 9]
+binary search for 5: 2
+binary search for 1: 0
+binary search for 9: 4
+binary search for 99: -1
+max: 9
+min: 1
+reverse: [9, 7, 5, 3, 1]
+empty max: none
+empty min: none
+=== ALL DSA TESTS COMPLETE ===

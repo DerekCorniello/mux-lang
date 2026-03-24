@@ -4,7 +4,7 @@
 
 use super::CodeGenerator;
 use crate::ast::{AstNode, EnumVariant, Field, PrimitiveType, TypeKind, TypeNode};
-use crate::semantics::MethodSig;
+use crate::semantics::{MethodSig, Type};
 use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, IntValue};
@@ -41,7 +41,7 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         name: &str,
         fields: &[Field],
-        interfaces: &HashMap<String, HashMap<String, MethodSig>>,
+        interfaces: &HashMap<String, (Vec<Type>, HashMap<String, MethodSig>)>,
     ) -> Result<(), String> {
         let mut field_types = Vec::new();
         let mut field_indices = HashMap::new();
@@ -105,9 +105,9 @@ impl<'a> CodeGenerator<'a> {
     pub(super) fn generate_class_vtables(
         &mut self,
         class_name: &str,
-        interfaces: &HashMap<String, HashMap<String, MethodSig>>,
+        interfaces: &HashMap<String, (Vec<Type>, HashMap<String, MethodSig>)>,
     ) -> Result<(), String> {
-        for (interface_name, interface_methods) in interfaces {
+        for (interface_name, (_, interface_methods)) in interfaces {
             let mut vtable_values = Vec::new();
             for method_name in interface_methods.keys() {
                 let class_method_name = format!("{}.{}", class_name, method_name);
@@ -147,7 +147,7 @@ impl<'a> CodeGenerator<'a> {
             .all_symbols()
             .get(name)
             .ok_or_else(|| format!("Interface symbol '{}' not found in symbol table", name))?;
-        let interface_methods = symbol
+        let (_, interface_methods) = symbol
             .interfaces
             .get(name)
             .ok_or_else(|| format!("Interface methods for '{}' not found", name))?;
@@ -238,7 +238,8 @@ impl<'a> CodeGenerator<'a> {
     }
 
     /// load the discriminant from an enum value as an i32
-    /// this function centralizes discriminant loading logic and ensures type safety
+    /// for optional and result, all values are *mut Value -- use the Value-based discriminant functions
+    /// for user-defined enums, load the discriminant field directly from the struct
     pub(super) fn load_enum_discriminant(
         &self,
         enum_name: &str,
@@ -246,11 +247,10 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<IntValue<'a>, String> {
         match enum_name {
             "optional" | "result" => {
-                // for built-in enums, use runtime functions
                 let discriminant_func = if enum_name == "optional" {
-                    "mux_optional_discriminant"
+                    "mux_value_optional_discriminant"
                 } else {
-                    "mux_result_discriminant"
+                    "mux_value_result_discriminant"
                 };
                 let func = self
                     .module
@@ -265,7 +265,7 @@ impl<'a> CodeGenerator<'a> {
                 Ok(discriminant_call
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_get_discriminant should return a basic value")
+                    .expect("discriminant function should return a basic value")
                     .into_int_value())
             }
             _ => {

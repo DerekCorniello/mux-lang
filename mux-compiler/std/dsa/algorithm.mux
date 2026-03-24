@@ -1,0 +1,131 @@
+import std.dsa.collection.Collection
+
+func sort<T is Comparable>(list<T> items) returns list<T> {
+    auto out = items
+    int n = out.size()
+
+    if n <= 1 {
+        return out
+    }
+
+    int low = 0
+    int high = n - 1
+
+    list<int> stack = []
+    stack.push_back(low)
+    stack.push_back(high)
+
+    while stack.size() > 0 {
+        int h = stack[stack.size() - 1]
+        stack.pop_back()
+        int l = stack[stack.size() - 1]
+        stack.pop_back()
+
+        if l < h {
+            auto pivot = out[h]
+            int i = l - 1
+
+            int j = l
+            while j < h {
+                if out[j] <= pivot {
+                    i = i + 1
+                    auto tmp = out[i]
+                    out[i] = out[j]
+                    out[j] = tmp
+                }
+                j = j + 1
+            }
+
+            auto tmp = out[i + 1]
+            out[i + 1] = out[h]
+            out[h] = tmp
+
+            int p = i + 1
+
+            if p - 1 > l {
+                stack.push_back(l)
+                stack.push_back(p - 1)
+            }
+            if p + 1 < h {
+                stack.push_back(p + 1)
+                stack.push_back(h)
+            }
+        }
+    }
+
+    return out
+}
+
+func binary_search<T is Comparable, E is Collection<T>>(E items, T target) returns int {
+    auto values = sort(items.to_list())
+    int left = 0
+    int right = values.size() - 1
+
+    while left <= right {
+        int mid = (left + right) / 2
+        auto value = values[mid]
+
+        if value == target {
+            return mid
+        }
+
+        if value < target {
+            left = mid + 1
+        } else {
+            right = mid - 1
+        }
+    }
+
+    return -1
+}
+
+func max<T is Comparable & Stringable, E is Collection<T>>(E collection) returns optional<T> {
+    if collection.is_empty() {
+        return none
+    }
+
+    auto values = collection.to_list()
+    auto best = values[0]
+
+    int i = 1
+    while i < values.size() {
+        if best < values[i] {
+            best = values[i]
+        }
+        i = i + 1
+    }
+
+    return some(best)
+}
+
+func min<T is Comparable & Stringable, E is Collection<T>>(E collection) returns optional<T> {
+    if collection.is_empty() {
+        return none
+    }
+
+    auto values = collection.to_list()
+    auto best = values[0]
+
+    int i = 1
+    while i < values.size() {
+        if values[i] < best {
+            best = values[i]
+        }
+        i = i + 1
+    }
+
+    return some(best)
+}
+
+func reverse<T, E is Collection<T>>(E collection) returns list<T> {
+    auto values = collection.to_list()
+    list<T> out = []
+
+    int i = values.size() - 1
+    while i >= 0 {
+        out.push_back(values[i])
+        i = i - 1
+    }
+
+    return out
+}

@@ -1,11 +1,13 @@
-use ::std::cmp;
-use ::std::collections::{BTreeMap, BTreeSet};
-use ::std::ffi::c_void;
-use ::std::fmt;
-use ::std::hash;
-use ::std::mem;
-use ::std::rc::Rc;
-use ::std::sync::atomic::{AtomicUsize, Ordering};
+extern crate std as rust_std;
+
+use rust_std::cmp;
+use rust_std::collections::{BTreeMap, BTreeSet};
+use rust_std::ffi::c_void;
+use rust_std::fmt;
+use rust_std::hash;
+use rust_std::mem;
+use rust_std::rc::Rc;
+use rust_std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type TypeId = u32;
 
@@ -163,6 +165,11 @@ impl PartialOrd for Value {
 }
 
 impl Value {
+    pub fn type_tag(&self) -> i32 {
+        const TAG_BY_ORDER: [i32; 12] = [11, 0, 1, 2, 3, 4, 5, 6, 10, 7, 8, 9];
+        TAG_BY_ORDER[self.variant_order() as usize]
+    }
+
     fn variant_order(&self) -> u8 {
         match self {
             Value::Unit => 0,
@@ -266,10 +273,12 @@ impl From<String> for Value {
 pub mod assert;
 pub mod bool;
 pub mod boxing;
+pub mod data;
 pub mod datetime;
 pub mod float;
 pub mod int;
 pub mod io;
+pub mod json;
 pub mod list;
 pub mod map;
 pub mod math;
@@ -280,6 +289,7 @@ pub mod random;
 pub mod refcount;
 pub mod result;
 pub mod set;
+pub mod sql;
 pub mod std;
 pub mod string;
 pub mod sync;

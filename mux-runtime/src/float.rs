@@ -2,9 +2,8 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::c_char;
 
-use crate::Value;
 use crate::refcount::mux_rc_alloc;
-use crate::result::MuxResult;
+use crate::Value;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Float(pub ordered_float::OrderedFloat<f64>);
@@ -132,10 +131,10 @@ pub extern "C" fn mux_float_mul(a: f64, b: f64) -> f64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_float_div(a: f64, b: f64) -> *mut MuxResult {
+pub extern "C" fn mux_float_div(a: f64, b: f64) -> *mut Value {
     match Float(ordered_float::OrderedFloat(a)).div(&Float(ordered_float::OrderedFloat(b))) {
-        Ok(f) => Box::into_raw(Box::new(MuxResult::ok(Value::Float(f.0)))),
-        Err(e) => Box::into_raw(Box::new(MuxResult::err(e))),
+        Ok(f) => mux_rc_alloc(Value::Result(Ok(Box::new(Value::Float(f.0))))),
+        Err(e) => mux_rc_alloc(Value::Result(Err(Box::new(Value::String(e))))),
     }
 }
 

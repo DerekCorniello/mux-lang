@@ -1,0 +1,68 @@
+import std.dsa.collection.Collection
+
+class Queue<T> is Collection<T> {
+    list<T> items
+    int head
+
+    func len() returns int {
+        return self.items.size() - self.head
+    }
+
+    func is_empty() returns bool {
+        return self.len() == 0
+    }
+
+    func clear() returns void {
+        while !self.items.is_empty() {
+            self.items.pop_back()
+        }
+        self.head = 0
+    }
+
+    func to_list() returns list<T> {
+        list<T> out = []
+        int i = self.head
+        while i < self.items.size() {
+            out.push_back(self.items[i])
+            i = i + 1
+        }
+        return out
+    }
+
+    func enqueue(T value) returns void {
+        self.items.push_back(value)
+    }
+
+    func dequeue() returns optional<T> {
+        if self.head >= self.items.size() {
+            return none
+        }
+
+        auto value = self.items[self.head]
+        self.head = self.head + 1
+
+        if self.head > 32 && self.head * 2 > self.items.size() {
+            self.compact()
+        }
+
+        return some(value)
+    }
+
+    func peek() returns optional<T> {
+        if self.head >= self.items.size() {
+            return none
+        }
+        return self.items.get(self.head)
+    }
+
+    func compact() returns void {
+        list<T> next = []
+        int i = self.head
+        while i < self.items.size() {
+            next.push_back(self.items[i])
+            i = i + 1
+        }
+        self.items = next
+        self.head = 0
+    }
+}

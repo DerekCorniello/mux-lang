@@ -1,0 +1,21 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+=== BinaryTree Full Test ===
+empty: true
+len: 0
+len after inserts (duplicates ignored): 7
+contains 6: true
+contains 99: false
+sorted list: [2, 3, 4, 5, 6, 7, 8]
+min: 2
+max: 8
+after remove leaf 2: [3, 4, 5, 6, 7, 8]
+after remove node with children 7: [3, 4, 5, 6, 8]
+after remove root 5: [3, 4, 6, 8]
+after remove missing 42: [3, 4, 6, 8]
+len final: 4
+after clear len: 0
+after clear empty: true
+=== BinaryTree Full Test Complete ===

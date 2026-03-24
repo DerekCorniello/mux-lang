@@ -32,25 +32,62 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         args: &[ExpressionNode],
         func_type: Option<&Type>,
+        llvm_func: Option<inkwell::values::FunctionValue<'a>>,
     ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
         let param_types = match func_type {
             Some(Type::Function { params, .. }) => Some(params.as_slice()),
             _ => None,
         };
+        let llvm_param_types = llvm_func.map(|f| f.get_type().get_param_types());
 
         let mut call_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
             let arg_val = self.generate_expression(arg)?;
+            let mut coerced = arg_val;
             if let Some(params) = param_types
                 && let Some(param_type) = params.get(idx)
             {
-                let coerced = self.coerce_import_arg(arg_val, param_type)?;
-                call_args.push(coerced.into());
-                continue;
+                coerced = self.coerce_import_arg(coerced, param_type)?;
             }
-            call_args.push(arg_val.into());
+
+            if let Some(ref param_types) = llvm_param_types
+                && let Some(expected) = param_types.get(idx)
+            {
+                coerced = self.coerce_to_llvm_param_type(coerced, *expected)?;
+            }
+            call_args.push(coerced.into());
         }
         Ok(call_args)
+    }
+
+    fn coerce_to_llvm_param_type(
+        &self,
+        value: BasicValueEnum<'a>,
+        expected: BasicMetadataTypeEnum<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if value.is_int_value()
+            && let BasicMetadataTypeEnum::IntType(expected_int) = expected
+        {
+            let actual_int = value.into_int_value();
+            let actual_width = actual_int.get_type().get_bit_width();
+            let expected_width = expected_int.get_bit_width();
+
+            if actual_width < expected_width {
+                let widened = self
+                    .builder
+                    .build_int_z_extend(actual_int, expected_int, "ffi_int_widen")
+                    .map_err(|e| e.to_string())?;
+                return Ok(widened.into());
+            }
+            if actual_width > expected_width {
+                let narrowed = self
+                    .builder
+                    .build_int_truncate(actual_int, expected_int, "ffi_int_narrow")
+                    .map_err(|e| e.to_string())?;
+                return Ok(narrowed.into());
+            }
+        }
+        Ok(value)
     }
 
     /// Coerce arguments for FFI/calling convention compatibility.
@@ -84,6 +121,25 @@ impl<'a> CodeGenerator<'a> {
     /// Helper function to resolve the class/struct name from any expression
     /// Uses the semantic analyzer to get the expression type
     fn resolve_expression_class_name(&mut self, expr: &ExpressionNode) -> Option<String> {
+        if let ExpressionKind::Identifier(name) = &expr.kind
+            && let Some((_, _, var_type)) = self
+                .variables
+                .get(name)
+                .or_else(|| self.global_variables.get(name))
+        {
+            return match var_type {
+                Type::Named(type_name, _) => Some(type_name.clone()),
+                Type::Reference(inner) => {
+                    if let Type::Named(type_name, _) = inner.as_ref() {
+                        Some(type_name.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+        }
+
         let expr_type = self.analyzer.get_expression_type(expr).ok()?;
         match expr_type {
             Type::Named(name, _) => Some(name.clone()),
@@ -96,6 +152,46 @@ impl<'a> CodeGenerator<'a> {
             }
             _ => None,
         }
+    }
+
+    fn generate_csv_field_access(
+        &mut self,
+        expr: &ExpressionNode,
+        field: &str,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if field != "headers" && field != "rows" {
+            return Err(format!("Csv has no field '{}'", field));
+        }
+        let csv_value = self.generate_expression(expr)?;
+        let raw_map = self
+            .generate_runtime_call("mux_value_get_map", &[csv_value.into()])
+            .ok_or_else(|| "mux_value_get_map should return a value".to_string())?;
+        let key_value = self.csv_field_key_value(field)?;
+        let map_get = self
+            .generate_runtime_call("mux_map_get", &[raw_map.into(), key_value.into()])
+            .ok_or_else(|| "mux_map_get should return a value".to_string())?
+            .into_pointer_value();
+        let value = self
+            .generate_runtime_call("mux_optional_get_value", &[map_get.into()])
+            .ok_or_else(|| "mux_optional_get_value should return a value".to_string())?;
+        let free_opt = self
+            .module
+            .get_function("mux_free_optional")
+            .ok_or("mux_free_optional not found")?;
+        let _ = self
+            .builder
+            .build_call(free_opt, &[map_get.into()], "free_csv_optional");
+        Ok(value)
+    }
+
+    fn csv_field_key_value(&mut self, field: &str) -> Result<BasicValueEnum<'a>, String> {
+        let key_global = self
+            .builder
+            .build_global_string_ptr(field, &format!("csv_field_key_{}", field))
+            .map_err(|e| e.to_string())?;
+        let key_ptr = key_global.as_pointer_value();
+        self.generate_runtime_call("mux_new_string_from_cstr", &[key_ptr.into()])
+            .ok_or_else(|| "mux_new_string_from_cstr should return a value".to_string())
     }
 
     /// Helper to generate a call to the mux_print runtime function.
@@ -1458,10 +1554,8 @@ impl<'a> CodeGenerator<'a> {
                                     Ok(right_val)
                                 } else {
                                     // Simple (non-nested) assignment
-                                    let target_type = self
-                                        .analyzer
-                                        .get_expression_type(target_expr)
-                                        .map_err(|e| e.message)?;
+                                    let target_type =
+                                        self.resolve_expression_type_with_fallback(target_expr)?;
 
                                     match target_type {
                                         crate::semantics::Type::List(_) => {
@@ -1742,14 +1836,24 @@ impl<'a> CodeGenerator<'a> {
                                             .and_then(|module_syms| module_syms.get(submodule_name))
                                         {
                                             // submodule is an Import, check if field is a function in submodule
-                                            if let Some(function_symbol) = self
+                                            let qualified_submodule_name =
+                                                format!("{}.{}", module_name, submodule_name);
+                                            let function_symbol = self
                                                 .analyzer
                                                 .imported_symbols()
-                                                .get(submodule_name)
+                                                .get(&qualified_submodule_name)
                                                 .and_then(|submodule_syms| {
                                                     submodule_syms.get(field)
                                                 })
-                                            {
+                                                .or_else(|| {
+                                                    self.analyzer
+                                                        .imported_symbols()
+                                                        .get(submodule_name)
+                                                        .and_then(|submodule_syms| {
+                                                            submodule_syms.get(field)
+                                                        })
+                                                });
+                                            if let Some(function_symbol) = function_symbol {
                                                 let func_type = function_symbol.type_.clone();
                                                 let llvm_function_name = function_symbol
                                                     .llvm_name
@@ -1773,6 +1877,7 @@ impl<'a> CodeGenerator<'a> {
                                                     let call_args = self.build_import_call_args(
                                                         args,
                                                         func_type.as_ref(),
+                                                        Some(func),
                                                     )?;
                                                     let call = self
                                                         .builder
@@ -1864,8 +1969,11 @@ impl<'a> CodeGenerator<'a> {
                                         if let Some(func) =
                                             self.module.get_function(&llvm_function_name)
                                         {
-                                            let call_args = self
-                                                .build_import_call_args(args, func_type.as_ref())?;
+                                            let call_args = self.build_import_call_args(
+                                                args,
+                                                func_type.as_ref(),
+                                                Some(func),
+                                            )?;
                                             let call = self
                                                 .builder
                                                 .build_call(
@@ -1883,6 +1991,13 @@ impl<'a> CodeGenerator<'a> {
                                                     .into()),
                                             };
                                         } else {
+                                            if let Some(generic_func) =
+                                                self.function_nodes.get(field)
+                                                && !generic_func.type_params.is_empty()
+                                            {
+                                                return self
+                                                    .generate_generic_function_call(field, args);
+                                            }
                                             return Err(format!(
                                                 "Function {} not found in module {}",
                                                 field, name
@@ -2001,6 +2116,12 @@ impl<'a> CodeGenerator<'a> {
                             }
                         }
                         ExpressionKind::GenericType(class_name, type_args) => {
+                            let resolved_class_name = class_name
+                                .split('.')
+                                .next_back()
+                                .unwrap_or(class_name.as_str())
+                                .to_string();
+
                             // convert type arguments to Type
                             let resolved_type_args = type_args
                                 .iter()
@@ -2016,7 +2137,7 @@ impl<'a> CodeGenerator<'a> {
                                     .map(|arg| self.resolve_type(arg))
                                     .collect::<Result<Vec<_>, _>>()?;
                                 return self.generate_constructor_call_with_types(
-                                    class_name,
+                                    &resolved_class_name,
                                     &concrete_type_args,
                                     args,
                                 );
@@ -2024,81 +2145,90 @@ impl<'a> CodeGenerator<'a> {
 
                             // check for static methods on the class
                             if let Some(class_symbol) =
-                                self.analyzer.symbol_table().lookup(class_name)
+                                self.analyzer.symbol_table().lookup(&resolved_class_name)
                             {
                                 if let Some(method) = class_symbol.methods.get(field) {
                                     if method.is_static {
                                         // set up generic context for static method call
                                         let context = GenericContext {
                                             type_params: self.build_type_param_map(
-                                                class_name,
+                                                &resolved_class_name,
                                                 &resolved_type_args,
                                             )?,
                                         };
+                                        let old_context = self.generic_context.take();
                                         self.generic_context = Some(context);
 
-                                        // save variables and current builder state before generating specialized methods
-                                        let saved_variables = self.variables.clone();
-                                        let saved_insert_block = self.builder.get_insert_block();
+                                        let call_result = (|| {
+                                            // save variables and current builder state before generating specialized methods
+                                            let saved_variables = self.variables.clone();
+                                            let saved_insert_block =
+                                                self.builder.get_insert_block();
 
-                                        // generate specialized methods for this class variant if not already generated
-                                        if !resolved_type_args.is_empty() {
-                                            self.generate_specialized_methods(
-                                                class_name,
-                                                &resolved_type_args,
-                                            )?;
-                                        }
+                                            // generate specialized methods for this class variant if not already generated
+                                            if !resolved_type_args.is_empty() {
+                                                self.generate_specialized_methods(
+                                                    &resolved_class_name,
+                                                    &resolved_type_args,
+                                                )?;
+                                            }
 
-                                        // restore variables and builder state after generating specialized methods
-                                        self.variables = saved_variables;
-                                        if let Some(block) = saved_insert_block {
-                                            self.builder.position_at_end(block);
-                                        }
+                                            // restore variables and builder state after generating specialized methods
+                                            self.variables = saved_variables;
+                                            if let Some(block) = saved_insert_block {
+                                                self.builder.position_at_end(block);
+                                            }
 
-                                        // generate static method call - prioritize specialized methods
-                                        let mut call_args = vec![];
-                                        for arg in args.iter() {
-                                            let arg_val = self.generate_expression(arg)?;
-                                            call_args.push(arg_val.into());
-                                        }
+                                            // generate static method call - prioritize specialized methods
+                                            let mut call_args = vec![];
+                                            for arg in args.iter() {
+                                                let arg_val = self.generate_expression(arg)?;
+                                                call_args.push(arg_val.into());
+                                            }
 
-                                        // try specialized method first
-                                        let specialized_method_name = self
-                                            .create_specialized_method_name(
-                                                class_name,
-                                                &resolved_type_args,
-                                                field,
-                                            );
-                                        let function_name = if self
-                                            .module
-                                            .get_function(&specialized_method_name)
-                                            .is_some()
-                                        {
-                                            specialized_method_name
-                                        } else {
-                                            format!("{}.{}", class_name, field)
-                                        };
+                                            // try specialized method first
+                                            let specialized_method_name = self
+                                                .create_specialized_method_name(
+                                                    class_name,
+                                                    &resolved_type_args,
+                                                    field,
+                                                );
+                                            let function_name = if self
+                                                .module
+                                                .get_function(&specialized_method_name)
+                                                .is_some()
+                                            {
+                                                specialized_method_name
+                                            } else {
+                                                format!("{}.{}", class_name, field)
+                                            };
 
-                                        let call = self
-                                            .builder
-                                            .build_call(
-                                                self.module.get_function(&function_name).ok_or(
-                                                    format!("Method '{}' not found", function_name),
-                                                )?,
-                                                &call_args,
-                                                &format!(
-                                                    "{}_call",
-                                                    function_name.replace('.', "_")
-                                                ),
-                                            )
-                                            .map_err(|e| e.to_string())?;
+                                            let call = self
+                                                .builder
+                                                .build_call(
+                                                    self.module
+                                                        .get_function(&function_name)
+                                                        .ok_or(format!(
+                                                            "Method '{}' not found",
+                                                            function_name
+                                                        ))?,
+                                                    &call_args,
+                                                    &format!(
+                                                        "{}_call",
+                                                        function_name.replace('.', "_")
+                                                    ),
+                                                )
+                                                .map_err(|e| e.to_string())?;
 
-                                        // clear generic context after call
-                                        self.generic_context = None;
+                                            Ok(call.try_as_basic_value().left().expect(
+                                                "generic method call should return a basic value",
+                                            ))
+                                        })(
+                                        );
 
-                                        return Ok(call.try_as_basic_value().left().expect(
-                                            "generic method call should return a basic value",
-                                        ));
+                                        self.generic_context = old_context;
+
+                                        return call_result;
                                     } else {
                                         return Err(format!(
                                             "Method {} on class {} is not static",
@@ -2211,6 +2341,21 @@ impl<'a> CodeGenerator<'a> {
                             let arg_type = self
                                 .analyzer
                                 .get_expression_type(arg_expr)
+                                .or_else(|_| {
+                                    if let ExpressionKind::Identifier(name) = &arg_expr.kind {
+                                        if let Some((_, _, ty)) = self
+                                            .variables
+                                            .get(name)
+                                            .or_else(|| self.global_variables.get(name))
+                                        {
+                                            return Ok(ty.clone());
+                                        }
+                                    }
+                                    Err(crate::semantics::SemanticError::new(
+                                        "Type inference failed for Some() argument",
+                                        arg_expr.span,
+                                    ))
+                                })
                                 .map_err(|e| format!("Type inference failed: {}", e))?;
                             let arg_val = self.generate_expression(arg_expr)?;
                             let func_name = match arg_type {
@@ -2223,6 +2368,8 @@ impl<'a> CodeGenerator<'a> {
                                 | Type::Map(_, _)
                                 | Type::Set(_)
                                 | Type::Named(_, _)
+                                | Type::Variable(_)
+                                | Type::Generic(_)
                                 | Type::Instantiated(_, _) => "mux_optional_some_value",
                                 _ => {
                                     return Err(format!(
@@ -2575,6 +2722,12 @@ impl<'a> CodeGenerator<'a> {
                                 }
                             } else {
                                 // check if this is a generic function that needs instantiation
+                                if let Some(func_node) = self.function_nodes.get(name)
+                                    && !func_node.type_params.is_empty()
+                                {
+                                    return self.generate_generic_function_call(name, args);
+                                }
+
                                 if let Some(func_symbol) = self.analyzer.symbol_table().lookup(name)
                                 {
                                     if let SymbolKind::Function = func_symbol.kind {
@@ -2924,13 +3077,10 @@ impl<'a> CodeGenerator<'a> {
                 let index_val = self.generate_expression(index)?;
 
                 // Get the target type to determine if it's a list or map
-                let target_type = self
-                    .analyzer
-                    .get_expression_type(target_expr)
-                    .map_err(|e| e.message)?;
+                let target_type = self.resolve_expression_type_with_fallback(target_expr)?;
 
-                match target_type {
-                    crate::semantics::Type::List(_) => {
+                match &target_type {
+                    crate::semantics::Type::List(element_type) => {
                         // List access: use mux_list_get_value
                         // extract raw List pointer from Value
                         let raw_list = self
@@ -3022,18 +3172,12 @@ impl<'a> CodeGenerator<'a> {
                         // continue block: extract the value based on its actual type
                         self.builder.position_at_end(continue_bb);
 
-                        // Get the element type from the semantic analyzer
-                        let element_type = self
-                            .analyzer
-                            .get_expression_type(expr)
-                            .map_err(|e| e.message)?;
-
                         // Use extract_value_from_ptr to properly extract based on type
                         let (extracted_val, _) =
-                            self.extract_value_from_ptr(result_ptr, &element_type, "list_element")?;
+                            self.extract_value_from_ptr(result_ptr, element_type, "list_element")?;
                         Ok(extracted_val)
                     }
-                    crate::semantics::Type::Map(_, _) => {
+                    crate::semantics::Type::Map(_, value_type) => {
                         // Map access: use mux_map_get (returns Optional)
                         // extract raw Map pointer from Value
                         let raw_map = self
@@ -3155,15 +3299,9 @@ impl<'a> CodeGenerator<'a> {
                             .expect("mux_optional_get_value should return a basic value")
                             .into_pointer_value();
 
-                        // Get the value type from the semantic analyzer
-                        let value_type = self
-                            .analyzer
-                            .get_expression_type(expr)
-                            .map_err(|e| e.message)?;
-
                         // Use extract_value_from_ptr to properly extract based on type
                         let (extracted_val, _) =
-                            self.extract_value_from_ptr(value_ptr, &value_type, "map_element")?;
+                            self.extract_value_from_ptr(value_ptr, value_type, "map_element")?;
                         Ok(extracted_val)
                     }
                     _ => Err(format!(
@@ -3387,6 +3525,12 @@ impl<'a> CodeGenerator<'a> {
                     return Ok(field_value);
                 }
 
+                if let Type::Named(name, _) = &expr_type {
+                    if name == "Csv" {
+                        return self.generate_csv_field_access(expr, field);
+                    }
+                }
+
                 let mut struct_ptr = if let ExpressionKind::Identifier(obj_name) = &expr.kind {
                     if obj_name == "self" {
                         // special case: accessing field of 'self' - load actual object pointer from alloca first
@@ -3545,36 +3689,92 @@ impl<'a> CodeGenerator<'a> {
                                             ..
                                         } = &field_def.type_
                                         {
-                                            // Try to resolve the generic parameter
+                                            // Try to resolve the generic parameter from current context
+                                            let mut concrete_type_opt = None;
                                             if let Some(context) = &self.generic_context {
-                                                if let Some(concrete_type) =
-                                                    context.type_params.get(param_name)
+                                                concrete_type_opt =
+                                                    context.type_params.get(param_name).cloned();
+                                            }
+
+                                            // If no generic context, try to infer from the object's type
+                                            if concrete_type_opt.is_none() {
+                                                if let ExpressionKind::Identifier(obj_name) =
+                                                    &expr.kind
                                                 {
-                                                    // Match on the CONCRETE type to decide unboxing
-                                                    match concrete_type {
-                                                        Type::Primitive(PrimitiveType::Int) => {
-                                                            let raw_int =
-                                                                self.get_raw_int_value(loaded)?;
-                                                            return Ok(raw_int.into());
+                                                    if let Some((
+                                                        _,
+                                                        _,
+                                                        Type::Named(_, type_args)
+                                                        | Type::Instantiated(_, type_args),
+                                                    )) =
+                                                        self.variables.get(obj_name).or_else(|| {
+                                                            self.global_variables.get(obj_name)
+                                                        })
+                                                    {
+                                                        if !type_args.is_empty() {
+                                                            // Map type parameters from class definition to concrete types
+                                                            if let Some(class_symbol) = self
+                                                                .analyzer
+                                                                .all_symbols()
+                                                                .get(class_name.as_str())
+                                                            {
+                                                                if let Some(param_index) =
+                                                                    class_symbol
+                                                                        .type_params
+                                                                        .iter()
+                                                                        .position(|(p, _)| {
+                                                                            p == param_name
+                                                                        })
+                                                                {
+                                                                    if param_index < type_args.len()
+                                                                    {
+                                                                        concrete_type_opt = Some(
+                                                                            type_args[param_index]
+                                                                                .clone(),
+                                                                        );
+                                                                    }
+                                                                }
+                                                            }
                                                         }
-                                                        Type::Primitive(PrimitiveType::Float) => {
-                                                            let raw_float =
-                                                                self.get_raw_float_value(loaded)?;
-                                                            return Ok(raw_float.into());
-                                                        }
-                                                        Type::Primitive(PrimitiveType::Bool) => {
-                                                            let raw_bool =
-                                                                self.get_raw_bool_value(loaded)?;
-                                                            return Ok(raw_bool.into());
-                                                        }
-                                                        Type::Named(_type_name, _) => {
-                                                            // For both enums and classes, return pointer directly (no unboxing)
-                                                            return Ok(loaded);
-                                                        }
-                                                        _ => {
-                                                            // Other types: return loaded pointer as-is
-                                                            return Ok(loaded);
-                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // If we resolved the concrete type, perform unboxing
+                                            if let Some(concrete_type) = concrete_type_opt {
+                                                match concrete_type {
+                                                    Type::Primitive(PrimitiveType::Int) => {
+                                                        let raw_int =
+                                                            self.get_raw_int_value(loaded)?;
+                                                        return Ok(raw_int.into());
+                                                    }
+                                                    Type::Primitive(PrimitiveType::Float) => {
+                                                        let raw_float =
+                                                            self.get_raw_float_value(loaded)?;
+                                                        return Ok(raw_float.into());
+                                                    }
+                                                    Type::Primitive(PrimitiveType::Bool) => {
+                                                        let raw_bool =
+                                                            self.get_raw_bool_value(loaded)?;
+                                                        return Ok(raw_bool.into());
+                                                    }
+                                                    Type::Primitive(PrimitiveType::Str) => {
+                                                        // String is already a pointer
+                                                        return Ok(loaded);
+                                                    }
+                                                    Type::Primitive(PrimitiveType::Char) => {
+                                                        // Char is stored as i64
+                                                        let raw_int =
+                                                            self.get_raw_int_value(loaded)?;
+                                                        return Ok(raw_int.into());
+                                                    }
+                                                    Type::Named(_type_name, _) => {
+                                                        // For both enums and classes, return pointer directly (no unboxing)
+                                                        return Ok(loaded);
+                                                    }
+                                                    _ => {
+                                                        // Other types: return loaded pointer as-is
+                                                        return Ok(loaded);
                                                     }
                                                 }
                                             }

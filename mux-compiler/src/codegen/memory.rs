@@ -57,6 +57,11 @@ impl<'a> CodeGenerator<'a> {
     /// The variable will have mux_rc_dec called on it when the scope ends.
     pub(super) fn track_rc_variable(&mut self, name: &str, alloca: PointerValue<'a>) {
         if let Some(current_scope) = self.rc_scope_stack.last_mut() {
+            // Avoid duplicate tracking of the same storage slot inside a scope.
+            // Duplicates can lead to double decrements during cleanup.
+            if current_scope.iter().any(|(_, p)| *p == alloca) {
+                return;
+            }
             current_scope.push((name.to_string(), alloca));
         }
     }

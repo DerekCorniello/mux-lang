@@ -1,6 +1,6 @@
+use crate::refcount::mux_rc_alloc;
 use crate::Tuple;
 use crate::Value;
-use crate::refcount::mux_rc_alloc;
 use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::fmt;
@@ -48,15 +48,12 @@ pub extern "C" fn mux_map_value(map: *mut Map) -> *mut Value {
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_map_get(
-    map: *const Map,
-    key: *const Value,
-) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_map_get(map: *const Map, key: *const Value) -> *mut Value {
     let opt = unsafe { (*map).get(&*key).cloned() };
-    Box::into_raw(Box::new(
-        opt.map(crate::optional::Optional::some)
-            .unwrap_or(crate::optional::Optional::none()),
-    ))
+    match opt {
+        Some(v) => mux_rc_alloc(Value::Optional(Some(Box::new(v)))),
+        None => mux_rc_alloc(Value::Optional(None)),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -89,37 +86,31 @@ pub extern "C" fn mux_map_put_value(map_val: *mut Value, key: *mut Value, val: *
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_map_remove(
-    map: *mut Map,
-    key: *const Value,
-) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_map_remove(map: *mut Map, key: *const Value) -> *mut Value {
     let opt = unsafe { (*map).remove(&*key) };
-    Box::into_raw(Box::new(
-        opt.map(crate::optional::Optional::some)
-            .unwrap_or(crate::optional::Optional::none()),
-    ))
+    match opt {
+        Some(v) => mux_rc_alloc(Value::Optional(Some(Box::new(v)))),
+        None => mux_rc_alloc(Value::Optional(None)),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[allow(clippy::mutable_key_type)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_map_remove_value(
-    map_val: *mut Value,
-    key: *mut Value,
-) -> *mut crate::optional::Optional {
+pub extern "C" fn mux_map_remove_value(map_val: *mut Value, key: *mut Value) -> *mut Value {
     let key = unsafe { (*key).clone() };
     unsafe {
         if let Value::Map(map_data) = &*map_val {
             let mut new_map = map_data.clone();
             let opt = new_map.remove(&key);
             *map_val = Value::Map(new_map);
-            return Box::into_raw(Box::new(
-                opt.map(crate::optional::Optional::some)
-                    .unwrap_or(crate::optional::Optional::none()),
-            ));
+            return match opt {
+                Some(v) => mux_rc_alloc(Value::Optional(Some(Box::new(v)))),
+                None => mux_rc_alloc(Value::Optional(None)),
+            };
         }
     }
-    Box::into_raw(Box::new(crate::optional::Optional::none()))
+    mux_rc_alloc(Value::Optional(None))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

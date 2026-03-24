@@ -1,0 +1,18 @@
+import std.env
+import std.assert
+
+// Use PATH as the canonical env var across dev and CI. Do not print its value.
+match env.get("PATH") {
+    some(_) {
+        print("Got PATH env var")
+    }
+    none {
+        assert.assert(false, "PATH environment variable not found; CI must provide PATH")
+    }
+}
+
+// Also test a variable that should not exist to exercise the `none` branch
+match env.get("MUX_TEST_NON_EXISTENT_ENV_VAR_12345") {
+    some(v) { print("UNEXPECTED: " + v) }
+    none { print("MISSING_ENV_VAR (expected)") }
+}

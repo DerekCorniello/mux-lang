@@ -1,5 +1,5 @@
-use crate::Value;
 use crate::refcount::mux_rc_alloc;
+use crate::Value;
 use std::ffi::CStr;
 use std::fmt;
 
@@ -19,75 +19,6 @@ impl MuxResult {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_result_ok_int(val: i64) -> *mut MuxResult {
-    Box::into_raw(Box::new(MuxResult::ok(Value::Int(val))))
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_result_ok_float(val: f64) -> *mut MuxResult {
-    use ordered_float::OrderedFloat;
-    Box::into_raw(Box::new(MuxResult::ok(Value::Float(OrderedFloat(val)))))
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_result_ok_bool(val: i32) -> *mut MuxResult {
-    Box::into_raw(Box::new(MuxResult::ok(Value::Bool(val != 0))))
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_result_ok_char(val: i64) -> *mut MuxResult {
-    Box::into_raw(Box::new(MuxResult::ok(Value::Int(val))))
-}
-
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_result_ok_string(val: *mut Value) -> *mut MuxResult {
-    mux_result_ok_value(val)
-}
-
-/// # Safety
-/// Takes ownership of `val` - caller must NOT free after this.
-/// Clones the inner value if present.
-/// Returns ownership of a new `MuxResult*` - caller is responsible for its lifecycle.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_result_ok_value(val: *mut Value) -> *mut MuxResult {
-    if val.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        let value = (*val).clone();
-        Box::into_raw(Box::new(MuxResult::ok(value)))
-    }
-}
-
-/// # Safety
-/// The `msg` pointer must point to a valid, null-terminated C string.
-/// The caller must ensure the pointer remains valid for the duration of this function call.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mux_result_err_str(msg: *const std::os::raw::c_char) -> *mut MuxResult {
-    let c_str = unsafe { CStr::from_ptr(msg) };
-    let msg_str = c_str.to_string_lossy().into_owned();
-    Box::into_raw(Box::new(MuxResult::err(Value::String(msg_str))))
-}
-
-/// # Safety
-/// Takes ownership of `val` - caller must NOT free after this.
-/// Clones the inner value if present.
-/// Returns ownership of a new `MuxResult*` - caller is responsible for its lifecycle.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_result_err_value(val: *mut Value) -> *mut MuxResult {
-    if val.is_null() {
-        return std::ptr::null_mut();
-    }
-    unsafe {
-        let value = (*val).clone();
-        Box::into_raw(Box::new(MuxResult::err(value)))
-    }
-}
-
 impl fmt::Display for MuxResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -97,48 +28,111 @@ impl fmt::Display for MuxResult {
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_int(val: i64) -> *mut Value {
+    mux_rc_alloc(Value::Result(Ok(Box::new(Value::Int(val)))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_float(val: f64) -> *mut Value {
+    use ordered_float::OrderedFloat;
+    mux_rc_alloc(Value::Result(Ok(Box::new(Value::Float(OrderedFloat(val))))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_bool(val: i32) -> *mut Value {
+    mux_rc_alloc(Value::Result(Ok(Box::new(Value::Bool(val != 0)))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_char(val: i64) -> *mut Value {
+    mux_rc_alloc(Value::Result(Ok(Box::new(Value::Int(val)))))
+}
+
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_result_discriminant(res: *mut MuxResult) -> i32 {
-    if res.is_null() {
-        return -1;
+pub extern "C" fn mux_result_ok_string(val: *mut Value) -> *mut Value {
+    mux_result_ok_value(val)
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_ok_value(val: *mut Value) -> *mut Value {
+    if val.is_null() {
+        return std::ptr::null_mut();
     }
     unsafe {
-        match &*res {
-            MuxResult::Ok(_) => 0,
-            MuxResult::Err(_) => 1,
+        let value = (*val).clone();
+        mux_rc_alloc(Value::Result(Ok(Box::new(value))))
+    }
+}
+
+/// # Safety
+/// The `msg` pointer must point to a valid, null-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_result_err_str(msg: *const std::os::raw::c_char) -> *mut Value {
+    let c_str = unsafe { CStr::from_ptr(msg) };
+    let msg_str = c_str.to_string_lossy().into_owned();
+    mux_rc_alloc(Value::Result(Err(Box::new(Value::String(msg_str)))))
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_err_value(val: *mut Value) -> *mut Value {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        let value = (*val).clone();
+        mux_rc_alloc(Value::Result(Err(Box::new(value))))
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_is_ok(val: *mut Value) -> bool {
+    if val.is_null() {
+        return false;
+    }
+    unsafe { matches!(&*val, Value::Result(Ok(_))) }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_is_err(val: *mut Value) -> bool {
+    if val.is_null() {
+        return false;
+    }
+    unsafe { matches!(&*val, Value::Result(Err(_))) }
+}
+
+/// Returns the inner value from a `Value::Result`, for both Ok and Err variants.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_result_data(val: *mut Value) -> *mut Value {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        match &*val {
+            Value::Result(Ok(v)) => mux_rc_alloc(*v.clone()),
+            Value::Result(Err(e)) => mux_rc_alloc(*e.clone()),
+            _ => std::ptr::null_mut(),
         }
     }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn mux_result_is_ok(res: *mut MuxResult) -> bool {
-    if res.is_null() {
-        return false;
-    }
-    unsafe { matches!(&*res, MuxResult::Ok(_)) }
-}
-
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_result_is_err(res: *mut MuxResult) -> bool {
-    if res.is_null() {
-        return false;
-    }
-    unsafe { matches!(&*res, MuxResult::Err(_)) }
-}
-
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[unsafe(no_mangle)]
-pub extern "C" fn mux_result_data(res: *mut MuxResult) -> *mut Value {
-    if res.is_null() {
-        return std::ptr::null_mut();
+pub extern "C" fn mux_value_result_discriminant(val: *mut Value) -> i32 {
+    if val.is_null() {
+        return -1;
     }
     unsafe {
-        match &*res {
-            MuxResult::Ok(v) => mux_rc_alloc(*v.clone()),
-            MuxResult::Err(e) => mux_rc_alloc(*e.clone()),
+        match &*val {
+            Value::Result(Ok(_)) => 0,
+            Value::Result(Err(_)) => 1,
+            _ => -1,
         }
     }
 }

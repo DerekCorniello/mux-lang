@@ -58,15 +58,6 @@ impl SymbolTable {
     }
 
     pub fn exists(&self, name: &str) -> bool {
-        // For variable/constant lookups, only check the scope stack (not global)
-        // For other symbol kinds (functions, classes, etc.), check global too
-        if self.get_cloned(name).is_some() {
-            return true;
-        }
-
-        // Only consider symbols that are currently in scope.
-        // Global `all_symbols` is intentionally ignored here to prevent
-        // out-of-scope symbols from being treated as visible.
         self.get_cloned(name).is_some()
     }
 
@@ -94,14 +85,53 @@ impl SymbolTable {
         current_borrow
             .symbols
             .insert(name.to_string(), symbol.clone());
-        // Add all symbols to all_symbols for codegen lookups
-        // Note: This can cause name collisions for local variables across different functions,
-        // but it's needed because codegen calls get_expression_type after scopes are popped.
-        // For the collision case in generic methods, codegen should use expression types directly.
-        if name != "self" {
+        if self.should_track_global_symbol(name, &symbol) {
             self.all_symbols.insert(name.to_string(), symbol);
         }
         Ok(())
+    }
+
+    fn should_track_global_symbol(&self, name: &str, symbol: &Symbol) -> bool {
+        let _ = symbol;
+        name != "self"
+    }
+
+    pub fn add_imported_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {
+        if self.scopes.is_empty() {
+            return Err(SemanticError {
+                message: "No active scope".into(),
+                span: Span::new(0, 0),
+            });
+        }
+
+        let current = self
+            .scopes
+            .last()
+            .expect("at least global scope should exist");
+        let mut current_borrow = current.borrow_mut();
+
+        if current_borrow.symbols.contains_key(name) {
+            return Err(SemanticError {
+                message: format!("Duplicate declaration of '{}'", name),
+                span: symbol.span,
+            });
+        }
+
+        current_borrow
+            .symbols
+            .insert(name.to_string(), symbol.clone());
+
+        if self.should_track_global_symbol(name, &symbol) {
+            self.all_symbols.insert(name.to_string(), symbol);
+        }
+        Ok(())
+    }
+
+    pub fn global_scope_symbols(&self) -> HashMap<String, Symbol> {
+        self.scopes
+            .first()
+            .map(|scope| scope.borrow().symbols.clone())
+            .unwrap_or_default()
     }
 
     pub fn lookup(&self, name: &str) -> Option<Symbol> {
@@ -126,40 +156,54 @@ impl SymbolTable {
     pub fn find_similar(&self, name: &str) -> Option<String> {
         let threshold = calculate_similarity_threshold(name);
 
-        let mut best: Option<(String, usize)> = None;
+        let mut best: Option<(String, usize, u8)> = None;
 
         // Check all scopes
         for scope in self.scopes.iter().rev() {
             let scope_borrow = scope.borrow();
-            best = Self::find_best_match(name, threshold, scope_borrow.symbols.keys(), best);
+            best = Self::find_best_match(name, threshold, 0, scope_borrow.symbols.keys(), best);
         }
 
         // Also check all_symbols (hoisted functions, classes, etc.)
-        best = Self::find_best_match(name, threshold, self.all_symbols.keys(), best);
+        best = Self::find_best_match(name, threshold, 1, self.all_symbols.keys(), best);
 
         // Check built-in functions
         best = Self::find_best_match(
             name,
             threshold,
+            2,
             crate::semantics::stdlib::BUILT_IN_FUNCTIONS.keys().copied(),
             best,
         );
 
-        best.map(|(name, _)| name)
+        best.map(|(name, _, _)| name)
     }
 
     fn find_best_match<S: AsRef<str>>(
         name: &str,
         threshold: usize,
+        source_rank: u8,
         candidates: impl Iterator<Item = S>,
-        best: Option<(String, usize)>,
-    ) -> Option<(String, usize)> {
+        best: Option<(String, usize, u8)>,
+    ) -> Option<(String, usize, u8)> {
         let mut current_best = best;
         for candidate in candidates {
             let s = candidate.as_ref();
             let dist = edit_distance(name, s);
-            if dist <= threshold && current_best.as_ref().is_none_or(|(_, d)| dist < *d) {
-                current_best = Some((s.to_string(), dist));
+            if dist > threshold {
+                continue;
+            }
+
+            if current_best
+                .as_ref()
+                .is_none_or(|(best_name, best_dist, best_rank)| {
+                    dist < *best_dist
+                        || (dist == *best_dist
+                            && (source_rank < *best_rank
+                                || (source_rank == *best_rank && s < best_name.as_str())))
+                })
+            {
+                current_best = Some((s.to_string(), dist, source_rank));
             }
         }
         current_best

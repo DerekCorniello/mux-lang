@@ -12,12 +12,27 @@ use crate::ast::{
     TypeNode,
 };
 use crate::lexer::Span;
-use crate::semantics::Type;
+use crate::semantics::{Type, infer_missing_type_params_from_bounds};
 
+use super::ClassTypeParamBounds;
 use super::CodeGenerator;
 use super::GenericContext;
 
 impl<'a> CodeGenerator<'a> {
+    fn lookup_class_symbol(&self, class_name: &str) -> Option<crate::semantics::Symbol> {
+        if let Some(symbol) = self.analyzer.symbol_table().lookup(class_name) {
+            return Some(symbol);
+        }
+
+        for module_symbols in self.analyzer.imported_symbols().values() {
+            if let Some(symbol) = module_symbols.get(class_name) {
+                return Some(symbol.clone());
+            }
+        }
+
+        None
+    }
+
     pub(super) fn generate_specialized_methods(
         &mut self,
         class_name: &str,
@@ -44,23 +59,58 @@ impl<'a> CodeGenerator<'a> {
 
         // get the class symbol to access methods
         let class_symbol = self
-            .analyzer
-            .symbol_table()
-            .lookup(class_name)
+            .lookup_class_symbol(class_name)
             .ok_or(format!("Class {} not found", class_name))?;
 
         // Set class-level type parameter bounds for specialized method generation
         if !class_symbol.type_params.is_empty() {
-            self.analyzer
-                .set_class_type_params(class_symbol.type_params.clone());
+            let bounds: ClassTypeParamBounds = class_symbol
+                .type_params
+                .iter()
+                .map(|(param, bound_names)| {
+                    (
+                        param.clone(),
+                        bound_names
+                            .iter()
+                            .map(|bound_name| (bound_name.clone(), Vec::new()))
+                            .collect(),
+                    )
+                })
+                .collect();
+            self.analyzer.set_class_type_params(bounds);
         }
 
-        // generate specialized methods (including static methods)
-        for (method_name, method_sig) in &class_symbol.methods {
-            let specialized_method_name =
-                self.create_specialized_method_name(class_name, type_args, method_name);
+        let mut type_param_map = HashMap::new();
+        for (i, param) in class_symbol.type_params.iter().enumerate() {
+            let resolved_type_arg = self.resolve_type(&type_args[i])?;
+            type_param_map.insert(param.0.clone(), resolved_type_arg);
+        }
 
-            // skip if this specific method was already generated
+        let mut specialized_methods = Vec::new();
+
+        let method_prefix = format!("{}.", class_name);
+        let original_methods: Vec<crate::ast::FunctionNode> = self
+            .function_nodes
+            .iter()
+            .filter_map(|(name, node)| {
+                if name.starts_with(&method_prefix) && !name.contains('$') {
+                    Some(node.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Pass 1: prepare all specialized method AST nodes.
+        for method_node in original_methods {
+            let method_name = method_node
+                .name
+                .strip_prefix(&method_prefix)
+                .unwrap_or(&method_node.name)
+                .to_string();
+            let specialized_method_name =
+                self.create_specialized_method_name(class_name, type_args, &method_name);
+
             if self
                 .generated_methods
                 .contains_key(&specialized_method_name)
@@ -68,73 +118,48 @@ impl<'a> CodeGenerator<'a> {
                 continue;
             }
 
-            // get the original method AST node
-            let original_method_name = if method_sig.is_static {
-                // static methods are stored as "ClassName.method_name"
-                format!("{}.{}", class_name, method_name)
-            } else {
-                // instance methods are stored as "ClassName.method_name" too
-                format!("{}.{}", class_name, method_name)
-            };
+            let mut specialized_method = method_node.clone();
+            specialized_method.name = specialized_method_name;
 
-            if let Some(method_node) = self.function_nodes.get(&original_method_name) {
-                // clone the method and specialize it
-                let mut specialized_method = method_node.clone();
-                specialized_method.name = specialized_method_name.clone();
-
-                // create type parameter substitution map
-                let type_param_map = class_symbol
-                    .type_params
-                    .iter()
-                    .enumerate()
-                    .map(|(_i, param)| (param.0.clone(), type_args[_i].clone()))
-                    .collect::<HashMap<_, _>>();
-
-                // substitute types in parameters and return type
-                for param in &mut specialized_method.params {
-                    param.type_ = self.substitute_types_in_type_node(&param.type_, &type_param_map);
-                }
-                specialized_method.return_type = self.substitute_types_in_type_node(
-                    &specialized_method.return_type,
-                    &type_param_map,
-                );
-
-                // substitute types in the method body
-                let mut substituted_body = Vec::new();
-                for stmt in &specialized_method.body {
-                    substituted_body
-                        .push(self.substitute_types_in_statement(stmt, &type_param_map));
-                }
-                specialized_method.body = substituted_body;
-
-                // set up generic context for specialized method generation
-                let specialized_context = GenericContext {
-                    type_params: type_param_map,
-                };
-                let old_context = self.generic_context.take();
-                self.generic_context = Some(specialized_context);
-
-                // IMPORTANT: Save the current variables table before generating the specialized method
-                // because generate_function clears self.variables, which would lose the current function's
-                // parameters if we're generating this specialized method from within another function
-                let saved_variables = self.variables.clone();
-
-                // declare the specialized method first
-                self.declare_function(&specialized_method)?;
-
-                // generate the specialized method
-                // Note: generate_function now handles its own RC scope stack isolation internally,
-                // so we don't need to save/restore it here
-                self.generate_function(&specialized_method)?;
-
-                // mark as generated
-                self.generated_methods.insert(specialized_method_name, true);
-
-                // restore original context and variables
-                self.generic_context = old_context;
-                self.variables = saved_variables;
+            for param in &mut specialized_method.params {
+                param.type_ = self.substitute_types_in_type_node(&param.type_, &type_param_map);
             }
+            specialized_method.return_type = self
+                .substitute_types_in_type_node(&specialized_method.return_type, &type_param_map);
+
+            let mut substituted_body = Vec::new();
+            for stmt in &specialized_method.body {
+                substituted_body.push(self.substitute_types_in_statement(stmt, &type_param_map));
+            }
+            specialized_method.body = substituted_body;
+
+            specialized_methods.push(specialized_method);
         }
+
+        // set up generic context for specialized method generation
+        let specialized_context = GenericContext {
+            type_params: type_param_map,
+        };
+        let old_context = self.generic_context.take();
+        self.generic_context = Some(specialized_context);
+
+        // Save variables table because method generation clears self.variables.
+        let saved_variables = self.variables.clone();
+
+        // Pass 2: declare all specialized methods first so cross-method calls resolve.
+        for method in &specialized_methods {
+            self.declare_function(method)?;
+        }
+
+        // Pass 3: generate all specialized method bodies.
+        for method in &specialized_methods {
+            self.generate_function(method)?;
+            self.generated_methods.insert(method.name.clone(), true);
+        }
+
+        // restore original context and variables
+        self.generic_context = old_context;
+        self.variables = saved_variables;
 
         // restore the builder position to where we were before generating specialized methods
         if let Some(block) = saved_insert_block {
@@ -155,11 +180,12 @@ impl<'a> CodeGenerator<'a> {
         let mut type_params = HashMap::new();
 
         // get the class symbol to find generic parameter names
-        if let Some(class_symbol) = self.analyzer.symbol_table().lookup(class_name) {
+        if let Some(class_symbol) = self.lookup_class_symbol(class_name) {
             if class_symbol.type_params.len() == type_args.len() {
                 for (i, param) in class_symbol.type_params.iter().enumerate() {
                     // param is (String, Vec<String>) - first element is the parameter name
-                    type_params.insert(param.0.clone(), type_args[i].clone());
+                    let resolved_type_arg = self.resolve_type(&type_args[i])?;
+                    type_params.insert(param.0.clone(), resolved_type_arg);
                 }
             } else {
                 return Err(format!(
@@ -183,51 +209,12 @@ impl<'a> CodeGenerator<'a> {
         let func_node = self
             .function_nodes
             .get(func_name)
+            .cloned()
             .ok_or(format!("Generic function {} not found", func_name))?;
 
-        // infer concrete types by matching function signature against arguments
-        let mut type_map = std::collections::HashMap::new();
-
-        // for each parameter in the function signature, match against the corresponding argument
-        for (param_idx, param) in func_node.params.iter().enumerate() {
-            if param_idx >= args.len() {
-                break;
-            }
-
-            let arg_type = self
-                .analyzer
-                .get_expression_type(&args[param_idx])
-                .map_err(|e| format!("Failed to get argument type: {}", e))?;
-
-            // recursively match the parameter type against the argument type to infer generic parameters
-            self.infer_types_from_signature(&param.type_, &arg_type, &mut type_map)?;
-        }
-
-        // convert to concrete types list in the order of type parameters
-        let mut concrete_types = Vec::new();
-        for (type_param_name, _) in &func_node.type_params {
-            if let Some(concrete_type) = type_map.get(type_param_name) {
-                concrete_types.push(concrete_type.clone());
-            } else {
-                return Err(format!(
-                    "Could not infer concrete type for generic parameter {}",
-                    type_param_name
-                ));
-            }
-        }
-
-        // create instantiation key
-        let type_names: Vec<String> = concrete_types
-            .iter()
-            .map(|t| self.type_to_string(t))
-            .collect();
-        let instance_name = format!("{}_{}", func_name, type_names.join("_"));
-
-        // check if already instantiated
-        if self.module.get_function(&instance_name).is_none() {
-            // instantiate the generic function
-            self.instantiate_generic_function(func_name, &concrete_types, &instance_name)?;
-        }
+        let concrete_types = self.infer_concrete_types_for_generic_function(&func_node, args)?;
+        let instance_name =
+            self.ensure_generic_function_instantiated(func_name, &concrete_types)?;
 
         // call the instantiated function
         let func = self
@@ -468,6 +455,16 @@ impl<'a> CodeGenerator<'a> {
         type_map: &std::collections::HashMap<String, Type>,
     ) -> ExpressionNode {
         match &expr.kind {
+            ExpressionKind::GenericType(name, type_args) => {
+                let substituted_args = type_args
+                    .iter()
+                    .map(|arg| self.substitute_types_in_type_node(arg, type_map))
+                    .collect();
+                ExpressionNode {
+                    kind: ExpressionKind::GenericType(name.clone(), substituted_args),
+                    span: expr.span,
+                }
+            }
             ExpressionKind::Call { func, args } => {
                 let substituted_func = self.substitute_types_in_expression(func, type_map);
                 let substituted_args = args
@@ -656,5 +653,83 @@ impl<'a> CodeGenerator<'a> {
             }
         }
         Ok(())
+    }
+
+    fn infer_concrete_types_for_generic_function(
+        &mut self,
+        func_node: &crate::ast::FunctionNode,
+        args: &[ExpressionNode],
+    ) -> Result<Vec<Type>, String> {
+        let mut type_map = std::collections::HashMap::new();
+
+        // for each parameter in the function signature, match against the corresponding argument
+        for (param_idx, param) in func_node.params.iter().enumerate() {
+            if param_idx >= args.len() {
+                break;
+            }
+
+            let arg_type = self
+                .resolve_expression_type_with_fallback(&args[param_idx])
+                .map_err(|e| format!("Failed to get argument type: {}", e))?;
+
+            // recursively match the parameter type against the argument type to infer generic parameters
+            self.infer_types_from_signature(&param.type_, &arg_type, &mut type_map)?;
+        }
+        // Infer missing type params from already-inferred params' bounds
+        infer_missing_type_params_from_bounds(&func_node.type_params, &mut type_map);
+
+        // convert to concrete types list in the order of type parameters
+        let mut concrete_types = Vec::new();
+        for (type_param_name, _) in &func_node.type_params {
+            if let Some(concrete_type) = type_map.get(type_param_name) {
+                concrete_types.push(concrete_type.clone());
+                continue;
+            }
+
+            // If a type parameter was not directly inferred from arguments, try to infer it
+            // from already-inferred parameters via their trait bound type arguments.
+            // Example: in `max<T, E is Collection<T>>(E collection)`, inferring `E = Stack<int>`
+            // lets us infer `T = int`.
+            let inferred_from_bounds: Option<Type> = None;
+
+            if let Some(concrete_type) = inferred_from_bounds {
+                concrete_types.push(concrete_type);
+            } else if let Some(context) = &self.generic_context {
+                if let Some(concrete_type) = context.type_params.get(type_param_name) {
+                    concrete_types.push(concrete_type.clone());
+                    continue;
+                }
+                return Err(format!(
+                    "Could not infer concrete type for generic parameter {} in function {}",
+                    type_param_name, func_node.name
+                ));
+            } else {
+                return Err(format!(
+                    "Could not infer concrete type for generic parameter {} in function {}",
+                    type_param_name, func_node.name
+                ));
+            }
+        }
+        Ok(concrete_types)
+    }
+
+    fn ensure_generic_function_instantiated(
+        &mut self,
+        func_name: &str,
+        concrete_types: &[Type],
+    ) -> Result<String, String> {
+        // create instantiation key
+        let type_names: Vec<String> = concrete_types
+            .iter()
+            .map(|t| self.type_to_string(t))
+            .collect();
+        let instance_name = format!("{}_{}", func_name, type_names.join("_"));
+
+        // check if already instantiated
+        if self.module.get_function(&instance_name).is_none() {
+            // instantiate the generic function
+            self.instantiate_generic_function(func_name, concrete_types, &instance_name)?;
+        }
+        Ok(instance_name)
     }
 }

@@ -124,6 +124,11 @@ I also want to acknowlege that I am aware that there are likely far better ways 
 
 Finally, I want to acknowledge that I have also been using this project as a way to experiment with AI tools to help me write, review, test and document code. While I have made every effort to ensure the accuracy and quality of the content, there may be occasional "bad code", errors, or inconsistencies. I appreciate your understanding as I continue to refine both the language and my use of these tools.
 
+## Recent Runtime ABI note
+
+• The runtime now uses a unified representation for `optional<T>` and `result<T, E]` at the FFI level: both are boxed `Value` pointers (`*mut Value`).
+• Compiler-generated code and FFI should treat optionals/results as `*mut Value` and use the runtime discriminant helpers when inspecting variants. This avoids mismatched representations and related crashes.
+
 # Mux Language Specification
 
 ## 1. Overview
@@ -1960,12 +1965,12 @@ func main() returns void {
 
 ## 17. Standard Library
 
-The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, and `net`.
+The Mux standard library includes `assert`, `math`, `io`, `random`, `datetime`, `sync`, `net`, `env`, `data`, and `sql`.
 
 Import styles:
 
 ```mux
-import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net
+import std                    // use std.assert, std.math, std.io, std.random, std.datetime, std.sync, std.net, std.env, std.data, std.sql
 import std.assert              // use assert.*
 import std.math               // use math.*
 import std.io                 // use io.*
@@ -1973,6 +1978,9 @@ import std.random             // use random.*
 import std.datetime           // use datetime.*
 import std.sync               // use sync.*
 import std.net                // use net.*
+import std.env                // use env.*
+import std.data               // use data.*
+import std.sql                // use sql.*
 import std.(math, random as r)
 import std.*                  // flat import of stdlib items
 ```
@@ -2049,6 +2057,7 @@ Format patterns use chrono `strftime` tokens, for example:
 - `sync.sleep(int milliseconds) -> void`
 - `Thread.join() -> result<void, string>`
 - `Thread.detach() -> result<void, string>`
+
 - `Mutex.new() -> Mutex`
 - `Mutex.lock() -> result<void, string>`
 - `Mutex.unlock() -> result<void, string>`
@@ -2063,13 +2072,186 @@ Format patterns use chrono `strftime` tokens, for example:
 
 ### 17.7 net
 
-`net` exposes the primitives you need to work with raw sockets and build higher-level protocols.
+`net` exposes TCP/UDP sockets plus HTTP client/server primitives with JSON request and response shapes.
 
-- **`TcpStream`** provides `connect`, blocking reads/writes, `set_nonblocking` (returns `result<void, string>`), and `peer_addr`/`local_addr` helpers that both return `result<string, string>`.
-- **`UdpSocket`** lets you bind to a local port, send datagrams, receive a `(Bytes, string)` tuple plus the sender address, toggle non-blocking mode via `set_nonblocking` (`result<void, string>`), and inspect `peer_addr`/`local_addr` results.
-- **Request/Response shapes** define the protocol-agnostic payloads that HTTP (or future) libraries can share: store `method`, `url`, `headers`, and `body` in a `map`, while responses pair `status`, `headers`, and `body`.
+- `net.TcpStream.connect(string addr) -> result<TcpStream, string>`
+- `net.TcpListener.bind(string addr) -> result<TcpListener, string>`
+- `listener.accept() -> result<TcpStream, string>`
+- `net.UdpSocket.bind(string addr) -> result<UdpSocket, string>`
+- `net.http.request(Json req) -> result<Json, string>`
+- `net.http.read_request(TcpStream stream) -> result<Json, string>`
+- `net.http.write_response(TcpStream stream, Json response) -> result<void, string>`
+  `write_response` serializes body as JSON and defaults `Content-Type` to `application/json` unless you set it in `headers`.
+- `net.TcpStream.read(int size)`, `net.TcpStream.write(list<int> bytes)`
+- `net.UdpSocket.send_to(list<int> bytes, string addr)`, `net.UdpSocket.recv_from(int size)`
+  (all methods return `result<T, string>` when they can fail)
 
-Both classes return explicit `result` types so you can handle networking errors without hidden panics.
+### 17.8 env
+
+`env` exposes operating-system environment access with explicit errors.
+
+- `env.get(string name) -> optional<string>`
+
+### 17.9 data.json
+
+`data.json` is the JSON utility layer built on `std.json`.
+
+- `data.json.parse(string json) -> result<Json, string>`
+- `data.json.from_map(map<string, T>) -> result<Json, string>`
+- `data.json.to_map(Json value) -> result<map<string, Json>, string>`
+
+### 17.10 data.csv
+
+`data.csv` parses CSV text into structured rows.
+
+- `data.csv.parse(string csv_text) -> result<Csv, string>`
+- `data.csv.parse_with_headers(string csv_text) -> result<Csv, string>`
+
+### 17.11 sql
+
+`sql` provides database connectivity and typed SQL values.
+
+- `sql.connect(string uri) -> result<Connection, string>`
+- `Connection.close() -> void`
+- `Connection.execute(string sql) -> result<int, string>`
+- `Connection.execute_params(string sql, list<SqlValue> params) -> result<int, string>`
+- `Connection.query(string sql) -> result<ResultSet, string>`
+- `Connection.query_params(string sql, list<SqlValue> params) -> result<ResultSet, string>`
+- `Connection.begin_transaction() -> result<Transaction, string>`
+- `Transaction.commit() -> result<void, string>`
+- `Transaction.rollback() -> result<void, string>`
+- `Transaction.execute(string sql) -> result<int, string>`
+- `Transaction.query(string sql) -> result<ResultSet, string>`
+- `ResultSet.rows() -> list<map<string, SqlValue>>`
+- `ResultSet.next() -> optional<map<string, SqlValue>>`
+- `ResultSet.columns() -> list<string>`
+
+`SqlValue` constructors:
+
+- `sql.int(int) -> SqlValue`
+- `sql.float(float) -> SqlValue`
+- `sql.bool(bool) -> SqlValue`
+- `sql.string(string) -> SqlValue`
+- `sql.bytes(list<int>) -> SqlValue`
+- `sql.null() -> SqlValue`
+
+`SqlValue` methods:
+
+- `.is_null() -> bool`
+- `.as_bool() -> result<bool, string>`
+- `.as_int() -> result<int, string>`
+- `.as_float() -> result<float, string>`
+- `.as_string() -> result<string, string>`
+- `.as_bytes() -> result<list<int>, string>`
+- `.to_string() -> string`
+
+Current provider support:
+
+- SQLite: supported (`sqlite::memory:`, `sqlite:///path/to/file.db`)
+- PostgreSQL: supported (`postgres://...`, `postgresql://...`)
+- MySQL/MariaDB: supported (`mysql://...`, `mariadb://...`)
+- SQL Server: URI recognized, currently unsupported
+
+### 17.12 dsa
+
+`dsa` provides data structures and algorithms: stack, queue, heap, bintree, graph, and utility functions.
+
+Import styles:
+
+```mux
+import std.dsa                       // use dsa.stack, dsa.queue, etc.
+import std.dsa.stack                 // use stack.*
+import std.dsa.algorithm             // use algorithm.*
+import std.dsa.collection.Collection // import the interface
+```
+
+#### Collection Interface
+
+The `Collection<T>` interface is implemented by all DSA data structures:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `len() returns int` | Number of elements |
+| `is_empty() returns bool` | True if empty |
+| `clear() returns void` | Remove all elements |
+| `to_list() returns list<T>` | Elements as a list |
+
+#### stack.Stack<T>
+
+A LIFO (last-in, first-out) collection.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Stack<T>.new() returns Stack<T>` | Create empty stack |
+| `push(T value) returns void` | Add element to top |
+| `pop() returns optional<T>` | Remove and return top element |
+| `peek() returns optional<T>` | View top element without removing |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()`.
+
+#### queue.Queue<T>
+
+A FIFO (first-in, first-out) collection.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Queue<T>.new() returns Queue<T>` | Create empty queue |
+| `enqueue(T value) returns void` | Add element to back |
+| `dequeue() returns optional<T>` | Remove and return front element |
+| `peek() returns optional<T>` | View front element without removing |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()`.
+
+#### heap.Heap<T is Comparable>
+
+A min-heap collection where the smallest element is always at the top.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Heap<T>.new() returns Heap<T>` | Create empty heap |
+| `push(T value) returns void` | Add element |
+| `pop() returns optional<T>` | Remove and return minimum |
+| `peek() returns optional<T>` | View minimum without removing |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()`.
+
+#### bintree.BinaryTree<T is Comparable>
+
+A binary search tree with set semantics (duplicates ignored).
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `BinaryTree<T>.new() returns BinaryTree<T>` | Create empty tree |
+| `insert(T value) returns void` | Add element |
+| `remove(T value) returns void` | Remove element |
+| `contains(T value) returns bool` | Check if element exists |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()` (inorder traversal).
+
+#### graph.Graph<T is Hashable & Stringable>
+
+A directed graph using adjacency lists.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Graph<T>.new() returns Graph<T>` | Create empty graph |
+| `add_vertex(T value) returns void` | Add a vertex |
+| `add_edge(T from, T to) returns void` | Add directed edge |
+| `neighbors(T value) returns list<T>` | Get neighbors of vertex |
+| `bfs(T start) returns list<T>` | Breadth-first search traversal |
+
+Also implements `len()`, `is_empty()`, `clear()`, `to_list()` (vertices in insertion order).
+
+#### algorithm Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `sort` | `<T is Comparable>(list<T> items) returns list<T>` | Quicksort |
+| `binary_search` | `<T is Comparable, E is Collection<T>>(E items, T target) returns int` | Returns index or -1 |
+| `max` | `<T is Comparable & Stringable, E is Collection<T>>(E collection) returns optional<T>` | Maximum element |
+| `min` | `<T is Comparable & Stringable, E is Collection<T>>(E collection) returns optional<T>` | Minimum element |
+| `reverse` | `<T, E is Collection<T>>(E collection) returns list<T>` | Reversed list |
+
 
 ---
 

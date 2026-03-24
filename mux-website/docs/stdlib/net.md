@@ -34,22 +34,80 @@ Use `TcpStream` to connect to a TCP server and perform simple blocking-IO operat
 | `socket.peer_addr()` | — | `result<string, string>` | Returns the peer address when the socket is connected. |
 | `socket.local_addr()` | — | `result<string, string>` | Returns the local bind address. |
 
-## Request / Response shapes
+## TcpListener
 
-`std.net` also documents the protocol-agnostic shapes that higher-level libraries can share. The compiler does not currently provide a dedicated `Request` type, but you can represent them as `map` objects with the following keys:
+`TcpListener` is the low-level server socket primitive for accepting inbound TCP connections.
 
-- `method`: `string` (`GET`, `POST`, etc.)
-- `url`: `string`
-- `headers`: `map<string, string>`
-- `body`: `list<int>` (raw bytes)
+| Method | Signature | Return | Description |
+| ------ | --------- | ------ | ----------- |
+| `TcpListener.bind(addr)` | `string` | `result<TcpListener, string>` | Binds a listener to the supplied address. Use `127.0.0.1:0` for an ephemeral port. |
+| `listener.accept()` | — | `result<TcpStream, string>` | Blocks until a connection arrives and returns a connected `TcpStream`. |
+| `listener.local_addr()` | — | `result<string, string>` | Returns the bound socket address. |
+| `listener.set_nonblocking(enabled)` | `bool` | `result<void, string>` | Toggles non-blocking mode for accept operations. |
+| `listener.close()` | — | `void` | Releases the listener handle. |
 
-Likewise, a response consists of:
+## Http client
 
-- `status`: `int`
-- `headers`: `map<string, string>`
-- `body`: `list<int>`
+`std.net.http` exposes a low-level JSON-driven HTTP client primitive.
 
-Access these fields using the normal `map` API (e.g., `req["method"]` or `req.get("method").value()`).
+| Function | Signature | Return | Description |
+| -------- | --------- | ------ | ----------- |
+| `http.request(req)` | `Json` | `result<Json, string>` | Sends an HTTP request represented as JSON and returns a JSON response shape. |
+| `http.read_request(stream)` | `TcpStream` | `result<Json, string>` | Reads one HTTP request from a connected stream and returns the parsed JSON shape. |
+| `http.write_response(stream, response)` | `TcpStream`, `Json` | `result<void, string>` | Serializes a JSON response shape to HTTP and writes it to the stream. |
+
+### Request JSON shape
+
+- `method`: `string` (required)
+- `url`: `string` (required)
+- `headers`: `object<string, string>` (optional)
+- `body`: `Json` (optional, serialized as JSON text)
+
+### Response JSON shape
+
+- `status`: `number`
+- `headers`: `object<string, string>`
+- `body`: `Json` (parsed from response text when valid JSON, otherwise raw string)
+
+### Server request JSON shape (`http.read_request`)
+
+- `method`: `string`
+- `path`: `string`
+- `query`: `string`
+- `version`: `string`
+- `headers`: `object<string, string>`
+- `body`: `Json`
+
+### Server response JSON shape (`http.write_response`)
+
+- `status`: `int` (required)
+- `headers`: `object<string, string>` (optional)
+- `body`: `Json` (optional, defaults to `null`)
+
+### Response serialization notes
+
+- `http.write_response` always serializes `body` as JSON text using Mux JSON stringification.
+- If `headers` does not include `Content-Type`, the runtime defaults it to `application/json`.
+- You can override `Content-Type` explicitly in `headers` when you need a different value.
+
+## Quick HTTP example
+
+```mux
+import std.data.json
+import std.net
+
+func main() returns void {
+    match json.parse("{\"method\":\"POST\",\"url\":\"https://httpbin.org/post\",\"headers\":{\"Accept\":\"application/json\"},\"body\":{\"value\":42}}") {
+        ok(req) {
+            match net.http.request(req) {
+                ok(resp) { print("http response json received") }
+                err(e) { print("http error: " + e) }
+            }
+        }
+        err(e) { print("invalid request json: " + e) }
+    }
+}
+```
 
 ## Quick UDP example
 

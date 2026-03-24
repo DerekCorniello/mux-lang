@@ -1,0 +1,6 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+Got PATH env var
+MISSING_ENV_VAR (expected)
