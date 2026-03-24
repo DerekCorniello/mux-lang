@@ -44,7 +44,7 @@ import std.*                    // flat import of all stdlib items
 
 ## Module Stability
 
-The standard library is actively being developed. While the core functionality is stable, APIs may change as the language evolves. Breaking changes will be documented in release notes.
+The standard library is published and available. Core modules are stable, and APIs may evolve as new modules are added. Any breaking changes will be documented in release notes.
 
 ## Future Modules
 

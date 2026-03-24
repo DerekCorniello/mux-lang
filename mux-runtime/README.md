@@ -1,5 +1,5 @@
 
-  ![MuxLang Version](https://img.shields.io/badge/MuxLang-0.1.2-4c1?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang/releases)&nbsp;
+  ![MuxLang Version](https://img.shields.io/badge/MuxLang-0.2.0-4c1?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang/releases)&nbsp;
   ![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white&link=https://www.rust-lang.org/)&nbsp;
   ![LLVM](https://img.shields.io/badge/LLVM-262D3A?style=for-the-badge&logo=llvm&logoColor=white&link=https://llvm.org/)&nbsp;
   ![crates.io](https://img.shields.io/badge/crates.io-MuxLang-orange?style=for-the-badge&logo=rust&link=https://crates.io/crates/mux-lang)&nbsp;
@@ -129,7 +129,7 @@ Finally, I want to acknowledge that I have also been using this project as a way
 
 ### Runtime ABI: optionals & results unified
 
-• Recent changes (v0.1.2) unify the runtime ABI for `optional<T>` and `result<T, E>`: both are represented as boxed `Value` pointers (`*mut Value`) at the FFI boundary.
+• Runtime ABI unifies `optional<T>` and `result<T, E>`: both are represented as boxed `Value` pointers (`*mut Value`) at the FFI boundary.
 • All C-exported constructors and helpers in the runtime now return `*mut Value`. If you call runtime functions from generated code or from C, treat optionals/results as normal boxed `Value` objects and use the discriminant helpers (`mux_value_optional_discriminant`, `mux_value_result_discriminant`) when pattern-matching.
 • This change fixes crashes caused by mismatched runtime representations and keeps the compiler and runtime in sync.
 
