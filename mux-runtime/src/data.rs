@@ -44,6 +44,7 @@ fn collect_rows(reader: &mut csv::Reader<&[u8]>) -> Result<Vec<Value>, *mut Valu
     Ok(rows)
 }
 
+#[allow(clippy::mutable_key_type)]
 fn csv_value(headers: Value, rows: Vec<Value>) -> Value {
     let mut map = BTreeMap::new();
     map.insert(Value::String("headers".to_string()), headers);
