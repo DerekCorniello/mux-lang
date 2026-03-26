@@ -81,6 +81,356 @@ impl<'a> CodeGenerator<'a> {
         }
         Ok(())
     }
+
+    fn generate_for_statement_inner(
+        &mut self,
+        function: &FunctionValue<'a>,
+        var: &str,
+        var_type: &crate::ast::TypeNode,
+        iter: &ExpressionNode,
+        body: &[StatementNode],
+    ) -> Result<(), String> {
+        if let ExpressionKind::Call { func, args } = &iter.kind {
+            if let ExpressionKind::Identifier(name) = &func.kind {
+                if name == "range" && args.len() == 2 {
+                    let resolved_var_type = Type::Primitive(PrimitiveType::Int);
+                    let start_val = self.generate_expression(&args[0])?;
+                    let end_val = self.generate_expression(&args[1])?;
+                    let index_type = self.context.i64_type();
+                    let index_alloca = self
+                        .builder
+                        .build_alloca(index_type, "index")
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(index_alloca, start_val)
+                        .map_err(|e| e.to_string())?;
+                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let var_alloca = self
+                        .builder
+                        .build_alloca(ptr_type, var)
+                        .map_err(|e| e.to_string())?;
+                    self.variables.insert(
+                        var.to_string(),
+                        (
+                            var_alloca,
+                            BasicTypeEnum::PointerType(ptr_type),
+                            resolved_var_type.clone(),
+                        ),
+                    );
+                    let label_id = self.label_counter;
+                    self.label_counter += 1;
+                    let header_bb = self
+                        .context
+                        .append_basic_block(*function, &format!("for_header_{}", label_id));
+                    let body_bb = self
+                        .context
+                        .append_basic_block(*function, &format!("for_body_{}", label_id));
+                    let exit_bb = self
+                        .context
+                        .append_basic_block(*function, &format!("for_exit_{}", label_id));
+                    self.builder
+                        .build_unconditional_branch(header_bb)
+                        .map_err(|e| e.to_string())?;
+                    self.builder.position_at_end(header_bb);
+                    let index_load = self
+                        .builder
+                        .build_load(index_type, index_alloca, "index_load")
+                        .map_err(|e| e.to_string())?;
+                    let cmp = self
+                        .builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::SLT,
+                            index_load.into_int_value(),
+                            end_val.into_int_value(),
+                            "cmp",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_conditional_branch(cmp, body_bb, exit_bb)
+                        .map_err(|e| e.to_string())?;
+                    self.builder.position_at_end(body_bb);
+                    let index_load2 = self
+                        .builder
+                        .build_load(index_type, index_alloca, "index_load2")
+                        .map_err(|e| e.to_string())?;
+                    let boxed = self.box_value(index_load2);
+                    self.builder
+                        .build_store(var_alloca, boxed)
+                        .map_err(|e| e.to_string())?;
+                    for stmt in body {
+                        self.generate_statement(stmt, Some(function))?;
+                    }
+                    let one = self.context.i64_type().const_int(1, false);
+                    let new_index = self
+                        .builder
+                        .build_int_add(index_load2.into_int_value(), one, "inc")
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(index_alloca, new_index)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_unconditional_branch(header_bb)
+                        .map_err(|e| e.to_string())?;
+                    self.builder.position_at_end(exit_bb);
+                    return Ok(());
+                }
+                return Err("For loop iter must be range(start, end)".to_string());
+            }
+            return Err("For loop iter must be range call".to_string());
+        }
+
+        if let ExpressionKind::Identifier(_) = &iter.kind {
+            let resolved_var_type = self
+                .analyzer
+                .resolve_type(var_type)
+                .map_err(|e| e.message)?;
+            let list_val = self.generate_expression(iter)?;
+            let len_call = self
+                .builder
+                .build_call(
+                    self.module
+                        .get_function("mux_value_list_length")
+                        .expect("mux_value_list_length must be declared in runtime"),
+                    &[list_val.into()],
+                    "list_len",
+                )
+                .map_err(|e| e.to_string())?;
+            let len_val = len_call
+                .try_as_basic_value()
+                .left()
+                .expect("mux_value_list_length should return a basic value")
+                .into_int_value();
+            let index_type = self.context.i64_type();
+            let index_alloca = self
+                .builder
+                .build_alloca(index_type, "index")
+                .map_err(|e| e.to_string())?;
+            let zero = self.context.i64_type().const_int(0, false);
+            self.builder
+                .build_store(index_alloca, zero)
+                .map_err(|e| e.to_string())?;
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let var_alloca = self
+                .builder
+                .build_alloca(ptr_type, var)
+                .map_err(|e| e.to_string())?;
+            self.variables.insert(
+                var.to_string(),
+                (
+                    var_alloca,
+                    BasicTypeEnum::PointerType(ptr_type),
+                    resolved_var_type.clone(),
+                ),
+            );
+            let label_id = self.label_counter;
+            self.label_counter += 1;
+            let header_bb = self
+                .context
+                .append_basic_block(*function, &format!("for_header_{}", label_id));
+            let body_bb = self
+                .context
+                .append_basic_block(*function, &format!("for_body_{}", label_id));
+            let exit_bb = self
+                .context
+                .append_basic_block(*function, &format!("for_exit_{}", label_id));
+            self.builder
+                .build_unconditional_branch(header_bb)
+                .map_err(|e| e.to_string())?;
+            self.builder.position_at_end(header_bb);
+            let index_load = self
+                .builder
+                .build_load(index_type, index_alloca, "index_load")
+                .map_err(|e| e.to_string())?;
+            let cmp = self
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::SLT,
+                    index_load.into_int_value(),
+                    len_val,
+                    "cmp",
+                )
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_conditional_branch(cmp, body_bb, exit_bb)
+                .map_err(|e| e.to_string())?;
+            self.builder.position_at_end(body_bb);
+            let index_load2 = self
+                .builder
+                .build_load(index_type, index_alloca, "index_load2")
+                .map_err(|e| e.to_string())?;
+            let get_call = self
+                .builder
+                .build_call(
+                    self.module
+                        .get_function("mux_value_list_get_value")
+                        .expect("mux_value_list_get_value must be declared in runtime"),
+                    &[list_val.into(), index_load2.into()],
+                    "list_get_value",
+                )
+                .map_err(|e| e.to_string())?;
+            let value_ptr = get_call
+                .try_as_basic_value()
+                .left()
+                .expect("mux_value_list_get_value should return a basic value")
+                .into_pointer_value();
+            self.builder
+                .build_store(var_alloca, value_ptr)
+                .map_err(|e| e.to_string())?;
+            for stmt in body {
+                self.generate_statement(stmt, Some(function))?;
+            }
+            let one = self.context.i64_type().const_int(1, false);
+            let new_index = self
+                .builder
+                .build_int_add(index_load2.into_int_value(), one, "inc")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(index_alloca, new_index)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(header_bb)
+                .map_err(|e| e.to_string())?;
+            let continue_bb = self
+                .context
+                .append_basic_block(*function, &format!("for_continue_{}", label_id));
+            self.builder.position_at_end(exit_bb);
+            self.builder
+                .build_unconditional_branch(continue_bb)
+                .map_err(|e| e.to_string())?;
+            self.builder.position_at_end(continue_bb);
+            return Ok(());
+        }
+
+        Err("For loop iter must be range(...) or list identifier".to_string())
+    }
+
+    fn prepare_match_expression(
+        &mut self,
+        expr: &ExpressionNode,
+    ) -> Result<(BasicValueEnum<'a>, ExpressionNode), String> {
+        if matches!(
+            &expr.kind,
+            ExpressionKind::Identifier(_) | ExpressionKind::FieldAccess { .. }
+        ) || matches!(&expr.kind, ExpressionKind::Call { func, .. } if matches!(func.kind, ExpressionKind::Identifier(_)))
+        {
+            return Ok((self.generate_expression(expr)?, expr.clone()));
+        }
+
+        let temp_val = self.generate_expression(expr)?;
+        let temp_name = format!("match_temp_{}", self.label_counter);
+        self.label_counter += 1;
+        let temp_type = self.context.ptr_type(AddressSpace::default());
+        let temp_alloca = self
+            .builder
+            .build_alloca(temp_type, &temp_name)
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(temp_alloca, temp_val)
+            .map_err(|e| e.to_string())?;
+        let actual_type = self
+            .analyzer
+            .get_expression_type(expr)
+            .map_err(|e| format!("Type inference failed: {}", e))?;
+        self.variables.insert(
+            temp_name.clone(),
+            (
+                temp_alloca,
+                BasicTypeEnum::PointerType(temp_type),
+                actual_type,
+            ),
+        );
+        let temp_expr = ExpressionNode {
+            kind: ExpressionKind::Identifier(temp_name),
+            span: expr.span,
+        };
+        Ok((temp_val, temp_expr))
+    }
+
+    fn resolve_match_expression_type(
+        &mut self,
+        match_expr: &ExpressionNode,
+    ) -> Result<Type, String> {
+        match &match_expr.kind {
+            ExpressionKind::Identifier(name) => {
+                if name == "self" || name.starts_with("match_temp_") {
+                    if let Some((_, _, var_type)) = self
+                        .variables
+                        .get(name)
+                        .or_else(|| self.global_variables.get(name))
+                    {
+                        return Ok(var_type.clone());
+                    }
+                    let label = if name == "self" {
+                        "Self"
+                    } else {
+                        "Temporary variable"
+                    };
+                    return Err(format!("{} {} not found", label, name));
+                }
+                self.analyzer
+                    .get_expression_type(match_expr)
+                    .map_err(|e| format!("Type inference failed: {}", e))
+            }
+            ExpressionKind::FieldAccess { expr, field } => {
+                if let ExpressionKind::Identifier(obj) = &expr.kind
+                    && obj == "self"
+                {
+                    if let Some((_, _, Type::Named(class_name, _))) = self
+                        .variables
+                        .get("self")
+                        .or_else(|| self.global_variables.get("self"))
+                    {
+                        if let Some(fields) = self.classes.get(class_name) {
+                            if let Some(f) = fields.iter().find(|f| f.name == *field) {
+                                return self
+                                    .analyzer
+                                    .resolve_type(&f.type_)
+                                    .map_err(|e| format!("Type resolution failed: {}", e));
+                            }
+                            return Err(format!(
+                                "Field {} not found in class {}",
+                                field, class_name
+                            ));
+                        }
+                        return Err(format!("Class {} not found", class_name));
+                    }
+                    return Err("Self not found".to_string());
+                }
+                self.analyzer
+                    .get_expression_type(match_expr)
+                    .map_err(|e| format!("Type inference failed: {}", e))
+            }
+            _ => self
+                .analyzer
+                .get_expression_type(match_expr)
+                .map_err(|e| format!("Type inference failed: {}", e)),
+        }
+    }
+
+    fn generate_match_statement_inner(
+        &mut self,
+        function: &FunctionValue<'a>,
+        expr: &ExpressionNode,
+        arms: &[crate::ast::MatchArm],
+    ) -> Result<(), String> {
+        let (expr_val, match_expr) = self.prepare_match_expression(expr)?;
+        let match_expr_type = self.resolve_match_expression_type(&match_expr)?;
+        let is_enum = self.is_enum_match_type(&match_expr_type);
+
+        if is_enum {
+            self.generate_enum_match(function, &match_expr, &match_expr_type, expr_val, arms)?;
+        } else {
+            self.generate_switch_match(function, &match_expr_type, expr_val, arms)?;
+        }
+
+        if let ExpressionKind::Identifier(temp_name) = &match_expr.kind
+            && temp_name.starts_with("match_temp_")
+        {
+            self.variables.remove(temp_name);
+        }
+
+        Ok(())
+    }
     pub(super) fn generate_statement(
         &mut self,
         stmt: &StatementNode,
@@ -384,378 +734,11 @@ impl<'a> CodeGenerator<'a> {
                 body,
             } => {
                 let function = function.ok_or("For statement not in function")?;
-                // assume iter is range(start, end) or list identifier
-                if let ExpressionKind::Call { func, args } = &iter.kind {
-                    if let ExpressionKind::Identifier(name) = &func.kind {
-                        if name == "range" && args.len() == 2 {
-                            let resolved_var_type = Type::Primitive(PrimitiveType::Int);
-                            let start_val = self.generate_expression(&args[0])?;
-                            let end_val = self.generate_expression(&args[1])?;
-                            // create index variable
-                            let index_type = self.context.i64_type();
-                            let index_alloca = self
-                                .builder
-                                .build_alloca(index_type, "index")
-                                .map_err(|e| e.to_string())?;
-                            self.builder
-                                .build_store(index_alloca, start_val)
-                                .map_err(|e| e.to_string())?;
-                            // create loop var
-                            let ptr_type = self.context.ptr_type(AddressSpace::default());
-                            let var_alloca = self
-                                .builder
-                                .build_alloca(ptr_type, var)
-                                .map_err(|e| e.to_string())?;
-                            self.variables.insert(
-                                var.clone(),
-                                (
-                                    var_alloca,
-                                    BasicTypeEnum::PointerType(ptr_type),
-                                    resolved_var_type.clone(),
-                                ),
-                            );
-                            // loop header
-                            let label_id = self.label_counter;
-                            self.label_counter += 1;
-                            let header_bb = self
-                                .context
-                                .append_basic_block(*function, &format!("for_header_{}", label_id));
-                            let body_bb = self
-                                .context
-                                .append_basic_block(*function, &format!("for_body_{}", label_id));
-                            let exit_bb = self
-                                .context
-                                .append_basic_block(*function, &format!("for_exit_{}", label_id));
-                            self.builder
-                                .build_unconditional_branch(header_bb)
-                                .map_err(|e| e.to_string())?;
-                            // header: check index < end
-                            self.builder.position_at_end(header_bb);
-                            let index_load = self
-                                .builder
-                                .build_load(index_type, index_alloca, "index_load")
-                                .map_err(|e| e.to_string())?;
-                            let cmp = self
-                                .builder
-                                .build_int_compare(
-                                    inkwell::IntPredicate::SLT,
-                                    index_load.into_int_value(),
-                                    end_val.into_int_value(),
-                                    "cmp",
-                                )
-                                .map_err(|e| e.to_string())?;
-                            self.builder
-                                .build_conditional_branch(cmp, body_bb, exit_bb)
-                                .map_err(|e| e.to_string())?;
-                            // body: set var = index, then body
-                            self.builder.position_at_end(body_bb);
-                            let index_load2 = self
-                                .builder
-                                .build_load(index_type, index_alloca, "index_load2")
-                                .map_err(|e| e.to_string())?;
-                            let boxed = self.box_value(index_load2);
-                            self.builder
-                                .build_store(var_alloca, boxed)
-                                .map_err(|e| e.to_string())?;
-                            for stmt in body {
-                                self.generate_statement(stmt, Some(function))?;
-                            }
-                            // increment index
-                            let one = self.context.i64_type().const_int(1, false);
-                            let new_index = self
-                                .builder
-                                .build_int_add(index_load2.into_int_value(), one, "inc")
-                                .map_err(|e| e.to_string())?;
-                            self.builder
-                                .build_store(index_alloca, new_index)
-                                .map_err(|e| e.to_string())?;
-                            self.builder
-                                .build_unconditional_branch(header_bb)
-                                .map_err(|e| e.to_string())?;
-                            self.builder.position_at_end(exit_bb);
-                        } else {
-                            return Err("For loop iter must be range(start, end)".to_string());
-                        }
-                    } else {
-                        return Err("For loop iter must be range call".to_string());
-                    }
-                } else if let ExpressionKind::Identifier(_) = &iter.kind {
-                    // iterate over list
-                    let resolved_var_type = self
-                        .analyzer
-                        .resolve_type(var_type)
-                        .map_err(|e| e.message)?;
-                    let list_val = self.generate_expression(iter)?;
-                    // get length
-                    let len_call = self
-                        .builder
-                        .build_call(
-                            self.module
-                                .get_function("mux_value_list_length")
-                                .expect("mux_value_list_length must be declared in runtime"),
-                            &[list_val.into()],
-                            "list_len",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    let len_val = len_call
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_value_list_length should return a basic value")
-                        .into_int_value();
-                    // create index variable
-                    let index_type = self.context.i64_type();
-                    let index_alloca = self
-                        .builder
-                        .build_alloca(index_type, "index")
-                        .map_err(|e| e.to_string())?;
-                    let zero = self.context.i64_type().const_int(0, false);
-                    self.builder
-                        .build_store(index_alloca, zero)
-                        .map_err(|e| e.to_string())?;
-                    // create loop var
-                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let var_alloca = self
-                        .builder
-                        .build_alloca(ptr_type, var)
-                        .map_err(|e| e.to_string())?;
-                    self.variables.insert(
-                        var.clone(),
-                        (
-                            var_alloca,
-                            BasicTypeEnum::PointerType(ptr_type),
-                            resolved_var_type.clone(),
-                        ),
-                    );
-                    // loop header
-                    let label_id = self.label_counter;
-                    self.label_counter += 1;
-                    let header_bb = self
-                        .context
-                        .append_basic_block(*function, &format!("for_header_{}", label_id));
-                    let body_bb = self
-                        .context
-                        .append_basic_block(*function, &format!("for_body_{}", label_id));
-                    let exit_bb = self
-                        .context
-                        .append_basic_block(*function, &format!("for_exit_{}", label_id));
-                    self.builder
-                        .build_unconditional_branch(header_bb)
-                        .map_err(|e| e.to_string())?;
-                    // header: check index < len
-                    self.builder.position_at_end(header_bb);
-                    let index_load = self
-                        .builder
-                        .build_load(index_type, index_alloca, "index_load")
-                        .map_err(|e| e.to_string())?;
-                    let cmp = self
-                        .builder
-                        .build_int_compare(
-                            inkwell::IntPredicate::SLT,
-                            index_load.into_int_value(),
-                            len_val,
-                            "cmp",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_conditional_branch(cmp, body_bb, exit_bb)
-                        .map_err(|e| e.to_string())?;
-                    // body: get element at index
-                    self.builder.position_at_end(body_bb);
-                    let index_load2 = self
-                        .builder
-                        .build_load(index_type, index_alloca, "index_load2")
-                        .map_err(|e| e.to_string())?;
-                    let get_call = self
-                        .builder
-                        .build_call(
-                            self.module
-                                .get_function("mux_value_list_get_value")
-                                .expect("mux_value_list_get_value must be declared in runtime"),
-                            &[list_val.into(), index_load2.into()],
-                            "list_get_value",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    let value_ptr = get_call
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_value_list_get_value should return a basic value")
-                        .into_pointer_value();
-                    // store the Value pointer directly
-                    self.builder
-                        .build_store(var_alloca, value_ptr)
-                        .map_err(|e| e.to_string())?;
-                    // execute body
-                    for stmt in body {
-                        self.generate_statement(stmt, Some(function))?;
-                    }
-                    // increment index
-                    let one = self.context.i64_type().const_int(1, false);
-                    let new_index = self
-                        .builder
-                        .build_int_add(index_load2.into_int_value(), one, "inc")
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_store(index_alloca, new_index)
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_unconditional_branch(header_bb)
-                        .map_err(|e| e.to_string())?;
-                    // create continuation block for code after the loop
-                    let continue_bb = self
-                        .context
-                        .append_basic_block(*function, &format!("for_continue_{}", label_id));
-                    // position exit block to branch to continuation
-                    self.builder.position_at_end(exit_bb);
-                    self.builder
-                        .build_unconditional_branch(continue_bb)
-                        .map_err(|e| e.to_string())?;
-                    // position at continuation block for code after loop
-                    self.builder.position_at_end(continue_bb);
-                } else {
-                    return Err("For loop iter must be range(...) or list identifier".to_string());
-                }
+                self.generate_for_statement_inner(function, var, var_type, iter, body)?;
             }
             StatementKind::Match { expr, arms } => {
                 let function = function.ok_or("Match not in function")?;
-                // check if match expression is complex (not simple identifier/constructor/field access)
-                let (expr_val, match_expr) = if matches!(
-                    &expr.kind,
-                    ExpressionKind::Identifier(_) | ExpressionKind::FieldAccess { .. }
-                ) || matches!(&expr.kind, ExpressionKind::Call { func, .. } if matches!(func.kind, ExpressionKind::Identifier(_)))
-                {
-                    // simple expressions - use directly
-                    (self.generate_expression(expr)?, expr.clone())
-                } else {
-                    // complex expression - evaluate first and store in temporary
-                    let temp_val = self.generate_expression(expr)?;
-                    let temp_name = format!("match_temp_{}", self.label_counter);
-                    self.label_counter += 1;
-                    // create temporary variable to hold the result
-                    let temp_type = self.context.ptr_type(AddressSpace::default());
-                    let temp_alloca = self
-                        .builder
-                        .build_alloca(temp_type, &temp_name)
-                        .map_err(|e| e.to_string())?;
-                    // store the result
-                    self.builder
-                        .build_store(temp_alloca, temp_val)
-                        .map_err(|e| e.to_string())?;
-                    // get the actual type for the temporary variable
-                    let actual_type = self
-                        .analyzer
-                        .get_expression_type(expr)
-                        .map_err(|e| format!("Type inference failed: {}", e))?;
-                    // add to variables for pattern matching
-                    self.variables.insert(
-                        temp_name.clone(),
-                        (
-                            temp_alloca,
-                            BasicTypeEnum::PointerType(temp_type),
-                            actual_type,
-                        ),
-                    );
-                    // create synthetic identifier expression for the temporary
-                    let temp_expr = ExpressionNode {
-                        kind: ExpressionKind::Identifier(temp_name),
-                        span: expr.span,
-                    };
-                    (temp_val, temp_expr)
-                };
-                // get the full type of the match expression
-                let match_expr_type = match &match_expr.kind {
-                    ExpressionKind::Identifier(name) => {
-                        if name == "self" {
-                            if let Some((_, _, var_type)) = self
-                                .variables
-                                .get(name)
-                                .or_else(|| self.global_variables.get(name))
-                            {
-                                var_type.clone()
-                            } else {
-                                return Err("Self not found".to_string());
-                            }
-                        } else if name.starts_with("match_temp_") {
-                            // temporary variable created during codegen
-                            if let Some((_, _, var_type)) = self
-                                .variables
-                                .get(name)
-                                .or_else(|| self.global_variables.get(name))
-                            {
-                                var_type.clone()
-                            } else {
-                                return Err(format!("Temporary variable {} not found", name));
-                            }
-                        } else {
-                            self.analyzer
-                                .get_expression_type(&match_expr)
-                                .map_err(|e| format!("Type inference failed: {}", e))?
-                        }
-                    }
-                    ExpressionKind::FieldAccess { expr, field } => {
-                        if let ExpressionKind::Identifier(obj) = &expr.kind {
-                            if obj == "self" {
-                                if let Some((_, _, Type::Named(class_name, _))) = self
-                                    .variables
-                                    .get("self")
-                                    .or_else(|| self.global_variables.get("self"))
-                                {
-                                    if let Some(fields) = self.classes.get(class_name) {
-                                        if let Some(f) = fields.iter().find(|f| f.name == *field) {
-                                            self.analyzer.resolve_type(&f.type_).map_err(|e| {
-                                                format!("Type resolution failed: {}", e)
-                                            })?
-                                        } else {
-                                            return Err(format!(
-                                                "Field {} not found in class {}",
-                                                field, class_name
-                                            ));
-                                        }
-                                    } else {
-                                        return Err(format!("Class {} not found", class_name));
-                                    }
-                                } else {
-                                    return Err("Self not found".to_string());
-                                }
-                            } else {
-                                self.analyzer
-                                    .get_expression_type(&match_expr)
-                                    .map_err(|e| format!("Type inference failed: {}", e))?
-                            }
-                        } else {
-                            self.analyzer
-                                .get_expression_type(&match_expr)
-                                .map_err(|e| format!("Type inference failed: {}", e))?
-                        }
-                    }
-                    _ => self
-                        .analyzer
-                        .get_expression_type(&match_expr)
-                        .map_err(|e| format!("Type inference failed: {}", e))?,
-                };
-
-                // Determine if this is an enum match or a switch-style match
-                let is_enum = self.is_enum_match_type(&match_expr_type);
-
-                if is_enum {
-                    // Enum-based matching (discriminant comparison)
-                    self.generate_enum_match(
-                        function,
-                        &match_expr,
-                        &match_expr_type,
-                        expr_val,
-                        arms,
-                    )?;
-                } else {
-                    // Switch-style matching for non-enum types (equality comparison)
-                    self.generate_switch_match(function, &match_expr_type, expr_val, arms)?;
-                }
-
-                // clean up temporary variables created for complex match expressions
-                if let ExpressionKind::Identifier(temp_name) = &match_expr.kind
-                    && temp_name.starts_with("match_temp_")
-                {
-                    self.variables.remove(temp_name);
-                }
+                self.generate_match_statement_inner(function, expr, arms)?;
             }
             StatementKind::Expression(expr) => {
                 self.generate_expression(expr)?;
@@ -856,58 +839,46 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
-    /// Generate match code for enum types using discriminant-based comparison.
-    fn generate_enum_match(
-        &mut self,
-        function: &FunctionValue<'a>,
-        match_expr: &ExpressionNode,
-        match_expr_type: &Type,
-        expr_val: BasicValueEnum<'a>,
-        arms: &[crate::ast::MatchArm],
-    ) -> Result<(), String> {
-        let enum_name = match &match_expr.kind {
+    fn resolve_enum_match_name(&self, match_expr: &ExpressionNode) -> Result<String, String> {
+        match &match_expr.kind {
             ExpressionKind::Identifier(name) => {
                 if name.starts_with("match_temp_") {
                     if let Some((_, _, var_type)) = self.variables.get(name) {
-                        match var_type {
-                            Type::Named(n, _) => n.clone(),
-                            Type::Optional(_) => "optional".to_string(),
-                            Type::Result(_, _) => "result".to_string(),
-                            _ => {
-                                return Err(format!(
-                                    "Match expression must be an enum type, got {:?}",
-                                    var_type
-                                ));
-                            }
-                        }
-                    } else {
-                        return Err(format!("Temporary variable {} not found", name));
+                        return match var_type {
+                            Type::Named(n, _) => Ok(n.clone()),
+                            Type::Optional(_) => Ok("optional".to_string()),
+                            Type::Result(_, _) => Ok("result".to_string()),
+                            _ => Err(format!(
+                                "Match expression must be an enum type, got {:?}",
+                                var_type
+                            )),
+                        };
                     }
-                } else if let Some((_, _, var_type)) = self.variables.get(name) {
-                    match var_type {
-                        Type::Named(n, _) => n.clone(),
-                        Type::Optional(_) => "optional".to_string(),
-                        Type::Result(_, _) => "result".to_string(),
-                        _ => {
-                            return Err("Match expression must be an enum type".to_string());
-                        }
-                    }
-                } else if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
-                    if let Some(symbol_type) = &symbol.type_ {
-                        match symbol_type {
-                            Type::Named(n, _) => n.clone(),
-                            Type::Optional(_) => "optional".to_string(),
-                            Type::Result(_, _) => "result".to_string(),
-                            _ => {
-                                return Err("Match expression must be an enum type".to_string());
-                            }
-                        }
-                    } else {
-                        return Err("Match expression must be an enum type".to_string());
-                    }
-                } else {
-                    return Err(format!("Symbol {} not found", name));
+                    return Err(format!("Temporary variable {} not found", name));
                 }
+
+                if let Some((_, _, var_type)) = self.variables.get(name) {
+                    return match var_type {
+                        Type::Named(n, _) => Ok(n.clone()),
+                        Type::Optional(_) => Ok("optional".to_string()),
+                        Type::Result(_, _) => Ok("result".to_string()),
+                        _ => Err("Match expression must be an enum type".to_string()),
+                    };
+                }
+
+                if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+                    if let Some(symbol_type) = &symbol.type_ {
+                        return match symbol_type {
+                            Type::Named(n, _) => Ok(n.clone()),
+                            Type::Optional(_) => Ok("optional".to_string()),
+                            Type::Result(_, _) => Ok("result".to_string()),
+                            _ => Err("Match expression must be an enum type".to_string()),
+                        };
+                    }
+                    return Err("Match expression must be an enum type".to_string());
+                }
+
+                Err(format!("Symbol {} not found", name))
             }
             ExpressionKind::FieldAccess { expr, field } => {
                 if let ExpressionKind::Identifier(obj) = &expr.kind {
@@ -920,23 +891,21 @@ impl<'a> CodeGenerator<'a> {
                             if let Some(fields) = self.classes.get(class_name) {
                                 if let Some(f) = fields.iter().find(|f| f.name == *field) {
                                     if let TypeKind::Named(n, _) = &f.type_.kind {
-                                        n.clone()
-                                    } else {
-                                        return Err("Match field must be enum type".to_string());
+                                        return Ok(n.clone());
                                     }
-                                } else {
-                                    return Err(format!(
-                                        "Field {} not found in class {}",
-                                        field, class_name
-                                    ));
+                                    return Err("Match field must be enum type".to_string());
                                 }
-                            } else {
-                                return Err(format!("Class {} not found", class_name));
+                                return Err(format!(
+                                    "Field {} not found in class {}",
+                                    field, class_name
+                                ));
                             }
-                        } else {
-                            return Err("Self not found".to_string());
+                            return Err(format!("Class {} not found", class_name));
                         }
-                    } else if let Some((_, _, var_type)) = self
+                        return Err("Self not found".to_string());
+                    }
+
+                    if let Some((_, _, var_type)) = self
                         .variables
                         .get(obj)
                         .or_else(|| self.global_variables.get(obj))
@@ -945,63 +914,184 @@ impl<'a> CodeGenerator<'a> {
                             if let Some(fields) = self.classes.get(class_name) {
                                 if let Some(f) = fields.iter().find(|f| f.name == *field) {
                                     if let TypeKind::Named(n, _) = &f.type_.kind {
-                                        n.clone()
-                                    } else {
-                                        return Err("Match field must be enum type".to_string());
+                                        return Ok(n.clone());
                                     }
-                                } else {
-                                    return Err(format!(
-                                        "Field {} not found in class {}",
-                                        field, class_name
-                                    ));
+                                    return Err("Match field must be enum type".to_string());
                                 }
-                            } else {
-                                return Err(format!("Class {} not found", class_name));
+                                return Err(format!(
+                                    "Field {} not found in class {}",
+                                    field, class_name
+                                ));
                             }
-                        } else {
-                            return Err(format!("Variable {} is not a class instance", obj));
+                            return Err(format!("Class {} not found", class_name));
                         }
-                    } else {
-                        return Err(format!("Variable {} not found", obj));
+                        return Err(format!("Variable {} is not a class instance", obj));
                     }
-                } else {
-                    return Err(
-                        "Match expression must be identifier, self.field, or obj.field".to_string(),
-                    );
+
+                    return Err(format!("Variable {} not found", obj));
                 }
+
+                Err("Match expression must be identifier, self.field, or obj.field".to_string())
             }
             ExpressionKind::Call { func, .. } => {
                 if let ExpressionKind::Identifier(constructor_name) = &func.kind {
-                    match constructor_name.as_str() {
-                        "some" | "none" => "optional".to_string(),
-                        "ok" | "err" => "result".to_string(),
+                    return match constructor_name.as_str() {
+                        "some" | "none" => Ok("optional".to_string()),
+                        "ok" | "err" => Ok("result".to_string()),
                         _ => {
                             if let Some(symbol) =
                                 self.analyzer.symbol_table().lookup(constructor_name)
                             {
                                 if let Some(Type::Named(type_name, _)) = &symbol.type_ {
-                                    type_name.clone()
+                                    Ok(type_name.clone())
                                 } else {
-                                    return Err("Constructor must be enum type".to_string());
+                                    Err("Constructor must be enum type".to_string())
                                 }
                             } else {
-                                return Err(format!("Constructor {} not found", constructor_name));
+                                Err(format!("Constructor {} not found", constructor_name))
                             }
                         }
-                    }
+                    };
+                }
+
+                Err("Match expression constructor calls must be simple identifiers".to_string())
+            }
+            _ => Err(
+                "Match expression must be identifier, field access, or constructor call"
+                    .to_string(),
+            ),
+        }
+    }
+
+    fn emit_match_guard_and_body(
+        &mut self,
+        function: &FunctionValue<'a>,
+        arm: &crate::ast::MatchArm,
+        next_bb: inkwell::basic_block::BasicBlock<'a>,
+        end_bb: inkwell::basic_block::BasicBlock<'a>,
+        arm_index: usize,
+    ) -> Result<(), String> {
+        if let Some(guard) = &arm.guard {
+            let guard_val = self.generate_expression(guard)?;
+            let guard_pass_bb = self
+                .context
+                .append_basic_block(*function, &format!("match_guard_pass_{}", arm_index));
+            self.builder
+                .build_conditional_branch(guard_val.into_int_value(), guard_pass_bb, next_bb)
+                .map_err(|e| e.to_string())?;
+            self.builder.position_at_end(guard_pass_bb);
+        }
+
+        for stmt in &arm.body {
+            self.generate_statement(stmt, Some(function))?;
+        }
+        if self
+            .builder
+            .get_insert_block()
+            .and_then(|bb| bb.get_terminator())
+            .is_none()
+        {
+            self.builder
+                .build_unconditional_branch(end_bb)
+                .map_err(|e| e.to_string())?;
+        }
+
+        Ok(())
+    }
+
+    fn evaluate_switch_pattern_condition(
+        &mut self,
+        match_val: BasicValueEnum<'a>,
+        match_expr_type: &Type,
+        pattern: &PatternNode,
+    ) -> Result<inkwell::values::IntValue<'a>, String> {
+        match pattern {
+            PatternNode::Literal(lit) => {
+                let pattern_val = self.generate_literal(lit)?;
+                self.generate_value_equality(match_val, pattern_val, match_expr_type)
+            }
+            PatternNode::Identifier(name) => {
+                let is_constant = self
+                    .analyzer
+                    .symbol_table()
+                    .lookup(name)
+                    .map(|s| s.kind == crate::semantics::SymbolKind::Constant)
+                    .unwrap_or(false);
+
+                if is_constant {
+                    let const_ptr = self
+                        .variables
+                        .get(name)
+                        .or_else(|| self.global_variables.get(name))
+                        .ok_or_else(|| format!("Constant {} not found", name))?
+                        .0;
+
+                    let boxed_ptr = self
+                        .builder
+                        .build_load(
+                            self.context.ptr_type(AddressSpace::default()),
+                            const_ptr,
+                            &format!("load_{}", name),
+                        )
+                        .map_err(|e| e.to_string())?
+                        .into_pointer_value();
+
+                    let const_val = match match_expr_type {
+                        Type::Primitive(PrimitiveType::Int)
+                        | Type::Primitive(PrimitiveType::Char) => {
+                            self.get_raw_int_value(boxed_ptr.into())?.into()
+                        }
+                        Type::Primitive(PrimitiveType::Bool) => {
+                            self.get_raw_bool_value(boxed_ptr.into())?.into()
+                        }
+                        Type::Primitive(PrimitiveType::Float) => {
+                            self.get_raw_float_value(boxed_ptr.into())?.into()
+                        }
+                        Type::Primitive(PrimitiveType::Str) => boxed_ptr.into(),
+                        _ => boxed_ptr.into(),
+                    };
+
+                    self.generate_value_equality(match_val, const_val, match_expr_type)
                 } else {
-                    return Err(
-                        "Match expression constructor calls must be simple identifiers".to_string(),
+                    let boxed = self.box_value(match_val);
+                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let alloca = self
+                        .builder
+                        .build_alloca(ptr_type, name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, boxed)
+                        .map_err(|e| e.to_string())?;
+                    self.variables.insert(
+                        name.clone(),
+                        (alloca, ptr_type.into(), match_expr_type.clone()),
                     );
+                    Ok(self.context.bool_type().const_int(1, false))
                 }
             }
-            _ => {
-                return Err(
-                    "Match expression must be identifier, field access, or constructor call"
-                        .to_string(),
-                );
+            PatternNode::Wildcard => Ok(self.context.bool_type().const_int(1, false)),
+            PatternNode::List { elements, rest } => self.generate_list_pattern_check(
+                match_val,
+                match_expr_type,
+                elements,
+                rest.as_deref(),
+            ),
+            PatternNode::EnumVariant { .. } => {
+                Err("Enum variant patterns are not valid in non-enum match".to_string())
             }
-        };
+        }
+    }
+
+    /// Generate match code for enum types using discriminant-based comparison.
+    fn generate_enum_match(
+        &mut self,
+        function: &FunctionValue<'a>,
+        match_expr: &ExpressionNode,
+        match_expr_type: &Type,
+        expr_val: BasicValueEnum<'a>,
+        arms: &[crate::ast::MatchArm],
+    ) -> Result<(), String> {
+        let enum_name = self.resolve_enum_match_name(match_expr)?;
 
         let expr_ptr_opt = if enum_name == "optional" || enum_name == "result" {
             if expr_val.is_pointer_value() {
@@ -1234,31 +1324,7 @@ impl<'a> CodeGenerator<'a> {
                 }
             }
 
-            // check guard
-            if let Some(guard) = &arm.guard {
-                let guard_val = self.generate_expression(guard)?;
-                let guard_pass_bb = self
-                    .context
-                    .append_basic_block(*function, &format!("match_guard_pass_{}", i));
-                self.builder
-                    .build_conditional_branch(guard_val.into_int_value(), guard_pass_bb, next_bb)
-                    .map_err(|e| e.to_string())?;
-                self.builder.position_at_end(guard_pass_bb);
-            }
-
-            for stmt in &arm.body {
-                self.generate_statement(stmt, Some(function))?;
-            }
-            if self
-                .builder
-                .get_insert_block()
-                .and_then(|bb| bb.get_terminator())
-                .is_none()
-            {
-                self.builder
-                    .build_unconditional_branch(end_bb)
-                    .map_err(|e| e.to_string())?;
-            }
+            self.emit_match_guard_and_body(function, arm, next_bb, end_bb, i)?;
 
             current_bb = next_bb;
         }
@@ -1312,86 +1378,8 @@ impl<'a> CodeGenerator<'a> {
                 continue;
             }
 
-            let condition = match &arm.pattern {
-                PatternNode::Literal(lit) => {
-                    let pattern_val = self.generate_literal(lit)?;
-                    self.generate_value_equality(match_val, pattern_val, match_expr_type)?
-                }
-                PatternNode::Identifier(name) => {
-                    // Check if this is a constant
-                    let is_constant = self
-                        .analyzer
-                        .symbol_table()
-                        .lookup(name)
-                        .map(|s| s.kind == crate::semantics::SymbolKind::Constant)
-                        .unwrap_or(false);
-
-                    if is_constant {
-                        // Load the constant value and compare
-                        let const_ptr = self
-                            .variables
-                            .get(name)
-                            .or_else(|| self.global_variables.get(name))
-                            .ok_or_else(|| format!("Constant {} not found", name))?
-                            .0;
-
-                        // Load the boxed value pointer (constants are stored as boxed pointers)
-                        let boxed_ptr = self
-                            .builder
-                            .build_load(
-                                self.context.ptr_type(AddressSpace::default()),
-                                const_ptr,
-                                &format!("load_{}", name),
-                            )
-                            .map_err(|e| e.to_string())?
-                            .into_pointer_value();
-
-                        // Extract the raw value based on type for comparison
-                        let const_val = match match_expr_type {
-                            Type::Primitive(PrimitiveType::Int)
-                            | Type::Primitive(PrimitiveType::Char) => {
-                                self.get_raw_int_value(boxed_ptr.into())?.into()
-                            }
-                            Type::Primitive(PrimitiveType::Bool) => {
-                                self.get_raw_bool_value(boxed_ptr.into())?.into()
-                            }
-                            Type::Primitive(PrimitiveType::Float) => {
-                                self.get_raw_float_value(boxed_ptr.into())?.into()
-                            }
-                            Type::Primitive(PrimitiveType::Str) => boxed_ptr.into(),
-                            _ => boxed_ptr.into(),
-                        };
-
-                        self.generate_value_equality(match_val, const_val, match_expr_type)?
-                    } else {
-                        // Variable binding: always matches, bind the value
-                        let boxed = self.box_value(match_val);
-                        let ptr_type = self.context.ptr_type(AddressSpace::default());
-                        let alloca = self
-                            .builder
-                            .build_alloca(ptr_type, name)
-                            .map_err(|e| e.to_string())?;
-                        self.builder
-                            .build_store(alloca, boxed)
-                            .map_err(|e| e.to_string())?;
-                        self.variables.insert(
-                            name.clone(),
-                            (alloca, ptr_type.into(), match_expr_type.clone()),
-                        );
-                        self.context.bool_type().const_int(1, false)
-                    }
-                }
-                PatternNode::Wildcard => self.context.bool_type().const_int(1, false),
-                PatternNode::List { elements, rest } => self.generate_list_pattern_check(
-                    match_val,
-                    match_expr_type,
-                    elements,
-                    rest.as_deref(),
-                )?,
-                PatternNode::EnumVariant { .. } => {
-                    return Err("Enum variant patterns are not valid in non-enum match".to_string());
-                }
-            };
+            let condition =
+                self.evaluate_switch_pattern_condition(match_val, match_expr_type, &arm.pattern)?;
 
             self.builder
                 .build_conditional_branch(condition, arm_bb, next_bb)
@@ -1409,31 +1397,7 @@ impl<'a> CodeGenerator<'a> {
                 )?;
             }
 
-            // check guard
-            if let Some(guard) = &arm.guard {
-                let guard_val = self.generate_expression(guard)?;
-                let guard_pass_bb = self
-                    .context
-                    .append_basic_block(*function, &format!("match_guard_pass_{}", i));
-                self.builder
-                    .build_conditional_branch(guard_val.into_int_value(), guard_pass_bb, next_bb)
-                    .map_err(|e| e.to_string())?;
-                self.builder.position_at_end(guard_pass_bb);
-            }
-
-            for stmt in &arm.body {
-                self.generate_statement(stmt, Some(function))?;
-            }
-            if self
-                .builder
-                .get_insert_block()
-                .and_then(|bb| bb.get_terminator())
-                .is_none()
-            {
-                self.builder
-                    .build_unconditional_branch(end_bb)
-                    .map_err(|e| e.to_string())?;
-            }
+            self.emit_match_guard_and_body(function, arm, next_bb, end_bb, i)?;
 
             current_bb = next_bb;
         }
