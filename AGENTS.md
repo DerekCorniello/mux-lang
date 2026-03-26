@@ -11,6 +11,7 @@
 - **If confused about language design**, check README.md first, then stop and ask for clarification.
 - **No clippy warnings** - code must pass `cargo clippy` without warnings.
 - **Remove outdated comments** - ensure comments reflect current code.
+- **NEVER READ THE `.env` FILE** - do not read or parse the `.env` file. If environment variables are needed, ask the user to provide them explicitly.
 
 ## Critical Understanding
 Mux is a statically‑typed, reference‑counted language that aims for clean, zero‑cost abstractions. The compiler generates LLVM IR and links with a C/Rust runtime. The goal is a modern, easy‑to‑learn language with strong static typing.
@@ -43,9 +44,14 @@ When testing a feature:
    - Add them to existing test files if appropriate, or remove ad‑hoc tests.
 3. Run `cargo fmt` for consistent formatting.
 4. Run `cargo clippy` to ensure no warnings/errors.
-5. Use the SonarQube MCP tool to check code quality.
+5. Run SonarQube analysis locally to check code quality:
+   ```bash
+   source .env && npx --yes sonar-scanner -Dsonar.token="$SONARQUBE_TOKEN" -Dsonar.host.url="$SONARQUBE_URL"
+   ```
+   Results appear at https://sonarcloud.io/dashboard?id=DerekCorniello_mux-lang
+   - To view the reports in the cloud, use the MCP server.
 
-The user will run `cargo test` and insta snapshot tests separately.
+The user will run `cargo test` and insta snapshot tests separately. Do not manually edit the snapshots.
 
 ### Common Issues
 - Executable output seems cut off → likely a segfault due to incorrect LLVM IR generation. Review codegen changes carefully.
