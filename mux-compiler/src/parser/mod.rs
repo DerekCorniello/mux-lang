@@ -160,60 +160,7 @@ impl<'a> Parser<'a> {
         if self.is_at_end() {
             return Ok(None);
         }
-        let result = if self.check(TokenType::Auto) {
-            self.auto_declaration().map(Some)
-        } else if self.check(TokenType::Const) {
-            self.const_declaration().map(Some)
-        } else if self.check(TokenType::Common) {
-            self.consume();
-            self.function_declaration(true).map(Some)
-        } else if self.check(TokenType::Func) {
-            self.function_declaration(false).map(Some)
-        } else if let TokenType::Id(_) = &self.peek().token_type {
-            let start = self.current;
-            if self.parse_type().is_ok() {
-                if let TokenType::Id(_) = &self.peek().token_type {
-                    let next = self.current + 1;
-                    if next < self.tokens.len() && self.tokens[next].token_type == TokenType::Eq {
-                        self.current = start;
-                        match self.typed_declaration() {
-                            Ok(node) => Ok(Some(node)),
-                            Err(e)
-                                if matches!(
-                                    e.message.as_str(),
-                                    "must be terminated with a newline"
-                                        | "expected newline after statement"
-                                ) =>
-                            {
-                                self.errors.push(e);
-                                self.synchronize();
-                                Ok(None)
-                            }
-                            Err(e) => Err(e),
-                        }
-                    } else {
-                        self.current = start;
-                        self.statement().map(Some)
-                    }
-                } else {
-                    self.current = start;
-                    self.statement().map(Some)
-                }
-            } else {
-                self.current = start;
-                self.statement().map(Some)
-            }
-        } else if self.check(TokenType::Class) {
-            self.class_declaration().map(Some)
-        } else if self.check(TokenType::Interface) {
-            self.interface_declaration().map(Some)
-        } else if self.check(TokenType::Enum) {
-            self.enum_declaration().map(Some)
-        } else if self.check(TokenType::Import) {
-            self.import_declaration().map(Some)
-        } else {
-            self.statement().map(Some)
-        };
+        let result = self.parse_declaration_content();
 
         while self.matches(&[TokenType::NewLine]) {}
 
@@ -226,6 +173,74 @@ impl<'a> Parser<'a> {
         }
 
         result
+    }
+
+    fn parse_declaration_content(&mut self) -> ParserResult<Option<AstNode>> {
+        if self.check(TokenType::Auto) {
+            self.auto_declaration().map(Some)
+        } else if self.check(TokenType::Const) {
+            self.const_declaration().map(Some)
+        } else if self.check(TokenType::Common) {
+            self.consume();
+            self.function_declaration(true).map(Some)
+        } else if self.check(TokenType::Func) {
+            self.function_declaration(false).map(Some)
+        } else if let TokenType::Id(_) = &self.peek().token_type {
+            self.parse_id_start_declaration()
+        } else if self.check(TokenType::Class) {
+            self.class_declaration().map(Some)
+        } else if self.check(TokenType::Interface) {
+            self.interface_declaration().map(Some)
+        } else if self.check(TokenType::Enum) {
+            self.enum_declaration().map(Some)
+        } else if self.check(TokenType::Import) {
+            self.import_declaration().map(Some)
+        } else {
+            self.statement().map(Some)
+        }
+    }
+
+    fn parse_id_start_declaration(&mut self) -> ParserResult<Option<AstNode>> {
+        let start = self.current;
+        if self.parse_type().is_ok() {
+            self.parse_typed_or_statement(start)
+        } else {
+            self.current = start;
+            self.statement().map(Some)
+        }
+    }
+
+    fn parse_typed_or_statement(&mut self, start: usize) -> ParserResult<Option<AstNode>> {
+        if let TokenType::Id(_) = &self.peek().token_type {
+            let next = self.current + 1;
+            if next < self.tokens.len() && self.tokens[next].token_type == TokenType::Eq {
+                self.current = start;
+                self.parse_typed_declaration_with_recovery()
+            } else {
+                self.current = start;
+                self.statement().map(Some)
+            }
+        } else {
+            self.current = start;
+            self.statement().map(Some)
+        }
+    }
+
+    fn parse_typed_declaration_with_recovery(&mut self) -> ParserResult<Option<AstNode>> {
+        match self.typed_declaration() {
+            Ok(node) => Ok(Some(node)),
+            Err(e)
+                if matches!(
+                    e.message.as_str(),
+                    "must be terminated with a newline" | "expected newline after statement"
+                ) =>
+            {
+                self.errors.push(e);
+                self.synchronize();
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     fn auto_declaration(&mut self) -> ParserResult<AstNode> {
@@ -313,127 +328,14 @@ impl<'a> Parser<'a> {
     fn class_declaration(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current].span;
         self.consume_token(TokenType::Class, "Expected 'class' keyword")?;
-
         let name = self.consume_identifier("Expected class name")?;
-
-        let type_params = if self.matches(&[TokenType::Lt]) {
-            let mut params = Vec::new();
-
-            loop {
-                let param = self.consume_identifier("Expected type parameter name")?;
-                let mut bounds = Vec::new();
-
-                if self.matches(&[TokenType::Is]) {
-                    loop {
-                        let bound_name = self.consume_identifier("Expected trait name in bound")?;
-                        let type_args = if self.matches(&[TokenType::Lt]) {
-                            let args = self.parse_type_arguments()?;
-                            self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
-                            args
-                        } else {
-                            Vec::new()
-                        };
-
-                        bounds.push(TraitBound {
-                            name: bound_name,
-                            type_params: type_args,
-                        });
-
-                        if !self.matches(&[TokenType::Ref]) {
-                            break;
-                        }
-                    }
-                }
-
-                params.push((param, bounds));
-
-                if !self.matches(&[TokenType::Comma]) {
-                    break;
-                }
-            }
-            self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
-            params
-        } else {
-            Vec::new()
-        };
-
-        let traits = if self.matches(&[TokenType::Is]) {
-            let mut traits_list = Vec::new();
-            loop {
-                let trait_name = self.consume_identifier("Expected trait name")?;
-                let type_args = if self.matches(&[TokenType::Lt]) {
-                    let args = self.parse_type_arguments()?;
-                    self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
-                    args
-                } else {
-                    Vec::new()
-                };
-
-                traits_list.push(TraitRef {
-                    name: trait_name,
-                    type_args,
-                });
-
-                if !self.matches(&[TokenType::Comma]) {
-                    break;
-                }
-            }
-            traits_list
-        } else {
-            Vec::new()
-        };
-
+        let type_params = self.parse_type_params_list()?;
+        let traits = self.parse_trait_list()?;
         self.consume_token(TokenType::OpenBrace, "Expected '{' after class header")?;
-
-        let mut fields = Vec::new();
-        let mut methods = Vec::new();
-
-        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
-            match self.peek().token_type {
-                TokenType::Func => {
-                    let func_node = self.function_declaration(false)?;
-                    match func_node {
-                        AstNode::Function(func) => methods.push(func),
-                        _ => {
-                            return Err(ParserError::new("Expected function in class", start_span));
-                        }
-                    }
-                }
-                TokenType::Common => {
-                    self.consume();
-                    let func_node = self.function_declaration(true)?;
-                    match func_node {
-                        AstNode::Function(func) => methods.push(func),
-                        _ => {
-                            return Err(ParserError::new("Expected function in class", start_span));
-                        }
-                    }
-                }
-                TokenType::Id(_) | TokenType::Const => {
-                    let field = self.parse_field_declaration(&type_params)?;
-                    fields.push(field);
-                }
-                TokenType::NewLine => {
-                    self.consume_token(TokenType::NewLine, "Expected newline")?;
-                }
-                _ => {
-                    let token_desc = Self::describe_token(&self.peek().token_type);
-                    return Err(ParserError::with_help(
-                        format!(
-                            "Expected field or method declaration in class body, found {}",
-                            token_desc
-                        ),
-                        self.peek().span,
-                        "Class bodies can only contain field declarations (e.g., 'int x = 0') and method declarations (e.g., 'func foo() returns void { ... }')",
-                    ));
-                }
-            }
-        }
-
+        let (fields, methods) = self.parse_class_body(&type_params, start_span)?;
         let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after class body")?;
         let full_span = start_span.combine(&end_span);
-
         Ok(AstNode::Class {
             name,
             type_params,
@@ -444,151 +346,141 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_type_params_list(&mut self) -> ParserResult<Vec<(String, Vec<TraitBound>)>> {
+        if !self.matches(&[TokenType::Lt]) {
+            return Ok(Vec::new());
+        }
+        let mut params = Vec::new();
+        loop {
+            let param = self.consume_identifier("Expected type parameter name")?;
+            let bounds = self.parse_trait_bounds()?;
+            params.push((param, bounds));
+            if !self.matches(&[TokenType::Comma]) {
+                break;
+            }
+        }
+        self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
+        Ok(params)
+    }
+
+    fn parse_trait_bounds(&mut self) -> ParserResult<Vec<TraitBound>> {
+        if !self.matches(&[TokenType::Is]) {
+            return Ok(Vec::new());
+        }
+        let mut bounds = Vec::new();
+        loop {
+            let bound_name = self.consume_identifier("Expected trait name in bound")?;
+            let type_args = self.parse_optional_type_args()?;
+            bounds.push(TraitBound {
+                name: bound_name,
+                type_params: type_args,
+            });
+            if !self.matches(&[TokenType::Ref]) {
+                break;
+            }
+        }
+        Ok(bounds)
+    }
+
+    fn parse_trait_list(&mut self) -> ParserResult<Vec<TraitRef>> {
+        if !self.matches(&[TokenType::Is]) {
+            return Ok(Vec::new());
+        }
+        let mut traits_list = Vec::new();
+        loop {
+            let trait_name = self.consume_identifier("Expected trait name")?;
+            let type_args = self.parse_optional_type_args()?;
+            traits_list.push(TraitRef {
+                name: trait_name,
+                type_args,
+            });
+            if !self.matches(&[TokenType::Comma]) {
+                break;
+            }
+        }
+        Ok(traits_list)
+    }
+
+    fn parse_optional_type_args(&mut self) -> ParserResult<Vec<TypeNode>> {
+        if self.matches(&[TokenType::Lt]) {
+            let args = self.parse_type_arguments()?;
+            self.consume_token(TokenType::Gt, "Expected '>' after type arguments")?;
+            Ok(args)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    fn parse_class_body(
+        &mut self,
+        type_params: &[(String, Vec<TraitBound>)],
+        start_span: Span,
+    ) -> ParserResult<(Vec<Field>, Vec<FunctionNode>)> {
+        let mut fields = Vec::new();
+        let mut methods = Vec::new();
+        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
+            self.parse_class_member(type_params, start_span, &mut fields, &mut methods)?;
+        }
+        Ok((fields, methods))
+    }
+
+    fn parse_class_member(
+        &mut self,
+        type_params: &[(String, Vec<TraitBound>)],
+        start_span: Span,
+        fields: &mut Vec<Field>,
+        methods: &mut Vec<FunctionNode>,
+    ) -> ParserResult<()> {
+        match self.peek().token_type {
+            TokenType::Func => {
+                let func_node = self.function_declaration(false)?;
+                if let AstNode::Function(func) = func_node {
+                    methods.push(func);
+                } else {
+                    return Err(ParserError::new("Expected function in class", start_span));
+                }
+            }
+            TokenType::Common => {
+                self.consume();
+                let func_node = self.function_declaration(true)?;
+                if let AstNode::Function(func) = func_node {
+                    methods.push(func);
+                } else {
+                    return Err(ParserError::new("Expected function in class", start_span));
+                }
+            }
+            TokenType::Id(_) | TokenType::Const => {
+                let field = self.parse_field_declaration(type_params)?;
+                fields.push(field);
+            }
+            TokenType::NewLine => {
+                self.consume_token(TokenType::NewLine, "Expected newline")?;
+            }
+            _ => {
+                let token_desc = Self::describe_token(&self.peek().token_type);
+                return Err(ParserError::with_help(
+                    format!(
+                        "Expected field or method declaration in class body, found {}",
+                        token_desc
+                    ),
+                    self.peek().span,
+                    "Class bodies can only contain field declarations (e.g., 'int x = 0') and method declarations (e.g., 'func foo() returns void { ... }')",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn interface_declaration(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current].span;
         self.consume_token(TokenType::Interface, "Expected 'interface' keyword")?;
-
         let name = self.consume_identifier("Expected interface name")?;
-
-        let type_params = if self.matches(&[TokenType::Lt]) {
-            let mut params = Vec::new();
-            if !self.check(TokenType::Gt) {
-                loop {
-                    let param = self.consume_identifier("Expected type parameter name")?;
-                    let mut bounds = Vec::new();
-
-                    if self.matches(&[TokenType::Colon]) {
-                        loop {
-                            let bound_name =
-                                self.consume_identifier("Expected trait name in bound")?;
-                            let type_args = if self.matches(&[TokenType::Lt]) {
-                                let args = self.parse_type_arguments()?;
-                                self.consume_token(
-                                    TokenType::Gt,
-                                    "Expected '>' after type arguments",
-                                )?;
-                                args
-                            } else {
-                                Vec::new()
-                            };
-
-                            bounds.push(TraitBound {
-                                name: bound_name,
-                                type_params: type_args,
-                            });
-
-                            if !self.matches(&[TokenType::Plus]) {
-                                break;
-                            }
-                        }
-                    }
-
-                    params.push((param, bounds));
-
-                    if !self.matches(&[TokenType::Comma]) {
-                        break;
-                    }
-                }
-            }
-            self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
-            params
-        } else {
-            Vec::new()
-        };
-
+        let type_params = self.parse_interface_type_params()?;
         self.consume_token(TokenType::OpenBrace, "Expected '{' after interface header")?;
-
-        let mut fields = Vec::new();
-        let mut methods = Vec::new();
-
-        while !self.is_at_end() {
-            self.skip_newlines();
-            if self.check(TokenType::CloseBrace) {
-                break;
-            }
-
-            match self.peek().token_type {
-                TokenType::Func => {
-                    self.consume();
-                    let name = self.consume_identifier("Expected method name")?;
-
-                    let type_params = if self.matches(&[TokenType::Lt]) {
-                        let mut params = Vec::new();
-                        if !self.check(TokenType::Gt) {
-                            loop {
-                                let param =
-                                    self.consume_identifier("Expected type parameter name")?;
-                                params.push((param, Vec::new()));
-                                if !self.matches(&[TokenType::Comma]) {
-                                    break;
-                                }
-                            }
-                        }
-                        self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
-                        params
-                    } else {
-                        Vec::new()
-                    };
-
-                    self.consume_token(TokenType::OpenParen, "Expected '(' after method name")?;
-                    let mut params = Vec::new();
-                    if !self.check(TokenType::CloseParen) {
-                        loop {
-                            let param_type = self.parse_type()?;
-                            let param_name = self.consume_identifier("Expected parameter name")?;
-                            params.push(Param {
-                                name: param_name,
-                                type_: param_type,
-                                default_value: None,
-                            });
-                            if !self.matches(&[TokenType::Comma]) {
-                                break;
-                            }
-                        }
-                    }
-                    self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
-
-                    let return_type = if self.matches(&[TokenType::Minus, TokenType::Gt])
-                        || self.matches(&[TokenType::Returns])
-                    {
-                        self.parse_type()?
-                    } else {
-                        TypeNode {
-                            kind: TypeKind::Primitive(PrimitiveType::Void),
-                            span: self.peek().span,
-                        }
-                    };
-
-                    methods.push(FunctionNode {
-                        name,
-                        type_params,
-                        params,
-                        return_type,
-                        body: vec![],
-                        span: start_span,
-                        is_common: false,
-                    });
-                }
-                TokenType::Id(_) | TokenType::Const => {
-                    let field = self.parse_field_declaration(&type_params)?;
-                    fields.push(field);
-                }
-                TokenType::NewLine => {
-                    self.consume_token(TokenType::NewLine, "Expected newline")?;
-                }
-                _ => {
-                    return Err(ParserError::new(
-                        "Expected field or function declaration in interface",
-                        self.peek().span,
-                    ));
-                }
-            }
-        }
-
+        let (fields, methods) = self.parse_interface_body(&type_params, start_span)?;
         let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after interface body")?;
         let full_span = start_span.combine(&end_span);
-
         Ok(AstNode::Interface {
             name,
             type_params,
@@ -598,114 +490,240 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_interface_type_params(&mut self) -> ParserResult<Vec<(String, Vec<TraitBound>)>> {
+        if !self.matches(&[TokenType::Lt]) {
+            return Ok(Vec::new());
+        }
+        let mut params = Vec::new();
+        if !self.check(TokenType::Gt) {
+            loop {
+                let param = self.consume_identifier("Expected type parameter name")?;
+                let bounds = self.parse_colon_trait_bounds()?;
+                params.push((param, bounds));
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
+        Ok(params)
+    }
+
+    fn parse_colon_trait_bounds(&mut self) -> ParserResult<Vec<TraitBound>> {
+        if !self.matches(&[TokenType::Colon]) {
+            return Ok(Vec::new());
+        }
+        let mut bounds = Vec::new();
+        loop {
+            let bound_name = self.consume_identifier("Expected trait name in bound")?;
+            let type_args = self.parse_optional_type_args()?;
+            bounds.push(TraitBound {
+                name: bound_name,
+                type_params: type_args,
+            });
+            if !self.matches(&[TokenType::Plus]) {
+                break;
+            }
+        }
+        Ok(bounds)
+    }
+
+    fn parse_interface_body(
+        &mut self,
+        type_params: &[(String, Vec<TraitBound>)],
+        start_span: Span,
+    ) -> ParserResult<(Vec<Field>, Vec<FunctionNode>)> {
+        let mut fields = Vec::new();
+        let mut methods = Vec::new();
+        while !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(TokenType::CloseBrace) {
+                break;
+            }
+            self.parse_interface_member(type_params, start_span, &mut fields, &mut methods)?;
+        }
+        Ok((fields, methods))
+    }
+
+    fn parse_interface_member(
+        &mut self,
+        type_params: &[(String, Vec<TraitBound>)],
+        start_span: Span,
+        fields: &mut Vec<Field>,
+        methods: &mut Vec<FunctionNode>,
+    ) -> ParserResult<()> {
+        match self.peek().token_type {
+            TokenType::Func => {
+                let method = self.parse_interface_method(start_span)?;
+                methods.push(method);
+            }
+            TokenType::Id(_) | TokenType::Const => {
+                let field = self.parse_field_declaration(type_params)?;
+                fields.push(field);
+            }
+            TokenType::NewLine => {
+                self.consume_token(TokenType::NewLine, "Expected newline")?;
+            }
+            _ => {
+                return Err(ParserError::new(
+                    "Expected field or function declaration in interface",
+                    self.peek().span,
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn parse_interface_method(&mut self, start_span: Span) -> ParserResult<FunctionNode> {
+        self.consume();
+        let name = self.consume_identifier("Expected method name")?;
+        let type_params = self.parse_simple_type_params()?;
+        self.consume_token(TokenType::OpenParen, "Expected '(' after method name")?;
+        let params = self.parse_param_list()?;
+        self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
+        let return_type = self.parse_optional_return_type()?;
+        Ok(FunctionNode {
+            name,
+            type_params,
+            params,
+            return_type,
+            body: vec![],
+            span: start_span,
+            is_common: false,
+        })
+    }
+
+    fn parse_simple_type_params(&mut self) -> ParserResult<Vec<(String, Vec<TraitBound>)>> {
+        if !self.matches(&[TokenType::Lt]) {
+            return Ok(Vec::new());
+        }
+        let mut params = Vec::new();
+        if !self.check(TokenType::Gt) {
+            loop {
+                let param = self.consume_identifier("Expected type parameter name")?;
+                params.push((param, Vec::new()));
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
+        Ok(params)
+    }
+
+    fn parse_param_list(&mut self) -> ParserResult<Vec<Param>> {
+        let mut params = Vec::new();
+        if !self.check(TokenType::CloseParen) {
+            loop {
+                let param_type = self.parse_type()?;
+                let param_name = self.consume_identifier("Expected parameter name")?;
+                params.push(Param {
+                    name: param_name,
+                    type_: param_type,
+                    default_value: None,
+                });
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        Ok(params)
+    }
+
+    fn parse_optional_return_type(&mut self) -> ParserResult<TypeNode> {
+        if self.matches(&[TokenType::Minus, TokenType::Gt]) || self.matches(&[TokenType::Returns]) {
+            self.parse_type()
+        } else {
+            Ok(TypeNode {
+                kind: TypeKind::Primitive(PrimitiveType::Void),
+                span: self.peek().span,
+            })
+        }
+    }
+
     fn enum_declaration(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current].span;
         self.consume_token(TokenType::Enum, "Expected 'enum' keyword")?;
         let name = self.consume_identifier("Expected enum name")?;
-        let type_params = if self.matches(&[TokenType::Lt]) {
-            let mut params = Vec::new();
-            if !self.check(TokenType::Gt) {
-                loop {
-                    let param = self.consume_identifier("Expected type parameter name")?;
-                    let mut bounds = Vec::new();
-
-                    if self.matches(&[TokenType::Colon]) {
-                        loop {
-                            let bound_name =
-                                self.consume_identifier("Expected trait name in bound")?;
-                            let type_args = if self.matches(&[TokenType::Lt]) {
-                                let args = self.parse_type_arguments()?;
-                                self.consume_token(
-                                    TokenType::Gt,
-                                    "Expected '>' after type arguments",
-                                )?;
-                                args
-                            } else {
-                                Vec::new()
-                            };
-
-                            bounds.push(TraitBound {
-                                name: bound_name,
-                                type_params: type_args,
-                            });
-
-                            if !self.matches(&[TokenType::Plus]) {
-                                break;
-                            }
-                        }
-                    }
-
-                    params.push((param, bounds));
-
-                    if !self.matches(&[TokenType::Comma]) {
-                        break;
-                    }
-                }
-            }
-            self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
-            params
-        } else {
-            Vec::new()
-        };
-
+        let type_params = self.parse_colon_type_params()?;
         self.consume_token(TokenType::OpenBrace, "Expected '{' after enum header")?;
-
-        let mut variants = Vec::new();
-        self.skip_newlines(); // Allow newlines after opening brace
-
-        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
-            let variant_name = self.consume_identifier("Expected variant name")?;
-
-            let data = if self.matches(&[TokenType::OpenParen]) {
-                let mut fields = Vec::new();
-                if !self.check(TokenType::CloseParen) {
-                    loop {
-                        let field_type = self.parse_type()?;
-
-                        // skip over any field names, we only care about the types for enum variants
-                        if let TokenType::Id(_) = self.peek().token_type {
-                            self.advance(); // Skip the field name
-                        }
-
-                        fields.push(field_type);
-
-                        if !self.matches(&[TokenType::Comma]) {
-                            break;
-                        }
-                    }
-                }
-                self.consume_token(TokenType::CloseParen, "Expected ')' after variant data")?;
-                Some(fields)
-            } else {
-                None
-            };
-
-            variants.push(EnumVariant {
-                name: variant_name,
-                data,
-            });
-
-            if self.matches(&[TokenType::Comma]) {
-                self.skip_newlines(); // Allow newlines after comma
-                if self.check(TokenType::CloseBrace) {
-                    break;
-                }
-            } else {
-                self.skip_newlines(); // Allow newlines before closing brace
-                break;
-            }
-        }
-
+        let variants = self.parse_enum_variants()?;
         let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after enum variants")?;
         let full_span = start_span.combine(&end_span);
-
         Ok(AstNode::Enum {
             name,
             type_params,
             variants,
             span: full_span,
         })
+    }
+
+    fn parse_colon_type_params(&mut self) -> ParserResult<Vec<(String, Vec<TraitBound>)>> {
+        if !self.matches(&[TokenType::Lt]) {
+            return Ok(Vec::new());
+        }
+        let mut params = Vec::new();
+        if !self.check(TokenType::Gt) {
+            loop {
+                let param = self.consume_identifier("Expected type parameter name")?;
+                let bounds = self.parse_colon_trait_bounds()?;
+                params.push((param, bounds));
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
+        Ok(params)
+    }
+
+    fn parse_enum_variants(&mut self) -> ParserResult<Vec<EnumVariant>> {
+        let mut variants = Vec::new();
+        self.skip_newlines();
+        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
+            let variant = self.parse_single_enum_variant()?;
+            variants.push(variant);
+            if !self.matches(&[TokenType::Comma]) {
+                self.skip_newlines();
+                break;
+            }
+            self.skip_newlines();
+            if self.check(TokenType::CloseBrace) {
+                break;
+            }
+        }
+        Ok(variants)
+    }
+
+    fn parse_single_enum_variant(&mut self) -> ParserResult<EnumVariant> {
+        let variant_name = self.consume_identifier("Expected variant name")?;
+        let data = self.parse_enum_variant_data()?;
+        Ok(EnumVariant {
+            name: variant_name,
+            data,
+        })
+    }
+
+    fn parse_enum_variant_data(&mut self) -> ParserResult<Option<Vec<TypeNode>>> {
+        if !self.matches(&[TokenType::OpenParen]) {
+            return Ok(None);
+        }
+        let mut fields = Vec::new();
+        if !self.check(TokenType::CloseParen) {
+            loop {
+                let field_type = self.parse_type()?;
+                if let TokenType::Id(_) = self.peek().token_type {
+                    self.advance();
+                }
+                fields.push(field_type);
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        self.consume_token(TokenType::CloseParen, "Expected ')' after variant data")?;
+        Ok(Some(fields))
     }
 
     fn import_declaration(&mut self) -> ParserResult<AstNode> {
@@ -852,129 +870,16 @@ impl<'a> Parser<'a> {
     fn function_declaration(&mut self, is_common: bool) -> ParserResult<AstNode> {
         let start_span = self.peek().span;
         self.consume_token(TokenType::Func, "Expected 'func' keyword")?;
-
         let name = self.consume_identifier("Expected function name")?;
-        let type_params = if self.matches(&[TokenType::Lt]) {
-            let mut params = Vec::new();
-            if !self.check(TokenType::Gt) {
-                loop {
-                    let param = self.consume_identifier("Expected type parameter name")?;
-                    let mut bounds = Vec::new();
-
-                    if self.matches(&[TokenType::Is]) {
-                        loop {
-                            let bound_name =
-                                self.consume_identifier("Expected trait name in bound")?;
-                            let type_args = if self.matches(&[TokenType::Lt]) {
-                                let args = self.parse_type_arguments()?;
-                                self.consume_token(
-                                    TokenType::Gt,
-                                    "Expected '>' after type arguments",
-                                )?;
-                                args
-                            } else {
-                                Vec::new()
-                            };
-
-                            bounds.push(TraitBound {
-                                name: bound_name,
-                                type_params: type_args,
-                            });
-
-                            if !self.matches(&[TokenType::Ref]) {
-                                break;
-                            }
-                        }
-                    }
-
-                    params.push((param, bounds));
-
-                    if !self.matches(&[TokenType::Comma]) {
-                        break;
-                    }
-                }
-            }
-            self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
-            params
-        } else {
-            Vec::new()
-        };
+        let type_params = self.parse_is_type_params()?;
         self.consume_token(TokenType::OpenParen, "Expected '(' after function name")?;
-        let mut params = Vec::new();
-
-        if !self.check(TokenType::CloseParen) {
-            let mut has_default = false;
-            loop {
-                let param_type = self.parse_type()?;
-                let param_name = self.consume_identifier("Expected parameter name")?;
-                let default_value = if self.matches(&[TokenType::Eq]) {
-                    let default_expr = self.parse_expression()?;
-                    // Validate that default value is a literal
-                    if !Self::is_literal_expression(&default_expr) {
-                        return Err(ParserError::with_help(
-                            "Default parameter values must be literals",
-                            default_expr.span,
-                            "Only literal values (int, float, string, bool, char) are allowed as default parameter values. Example: func foo(int x = 10) returns void { ... }",
-                        ));
-                    }
-                    has_default = true;
-                    Some(default_expr)
-                } else {
-                    // If we've already seen a default param, this one must also have a default
-                    if has_default {
-                        return Err(ParserError::with_help(
-                            "Required parameter cannot follow a parameter with a default value",
-                            self.previous().span,
-                            "Move all parameters with default values to the end of the parameter list",
-                        ));
-                    }
-                    None
-                };
-                params.push(Param {
-                    name: param_name,
-                    type_: param_type,
-                    default_value,
-                });
-                if !self.matches(&[TokenType::Comma]) {
-                    break;
-                }
-            }
-        }
-
+        let params = self.parse_function_params()?;
         self.consume_token(TokenType::CloseParen, "Expected ')' after parameters")?;
-
-        let return_type = if self.matches(&[TokenType::Returns]) {
-            self.parse_type()?
-        } else {
-            return Err(ParserError::with_help(
-                format!(
-                    "Expected 'returns' before return type, found {}",
-                    Self::describe_token(&self.peek().token_type)
-                ),
-                self.peek().span,
-                "All functions must declare a return type. Use 'returns void' for functions that return nothing. Example: func foo() returns int { ... }",
-            ));
-        };
-
+        let return_type = self.parse_required_return_type()?;
         self.skip_newlines();
-        let body = self.block()?;
-
-        let body_statements = match body {
-            AstNode::Statement(StatementNode {
-                kind: StatementKind::Block(block),
-                ..
-            }) => block,
-            _ => {
-                return Err(ParserError::new(
-                    "Expected block statement for function body",
-                    start_span,
-                ));
-            }
-        };
-
+        let body_statements = self.parse_function_body(start_span)?;
         let end_span = body_statements.last().map(|s| s.span).unwrap_or(start_span);
         let span = start_span.combine(&end_span);
-
         Ok(AstNode::Function(FunctionNode {
             name,
             type_params,
@@ -984,6 +889,125 @@ impl<'a> Parser<'a> {
             span,
             is_common,
         }))
+    }
+
+    fn parse_is_type_params(&mut self) -> ParserResult<Vec<(String, Vec<TraitBound>)>> {
+        if !self.matches(&[TokenType::Lt]) {
+            return Ok(Vec::new());
+        }
+        let mut params = Vec::new();
+        if !self.check(TokenType::Gt) {
+            loop {
+                let param = self.consume_identifier("Expected type parameter name")?;
+                let bounds = self.parse_ref_trait_bounds()?;
+                params.push((param, bounds));
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        self.consume_token(TokenType::Gt, "Expected '>' after type parameters")?;
+        Ok(params)
+    }
+
+    fn parse_ref_trait_bounds(&mut self) -> ParserResult<Vec<TraitBound>> {
+        if !self.matches(&[TokenType::Is]) {
+            return Ok(Vec::new());
+        }
+        let mut bounds = Vec::new();
+        loop {
+            let bound_name = self.consume_identifier("Expected trait name in bound")?;
+            let type_args = self.parse_optional_type_args()?;
+            bounds.push(TraitBound {
+                name: bound_name,
+                type_params: type_args,
+            });
+            if !self.matches(&[TokenType::Ref]) {
+                break;
+            }
+        }
+        Ok(bounds)
+    }
+
+    fn parse_function_params(&mut self) -> ParserResult<Vec<Param>> {
+        let mut params = Vec::new();
+        if !self.check(TokenType::CloseParen) {
+            let mut has_default = false;
+            loop {
+                let param = self.parse_single_param(&mut has_default)?;
+                params.push(param);
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        Ok(params)
+    }
+
+    fn parse_single_param(&mut self, has_default: &mut bool) -> ParserResult<Param> {
+        let param_type = self.parse_type()?;
+        let param_name = self.consume_identifier("Expected parameter name")?;
+        let default_value = self.parse_param_default(has_default)?;
+        Ok(Param {
+            name: param_name,
+            type_: param_type,
+            default_value,
+        })
+    }
+
+    fn parse_param_default(
+        &mut self,
+        has_default: &mut bool,
+    ) -> ParserResult<Option<ExpressionNode>> {
+        if !self.matches(&[TokenType::Eq]) {
+            if *has_default {
+                return Err(ParserError::with_help(
+                    "Required parameter cannot follow a parameter with a default value",
+                    self.previous().span,
+                    "Move all parameters with default values to the end of the parameter list",
+                ));
+            }
+            return Ok(None);
+        }
+        let default_expr = self.parse_expression()?;
+        if !Self::is_literal_expression(&default_expr) {
+            return Err(ParserError::with_help(
+                "Default parameter values must be literals",
+                default_expr.span,
+                "Only literal values (int, float, string, bool, char) are allowed as default parameter values. Example: func foo(int x = 10) returns void { ... }",
+            ));
+        }
+        *has_default = true;
+        Ok(Some(default_expr))
+    }
+
+    fn parse_required_return_type(&mut self) -> ParserResult<TypeNode> {
+        if self.matches(&[TokenType::Returns]) {
+            self.parse_type()
+        } else {
+            Err(ParserError::with_help(
+                format!(
+                    "Expected 'returns' before return type, found {}",
+                    Self::describe_token(&self.peek().token_type)
+                ),
+                self.peek().span,
+                "All functions must declare a return type. Use 'returns void' for functions that return nothing. Example: func foo() returns int { ... }",
+            ))
+        }
+    }
+
+    fn parse_function_body(&mut self, start_span: Span) -> ParserResult<Vec<StatementNode>> {
+        let body = self.block()?;
+        match body {
+            AstNode::Statement(StatementNode {
+                kind: StatementKind::Block(block),
+                ..
+            }) => Ok(block),
+            _ => Err(ParserError::new(
+                "Expected block statement for function body",
+                start_span,
+            )),
+        }
     }
 
     fn statement(&mut self) -> ParserResult<AstNode> {
@@ -1031,63 +1055,8 @@ impl<'a> Parser<'a> {
     fn looks_like_typed_decl(&self) -> bool {
         let n = self.tokens.len();
         let i = self.current;
-        // helper to skip over a type without consuming.
-        fn skip_type(tokens: &[&Token], mut i: usize) -> Option<usize> {
-            let n = tokens.len();
-            if i >= n {
-                return None;
-            }
-            match tokens[i].token_type {
-                TokenType::Ref => {
-                    i += 1;
-                    skip_type(tokens, i)
-                }
-                TokenType::OpenParen => {
-                    // function type: (types) returns type.
-                    i += 1;
-                    let mut depth = 1usize;
-                    while i < n && depth > 0 {
-                        match tokens[i].token_type {
-                            TokenType::OpenParen => depth += 1,
-                            TokenType::CloseParen => depth -= 1,
-                            _ => {}
-                        }
-                        i += 1;
-                    }
-                    if depth != 0 {
-                        return None;
-                    }
-                    if i >= n || tokens[i].token_type != TokenType::Returns {
-                        return None;
-                    }
-                    i += 1;
-                    skip_type(tokens, i)
-                }
-                TokenType::Id(_) => {
-                    i += 1;
-                    // handle generic angles: < ... > (nested)
-                    if i < n && tokens[i].token_type == TokenType::Lt {
-                        i += 1;
-                        let mut depth = 1usize;
-                        while i < n && depth > 0 {
-                            match tokens[i].token_type {
-                                TokenType::Lt => depth += 1,
-                                TokenType::Gt => depth -= 1,
-                                _ => {}
-                            }
-                            i += 1;
-                        }
-                        if depth != 0 {
-                            return None;
-                        }
-                    }
-                    Some(i)
-                }
-                _ => None,
-            }
-        }
 
-        if let Some(j) = skip_type(&self.tokens, i)
+        if let Some(j) = self.skip_type(i)
             && j < n
             && let TokenType::Id(_) = self.tokens[j].token_type
             && j + 1 < n
@@ -1098,22 +1067,70 @@ impl<'a> Parser<'a> {
         false
     }
 
+    fn skip_type(&self, mut i: usize) -> Option<usize> {
+        let n = self.tokens.len();
+        if i >= n {
+            return None;
+        }
+        match self.tokens[i].token_type {
+            TokenType::Ref => {
+                i += 1;
+                self.skip_type(i)
+            }
+            TokenType::OpenParen => self.skip_function_type(i, n),
+            TokenType::Id(_) => self.skip_identifier_type(i, n),
+            _ => None,
+        }
+    }
+
+    fn skip_function_type(&self, mut i: usize, n: usize) -> Option<usize> {
+        i += 1;
+        let mut depth = 1usize;
+        while i < n && depth > 0 {
+            match self.tokens[i].token_type {
+                TokenType::OpenParen => depth += 1,
+                TokenType::CloseParen => depth -= 1,
+                _ => {}
+            }
+            i += 1;
+        }
+        if depth != 0 {
+            return None;
+        }
+        if i >= n || self.tokens[i].token_type != TokenType::Returns {
+            return None;
+        }
+        i += 1;
+        self.skip_type(i)
+    }
+
+    fn skip_identifier_type(&self, mut i: usize, n: usize) -> Option<usize> {
+        i += 1;
+        if i < n && self.tokens[i].token_type == TokenType::Lt {
+            i += 1;
+            let mut depth = 1usize;
+            while i < n && depth > 0 {
+                match self.tokens[i].token_type {
+                    TokenType::Lt => depth += 1,
+                    TokenType::Gt => depth -= 1,
+                    _ => {}
+                }
+                i += 1;
+            }
+            if depth != 0 {
+                return None;
+            }
+        }
+        Some(i)
+    }
+
     fn if_statement(&mut self) -> ParserResult<AstNode> {
         let start_span = self.tokens[self.current - 1].span;
         let condition = self.parse_expression()?;
-
-        // Validate that postfix ++ and -- don't appear in condition
         self.check_no_postfix_increment_decrement(&condition)?;
-
         self.skip_newlines();
-        if !self.check(TokenType::OpenBrace) {
-            return Err(ParserError::new(
-                "Expected '{' after if condition",
-                self.peek().span,
-            ));
-        }
 
-        // parse then branch, require a braced block.
+        // Parse then block using the block() function directly
         let then_block = match self.block()? {
             AstNode::Statement(StatementNode {
                 kind: StatementKind::Block(block),
@@ -1127,62 +1144,9 @@ impl<'a> Parser<'a> {
             }
         };
 
-        // handle else/else if.
-        // allow newline between then-block '}' and 'else'.
         self.skip_newlines();
-        let (else_block, end_span) = if self.matches(&[TokenType::Else]) {
-            self.skip_newlines();
-            // support 'else if' sugar by nesting the parsed if inside the else_block.
-            if self.matches(&[TokenType::If]) {
-                let nested = self.if_statement()?;
-                match nested {
-                    AstNode::Statement(stmt) => {
-                        let end_span = stmt.span;
-                        (Some(vec![stmt]), end_span)
-                    }
-                    _ => {
-                        return Err(ParserError::new(
-                            "Expected statement after else if",
-                            self.previous().span,
-                        ));
-                    }
-                }
-            } else {
-                if !self.check(TokenType::OpenBrace) {
-                    return Err(ParserError::new(
-                        "Expected '{' after else",
-                        self.peek().span,
-                    ));
-                }
-                let else_block = match self.block()? {
-                    AstNode::Statement(StatementNode {
-                        kind: StatementKind::Block(block),
-                        ..
-                    }) => block,
-                    _ => {
-                        return Err(ParserError::new(
-                            "Expected block after else",
-                            self.peek().span,
-                        ));
-                    }
-                };
-
-                let end_span = else_block
-                    .last()
-                    .map(|s| s.span)
-                    .unwrap_or_else(|| self.tokens[self.current - 1].span);
-
-                (Some(else_block), end_span)
-            }
-        } else {
-            (
-                None,
-                then_block.last().map(|s| s.span).unwrap_or(start_span),
-            )
-        };
-
+        let (else_block, end_span) = self.parse_else_branch(start_span, &then_block)?;
         let span = start_span.combine(&end_span);
-
         Ok(AstNode::Statement(StatementNode {
             kind: StatementKind::If {
                 cond: condition,
@@ -1191,6 +1155,65 @@ impl<'a> Parser<'a> {
             },
             span,
         }))
+    }
+
+    fn parse_else_branch(
+        &mut self,
+        start_span: Span,
+        then_block: &[StatementNode],
+    ) -> ParserResult<(Option<Vec<StatementNode>>, Span)> {
+        if !self.matches(&[TokenType::Else]) {
+            let end_span = then_block.last().map(|s| s.span).unwrap_or(start_span);
+            return Ok((None, end_span));
+        }
+        self.skip_newlines();
+        if self.matches(&[TokenType::If]) {
+            self.parse_else_if_branch()
+        } else {
+            self.parse_else_block()
+        }
+    }
+
+    fn parse_else_if_branch(&mut self) -> ParserResult<(Option<Vec<StatementNode>>, Span)> {
+        let nested = self.if_statement()?;
+        match nested {
+            AstNode::Statement(stmt) => {
+                let end_span = stmt.span;
+                Ok((Some(vec![stmt]), end_span))
+            }
+            _ => Err(ParserError::new(
+                "Expected statement after else if",
+                self.previous().span,
+            )),
+        }
+    }
+
+    fn parse_else_block(&mut self) -> ParserResult<(Option<Vec<StatementNode>>, Span)> {
+        // Check for opening brace first with proper error message
+        if !self.check(TokenType::OpenBrace) {
+            return Err(ParserError::new(
+                "Expected '{' after else",
+                self.peek().span,
+            ));
+        }
+        // Parse the else block using block() which handles the opening brace
+        let else_block = match self.block()? {
+            AstNode::Statement(StatementNode {
+                kind: StatementKind::Block(block),
+                ..
+            }) => block,
+            _ => {
+                return Err(ParserError::new(
+                    "Expected block after else",
+                    self.peek().span,
+                ));
+            }
+        };
+        let end_span = else_block
+            .last()
+            .map(|s| s.span)
+            .unwrap_or_else(|| self.tokens[self.current - 1].span);
+        Ok((Some(else_block), end_span))
     }
 
     fn while_statement(&mut self) -> ParserResult<AstNode> {
@@ -1446,7 +1469,6 @@ impl<'a> Parser<'a> {
 
     fn block(&mut self) -> ParserResult<AstNode> {
         let start_span = self.consume_token(TokenType::OpenBrace, "Expected '{' before block")?;
-        let mut statements = Vec::new();
         self.skip_newlines();
 
         if self.matches(&[TokenType::CloseBrace]) {
@@ -1456,36 +1478,9 @@ impl<'a> Parser<'a> {
             }));
         }
 
-        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
-            self.skip_newlines();
-            if self.check(TokenType::CloseBrace) {
-                break;
-            }
-            match self.declaration() {
-                Ok(Some(decl)) => {
-                    statements.push(decl);
-                    self.skip_newlines();
-                }
-                Ok(None) => {
-                    // if we didn't make progress, advance to avoid infinite loops.
-                    let current_pos = self.current;
-                    if current_pos == self.current {
-                        self.advance();
-                    }
-                }
-                Err(e) => {
-                    self.errors.push(e);
-                    self.synchronize();
-                    let current_pos = self.current;
-                    if self.current == current_pos && !self.is_at_end() {
-                        self.advance();
-                    }
-                }
-            }
-        }
+        let statements = self.parse_block_statements_loop()?;
 
         let end_span = if self.check(TokenType::CloseBrace) {
-            // use the span returned by consume_token so row/col end are correct.
             self.consume_token(TokenType::CloseBrace, "Expected '}' after block")?
         } else {
             return Err(ParserError::new(
@@ -1493,7 +1488,6 @@ impl<'a> Parser<'a> {
                 self.peek().span,
             ));
         };
-
         let stmts: Vec<StatementNode> = statements
             .into_iter()
             .filter_map(|node| node.into_statement())
@@ -1503,6 +1497,42 @@ impl<'a> Parser<'a> {
             kind: StatementKind::Block(stmts),
             span: start_span.combine(&end_span),
         }))
+    }
+
+    fn parse_block_statements_loop(&mut self) -> ParserResult<Vec<AstNode>> {
+        let mut statements = Vec::new();
+        while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(TokenType::CloseBrace) {
+                break;
+            }
+            self.parse_block_statement(&mut statements)?;
+        }
+        Ok(statements)
+    }
+
+    fn parse_block_statement(&mut self, statements: &mut Vec<AstNode>) -> ParserResult<()> {
+        match self.declaration() {
+            Ok(Some(decl)) => {
+                statements.push(decl);
+                self.skip_newlines();
+            }
+            Ok(None) => {
+                let current_pos = self.current;
+                if current_pos == self.current {
+                    self.advance();
+                }
+            }
+            Err(e) => {
+                self.errors.push(e);
+                self.synchronize();
+                let current_pos = self.current;
+                if self.current == current_pos && !self.is_at_end() {
+                    self.advance();
+                }
+            }
+        }
+        Ok(())
     }
 
     fn is_in_block(&self) -> bool {
@@ -2021,110 +2051,143 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_collection_literal(&mut self, start_span: Span) -> ParserResult<ExpressionNode> {
-        let mut set_elements = Vec::new();
-        let mut map_entries = Vec::new();
-        let mut is_map = false;
-
         self.skip_newlines();
 
-        if !self.check(TokenType::CloseBrace) {
-            // parse first expression to determine if map or set
-            let first_expr = self.parse_expression()?;
-
-            if self.matches(&[TokenType::Colon]) {
-                // it is a map, key, value
-                is_map = true;
-                let value = self.parse_expression()?;
-                map_entries.push((first_expr, value));
-            } else {
-                // it is a set, just elements
-                set_elements.push(first_expr);
-            }
-
-            // parse remaining entries
-            loop {
-                self.skip_newlines();
-
-                if self.matches(&[TokenType::Comma]) {
-                    // Trailing comma: if next is closing brace, just stop
-                    if self.check(TokenType::CloseBrace) {
-                        break;
-                    }
-                    self.skip_newlines();
-                } else {
-                    // Look ahead past any remaining newlines to find comma
-                    let mut i = 0;
-                    let mut found_newlines = false;
-                    while let Some(t) = self.peek_ahead(i) {
-                        if t.token_type == TokenType::NewLine {
-                            found_newlines = true;
-                            i += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    // Check if we found comma after newlines AND there's an expression after
-                    if found_newlines
-                        && self
-                            .peek_ahead(i)
-                            .is_some_and(|t| t.token_type == TokenType::Comma)
-                        && self.peek_ahead(i + 1).is_some_and(|t| {
-                            !matches!(
-                                t.token_type,
-                                TokenType::CloseBrace | TokenType::NewLine | TokenType::Comma
-                            )
-                        })
-                    {
-                        // Consume the newlines and comma
-                        for _ in 0..=i {
-                            self.current += 1;
-                        }
-                        self.skip_newlines();
-                    } else {
-                        break;
-                    }
-                }
-
-                if is_map {
-                    let key = self.parse_expression()?;
-                    self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
-                    let value = self.parse_expression()?;
-                    map_entries.push((key, value));
-                } else {
-                    let elem = self.parse_expression()?;
-                    set_elements.push(elem);
-                }
-            }
+        if self.check(TokenType::CloseBrace) {
+            return self.parse_empty_collection(start_span);
         }
 
-        self.skip_newlines(); // Allow newlines before closing brace
+        let first_expr = self.parse_expression()?;
+        if self.matches(&[TokenType::Colon]) {
+            self.parse_map_literal(start_span, first_expr)
+        } else {
+            self.parse_set_literal(start_span, first_expr)
+        }
+    }
 
+    fn parse_empty_collection(&mut self, start_span: Span) -> ParserResult<ExpressionNode> {
         let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after collection")?;
+        Ok(ExpressionNode {
+            kind: ExpressionKind::SetLiteral(vec![]),
+            span: start_span.combine(&end_span),
+        })
+    }
 
-        let expr = if is_map {
-            ExpressionNode {
-                kind: ExpressionKind::MapLiteral {
-                    key_type: Box::new(TypeNode {
-                        kind: TypeKind::Auto,
-                        span: start_span,
-                    }),
-                    value_type: Box::new(TypeNode {
-                        kind: TypeKind::Auto,
-                        span: start_span,
-                    }),
-                    entries: map_entries,
-                },
-                span: start_span.combine(&end_span),
+    fn parse_map_literal(
+        &mut self,
+        start_span: Span,
+        first_key: ExpressionNode,
+    ) -> ParserResult<ExpressionNode> {
+        let first_value = self.parse_expression()?;
+        let mut entries = vec![(first_key, first_value)];
+        self.parse_collection_entries(&mut entries, true)?;
+        let end_span =
+            self.consume_token(TokenType::CloseBrace, "Expected '}' after collection")?;
+        Ok(ExpressionNode {
+            kind: ExpressionKind::MapLiteral {
+                key_type: Box::new(TypeNode {
+                    kind: TypeKind::Auto,
+                    span: start_span,
+                }),
+                value_type: Box::new(TypeNode {
+                    kind: TypeKind::Auto,
+                    span: start_span,
+                }),
+                entries,
+            },
+            span: start_span.combine(&end_span),
+        })
+    }
+
+    fn parse_set_literal(
+        &mut self,
+        start_span: Span,
+        first_elem: ExpressionNode,
+    ) -> ParserResult<ExpressionNode> {
+        let mut elements = vec![first_elem];
+        self.parse_set_entries(&mut elements)?;
+        let end_span =
+            self.consume_token(TokenType::CloseBrace, "Expected '}' after collection")?;
+        Ok(ExpressionNode {
+            kind: ExpressionKind::SetLiteral(elements),
+            span: start_span.combine(&end_span),
+        })
+    }
+
+    fn parse_set_entries(&mut self, elements: &mut Vec<ExpressionNode>) -> ParserResult<()> {
+        loop {
+            self.skip_newlines();
+            if !self.has_comma_or_entry()? {
+                break;
             }
+            let elem = self.parse_expression()?;
+            elements.push(elem);
+        }
+        Ok(())
+    }
+
+    fn parse_collection_entries(
+        &mut self,
+        entries: &mut Vec<(ExpressionNode, ExpressionNode)>,
+        is_map: bool,
+    ) -> ParserResult<()> {
+        loop {
+            self.skip_newlines();
+            if !self.has_comma_or_entry()? {
+                break;
+            }
+            if is_map {
+                let key = self.parse_expression()?;
+                self.consume_token(TokenType::Colon, "Expected ':' after map key")?;
+                let value = self.parse_expression()?;
+                entries.push((key, value));
+            }
+        }
+        Ok(())
+    }
+
+    fn has_comma_or_entry(&mut self) -> ParserResult<bool> {
+        if self.matches(&[TokenType::Comma]) {
+            if self.check(TokenType::CloseBrace) {
+                return Ok(false);
+            }
+            self.skip_newlines();
+            return Ok(true);
+        }
+        self.skip_newlines_after_comma()
+    }
+
+    fn skip_newlines_after_comma(&mut self) -> ParserResult<bool> {
+        let mut i = 0;
+        let mut found_newlines = false;
+        while let Some(t) = self.peek_ahead(i) {
+            if t.token_type == TokenType::NewLine {
+                found_newlines = true;
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        if found_newlines
+            && self
+                .peek_ahead(i)
+                .is_some_and(|t| t.token_type == TokenType::Comma)
+            && self.peek_ahead(i + 1).is_some_and(|t| {
+                !matches!(
+                    t.token_type,
+                    TokenType::CloseBrace | TokenType::NewLine | TokenType::Comma
+                )
+            })
+        {
+            for _ in 0..=i {
+                self.current += 1;
+            }
+            self.skip_newlines();
+            Ok(true)
         } else {
-            ExpressionNode {
-                kind: ExpressionKind::SetLiteral(set_elements),
-                span: start_span.combine(&end_span),
-            }
-        };
-
-        self.parse_postfix_operators(expr)
+            Ok(false)
+        }
     }
 
     fn parse_parenthesized_or_tuple_expression(
