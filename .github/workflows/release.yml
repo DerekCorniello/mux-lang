@@ -461,8 +461,8 @@ jobs:
           VERSION="${TAG#v}"
           echo "Extracting changelog for version $VERSION"
           # Find the section for this version
-          awk -v version="[$VERSION]" '
-            $0 ~ "^## " version {
+          awk -v version="$VERSION" '
+            $0 ~ "^## \\[" version "\\]" {
               found=1
               print
               next
@@ -479,7 +479,7 @@ jobs:
           if [ ! -s changelog_section.md ]; then
             echo "No section for version $VERSION, using Unreleased section"
             awk '
-              $0 ~ "^## \[Unreleased\]" {
+              $0 ~ "^## \\[Unreleased\\]" {
                 found=1
                 print
                 next
