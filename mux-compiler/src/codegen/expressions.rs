@@ -428,14 +428,11 @@ impl<'a> CodeGenerator<'a> {
         return_type: &TypeNode,
         body: &[StatementNode],
     ) -> Result<BasicValueEnum<'a>, String> {
-        // save current insert block
         let old_bb = self.builder.get_insert_block();
 
-        // generate unique function name
         let func_name = format!("lambda_{}", self.lambda_counter);
         self.lambda_counter += 1;
 
-        // Look up captured variables for this lambda
         let captures = self
             .analyzer
             .lambda_captures
@@ -444,26 +441,12 @@ impl<'a> CodeGenerator<'a> {
             .unwrap_or_default();
         let has_captures = !captures.is_empty();
 
-        // set current function name for proper scoping
         let old_function_name = self.current_function_name.take();
         self.current_function_name = Some(func_name.clone());
 
-        // Build parameter types - if we have captures, add capture struct pointer as first param
         let ptr_type = self.context.ptr_type(AddressSpace::default());
-        let mut param_types: Vec<BasicMetadataTypeEnum> = Vec::new();
+        let param_types = self.build_lambda_param_types(params, has_captures, ptr_type)?;
 
-        if has_captures {
-            // First parameter is pointer to capture struct
-            param_types.push(ptr_type.into());
-        }
-
-        // Add user-visible parameters
-        for param in params {
-            let param_type = self.llvm_type_from_mux_type(&param.type_)?;
-            param_types.push(param_type.into());
-        }
-
-        // Use explicit return type from lambda declaration
         let resolved_return = self
             .analyzer
             .resolve_type(return_type)
@@ -474,7 +457,6 @@ impl<'a> CodeGenerator<'a> {
             Some(self.llvm_type_from_mux_type(return_type)?)
         };
 
-        // set current function return type for proper return handling
         let old_return_type = self.current_function_return_type.take();
         self.current_function_return_type = Some(resolved_return.clone());
 
@@ -484,10 +466,75 @@ impl<'a> CodeGenerator<'a> {
             self.context.void_type().fn_type(&param_types, false)
         };
 
-        // create the function
         let function = self.module.add_function(&func_name, fn_type, None);
 
-        // set parameter names
+        let param_offset = self.setup_lambda_param_names(function, params, has_captures);
+
+        let entry_bb = self.context.append_basic_block(function, "entry");
+        self.builder.position_at_end(entry_bb);
+
+        let old_variables = self.variables.clone();
+        self.variables.clear();
+
+        let saved_rc_scope_stack = std::mem::take(&mut self.rc_scope_stack);
+        self.push_rc_scope();
+
+        if has_captures {
+            self.extract_captures_from_struct(function, &captures, ptr_type)?;
+        }
+
+        self.setup_lambda_user_params(function, params, param_offset, ptr_type)?;
+
+        for stmt in body {
+            self.generate_statement(stmt, Some(&function))?;
+        }
+
+        self.handle_lambda_void_return(return_type_opt)?;
+
+        self.rc_scope_stack.pop();
+        self.rc_scope_stack = saved_rc_scope_stack;
+
+        self.variables = old_variables;
+        self.current_function_return_type = old_return_type;
+        self.current_function_name = old_function_name;
+
+        if let Some(bb) = old_bb {
+            self.builder.position_at_end(bb);
+        }
+
+        if has_captures {
+            self.create_closure_with_captures(function, &captures, ptr_type)
+        } else {
+            self.create_closure_without_captures(function, ptr_type)
+        }
+    }
+
+    fn build_lambda_param_types(
+        &self,
+        params: &[Param],
+        has_captures: bool,
+        ptr_type: inkwell::types::PointerType<'a>,
+    ) -> Result<Vec<BasicMetadataTypeEnum<'a>>, String> {
+        let mut param_types: Vec<BasicMetadataTypeEnum> = Vec::new();
+
+        if has_captures {
+            param_types.push(ptr_type.into());
+        }
+
+        for param in params {
+            let param_type = self.llvm_type_from_mux_type(&param.type_)?;
+            param_types.push(param_type.into());
+        }
+
+        Ok(param_types)
+    }
+
+    fn setup_lambda_param_names(
+        &self,
+        function: inkwell::values::FunctionValue<'a>,
+        params: &[Param],
+        has_captures: bool,
+    ) -> u32 {
         let param_offset = if has_captures { 1 } else { 0 };
         if has_captures {
             function
@@ -501,69 +548,63 @@ impl<'a> CodeGenerator<'a> {
                 .expect("function parameter should exist at expected index");
             arg.set_name(&param.name);
         }
+        param_offset as u32
+    }
 
-        // create entry block and set up parameters
-        let entry_bb = self.context.append_basic_block(function, "entry");
-        self.builder.position_at_end(entry_bb);
+    fn extract_captures_from_struct(
+        &mut self,
+        function: inkwell::values::FunctionValue<'a>,
+        captures: &[(String, Type)],
+        ptr_type: inkwell::types::PointerType<'a>,
+    ) -> Result<(), String> {
+        let captures_ptr = function
+            .get_nth_param(0)
+            .expect("captures parameter should exist")
+            .into_pointer_value();
 
-        // save current variables and create new scope
-        let old_variables = self.variables.clone();
-        self.variables.clear();
+        let capture_struct_type = self
+            .context
+            .struct_type(&vec![ptr_type.into(); captures.len()], false);
 
-        // Save the parent's RC scope stack and start fresh for this lambda.
-        // Lambdas are separate functions and should not clean up the enclosing
-        // function's variables when they return.
-        let saved_rc_scope_stack = std::mem::take(&mut self.rc_scope_stack);
-        self.push_rc_scope();
+        for (i, (name, var_type)) in captures.iter().enumerate() {
+            let field_ptr = self
+                .builder
+                .build_struct_gep(
+                    capture_struct_type,
+                    captures_ptr,
+                    i as u32,
+                    &format!("cap_{}_ptr", name),
+                )
+                .map_err(|e| e.to_string())?;
 
-        // If we have captures, extract them from the capture struct
-        // The capture struct layout is: [ptr0, ptr1, ptr2, ...] where each ptr points to the captured variable's storage
-        if has_captures {
-            let captures_ptr = function
-                .get_nth_param(0)
-                .expect("captures parameter should exist")
+            let var_ptr = self
+                .builder
+                .build_load(ptr_type, field_ptr, &format!("cap_{}", name))
+                .map_err(|e| e.to_string())?
                 .into_pointer_value();
 
-            // Create a struct type for the captures (array of pointers)
-            let capture_struct_type = self
-                .context
-                .struct_type(&vec![ptr_type.into(); captures.len()], false);
-
-            for (i, (name, var_type)) in captures.iter().enumerate() {
-                // Get pointer to the i-th field in capture struct
-                let field_ptr = self
-                    .builder
-                    .build_struct_gep(
-                        capture_struct_type,
-                        captures_ptr,
-                        i as u32,
-                        &format!("cap_{}_ptr", name),
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                // Load the pointer to the captured variable's storage
-                let var_ptr = self
-                    .builder
-                    .build_load(ptr_type, field_ptr, &format!("cap_{}", name))
-                    .map_err(|e| e.to_string())?
-                    .into_pointer_value();
-
-                // Store in variables map - the var_ptr points to the original variable's alloca
-                self.variables.insert(
-                    name.clone(),
-                    (
-                        var_ptr,
-                        BasicTypeEnum::PointerType(ptr_type),
-                        var_type.clone(),
-                    ),
-                );
-            }
+            self.variables.insert(
+                name.clone(),
+                (
+                    var_ptr,
+                    BasicTypeEnum::PointerType(ptr_type),
+                    var_type.clone(),
+                ),
+            );
         }
+        Ok(())
+    }
 
-        // set up user parameter variables
+    fn setup_lambda_user_params(
+        &mut self,
+        function: inkwell::values::FunctionValue<'a>,
+        params: &[Param],
+        param_offset: u32,
+        ptr_type: inkwell::types::PointerType<'a>,
+    ) -> Result<(), String> {
         for (i, param) in params.iter().enumerate() {
             let arg = function
-                .get_nth_param((i + param_offset) as u32)
+                .get_nth_param(i as u32 + param_offset)
                 .expect("function parameter should exist at expected index");
             let boxed = self.box_value(arg);
             let alloca = self
@@ -586,204 +627,175 @@ impl<'a> CodeGenerator<'a> {
                 ),
             );
         }
+        Ok(())
+    }
 
-        // generate all statements
-        for stmt in body {
-            self.generate_statement(stmt, Some(&function))?;
-        }
-
-        // if void return, add return void if not already terminated
+    fn handle_lambda_void_return(
+        &mut self,
+        return_type_opt: Option<BasicTypeEnum<'a>>,
+    ) -> Result<(), String> {
         if return_type_opt.is_none()
             && let Some(block) = self.builder.get_insert_block()
             && block.get_terminator().is_none()
         {
-            // Generate RC cleanup before void return
             self.generate_all_scopes_cleanup()?;
             self.builder.build_return(None).map_err(|e| e.to_string())?;
         }
+        Ok(())
+    }
 
-        // Pop the lambda's RC scope and restore the parent's stack
-        self.rc_scope_stack.pop();
-        self.rc_scope_stack = saved_rc_scope_stack;
+    fn create_closure_with_captures(
+        &mut self,
+        function: inkwell::values::FunctionValue<'a>,
+        captures: &[(String, Type)],
+        ptr_type: inkwell::types::PointerType<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let capture_struct_type = self
+            .context
+            .struct_type(&vec![ptr_type.into(); captures.len()], false);
 
-        // restore variables - but keep a copy for looking up captured vars
-        self.variables = old_variables;
+        let struct_size = capture_struct_type
+            .size_of()
+            .ok_or("Failed to get capture struct size")?;
+        let malloc_fn = self
+            .module
+            .get_function("malloc")
+            .ok_or("malloc not found")?;
+        let capture_mem = self
+            .builder
+            .build_call(malloc_fn, &[struct_size.into()], "capture_alloc")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("malloc didn't return a value")?
+            .into_pointer_value();
 
-        // restore return type
-        self.current_function_return_type = old_return_type;
+        for (i, (name, var_type)) in captures.iter().enumerate() {
+            let (var_ptr, llvm_type, _) = self
+                .variables
+                .get(name)
+                .or_else(|| self.global_variables.get(name))
+                .ok_or_else(|| format!("Captured variable '{}' not found", name))?
+                .clone();
 
-        // restore function name
-        self.current_function_name = old_function_name;
+            let ptr_size = self
+                .context
+                .ptr_type(AddressSpace::default())
+                .size_of()
+                .into();
+            let heap_storage = self
+                .builder
+                .build_call(malloc_fn, &[ptr_size], &format!("cap_{}_heap", name))
+                .map_err(|e| e.to_string())?
+                .try_as_basic_value()
+                .left()
+                .ok_or("malloc didn't return a value")?
+                .into_pointer_value();
 
-        // restore builder to previous block
-        if let Some(bb) = old_bb {
-            self.builder.position_at_end(bb);
+            let current_value = self
+                .builder
+                .build_load(ptr_type, var_ptr, &format!("cap_{}_val", name))
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(heap_storage, current_value)
+                .map_err(|e| e.to_string())?;
+
+            self.variables
+                .insert(name.clone(), (heap_storage, llvm_type, var_type.clone()));
+
+            let field_ptr = self
+                .builder
+                .build_struct_gep(
+                    capture_struct_type,
+                    capture_mem,
+                    i as u32,
+                    &format!("cap_field_{}", i),
+                )
+                .map_err(|e| e.to_string())?;
+
+            self.builder
+                .build_store(field_ptr, heap_storage)
+                .map_err(|e| e.to_string())?;
         }
 
-        // If we have captures, create a closure object; otherwise return raw function pointer
-        if has_captures {
-            // Allocate capture struct and populate it with heap-allocated storage for captured variables
-            // This ensures captured values survive after the creating function returns
-            let capture_struct_type = self
-                .context
-                .struct_type(&vec![ptr_type.into(); captures.len()], false);
+        let closure_struct_type = self
+            .context
+            .struct_type(&[ptr_type.into(), ptr_type.into()], false);
 
-            // Calculate size and allocate the capture struct
-            let struct_size = capture_struct_type
-                .size_of()
-                .ok_or("Failed to get capture struct size")?;
-            let malloc_fn = self
-                .module
-                .get_function("malloc")
-                .ok_or("malloc not found")?;
-            let capture_mem = self
-                .builder
-                .build_call(malloc_fn, &[struct_size.into()], "capture_alloc")
-                .map_err(|e| e.to_string())?
-                .try_as_basic_value()
-                .left()
-                .ok_or("malloc didn't return a value")?
-                .into_pointer_value();
+        let closure_size = closure_struct_type
+            .size_of()
+            .ok_or("Failed to get closure struct size")?;
+        let closure_mem = self
+            .builder
+            .build_call(malloc_fn, &[closure_size.into()], "closure_alloc")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("malloc didn't return a value")?
+            .into_pointer_value();
 
-            // For each captured variable, allocate heap storage, copy the value, and store the heap pointer
-            // Also update self.variables so that outer scope mutations affect the heap location
-            for (i, (name, var_type)) in captures.iter().enumerate() {
-                // Get the pointer to the captured variable from outer scope
-                let (var_ptr, llvm_type, _) = self
-                    .variables
-                    .get(name)
-                    .or_else(|| self.global_variables.get(name))
-                    .ok_or_else(|| format!("Captured variable '{}' not found", name))?
-                    .clone();
+        let fn_ptr_field = self
+            .builder
+            .build_struct_gep(closure_struct_type, closure_mem, 0, "closure_fn_ptr")
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(fn_ptr_field, function.as_global_value().as_pointer_value())
+            .map_err(|e| e.to_string())?;
 
-                // Allocate heap storage for this captured value (one pointer-sized slot)
-                let ptr_size = self
-                    .context
-                    .ptr_type(AddressSpace::default())
-                    .size_of()
-                    .into();
-                let heap_storage = self
-                    .builder
-                    .build_call(malloc_fn, &[ptr_size], &format!("cap_{}_heap", name))
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .ok_or("malloc didn't return a value")?
-                    .into_pointer_value();
+        let captures_field = self
+            .builder
+            .build_struct_gep(closure_struct_type, closure_mem, 1, "closure_captures")
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(captures_field, capture_mem)
+            .map_err(|e| e.to_string())?;
 
-                // Load the current value from the original variable and store it in heap storage
-                let current_value = self
-                    .builder
-                    .build_load(ptr_type, var_ptr, &format!("cap_{}_val", name))
-                    .map_err(|e| e.to_string())?;
-                self.builder
-                    .build_store(heap_storage, current_value)
-                    .map_err(|e| e.to_string())?;
+        Ok(closure_mem.into())
+    }
 
-                // Update self.variables to point to the heap storage
-                // This way, mutations in the outer scope will affect the heap-allocated value
-                self.variables
-                    .insert(name.clone(), (heap_storage, llvm_type, var_type.clone()));
+    fn create_closure_without_captures(
+        &self,
+        function: inkwell::values::FunctionValue<'a>,
+        ptr_type: inkwell::types::PointerType<'a>,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let closure_struct_type = self
+            .context
+            .struct_type(&[ptr_type.into(), ptr_type.into()], false);
 
-                // Get pointer to the i-th field in capture struct
-                let field_ptr = self
-                    .builder
-                    .build_struct_gep(
-                        capture_struct_type,
-                        capture_mem,
-                        i as u32,
-                        &format!("cap_field_{}", i),
-                    )
-                    .map_err(|e| e.to_string())?;
+        let malloc_fn = self
+            .module
+            .get_function("malloc")
+            .ok_or("malloc not found")?;
+        let closure_size = closure_struct_type
+            .size_of()
+            .ok_or("Failed to get closure struct size")?;
+        let closure_mem = self
+            .builder
+            .build_call(malloc_fn, &[closure_size.into()], "closure_alloc")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("malloc didn't return a value")?
+            .into_pointer_value();
 
-                // Store the heap pointer (not the original stack alloca) in the capture struct
-                self.builder
-                    .build_store(field_ptr, heap_storage)
-                    .map_err(|e| e.to_string())?;
-            }
+        let fn_ptr_field = self
+            .builder
+            .build_struct_gep(closure_struct_type, closure_mem, 0, "closure_fn_ptr")
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(fn_ptr_field, function.as_global_value().as_pointer_value())
+            .map_err(|e| e.to_string())?;
 
-            // Create closure struct: { fn_ptr, captures_ptr }
-            let closure_struct_type = self
-                .context
-                .struct_type(&[ptr_type.into(), ptr_type.into()], false);
+        let captures_field = self
+            .builder
+            .build_struct_gep(closure_struct_type, closure_mem, 1, "closure_captures")
+            .map_err(|e| e.to_string())?;
+        let null_ptr = ptr_type.const_null();
+        self.builder
+            .build_store(captures_field, null_ptr)
+            .map_err(|e| e.to_string())?;
 
-            // Allocate closure struct
-            let closure_size = closure_struct_type
-                .size_of()
-                .ok_or("Failed to get closure struct size")?;
-            let closure_mem = self
-                .builder
-                .build_call(malloc_fn, &[closure_size.into()], "closure_alloc")
-                .map_err(|e| e.to_string())?
-                .try_as_basic_value()
-                .left()
-                .ok_or("malloc didn't return a value")?
-                .into_pointer_value();
-
-            // Store function pointer
-            let fn_ptr_field = self
-                .builder
-                .build_struct_gep(closure_struct_type, closure_mem, 0, "closure_fn_ptr")
-                .map_err(|e| e.to_string())?;
-            self.builder
-                .build_store(fn_ptr_field, function.as_global_value().as_pointer_value())
-                .map_err(|e| e.to_string())?;
-
-            // Store captures pointer
-            let captures_field = self
-                .builder
-                .build_struct_gep(closure_struct_type, closure_mem, 1, "closure_captures")
-                .map_err(|e| e.to_string())?;
-            self.builder
-                .build_store(captures_field, capture_mem)
-                .map_err(|e| e.to_string())?;
-
-            // Return closure pointer
-            Ok(closure_mem.into())
-        } else {
-            // No captures - still return a closure struct for uniform calling convention
-            // Closure struct: { fn_ptr, null }
-            let closure_struct_type = self
-                .context
-                .struct_type(&[ptr_type.into(), ptr_type.into()], false);
-
-            let malloc_fn = self
-                .module
-                .get_function("malloc")
-                .ok_or("malloc not found")?;
-            let closure_size = closure_struct_type
-                .size_of()
-                .ok_or("Failed to get closure struct size")?;
-            let closure_mem = self
-                .builder
-                .build_call(malloc_fn, &[closure_size.into()], "closure_alloc")
-                .map_err(|e| e.to_string())?
-                .try_as_basic_value()
-                .left()
-                .ok_or("malloc didn't return a value")?
-                .into_pointer_value();
-
-            // Store function pointer
-            let fn_ptr_field = self
-                .builder
-                .build_struct_gep(closure_struct_type, closure_mem, 0, "closure_fn_ptr")
-                .map_err(|e| e.to_string())?;
-            self.builder
-                .build_store(fn_ptr_field, function.as_global_value().as_pointer_value())
-                .map_err(|e| e.to_string())?;
-
-            // Store null for captures
-            let captures_field = self
-                .builder
-                .build_struct_gep(closure_struct_type, closure_mem, 1, "closure_captures")
-                .map_err(|e| e.to_string())?;
-            let null_ptr = ptr_type.const_null();
-            self.builder
-                .build_store(captures_field, null_ptr)
-                .map_err(|e| e.to_string())?;
-
-            Ok(closure_mem.into())
-        }
+        Ok(closure_mem.into())
     }
 
     /// check if a method's parameters or return type reference any of the given type parameters
