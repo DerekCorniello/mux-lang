@@ -6,7 +6,7 @@
             "command": [
                 "bash",
                 "-c",
-                "set -a; source .env; set +a; exec docker run --init --pull=always -i --rm -e SONARQUBE_TOKEN -e SONARQUBE_ORG -e SONARQUBE_URL -e SONARQUBE_PROJECT_KEY -e SONARQUBE_DEBUG_ENABLED mcp/sonarqube"
+                "set -a; source ./.env; set +a; exec docker run --init --pull=always -i --rm -e SONARQUBE_TOKEN -e SONARQUBE_ORG -e SONARQUBE_URL -e SONARQUBE_PROJECT_KEY -e SONARQUBE_DEBUG_ENABLED mcp/sonarqube"
             ],
             "enabled": true
         },
@@ -15,7 +15,7 @@
             "command": [
                 "bash",
                 "-c",
-                "set -a; source .env; set +a; exec npx -y @modelcontextprotocol/server-github"
+                "set -a; source ./.env; set +a; exec npx -y @modelcontextprotocol/server-github"
             ],
             "enabled": true
         }
