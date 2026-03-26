@@ -13,11 +13,11 @@
         "github": {
             "type": "local",
             "command": [
-                "set -a; source /home/derekcorn/code/mux-lang/.env; set +a;",
-                "npx",
-                "-y",
-                "@modelcontextprotocol/server-github"
+                "bash",
+                "-c",
+                "set -a; source /home/derekcorn/code/mux-lang/.env; set +a; exec npx -y @modelcontextprotocol/server-github"
             ],
+            "enabled": true
         }
     }
 }
