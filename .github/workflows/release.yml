@@ -446,14 +446,65 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
 
+      - name: Extract changelog for release
+        id: changelog
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "Extracting changelog for version $VERSION"
+          # Find the section for this version
+          awk -v version="[$VERSION]" '
+            $0 ~ "^## " version {
+              found=1
+              print
+              next
+            }
+            found && /^## \[/ {
+              # hit next version section
+              exit
+            }
+            found {
+              print
+            }
+          ' CHANGELOG.md > changelog_section.md
+          # If no specific section found, use "Unreleased" section
+          if [ ! -s changelog_section.md ]; then
+            echo "No section for version $VERSION, using Unreleased section"
+            awk '
+              $0 ~ "^## \[Unreleased\]" {
+                found=1
+                print
+                next
+              }
+              found && /^## \[/ {
+                exit
+              }
+              found {
+                print
+              }
+            ' CHANGELOG.md > changelog_section.md
+          fi
+          # If still empty, create a placeholder
+          if [ ! -s changelog_section.md ]; then
+            echo "No changelog section found." > changelog_section.md
+          fi
+          # Output multiline variable
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          cat changelog_section.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.changelog.outputs.body }}
           files: |
             dist/**/*.tar.gz
             dist/**/*.zip
