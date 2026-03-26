@@ -454,120 +454,19 @@ impl<'a> Lexer<'a> {
         start_span.complete(self.source.line, self.source.col);
 
         match first_char {
-            '*' => {
-                if self.source.peek() == Some('*') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::StarStar, start_span))
-                } else if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::StarEq, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Star, start_span))
-                }
-            }
-            '=' => {
-                if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::EqEq, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Eq, start_span))
-                }
-            }
-            '!' => {
-                if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::NotEq, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Bang, start_span))
-                }
-            }
-            '+' => match self.source.peek() {
-                Some('+') => {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Incr, start_span))
-                }
-                Some('=') => {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::PlusEq, start_span))
-                }
-                _ => Ok(Token::new(TokenType::Plus, start_span)),
-            },
-            '-' => match self.source.peek() {
-                Some('-') => {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Decr, start_span))
-                }
-                Some('=') => {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::MinusEq, start_span))
-                }
-                Some(c) if c.is_ascii_digit() => {
-                    // Negative number: include the minus sign and parse as number
-                    self.read_number(first_char, start_span)
-                }
-                _ => Ok(Token::new(TokenType::Minus, start_span)),
-            },
-            '<' => {
-                if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Le, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Lt, start_span))
-                }
-            }
-            '>' => {
-                if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Ge, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Gt, start_span))
-                }
-            }
-            '|' => {
-                if self.source.peek() == Some('|') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Or, start_span))
-                } else {
-                    Err(LexerError::with_help(
-                        "Unexpected character '|'",
-                        start_span,
-                        "Single '|' is not a valid operator. Use '||' for logical OR",
-                    ))
-                }
-            }
-            '&' => {
-                if self.source.peek() == Some('&') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::And, start_span))
-                } else {
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Ref, start_span))
-                }
-            }
+            '*' => self.handle_star_operator(start_span),
+            '=' => self.handle_eq_operator(start_span),
+            '!' => self.handle_bang_operator(start_span),
+            '+' => self.handle_plus_operator(start_span),
+            '-' => self.handle_minus_operator(first_char, start_span),
+            '<' => self.handle_lt_operator(start_span),
+            '>' => self.handle_gt_operator(start_span),
+            '|' => self.handle_or_operator(start_span),
+            '&' => self.handle_and_operator(start_span),
             '/' => self.read_slash_token(start_span),
             '0'..='9' => self.read_number(first_char, start_span),
             '\'' => self.read_char(start_span),
-            '"' => {
-                if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
-                    self.source.next_char();
-                    self.source.next_char();
-                    self.read_string(start_span)
-                } else {
-                    self.read_string(start_span)
-                }
-            }
+            '"' => self.handle_string_start(start_span),
             'a'..='z' | 'A'..='Z' | '_' => {
                 Ok(self.read_identifier_or_keyword(first_char, start_span))
             }
@@ -579,6 +478,133 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn handle_star_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('*') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::StarStar, start_span))
+        } else if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::StarEq, start_span))
+        } else {
+            Ok(Token::new(TokenType::Star, start_span))
+        }
+    }
+
+    fn handle_eq_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::EqEq, start_span))
+        } else {
+            Ok(Token::new(TokenType::Eq, start_span))
+        }
+    }
+
+    fn handle_bang_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::NotEq, start_span))
+        } else {
+            Ok(Token::new(TokenType::Bang, start_span))
+        }
+    }
+
+    fn handle_plus_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        match self.source.peek() {
+            Some('+') => {
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Ok(Token::new(TokenType::Incr, start_span))
+            }
+            Some('=') => {
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Ok(Token::new(TokenType::PlusEq, start_span))
+            }
+            _ => Ok(Token::new(TokenType::Plus, start_span)),
+        }
+    }
+
+    fn handle_minus_operator(
+        &mut self,
+        first_char: char,
+        mut start_span: Span,
+    ) -> Result<Token, LexerError> {
+        match self.source.peek() {
+            Some('-') => {
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Ok(Token::new(TokenType::Decr, start_span))
+            }
+            Some('=') => {
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Ok(Token::new(TokenType::MinusEq, start_span))
+            }
+            Some(c) if c.is_ascii_digit() => self.read_number(first_char, start_span),
+            _ => Ok(Token::new(TokenType::Minus, start_span)),
+        }
+    }
+
+    fn handle_lt_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::Le, start_span))
+        } else {
+            Ok(Token::new(TokenType::Lt, start_span))
+        }
+    }
+
+    fn handle_gt_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::Ge, start_span))
+        } else {
+            Ok(Token::new(TokenType::Gt, start_span))
+        }
+    }
+
+    fn handle_or_operator(&mut self, start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('|') {
+            self.source.next_char();
+            let mut span = start_span;
+            span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::Or, span))
+        } else {
+            Err(LexerError::with_help(
+                "Unexpected character '|'",
+                start_span,
+                "Single '|' is not a valid operator. Use '||' for logical OR",
+            ))
+        }
+    }
+
+    fn handle_and_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('&') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::And, start_span))
+        } else {
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::Ref, start_span))
+        }
+    }
+
+    fn handle_string_start(&mut self, start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
+            self.source.next_char();
+            self.source.next_char();
+            self.read_string(start_span)
+        } else {
+            self.read_string(start_span)
+        }
+    }
+
     // Helper function to check for triple quotes
     fn is_triple_quote(&self) -> bool {
         let next1 = self.source.peek();
@@ -586,7 +612,7 @@ impl<'a> Lexer<'a> {
         next1 == Some('"') && next2 == Some('"')
     }
 
-    fn read_string(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+    fn read_string(&mut self, start_span: Span) -> Result<Token, LexerError> {
         let mut s = String::new();
         let mut escaped = false;
         let is_triple = self.is_triple_quote();
@@ -603,46 +629,75 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c == '"' && !escaped {
-                if is_triple {
-                    if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
-                        self.source.next_char();
-                        self.source.next_char();
-                        start_span.complete(self.source.line, self.source.col);
-                        return Ok(Token::new(TokenType::Str(s), start_span));
-                    }
-                } else {
-                    start_span.complete(self.source.line, self.source.col);
-                    return Ok(Token::new(TokenType::Str(s), start_span));
-                }
+            if let Some(result) = self.try_end_string(c, escaped, is_triple, &s, start_span) {
+                return result;
             }
 
-            if escaped {
-                if let Some(decoded) = Self::decode_escape(c) {
-                    s.push(decoded);
-                } else {
-                    return Err(LexerError::with_help(
-                        format!("Unknown escape sequence: \\{}", c),
-                        Span::new(self.source.line, self.source.col - 1),
-                        "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\', \\\"",
-                    ));
-                }
-                escaped = false;
-            } else {
-                s.push(c);
-            }
+            self.process_string_char(c, &mut escaped, &mut s)?;
         }
 
-        // If we get here, the string wasn't properly terminated
-        // We read until EOF, so s contains all content including newlines
-        // The string content before the first newline is what we care about
-        let string_content = s.as_str();
+        self.handle_unterminated_string(&s, start_col, start_span)
+    }
+
+    fn try_end_string(
+        &mut self,
+        c: char,
+        escaped: bool,
+        is_triple: bool,
+        s: &str,
+        mut start_span: Span,
+    ) -> Option<Result<Token, LexerError>> {
+        if c != '"' || escaped {
+            return None;
+        }
+
+        if is_triple {
+            if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
+                self.source.next_char();
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Some(Ok(Token::new(TokenType::Str(s.to_string()), start_span)))
+            } else {
+                None
+            }
+        } else {
+            start_span.complete(self.source.line, self.source.col);
+            Some(Ok(Token::new(TokenType::Str(s.to_string()), start_span)))
+        }
+    }
+
+    fn process_string_char(
+        &mut self,
+        c: char,
+        escaped: &mut bool,
+        s: &mut String,
+    ) -> Result<(), LexerError> {
+        if *escaped {
+            if let Some(decoded) = Self::decode_escape(c) {
+                s.push(decoded);
+            } else {
+                return Err(LexerError::with_help(
+                    format!("Unknown escape sequence: \\{}", c),
+                    Span::new(self.source.line, self.source.col - 1),
+                    "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\', \\\"",
+                ));
+            }
+            *escaped = false;
+        } else {
+            s.push(c);
+        }
+        Ok(())
+    }
+
+    fn handle_unterminated_string(
+        &self,
+        string_content: &str,
+        start_col: usize,
+        mut start_span: Span,
+    ) -> Result<Token, LexerError> {
         let first_newline = string_content.find('\n').unwrap_or(string_content.len());
         let error_col = start_col + first_newline;
-
-        // Complete span at the end of the string content (where the unterminated part ends)
         start_span.complete(self.source.line, error_col);
-
         Err(LexerError::with_help(
             "Unterminated string",
             start_span,
@@ -650,8 +705,8 @@ impl<'a> Lexer<'a> {
         ))
     }
 
-    fn read_char(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
-        let start_col = self.source.col - 1; // adjust for the opening quote
+    fn read_char(&mut self, start_span: Span) -> Result<Token, LexerError> {
+        let start_col = self.source.col - 1;
         let mut chars = Vec::new();
         let mut escaped = false;
 
@@ -662,31 +717,10 @@ impl<'a> Lexer<'a> {
             }
 
             if c == '\'' && !escaped {
-                if chars.len() != 1 {
-                    return Err(LexerError::with_help(
-                        "Char literal must be exactly one character",
-                        Span::new(start_span.row_start, start_col + 1),
-                        "Example: 'a', '\\n', '\\''",
-                    ));
-                }
-                start_span.complete(self.source.line, self.source.col);
-                return Ok(Token::new(TokenType::Char(chars[0]), start_span));
+                return self.finish_char_literal(chars, start_span, start_col);
             }
 
-            if escaped {
-                if let Some(decoded) = Self::decode_escape(c) {
-                    chars.push(decoded);
-                } else {
-                    return Err(LexerError::with_help(
-                        format!("Unknown escape sequence: \\{}", c),
-                        Span::new(self.source.line, self.source.col - 1),
-                        "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\'",
-                    ));
-                }
-                escaped = false;
-            } else {
-                chars.push(c);
-            }
+            self.process_char_literal_char(c, &mut escaped, &mut chars, start_span, start_col)?;
 
             if chars.len() > 1 && !escaped {
                 return Err(LexerError::with_help(
@@ -702,6 +736,48 @@ impl<'a> Lexer<'a> {
             start_span,
             "Make sure to close the character with a matching quote",
         ))
+    }
+
+    fn finish_char_literal(
+        &mut self,
+        chars: Vec<char>,
+        mut start_span: Span,
+        start_col: usize,
+    ) -> Result<Token, LexerError> {
+        if chars.len() != 1 {
+            return Err(LexerError::with_help(
+                "Char literal must be exactly one character",
+                Span::new(start_span.row_start, start_col + 1),
+                "Example: 'a', '\\n', '\\''",
+            ));
+        }
+        start_span.complete(self.source.line, self.source.col);
+        Ok(Token::new(TokenType::Char(chars[0]), start_span))
+    }
+
+    fn process_char_literal_char(
+        &mut self,
+        c: char,
+        escaped: &mut bool,
+        chars: &mut Vec<char>,
+        _start_span: Span,
+        _start_col: usize,
+    ) -> Result<(), LexerError> {
+        if *escaped {
+            if let Some(decoded) = Self::decode_escape(c) {
+                chars.push(decoded);
+            } else {
+                return Err(LexerError::with_help(
+                    format!("Unknown escape sequence: \\{}", c),
+                    Span::new(self.source.line, self.source.col - 1),
+                    "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\'",
+                ));
+            }
+            *escaped = false;
+        } else {
+            chars.push(c);
+        }
+        Ok(())
     }
 
     fn read_number(&mut self, first_char: char, mut start_span: Span) -> Result<Token, LexerError> {
