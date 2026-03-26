@@ -317,6 +317,8 @@ pre code {
 
 .navbar__items:not(.navbar__items--right) {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
 }
 
 
@@ -643,7 +645,7 @@ hr {
 }
 
 /* Search bar - responsive centered */
-.navbar__items:not(.navbar__items--right) {
+.navbar__items:not(.navbar__items--right):has(.dsla-search-wrapper) {
   flex: 1;
   display: flex;
   align-items: center;
