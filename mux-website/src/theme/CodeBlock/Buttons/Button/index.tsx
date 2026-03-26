@@ -5,7 +5,7 @@ import type {Props} from '@theme/CodeBlock/Buttons/Button';
 export default function CodeBlockButton({
   className,
   ...props
-}: Props): ReactNode {
+}: Readonly<Props>): ReactNode {
   return (
     <button type="button" {...props} className={clsx('clean-btn', className)} />
   );

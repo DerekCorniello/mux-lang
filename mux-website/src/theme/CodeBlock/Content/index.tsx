@@ -47,7 +47,7 @@ function Code(props: ComponentProps<'code'>) {
 
 export default function CodeBlockContent({
   className: classNameProp,
-}: Props): ReactNode {
+}: Readonly<Props>): ReactNode {
   const {metadata, wordWrap} = useCodeBlockContext();
   const prismTheme = usePrismTheme();
   const {code, language, lineNumbersStart, lineClassNames} = metadata;

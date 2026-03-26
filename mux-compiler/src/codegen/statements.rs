@@ -460,6 +460,411 @@ impl<'a> CodeGenerator<'a> {
 
         Ok(())
     }
+
+    fn generate_auto_decl_statement(
+        &mut self,
+        name: &str,
+        expr: &ExpressionNode,
+        function: Option<&FunctionValue<'a>>,
+    ) -> Result<(), String> {
+        let value = self.generate_expression(expr)?;
+        let resolved_type = self
+            .resolve_expression_type_with_fallback(expr)
+            .map_err(|e| format!("Failed to get type for {}: {}", name, e))?;
+        let concrete_type = self
+            .resolve_type(&resolved_type)
+            .unwrap_or_else(|_| resolved_type.clone());
+        let var_type = value.get_type();
+        self.declare_variable(name, var_type, value, &concrete_type, function)
+    }
+
+    fn generate_typed_decl_statement(
+        &mut self,
+        name: &str,
+        type_node: &crate::ast::TypeNode,
+        expr: &ExpressionNode,
+        function: Option<&FunctionValue<'a>>,
+    ) -> Result<(), String> {
+        let var_type = self.llvm_type_from_mux_type(type_node)?;
+        let value = self.generate_expression(expr)?;
+        let resolved_type = self
+            .analyzer
+            .resolve_type(type_node)
+            .map_err(|e| format!("Failed to resolve type for {}: {}", name, e.message))?;
+        self.declare_variable(name, var_type, value, &resolved_type, function)
+    }
+
+    fn generate_const_decl_statement(
+        &mut self,
+        name: &str,
+        expr: &ExpressionNode,
+        function: Option<&FunctionValue<'a>>,
+    ) -> Result<(), String> {
+        let value = self.generate_expression(expr)?;
+        let boxed = self.box_value(value);
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let resolved_type = self
+            .resolve_expression_type_with_fallback(expr)
+            .map_err(|e| format!("Failed to get type for {}: {}", name, e))?;
+        let existing_ptr = self.variables.get(name).map(|(p, _, _)| *p);
+        if let Some(existing_ptr) = existing_ptr {
+            self.builder
+                .build_store(existing_ptr, boxed)
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+
+        let alloca = if let Some(func) = function {
+            self.create_entry_block_alloca(*func, ptr_type.into(), name)?
+        } else {
+            self.builder
+                .build_alloca(ptr_type, name)
+                .map_err(|e| e.to_string())?
+        };
+        self.builder
+            .build_store(alloca, boxed)
+            .map_err(|e| e.to_string())?;
+        self.variables.insert(
+            name.to_string(),
+            (
+                alloca,
+                BasicTypeEnum::PointerType(ptr_type),
+                resolved_type.clone(),
+            ),
+        );
+        if function.is_some() && self.type_needs_rc_tracking(&resolved_type) {
+            self.track_rc_variable(name, alloca);
+        }
+
+        Ok(())
+    }
+
+    fn try_generate_bool_literal_return(&mut self, expr: &ExpressionNode) -> Result<bool, String> {
+        if let ExpressionKind::Literal(LiteralNode::Boolean(b)) = &expr.kind
+            && let Some(ResolvedType::Primitive(PrimitiveType::Bool)) =
+                &self.current_function_return_type
+        {
+            self.generate_all_scopes_cleanup()?;
+            let bool_val = self
+                .context
+                .bool_type()
+                .const_int(if *b { 1 } else { 0 }, false);
+            self.builder
+                .build_return(Some(&bool_val))
+                .map_err(|e| e.to_string())?;
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    fn return_int_value(&mut self, value: BasicValueEnum<'a>) -> Result<(), String> {
+        let raw_int = self.get_raw_int_value(value)?;
+        self.generate_all_scopes_cleanup()?;
+        self.builder
+            .build_return(Some(&raw_int))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn return_float_value(&mut self, value: BasicValueEnum<'a>) -> Result<(), String> {
+        let raw_float = self.get_raw_float_value(value)?;
+        self.generate_all_scopes_cleanup()?;
+        self.builder
+            .build_return(Some(&raw_float))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn return_bool_int_value(
+        &mut self,
+        int_val: inkwell::values::IntValue<'a>,
+    ) -> Result<(), String> {
+        self.generate_all_scopes_cleanup()?;
+        if int_val.get_type().get_bit_width() == 1 {
+            self.builder
+                .build_return(Some(&int_val))
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+
+        let bool_val = self
+            .builder
+            .build_int_truncate(int_val, self.context.bool_type(), "int_to_i1")
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_return(Some(&bool_val))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn return_bool_ptr_value(
+        &mut self,
+        ptr: inkwell::values::PointerValue<'a>,
+    ) -> Result<(), String> {
+        let get_bool_fn = self
+            .module
+            .get_function("mux_value_get_bool")
+            .ok_or("mux_value_get_bool not found")?;
+        let result = self
+            .builder
+            .build_call(get_bool_fn, &[ptr.into()], "get_bool")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("Call returned no value")?;
+        self.generate_all_scopes_cleanup()?;
+        let bool_val = self
+            .builder
+            .build_int_truncate(
+                result.into_int_value(),
+                self.context.bool_type(),
+                "i32_to_i1",
+            )
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_return(Some(&bool_val))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn return_bool_value(&mut self, value: BasicValueEnum<'a>) -> Result<(), String> {
+        if value.is_int_value() {
+            return self.return_bool_int_value(value.into_int_value());
+        }
+        if value.is_pointer_value() {
+            return self.return_bool_ptr_value(value.into_pointer_value());
+        }
+        Err("Expected bool value or pointer".to_string())
+    }
+
+    fn return_list_value(&mut self, value: BasicValueEnum<'a>) -> Result<(), String> {
+        if !value.is_pointer_value() {
+            return Err("Expected pointer value for list return".to_string());
+        }
+        self.rc_inc_if_pointer(value)?;
+        self.generate_all_scopes_cleanup()?;
+        self.builder
+            .build_return(Some(&value))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn return_boxed_complex_value(&mut self, value: BasicValueEnum<'a>) -> Result<(), String> {
+        let boxed = match value {
+            BasicValueEnum::PointerValue(_) => value,
+            _ => self.box_value(value).into(),
+        };
+        self.rc_inc_if_pointer(boxed)?;
+        self.generate_all_scopes_cleanup()?;
+        self.builder
+            .build_return(Some(&boxed))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn generate_typed_return(
+        &mut self,
+        return_type: ResolvedType,
+        value: BasicValueEnum<'a>,
+    ) -> Result<(), String> {
+        match return_type {
+            ResolvedType::Primitive(PrimitiveType::Int) => self.return_int_value(value),
+            ResolvedType::Primitive(PrimitiveType::Float) => self.return_float_value(value),
+            ResolvedType::Primitive(PrimitiveType::Bool) => self.return_bool_value(value),
+            ResolvedType::List(_) => self.return_list_value(value),
+            _ => self.return_boxed_complex_value(value),
+        }
+    }
+
+    fn generate_return_with_value(&mut self, expr: &ExpressionNode) -> Result<(), String> {
+        if self.try_generate_bool_literal_return(expr)? {
+            return Ok(());
+        }
+
+        let value = self.generate_expression(expr)?;
+        if let Some(return_type) = self.current_function_return_type.clone() {
+            return self.generate_typed_return(return_type, value);
+        }
+
+        let boxed = self.box_value(value);
+        self.rc_inc_if_pointer(boxed.into())?;
+        self.generate_all_scopes_cleanup()?;
+        self.builder
+            .build_return(Some(&boxed))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn generate_if_statement(
+        &mut self,
+        function: &FunctionValue<'a>,
+        cond: &ExpressionNode,
+        then_block: &[StatementNode],
+        else_block: &Option<Vec<StatementNode>>,
+    ) -> Result<(), String> {
+        let cond_val = self.generate_expression(cond)?;
+        let cond_int = cond_val.into_int_value();
+        let if_id = self.label_counter;
+        self.label_counter += 1;
+        let then_bb = self
+            .context
+            .append_basic_block(*function, &format!("if_then_{}", if_id));
+        let else_bb = self
+            .context
+            .append_basic_block(*function, &format!("if_else_{}", if_id));
+        let then_ends_with_return = then_block
+            .last()
+            .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)));
+        let else_ends_with_return = if let Some(else_stmts) = else_block {
+            else_stmts
+                .last()
+                .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)))
+        } else {
+            false
+        };
+        let needs_merge = !then_ends_with_return || !else_ends_with_return;
+        let merge_bb = if needs_merge {
+            Some(
+                self.context
+                    .append_basic_block(*function, &format!("if_merge_{}", if_id)),
+            )
+        } else {
+            None
+        };
+        self.builder
+            .build_conditional_branch(cond_int, then_bb, else_bb)
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(then_bb);
+        for stmt in then_block {
+            self.generate_statement(stmt, Some(function))?;
+        }
+        if !then_ends_with_return && let Some(merge_bb) = merge_bb {
+            self.builder
+                .build_unconditional_branch(merge_bb)
+                .map_err(|e| e.to_string())?;
+        }
+
+        self.builder.position_at_end(else_bb);
+        if let Some(else_stmts) = else_block {
+            for stmt in else_stmts {
+                self.generate_statement(stmt, Some(function))?;
+            }
+        }
+        if !else_ends_with_return && let Some(merge_bb) = merge_bb {
+            self.builder
+                .build_unconditional_branch(merge_bb)
+                .map_err(|e| e.to_string())?;
+        }
+
+        if let Some(merge_bb) = merge_bb {
+            self.builder.position_at_end(merge_bb);
+        }
+
+        Ok(())
+    }
+
+    fn generate_while_statement(
+        &mut self,
+        function: &FunctionValue<'a>,
+        cond: &ExpressionNode,
+        body: &[StatementNode],
+    ) -> Result<(), String> {
+        let header_bb = self.context.append_basic_block(*function, "while_header");
+        let body_bb = self.context.append_basic_block(*function, "while_body");
+        let exit_bb = self.context.append_basic_block(*function, "while_exit");
+        self.builder
+            .build_unconditional_branch(header_bb)
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(header_bb);
+        let cond_val = self.generate_expression(cond)?;
+        let cond_int = cond_val.into_int_value();
+        self.builder
+            .build_conditional_branch(cond_int, body_bb, exit_bb)
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(body_bb);
+        for stmt in body {
+            self.generate_statement(stmt, Some(function))?;
+        }
+        self.builder
+            .build_unconditional_branch(header_bb)
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(exit_bb);
+        Ok(())
+    }
+
+    fn generate_nested_function_statement(
+        &mut self,
+        func: &crate::ast::FunctionNode,
+        function: Option<&FunctionValue<'a>>,
+    ) -> Result<(), String> {
+        let parent_name = self
+            .current_function_name
+            .as_ref()
+            .ok_or("Nested function outside of parent function")?;
+        let mangled_name = format!("{}!{}", parent_name, func.name);
+
+        self.function_nodes
+            .insert(mangled_name.clone(), func.clone());
+
+        if !self.functions.contains_key(&mangled_name) {
+            let saved_insert_block = self.builder.get_insert_block();
+
+            let return_type = self
+                .analyzer
+                .resolve_type(&func.return_type)
+                .map_err(|e| e.to_string())?;
+            let llvm_return_type = if matches!(return_type, Type::Void) {
+                None
+            } else {
+                Some(self.llvm_type_from_mux_type(&func.return_type)?)
+            };
+
+            let mut param_types = vec![];
+            for param in &func.params {
+                param_types.push(self.llvm_type_from_mux_type(&param.type_)?.into());
+            }
+
+            let fn_type = if let Some(ret_type) = llvm_return_type {
+                ret_type.fn_type(&param_types, false)
+            } else {
+                self.context.void_type().fn_type(&param_types, false)
+            };
+
+            let declared_function = self.module.add_function(&mangled_name, fn_type, None);
+            self.functions
+                .insert(mangled_name.clone(), declared_function);
+
+            if let Some(block) = saved_insert_block {
+                self.builder.position_at_end(block);
+            }
+        }
+
+        let saved_function_name = self.current_function_name.clone();
+        let saved_function_return_type = self.current_function_return_type.clone();
+        let saved_variables = self.variables.clone();
+
+        let mut mangled_func = func.clone();
+        mangled_func.name = mangled_name.clone();
+        self.generate_function(&mangled_func)?;
+
+        self.current_function_name = saved_function_name;
+        self.current_function_return_type = saved_function_return_type;
+        self.variables = saved_variables;
+
+        if let Some(current_fn) = function
+            && let Some(block) = current_fn.get_last_basic_block()
+        {
+            self.builder.position_at_end(block);
+        }
+
+        Ok(())
+    }
+
     pub(super) fn generate_statement(
         &mut self,
         stmt: &StatementNode,
@@ -467,200 +872,18 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<(), String> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
-                let value = self.generate_expression(expr)?;
-                let resolved_type = self
-                    .resolve_expression_type_with_fallback(expr)
-                    .map_err(|e| format!("Failed to get type for {}: {}", name, e))?;
-                let concrete_type = self
-                    .resolve_type(&resolved_type)
-                    .unwrap_or_else(|_| resolved_type.clone());
-                let var_type = value.get_type();
-                self.declare_variable(name, var_type, value, &concrete_type, function)?;
+                self.generate_auto_decl_statement(name, expr, function)?;
             }
             StatementKind::TypedDecl(name, type_node, expr) => {
-                let var_type = self.llvm_type_from_mux_type(type_node)?;
-                let value = self.generate_expression(expr)?;
-                let resolved_type = self
-                    .analyzer
-                    .resolve_type(type_node)
-                    .map_err(|e| format!("Failed to resolve type for {}: {}", name, e.message))?;
-                self.declare_variable(name, var_type, value, &resolved_type, function)?;
+                self.generate_typed_decl_statement(name, type_node, expr, function)?;
             }
             StatementKind::ConstDecl(name, _, expr) => {
-                let value = self.generate_expression(expr)?;
-                let boxed = self.box_value(value);
-                let ptr_type = self.context.ptr_type(AddressSpace::default());
-                let resolved_type = self
-                    .resolve_expression_type_with_fallback(expr)
-                    .map_err(|e| format!("Failed to get type for {}: {}", name, e))?;
-                let existing_ptr = self.variables.get(name).map(|(p, _, _)| *p);
-                if let Some(existing_ptr) = existing_ptr {
-                    self.builder
-                        .build_store(existing_ptr, boxed)
-                        .map_err(|e| e.to_string())?;
-                } else {
-                    let alloca = if let Some(func) = function {
-                        self.create_entry_block_alloca(*func, ptr_type.into(), name)?
-                    } else {
-                        self.builder
-                            .build_alloca(ptr_type, name)
-                            .map_err(|e| e.to_string())?
-                    };
-                    self.builder
-                        .build_store(alloca, boxed)
-                        .map_err(|e| e.to_string())?;
-                    self.variables.insert(
-                        name.to_string(),
-                        (
-                            alloca,
-                            BasicTypeEnum::PointerType(ptr_type),
-                            resolved_type.clone(),
-                        ),
-                    );
-                    if function.is_some() && self.type_needs_rc_tracking(&resolved_type) {
-                        self.track_rc_variable(name, alloca);
-                    }
-                }
+                self.generate_const_decl_statement(name, expr, function)?;
             }
             StatementKind::Return(Some(expr)) => {
-                // special handling for boolean literals in boolean functions
-                if let ExpressionKind::Literal(LiteralNode::Boolean(b)) = &expr.kind
-                    && let Some(ResolvedType::Primitive(PrimitiveType::Bool)) =
-                        &self.current_function_return_type
-                {
-                    // Generate cleanup before returning bool literal
-                    self.generate_all_scopes_cleanup()?;
-                    // return boolean literal directly as i1
-                    let bool_val = self
-                        .context
-                        .bool_type()
-                        .const_int(if *b { 1 } else { 0 }, false);
-                    self.builder
-                        .build_return(Some(&bool_val))
-                        .map_err(|e| e.to_string())?;
-                    return Ok(());
-                }
-                let value = self.generate_expression(expr)?;
-                // check if we need to return raw primitive or boxed value
-                if let Some(return_type) = &self.current_function_return_type {
-                    match return_type {
-                        ResolvedType::Primitive(PrimitiveType::Int) => {
-                            // for int, unbox if necessary
-                            let raw_int = self.get_raw_int_value(value)?;
-                            // Cleanup before return (int is unboxed, cleanup frees the box)
-                            self.generate_all_scopes_cleanup()?;
-                            self.builder
-                                .build_return(Some(&raw_int))
-                                .map_err(|e| e.to_string())?;
-                        }
-                        ResolvedType::Primitive(PrimitiveType::Float) => {
-                            // for float, unbox if necessary
-                            let raw_float = self.get_raw_float_value(value)?;
-                            // Cleanup before return (float is unboxed, cleanup frees the box)
-                            self.generate_all_scopes_cleanup()?;
-                            self.builder
-                                .build_return(Some(&raw_float))
-                                .map_err(|e| e.to_string())?;
-                        }
-                        ResolvedType::Primitive(PrimitiveType::Bool) => {
-                            // for bool, unbox if necessary and return i1
-                            if value.is_int_value() {
-                                let int_val = value.into_int_value();
-                                // Cleanup before return
-                                self.generate_all_scopes_cleanup()?;
-                                // check if we need to truncate i32/i64 to i1
-                                if int_val.get_type().get_bit_width() == 1 {
-                                    // already i1, return directly
-                                    self.builder
-                                        .build_return(Some(&int_val))
-                                        .map_err(|e| e.to_string())?;
-                                } else {
-                                    // truncate i32/i64 to i1
-                                    let bool_val = self
-                                        .builder
-                                        .build_int_truncate(
-                                            int_val,
-                                            self.context.bool_type(),
-                                            "int_to_i1",
-                                        )
-                                        .map_err(|e| e.to_string())?;
-                                    self.builder
-                                        .build_return(Some(&bool_val))
-                                        .map_err(|e| e.to_string())?;
-                                }
-                            } else if value.is_pointer_value() {
-                                // extract from boxed value
-                                let ptr = value.into_pointer_value();
-                                let get_bool_fn = self
-                                    .module
-                                    .get_function("mux_value_get_bool")
-                                    .ok_or("mux_value_get_bool not found")?;
-                                let result = self
-                                    .builder
-                                    .build_call(get_bool_fn, &[ptr.into()], "get_bool")
-                                    .map_err(|e| e.to_string())?
-                                    .try_as_basic_value()
-                                    .left()
-                                    .ok_or("Call returned no value")?;
-                                // Cleanup before return (bool is unboxed)
-                                self.generate_all_scopes_cleanup()?;
-                                // convert i32 to i1 for return
-                                let bool_val = self
-                                    .builder
-                                    .build_int_truncate(
-                                        result.into_int_value(),
-                                        self.context.bool_type(),
-                                        "i32_to_i1",
-                                    )
-                                    .map_err(|e| e.to_string())?;
-                                self.builder
-                                    .build_return(Some(&bool_val))
-                                    .map_err(|e| e.to_string())?;
-                            } else {
-                                return Err("Expected bool value or pointer".to_string());
-                            }
-                        }
-                        ResolvedType::List(_) => {
-                            // for list types, return the wrapped Value* directly
-                            // the function signature should expect wrapped pointers for lists
-                            if value.is_pointer_value() {
-                                // Increment RC before cleanup since we're returning a pointer
-                                self.rc_inc_if_pointer(value)?;
-                                self.generate_all_scopes_cleanup()?;
-                                self.builder
-                                    .build_return(Some(&value))
-                                    .map_err(|e| e.to_string())?;
-                            } else {
-                                return Err("Expected pointer value for list return".to_string());
-                            }
-                        }
-                        _ => {
-                            // for complex types, ensure it's boxed
-                            let boxed = match value {
-                                BasicValueEnum::PointerValue(_) => value, // already boxed
-                                _ => self.box_value(value).into(), // box it and convert to BasicValueEnum
-                            };
-                            // Increment RC before cleanup since we're returning a pointer
-                            self.rc_inc_if_pointer(boxed)?;
-                            self.generate_all_scopes_cleanup()?;
-                            self.builder
-                                .build_return(Some(&boxed))
-                                .map_err(|e| e.to_string())?;
-                        }
-                    }
-                } else {
-                    // fallback: assume boxed
-                    let boxed = self.box_value(value);
-                    // Increment RC before cleanup since we're returning a pointer
-                    self.rc_inc_if_pointer(boxed.into())?;
-                    self.generate_all_scopes_cleanup()?;
-                    self.builder
-                        .build_return(Some(&boxed))
-                        .map_err(|e| e.to_string())?;
-                }
+                self.generate_return_with_value(expr)?;
             }
             StatementKind::Return(None) => {
-                // Cleanup before void return
                 self.generate_all_scopes_cleanup()?;
                 self.builder.build_return(None).map_err(|e| e.to_string())?;
             }
@@ -670,91 +893,11 @@ impl<'a> CodeGenerator<'a> {
                 else_block,
             } => {
                 let function = function.ok_or("If statement not in function")?;
-                let cond_val = self.generate_expression(cond)?;
-                let cond_int = cond_val.into_int_value();
-                let if_id = self.label_counter;
-                self.label_counter += 1;
-                let then_bb = self
-                    .context
-                    .append_basic_block(*function, &format!("if_then_{}", if_id));
-                let else_bb = self
-                    .context
-                    .append_basic_block(*function, &format!("if_else_{}", if_id));
-                // check if we need a merge block
-                let then_ends_with_return = then_block
-                    .last()
-                    .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)));
-                let else_ends_with_return = if let Some(else_stmts) = &else_block {
-                    else_stmts
-                        .last()
-                        .is_some_and(|s| matches!(s.kind, StatementKind::Return(_)))
-                } else {
-                    false
-                };
-                let needs_merge = !then_ends_with_return || !else_ends_with_return;
-                let merge_bb = if needs_merge {
-                    Some(
-                        self.context
-                            .append_basic_block(*function, &format!("if_merge_{}", if_id)),
-                    )
-                } else {
-                    None
-                };
-                self.builder
-                    .build_conditional_branch(cond_int, then_bb, else_bb)
-                    .map_err(|e| e.to_string())?;
-                // then block
-                self.builder.position_at_end(then_bb);
-                for stmt in then_block {
-                    self.generate_statement(stmt, Some(function))?;
-                }
-                if !then_ends_with_return && let Some(merge_bb) = merge_bb {
-                    self.builder
-                        .build_unconditional_branch(merge_bb)
-                        .map_err(|e| e.to_string())?;
-                }
-                // else block
-                self.builder.position_at_end(else_bb);
-                if let Some(else_stmts) = else_block {
-                    for stmt in else_stmts {
-                        self.generate_statement(stmt, Some(function))?;
-                    }
-                }
-                if !else_ends_with_return && let Some(merge_bb) = merge_bb {
-                    self.builder
-                        .build_unconditional_branch(merge_bb)
-                        .map_err(|e| e.to_string())?;
-                }
-                // merge
-                if let Some(merge_bb) = merge_bb {
-                    self.builder.position_at_end(merge_bb);
-                }
+                self.generate_if_statement(function, cond, then_block, else_block)?;
             }
             StatementKind::While { cond, body } => {
                 let function = function.ok_or("While statement not in function")?;
-                let header_bb = self.context.append_basic_block(*function, "while_header");
-                let body_bb = self.context.append_basic_block(*function, "while_body");
-                let exit_bb = self.context.append_basic_block(*function, "while_exit");
-                self.builder
-                    .build_unconditional_branch(header_bb)
-                    .map_err(|e| e.to_string())?;
-                // header
-                self.builder.position_at_end(header_bb);
-                let cond_val = self.generate_expression(cond)?;
-                let cond_int = cond_val.into_int_value();
-                self.builder
-                    .build_conditional_branch(cond_int, body_bb, exit_bb)
-                    .map_err(|e| e.to_string())?;
-                // body
-                self.builder.position_at_end(body_bb);
-                for stmt in body {
-                    self.generate_statement(stmt, Some(function))?;
-                }
-                self.builder
-                    .build_unconditional_branch(header_bb)
-                    .map_err(|e| e.to_string())?;
-                // exit
-                self.builder.position_at_end(exit_bb);
+                self.generate_while_statement(function, cond, body)?;
             }
             StatementKind::For {
                 var,
@@ -773,77 +916,7 @@ impl<'a> CodeGenerator<'a> {
                 self.generate_expression(expr)?;
             }
             StatementKind::Function(func) => {
-                // Generate nested function with mangled name
-                let parent_name = self
-                    .current_function_name
-                    .as_ref()
-                    .ok_or("Nested function outside of parent function")?;
-                let mangled_name = format!("{}!{}", parent_name, func.name);
-
-                // Store the original function node with its mangled name
-                self.function_nodes
-                    .insert(mangled_name.clone(), func.clone());
-
-                // Declare the function if not already declared
-                if !self.functions.contains_key(&mangled_name) {
-                    // Save current builder position
-                    let saved_insert_block = self.builder.get_insert_block();
-
-                    // Declare the function
-                    let return_type = self
-                        .analyzer
-                        .resolve_type(&func.return_type)
-                        .map_err(|e| e.to_string())?;
-                    let llvm_return_type = if matches!(return_type, Type::Void) {
-                        None
-                    } else {
-                        Some(self.llvm_type_from_mux_type(&func.return_type)?)
-                    };
-
-                    let mut param_types = vec![];
-                    for param in &func.params {
-                        param_types.push(self.llvm_type_from_mux_type(&param.type_)?.into());
-                    }
-
-                    let fn_type = if let Some(ret_type) = llvm_return_type {
-                        ret_type.fn_type(&param_types, false)
-                    } else {
-                        self.context.void_type().fn_type(&param_types, false)
-                    };
-
-                    let function = self.module.add_function(&mangled_name, fn_type, None);
-                    self.functions.insert(mangled_name.clone(), function);
-
-                    // Restore builder position
-                    if let Some(block) = saved_insert_block {
-                        self.builder.position_at_end(block);
-                    }
-                }
-
-                // Generate the function body
-                // Save current context
-                let saved_function_name = self.current_function_name.clone();
-                let saved_function_return_type = self.current_function_return_type.clone();
-                let saved_variables = self.variables.clone();
-
-                // Create a modified function node with the mangled name for generation
-                let mut mangled_func = func.clone();
-                mangled_func.name = mangled_name.clone();
-
-                // Generate the function
-                self.generate_function(&mangled_func)?;
-
-                // Restore context
-                self.current_function_name = saved_function_name;
-                self.current_function_return_type = saved_function_return_type;
-                self.variables = saved_variables;
-
-                // Re-position builder to the correct block after generating nested function
-                if let Some(current_fn) = function
-                    && let Some(block) = current_fn.get_last_basic_block()
-                {
-                    self.builder.position_at_end(block);
-                }
+                self.generate_nested_function_statement(func, function)?;
             }
             _ => {} // skip other statement types for now
         }
@@ -1127,6 +1200,317 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    fn enum_expr_ptr_for_payload_access(
+        &mut self,
+        enum_name: &str,
+        expr_val: BasicValueEnum<'a>,
+    ) -> Result<Option<inkwell::values::PointerValue<'a>>, String> {
+        if enum_name != "optional" && enum_name != "result" {
+            return Ok(None);
+        }
+
+        if expr_val.is_pointer_value() {
+            return Ok(Some(expr_val.into_pointer_value()));
+        }
+
+        let struct_val = expr_val.into_struct_value();
+        let alloca = self
+            .builder
+            .build_alloca(struct_val.get_type(), "temp_enum")
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(alloca, struct_val)
+            .map_err(|e| e.to_string())?;
+        Ok(Some(alloca))
+    }
+
+    fn enum_temp_struct_ptr(
+        &mut self,
+        enum_name: &str,
+        expr_val: BasicValueEnum<'a>,
+    ) -> Result<Option<inkwell::values::PointerValue<'a>>, String> {
+        if expr_val.is_pointer_value() {
+            return Ok(Some(expr_val.into_pointer_value()));
+        }
+
+        let struct_type = self
+            .type_map
+            .get(enum_name)
+            .ok_or_else(|| format!("Enum {} not found in type map", enum_name))?
+            .into_struct_type();
+        let temp_ptr = self
+            .builder
+            .build_alloca(struct_type, "temp_enum_struct")
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(temp_ptr, expr_val)
+            .map_err(|e| e.to_string())?;
+        Ok(Some(temp_ptr))
+    }
+
+    fn enum_pattern_matches(
+        &mut self,
+        enum_name: &str,
+        discriminant: inkwell::values::IntValue<'a>,
+        pattern: &PatternNode,
+    ) -> Result<inkwell::values::IntValue<'a>, String> {
+        match pattern {
+            PatternNode::EnumVariant { name, args: _ } => {
+                let variant_index = self.get_variant_index(enum_name, name)?;
+                self.build_discriminant_comparison(discriminant, variant_index)
+            }
+            PatternNode::Identifier(_)
+            | PatternNode::Literal(_)
+            | PatternNode::Wildcard
+            | PatternNode::List { .. } => Ok(self.context.bool_type().const_int(1, false)),
+        }
+    }
+
+    fn bind_builtin_enum_variant_args(
+        &mut self,
+        enum_name: &str,
+        variant_name: &str,
+        args: &[PatternNode],
+        expr_ptr: inkwell::values::PointerValue<'a>,
+        match_expr_type: &Type,
+    ) -> Result<(), String> {
+        if !matches!(variant_name, "some" | "ok" | "err") || args.is_empty() {
+            return Ok(());
+        }
+
+        let PatternNode::Identifier(var) = &args[0] else {
+            return Ok(());
+        };
+
+        let data_func = self.enum_data_function_name(enum_name)?;
+
+        let func = self
+            .module
+            .get_function(data_func)
+            .ok_or(format!("{} not found", data_func))?;
+        let data_call = self
+            .builder
+            .build_call(func, &[expr_ptr.into()], "data_call")
+            .map_err(|e| e.to_string())?;
+        let data_ptr = data_call
+            .try_as_basic_value()
+            .left()
+            .expect("data function should return a basic value")
+            .into_pointer_value();
+
+        let (data_val, resolved_type) = self.extract_builtin_enum_variant_value(
+            enum_name,
+            variant_name,
+            match_expr_type,
+            data_ptr,
+        )?;
+
+        let boxed = self.box_value(data_val);
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let alloca = self.create_entry_alloca(ptr_type.into(), var)?;
+        self.builder
+            .build_store(alloca, boxed)
+            .map_err(|e| e.to_string())?;
+
+        self.variables
+            .insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
+        Ok(())
+    }
+
+    fn enum_data_function_name(&self, enum_name: &str) -> Result<&'static str, String> {
+        match enum_name {
+            "optional" => Ok("mux_optional_data"),
+            "result" => Ok("mux_result_data"),
+            _ => Err(format!("Unknown enum {}", enum_name)),
+        }
+    }
+
+    fn extract_builtin_enum_variant_value(
+        &mut self,
+        enum_name: &str,
+        variant_name: &str,
+        match_expr_type: &Type,
+        data_ptr: inkwell::values::PointerValue<'a>,
+    ) -> Result<(BasicValueEnum<'a>, Type), String> {
+        if enum_name == "optional" {
+            return self.extract_optional_variant_value(match_expr_type, data_ptr);
+        }
+        if enum_name == "result" {
+            return self.extract_result_variant_value(variant_name, match_expr_type, data_ptr);
+        }
+        Err(format!("Unknown enum {}", enum_name))
+    }
+
+    fn extract_optional_variant_value(
+        &mut self,
+        match_expr_type: &Type,
+        data_ptr: inkwell::values::PointerValue<'a>,
+    ) -> Result<(BasicValueEnum<'a>, Type), String> {
+        if let Type::Optional(inner_type) = match_expr_type {
+            return self.extract_value_from_ptr(data_ptr, inner_type, "some");
+        }
+        Err(format!(
+            "Type mismatch: expected Optional, got {:?}",
+            match_expr_type
+        ))
+    }
+
+    fn extract_result_variant_value(
+        &mut self,
+        variant_name: &str,
+        match_expr_type: &Type,
+        data_ptr: inkwell::values::PointerValue<'a>,
+    ) -> Result<(BasicValueEnum<'a>, Type), String> {
+        if let Type::Result(ok_type, err_type) = match_expr_type {
+            let (target_type, variant) = if variant_name == "ok" {
+                (ok_type, "ok")
+            } else {
+                (err_type, "err")
+            };
+            return self.extract_value_from_ptr(data_ptr, target_type, variant);
+        }
+        Err(format!(
+            "Type mismatch: expected Result, got {:?}",
+            match_expr_type
+        ))
+    }
+
+    fn bind_custom_enum_variant_args(
+        &mut self,
+        enum_name: &str,
+        variant_name: &str,
+        args: &[PatternNode],
+        temp_ptr: inkwell::values::PointerValue<'a>,
+    ) -> Result<(), String> {
+        let struct_type = self
+            .type_map
+            .get(enum_name)
+            .ok_or_else(|| format!("Enum {} not found in type map", enum_name))?
+            .into_struct_type();
+
+        let field_types_clone = self.variant_field_types(enum_name, variant_name)?;
+
+        for (i, arg) in args.iter().enumerate() {
+            if let PatternNode::Identifier(var) = arg {
+                let data_index = i + 1;
+                let data_ptr = self
+                    .builder
+                    .build_struct_gep(struct_type, temp_ptr, data_index as u32, "data_ptr")
+                    .map_err(|e| e.to_string())?;
+
+                let field_type: BasicTypeEnum<'_> =
+                    self.variant_field_llvm_type(enum_name, variant_name, &field_types_clone, i)?;
+
+                let data_val = self
+                    .builder
+                    .build_load(field_type, data_ptr, "data")
+                    .map_err(|e| e.to_string())?;
+                let boxed = self.box_value(data_val);
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let alloca = self
+                    .builder
+                    .build_alloca(ptr_type, var)
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(alloca, boxed)
+                    .map_err(|e| e.to_string())?;
+
+                let resolved_type = self.variant_field_resolved_type(
+                    enum_name,
+                    variant_name,
+                    &field_types_clone,
+                    i,
+                )?;
+
+                self.variables
+                    .insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn variant_field_types(
+        &self,
+        enum_name: &str,
+        variant_name: &str,
+    ) -> Result<Vec<crate::ast::TypeNode>, String> {
+        let variant_fields = self
+            .enum_variant_fields
+            .get(enum_name)
+            .ok_or_else(|| format!("No field information found for enum {}", enum_name))?;
+        variant_fields
+            .get(variant_name)
+            .cloned()
+            .ok_or_else(|| format!("Variant {} not found in enum {}", variant_name, enum_name))
+    }
+
+    fn variant_field_llvm_type(
+        &self,
+        enum_name: &str,
+        variant_name: &str,
+        field_types: &[crate::ast::TypeNode],
+        index: usize,
+    ) -> Result<BasicTypeEnum<'a>, String> {
+        if index >= field_types.len() {
+            return Err(format!(
+                "Field index {} out of bounds for enum variant {}.{} (has {} fields)",
+                index,
+                enum_name,
+                variant_name,
+                field_types.len()
+            ));
+        }
+        self.type_kind_to_llvm_type(&field_types[index].kind)
+    }
+
+    fn variant_field_resolved_type(
+        &mut self,
+        enum_name: &str,
+        variant_name: &str,
+        field_types: &[crate::ast::TypeNode],
+        index: usize,
+    ) -> Result<Type, String> {
+        if index >= field_types.len() {
+            return Err(format!(
+                "Field index {} out of bounds for enum variant {}.{} during type resolution (has {} fields)",
+                index,
+                enum_name,
+                variant_name,
+                field_types.len()
+            ));
+        }
+        self.analyzer
+            .resolve_type(&field_types[index])
+            .map_err(|e| e.to_string())
+    }
+
+    fn bind_enum_arm_variables(
+        &mut self,
+        arm: &crate::ast::MatchArm,
+        enum_name: &str,
+        match_expr_type: &Type,
+        expr_ptr_opt: Option<inkwell::values::PointerValue<'a>>,
+        temp_ptr_opt: Option<inkwell::values::PointerValue<'a>>,
+    ) -> Result<(), String> {
+        let PatternNode::EnumVariant { name, args } = &arm.pattern else {
+            return Ok(());
+        };
+
+        if let Some(expr_ptr) = expr_ptr_opt {
+            return self.bind_builtin_enum_variant_args(
+                enum_name,
+                name,
+                args,
+                expr_ptr,
+                match_expr_type,
+            );
+        }
+
+        let temp_ptr = temp_ptr_opt.ok_or_else(|| "Temp pointer should be Some".to_string())?;
+        self.bind_custom_enum_variant_args(enum_name, name, args, temp_ptr)
+    }
+
     /// Generate match code for enum types using discriminant-based comparison.
     fn generate_enum_match(
         &mut self,
@@ -1137,44 +1521,10 @@ impl<'a> CodeGenerator<'a> {
         arms: &[crate::ast::MatchArm],
     ) -> Result<(), String> {
         let enum_name = self.resolve_enum_match_name(match_expr)?;
-
-        let expr_ptr_opt = if enum_name == "optional" || enum_name == "result" {
-            if expr_val.is_pointer_value() {
-                Some(expr_val.into_pointer_value())
-            } else {
-                let struct_val = expr_val.into_struct_value();
-                let alloca = self
-                    .builder
-                    .build_alloca(struct_val.get_type(), "temp_enum")
-                    .map_err(|e| e.to_string())?;
-                self.builder
-                    .build_store(alloca, struct_val)
-                    .map_err(|e| e.to_string())?;
-                Some(alloca)
-            }
-        } else {
-            None
-        };
+        let expr_ptr_opt = self.enum_expr_ptr_for_payload_access(&enum_name, expr_val)?;
 
         let discriminant = self.load_enum_discriminant(&enum_name, expr_val)?;
-
-        let temp_ptr_opt = if expr_val.is_pointer_value() {
-            Some(expr_val.into_pointer_value())
-        } else {
-            let struct_type = self
-                .type_map
-                .get(&enum_name)
-                .ok_or_else(|| format!("Enum {} not found in type map", enum_name))?
-                .into_struct_type();
-            let temp_ptr = self
-                .builder
-                .build_alloca(struct_type, "temp_enum_struct")
-                .map_err(|e| e.to_string())?;
-            self.builder
-                .build_store(temp_ptr, expr_val)
-                .map_err(|e| e.to_string())?;
-            Some(temp_ptr)
-        };
+        let temp_ptr_opt = self.enum_temp_struct_ptr(&enum_name, expr_val)?;
 
         let mut current_bb = self
             .builder
@@ -1208,16 +1558,8 @@ impl<'a> CodeGenerator<'a> {
                 continue;
             }
 
-            let pattern_matches = match &arm.pattern {
-                PatternNode::EnumVariant { name, args: _ } => {
-                    let variant_index = self.get_variant_index(&enum_name, name)?;
-                    self.build_discriminant_comparison(discriminant, variant_index)?
-                }
-                PatternNode::Identifier(_) => self.context.bool_type().const_int(1, false),
-                PatternNode::Literal(_) => self.context.bool_type().const_int(1, false),
-                PatternNode::Wildcard => self.context.bool_type().const_int(1, false),
-                PatternNode::List { .. } => self.context.bool_type().const_int(1, false),
-            };
+            let pattern_matches =
+                self.enum_pattern_matches(&enum_name, discriminant, &arm.pattern)?;
 
             self.builder
                 .build_conditional_branch(pattern_matches, arm_bb, next_bb)
@@ -1225,149 +1567,13 @@ impl<'a> CodeGenerator<'a> {
 
             self.builder.position_at_end(arm_bb);
 
-            // bind variables for enum variants
-            if let PatternNode::EnumVariant { name, args } = &arm.pattern {
-                if let Some(expr_ptr) = expr_ptr_opt
-                    && (*name == "some" || *name == "ok" || *name == "err")
-                    && !args.is_empty()
-                    && let PatternNode::Identifier(var) = &args[0]
-                {
-                    let data_func = if enum_name == "optional" {
-                        "mux_optional_data"
-                    } else if enum_name == "result" {
-                        "mux_result_data"
-                    } else {
-                        return Err(format!("Unknown enum {}", enum_name));
-                    };
-                    let func = self
-                        .module
-                        .get_function(data_func)
-                        .ok_or(format!("{} not found", data_func))?;
-                    let data_call = self
-                        .builder
-                        .build_call(func, &[expr_ptr.into()], "data_call")
-                        .map_err(|e| e.to_string())?;
-                    let data_ptr = data_call
-                        .try_as_basic_value()
-                        .left()
-                        .expect("data function should return a basic value")
-                        .into_pointer_value();
-
-                    let (data_val, resolved_type) = if enum_name == "optional" {
-                        if let Type::Optional(inner_type) = match_expr_type {
-                            self.extract_value_from_ptr(data_ptr, inner_type, "some")?
-                        } else {
-                            return Err(format!(
-                                "Type mismatch: expected Optional, got {:?}",
-                                match_expr_type
-                            ));
-                        }
-                    } else if enum_name == "result" {
-                        if let Type::Result(ok_type, err_type) = match_expr_type {
-                            let target_type = if *name == "ok" { ok_type } else { err_type };
-                            let variant_name = if *name == "ok" { "ok" } else { "err" };
-                            self.extract_value_from_ptr(data_ptr, target_type, variant_name)?
-                        } else {
-                            return Err(format!(
-                                "Type mismatch: expected Result, got {:?}",
-                                match_expr_type
-                            ));
-                        }
-                    } else {
-                        return Err(format!("Unknown enum {} for value extraction", enum_name));
-                    };
-
-                    let boxed = self.box_value(data_val);
-                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let alloca = self.create_entry_alloca(ptr_type.into(), var)?;
-                    self.builder
-                        .build_store(alloca, boxed)
-                        .map_err(|e| e.to_string())?;
-
-                    self.variables
-                        .insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
-                } else if expr_ptr_opt.is_none() {
-                    // custom enum - use variant-specific field information
-                    let struct_type = self
-                        .type_map
-                        .get(&enum_name)
-                        .ok_or_else(|| format!("Enum {} not found in type map", enum_name))?
-                        .into_struct_type();
-                    let field_types_clone = if let Some(variant_fields) =
-                        self.enum_variant_fields.get(&enum_name)
-                    {
-                        if let Some(field_types) = variant_fields.get(name) {
-                            field_types.clone()
-                        } else {
-                            return Err(format!(
-                                "Variant {} not found in enum {}",
-                                name, enum_name
-                            ));
-                        }
-                    } else {
-                        return Err(format!("No field information found for enum {}", enum_name));
-                    };
-
-                    for (i, arg) in args.iter().enumerate() {
-                        if let PatternNode::Identifier(var) = arg {
-                            let data_index = i + 1;
-                            let data_ptr = self
-                                .builder
-                                .build_struct_gep(
-                                    struct_type,
-                                    temp_ptr_opt
-                                        .ok_or_else(|| "Temp pointer should be Some".to_string())?,
-                                    data_index as u32,
-                                    "data_ptr",
-                                )
-                                .map_err(|e| e.to_string())?;
-
-                            let field_type: BasicTypeEnum<'_> = if i < field_types_clone.len() {
-                                self.type_kind_to_llvm_type(&field_types_clone[i].kind)?
-                            } else {
-                                return Err(format!(
-                                    "Field index {} out of bounds for enum variant {}.{} (has {} fields)",
-                                    i,
-                                    enum_name,
-                                    name,
-                                    field_types_clone.len()
-                                ));
-                            };
-
-                            let data_val = self
-                                .builder
-                                .build_load(field_type, data_ptr, "data")
-                                .map_err(|e| e.to_string())?;
-                            let boxed = self.box_value(data_val);
-                            let ptr_type = self.context.ptr_type(AddressSpace::default());
-                            let alloca = self
-                                .builder
-                                .build_alloca(ptr_type, var)
-                                .map_err(|e| e.to_string())?;
-                            self.builder
-                                .build_store(alloca, boxed)
-                                .map_err(|e| e.to_string())?;
-
-                            let resolved_type = if i < field_types_clone.len() {
-                                self.analyzer
-                                    .resolve_type(&field_types_clone[i])
-                                    .map_err(|e| e.to_string())?
-                            } else {
-                                return Err(format!(
-                                    "Field index {} out of bounds for enum variant {}.{} during type resolution (has {} fields)",
-                                    i,
-                                    enum_name,
-                                    name,
-                                    field_types_clone.len()
-                                ));
-                            };
-
-                            self.variables
-                                .insert(var.clone(), (alloca, ptr_type.into(), resolved_type));
-                        }
-                    }
-                }
-            }
+            self.bind_enum_arm_variables(
+                arm,
+                &enum_name,
+                match_expr_type,
+                expr_ptr_opt,
+                temp_ptr_opt,
+            )?;
 
             self.emit_match_guard_and_body(function, arm, next_bb, end_bb, i)?;
 

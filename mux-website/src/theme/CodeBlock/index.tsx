@@ -113,8 +113,14 @@ export default function CodeBlock({
   const showLineNumbers = showLineNumbersProp ?? parsedMeta.showLineNumbers;
   
   const handleCopy = () => {
-    const textToCopy = typeof rawChildren === 'string' ? rawChildren : 
-                      Array.isArray(rawChildren) ? rawChildren.join('') : String(rawChildren);
+    let textToCopy = '';
+    if (typeof rawChildren === 'string') {
+      textToCopy = rawChildren;
+    } else if (Array.isArray(rawChildren)) {
+      textToCopy = rawChildren
+        .filter((child): child is string => typeof child === 'string')
+        .join('');
+    }
     navigator.clipboard.writeText(textToCopy.trimEnd());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

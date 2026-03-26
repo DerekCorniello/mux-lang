@@ -7,7 +7,7 @@ import useBrokenLinks from '@docusaurus/useBrokenLinks';
 import type {Props} from '@theme/Heading';
 import './styles.module.css';
 
-export default function Heading({as: As, id, ...props}: Props): ReactNode {
+export default function Heading({as: As, id, ...props}: Readonly<Props>): ReactNode {
   const brokenLinks = useBrokenLinks();
   const anchorTargetClassName = useAnchorTargetClassName(id);
   const [copied, setCopied] = useState(false);
@@ -32,7 +32,9 @@ export default function Heading({as: As, id, ...props}: Props): ReactNode {
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    const url = `${window.location.origin}${window.location.pathname}#${id}`;
+    const origin = globalThis.location.origin;
+    const pathname = globalThis.location.pathname;
+    const url = `${origin}${pathname}#${id}`;
     navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

@@ -11,7 +11,7 @@ type Token = Props['line'][number];
 // Historical code, not sure why we even need this :/
 function fixLineBreak(line: Token[]) {
   const singleLineBreakToken =
-    line.length === 1 && line[0]!.content === '\n' ? line[0] : undefined;
+    line.length === 1 && line[0].content === '\n' ? line[0] : undefined;
 
   if (singleLineBreakToken) {
     return [{...singleLineBreakToken, content: ''}];
