@@ -515,120 +515,108 @@ fn run_doctor(dev_mode: bool) {
     }
 }
 
-fn main() {
+fn parse_args_or_exit() -> (PathBuf, bool, Option<PathBuf>, bool) {
     let cli = Cli::parse();
-    let (file_path, do_run, output, intermediate) = match &cli.command {
+    match &cli.command {
         Commands::Version {} => {
-            // Print version from Cargo.toml automatically
             println!("mux version {}", env!("CARGO_PKG_VERSION"));
-            return;
+            process::exit(0);
         }
         Commands::Doctor { dev } => {
             run_doctor(*dev);
-            return;
+            process::exit(0);
         }
         Commands::Build {
             file,
             output,
             intermediate,
-        } => (file, false, output, *intermediate),
+        } => (file.clone(), false, output.clone(), *intermediate),
         Commands::Run {
             file,
             output,
             intermediate,
-        } => (file, true, output, *intermediate),
+        } => (file.clone(), true, output.clone(), *intermediate),
         Commands::Format { file } => {
             println!("Formatting is not yet implemented for {}", file.display());
-            return;
+            process::exit(0);
         }
-    };
+    }
+}
 
+fn ensure_mux_extension_or_exit(file_path: &Path) {
     if !file_path.to_string_lossy().ends_with(".mux") {
         eprintln!("Error: Input file must have a .mux extension.");
         process::exit(1);
     }
+}
 
-    let mut files = Files::new();
-
-    let source_str = match fs::read_to_string(file_path) {
+fn load_source_or_exit(file_path: &Path) -> String {
+    match fs::read_to_string(file_path) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error opening file: {}", e);
             process::exit(1);
         }
-    };
-    let file_id = files.add(file_path, source_str.clone());
-    let mut src = Source::from_string(source_str);
+    }
+}
 
+fn lex_source_or_exit(file_id: FileId, files: &Files, source: String) -> Vec<lexer::Token> {
+    let mut src = Source::from_string(source);
     let mut lex = lexer::Lexer::new(&mut src);
-    let tokens = match lex.lex_all() {
-        Ok(t) => t,
-        Err(e) => {
-            emit_diagnostics(&files, file_id, &[e]);
+    match lex.lex_all() {
+        Ok(tokens) => tokens,
+        Err(err) => {
+            emit_diagnostics(files, file_id, &[err]);
             process::exit(1);
         }
-    };
+    }
+}
 
-    let mut parser = parser::Parser::new(&tokens);
-    let nodes = match parser.parse() {
-        Ok(n) => n,
+fn parse_tokens_or_exit(
+    file_id: FileId,
+    files: &Files,
+    tokens: &[lexer::Token],
+) -> Vec<ast::AstNode> {
+    let mut parser = parser::Parser::new(tokens);
+    match parser.parse() {
+        Ok(nodes) => nodes,
         Err((_, errors)) => {
-            emit_diagnostics(&files, file_id, &errors);
+            emit_diagnostics(files, file_id, &errors);
             process::exit(1);
         }
-    };
+    }
+}
 
-    let base_path = file_path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .to_path_buf();
-    let resolver = Rc::new(RefCell::new(ModuleResolver::new(base_path)));
-
-    let mut analyzer = semantics::SemanticAnalyzer::new_with_resolver(resolver);
-    let errors = analyzer.analyze(&nodes, Some(&mut files));
+fn analyze_semantics_or_exit(
+    analyzer: &mut semantics::SemanticAnalyzer,
+    nodes: &[ast::AstNode],
+    file_id: FileId,
+    files: &mut Files,
+) {
+    let errors = analyzer.analyze(nodes, Some(files));
     if !errors.is_empty() {
-        emit_diagnostics(&files, file_id, &errors);
+        emit_diagnostics(files, file_id, &errors);
         process::exit(1);
     }
+}
 
-    let context = inkwell::context::Context::create();
-    let mut codegen = codegen::CodeGenerator::new(&context, &mut analyzer);
-    if let Err(e) = codegen.generate(&nodes) {
+fn generate_ir_or_exit(
+    codegen: &mut codegen::CodeGenerator,
+    nodes: &[ast::AstNode],
+    ir_file: &str,
+) {
+    if let Err(e) = codegen.generate(nodes) {
         eprintln!("Codegen error: {}", e);
         process::exit(1);
     }
-
-    let ir_file = format!(
-        "{}.ll",
-        file_path.to_string_lossy().trim_end_matches(".mux")
-    );
-    if let Err(e) = codegen.emit_ir_to_file(&ir_file) {
+    if let Err(e) = codegen.emit_ir_to_file(ir_file) {
         eprintln!("Failed to emit IR: {}", e);
         process::exit(1);
     }
+}
 
-    // build executable
-    // Use ./ prefix to ensure we run the local executable, not a system command
-    // (e.g., "test" would find the shell built-in instead of ./test)
-    // Executable goes next to the source file unless -o is specified
-    let exe_file = if let Some(out) = &output {
-        let out_path = out.to_path_buf();
-        if out_path.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
-            out_path
-        } else {
-            PathBuf::from("./").join(out_path)
-        }
-    } else {
-        let source_path = PathBuf::from(file_path.to_string_lossy().trim_end_matches(".mux"));
-        let parent = source_path.parent().unwrap_or(Path::new("."));
-        let file_stem = source_path
-            .file_stem()
-            .expect("executable name should be valid Unicode");
-        parent.join(file_stem)
-    };
-
-    let profile = runtime_profile();
-    let lib_dir = match resolve_runtime_lib_dir(profile) {
+fn resolve_runtime_lib_dir_or_exit(profile: &str) -> PathBuf {
+    match resolve_runtime_lib_dir(profile) {
         Some(dir) => dir,
         None => {
             eprintln!();
@@ -639,38 +627,28 @@ fn main() {
             eprintln!("  MUX_RUNTIME_LIB=/path/to/libmux_runtime.a mux run file.mux");
             process::exit(1);
         }
-    };
+    }
+}
 
-    let lib_path_str = lib_dir
-        .to_str()
-        .expect("library path should be valid Unicode");
-
-    let clang_cmd = match find_clang_command() {
+fn find_clang_or_exit() -> String {
+    match find_clang_command() {
         Some(cmd) => cmd,
         None => {
             eprintln!("clang is required to link Mux programs but was not found on PATH.");
             print_llvm_install_help();
             process::exit(1);
         }
-    };
-    let clang_output = Command::new(&clang_cmd)
-        .args([
-            &ir_file,
-            "-L",
-            lib_path_str,
-            "-Wl,-rpath,",
-            lib_path_str,
-            "-lmux_runtime",
-            "-o",
-            exe_file
-                .to_str()
-                .expect("executable path should be valid Unicode"),
-        ])
-        .output();
+    }
+}
 
+fn report_clang_output_or_exit(
+    clang_output: std::io::Result<std::process::Output>,
+    do_run: bool,
+    file_path: &Path,
+    ir_file: &str,
+) {
     match clang_output {
         Ok(output) if output.status.success() => {
-            // Show success message only for build command (not run)
             if !do_run {
                 let emitter = StandardEmitter::new(ColorConfig::Auto);
                 let file_name = file_path
@@ -694,36 +672,120 @@ fn main() {
             );
         }
     }
+}
 
-    if !intermediate {
-        Command::new("rm")
-            .arg(&ir_file)
-            .status()
-            .expect("Failed to remove intermediate IR file");
+fn remove_ir_if_requested(intermediate: bool, ir_file: &str) {
+    if intermediate {
+        return;
     }
 
-    if do_run {
-        let run_path = if exe_file.is_absolute() {
-            exe_file.clone()
-        } else {
-            PathBuf::from("./").join(&exe_file)
-        };
-        let status = Command::new(&run_path)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status();
+    Command::new("rm")
+        .arg(ir_file)
+        .status()
+        .expect("Failed to remove intermediate IR file");
+}
 
-        match status {
-            Ok(status) if status.success() => {}
-            Ok(status) => {
-                eprintln!("Program exited with status: {}", status);
-                process::exit(1);
-            }
-            Err(e) => {
-                eprintln!("Failed to execute program: {}", e);
-                process::exit(1);
-            }
+fn run_executable_or_exit(exe_file: &Path) {
+    let run_path = if exe_file.is_absolute() {
+        exe_file.to_path_buf()
+    } else {
+        PathBuf::from("./").join(exe_file)
+    };
+    let status = Command::new(&run_path)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status();
+
+    match status {
+        Ok(status) if status.success() => {}
+        Ok(status) => {
+            eprintln!("Program exited with status: {}", status);
+            process::exit(1);
         }
+        Err(e) => {
+            eprintln!("Failed to execute program: {}", e);
+            process::exit(1);
+        }
+    }
+}
+
+fn main() {
+    let (file_path, do_run, output, intermediate) = parse_args_or_exit();
+
+    ensure_mux_extension_or_exit(&file_path);
+
+    let mut files = Files::new();
+    let source_str = load_source_or_exit(&file_path);
+    let file_id = files.add(&file_path, source_str.clone());
+    let tokens = lex_source_or_exit(file_id, &files, source_str);
+    let nodes = parse_tokens_or_exit(file_id, &files, &tokens);
+
+    let base_path = file_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf();
+    let resolver = Rc::new(RefCell::new(ModuleResolver::new(base_path)));
+
+    let mut analyzer = semantics::SemanticAnalyzer::new_with_resolver(resolver);
+    analyze_semantics_or_exit(&mut analyzer, &nodes, file_id, &mut files);
+
+    let context = inkwell::context::Context::create();
+    let mut codegen = codegen::CodeGenerator::new(&context, &mut analyzer);
+
+    let ir_file = format!(
+        "{}.ll",
+        file_path.to_string_lossy().trim_end_matches(".mux")
+    );
+    generate_ir_or_exit(&mut codegen, &nodes, &ir_file);
+
+    // build executable
+    // Use ./ prefix to ensure we run the local executable, not a system command
+    // (e.g., "test" would find the shell built-in instead of ./test)
+    // Executable goes next to the source file unless -o is specified
+    let exe_file = if let Some(out_path) = &output {
+        if out_path.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
+            out_path.clone()
+        } else {
+            PathBuf::from("./").join(out_path)
+        }
+    } else {
+        let source_path = PathBuf::from(file_path.to_string_lossy().trim_end_matches(".mux"));
+        let parent = source_path.parent().unwrap_or(Path::new("."));
+        let file_stem = source_path
+            .file_stem()
+            .expect("executable name should be valid Unicode");
+        parent.join(file_stem)
+    };
+
+    let profile = runtime_profile();
+    let lib_dir = resolve_runtime_lib_dir_or_exit(profile);
+
+    let lib_path_str = lib_dir
+        .to_str()
+        .expect("library path should be valid Unicode");
+
+    let clang_cmd = find_clang_or_exit();
+    let clang_output = Command::new(&clang_cmd)
+        .args([
+            &ir_file,
+            "-L",
+            lib_path_str,
+            "-Wl,-rpath,",
+            lib_path_str,
+            "-lmux_runtime",
+            "-o",
+            exe_file
+                .to_str()
+                .expect("executable path should be valid Unicode"),
+        ])
+        .output();
+
+    report_clang_output_or_exit(clang_output, do_run, &file_path, &ir_file);
+
+    remove_ir_if_requested(intermediate, &ir_file);
+
+    if do_run {
+        run_executable_or_exit(&exe_file);
     }
 }

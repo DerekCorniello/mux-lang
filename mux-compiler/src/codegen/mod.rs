@@ -22,7 +22,9 @@ use inkwell::types::BasicTypeEnum;
 use inkwell::values::{FunctionValue, PointerValue};
 use std::collections::HashMap;
 
-use crate::ast::{AstNode, Field, FunctionNode, StatementKind, StatementNode, TypeNode};
+use crate::ast::{
+    AstNode, Field, FunctionNode, StatementKind, StatementNode, TraitBound, TypeNode,
+};
 use crate::semantics::{GenericContext, SemanticAnalyzer, Type, Type as ResolvedType};
 
 type ClassTypeParamBounds = Vec<(String, Vec<(String, Vec<Type>)>)>;
@@ -198,6 +200,188 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
+    fn declare_global_variable(
+        &mut self,
+        name: &str,
+        llvm_type: BasicTypeEnum<'a>,
+        resolved_type: ResolvedType,
+    ) {
+        let global = self.module.add_global(llvm_type, None, name);
+        global.set_initializer(&llvm_type.const_zero());
+        self.global_variables.insert(
+            name.to_string(),
+            (global.as_pointer_value(), llvm_type, resolved_type),
+        );
+    }
+
+    fn llvm_global_type_for_resolved_type(
+        &mut self,
+        resolved_type: &ResolvedType,
+    ) -> Result<BasicTypeEnum<'a>, String> {
+        match resolved_type {
+            Type::Primitive(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            _ => {
+                let type_node = self.type_to_type_node(resolved_type);
+                self.llvm_type_from_mux_type(&type_node)
+            }
+        }
+    }
+
+    fn declare_typed_or_const_global(
+        &mut self,
+        name: &str,
+        type_node: &TypeNode,
+    ) -> Result<(), String> {
+        let resolved_type = self
+            .analyzer
+            .resolve_type(type_node)
+            .map_err(|e| e.to_string())?;
+        let llvm_type = self.llvm_global_type_for_resolved_type(&resolved_type)?;
+        self.declare_global_variable(name, llvm_type, resolved_type);
+        Ok(())
+    }
+
+    fn declare_auto_global(
+        &mut self,
+        name: &str,
+        expr: &crate::ast::ExpressionNode,
+    ) -> Result<(), String> {
+        let resolved_type = self
+            .resolve_expression_type_with_fallback(expr)
+            .map_err(|e| format!("Failed to get type for {}: {}", name, e))?;
+        let llvm_type = self.llvm_global_type_for_resolved_type(&resolved_type)?;
+        self.declare_global_variable(name, llvm_type, resolved_type);
+        Ok(())
+    }
+
+    fn declare_top_level_globals(
+        &mut self,
+        top_level_statements: &[StatementNode],
+    ) -> Result<(), String> {
+        for stmt in top_level_statements {
+            match &stmt.kind {
+                StatementKind::TypedDecl(name, type_, _)
+                | StatementKind::ConstDecl(name, type_, _) => {
+                    self.declare_typed_or_const_global(name, type_)?;
+                }
+                StatementKind::AutoDecl(name, _, expr) => {
+                    self.declare_auto_global(name, expr)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn collect_module_init_data(&self) -> Vec<(String, Vec<StatementNode>)> {
+        self.analyzer
+            .all_module_asts()
+            .iter()
+            .map(|(module_path, module_nodes)| {
+                let module_top_level_statements = module_nodes
+                    .iter()
+                    .filter_map(|node| {
+                        if let AstNode::Statement(stmt) = node {
+                            Some(stmt.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                (module_path.replace('/', "_"), module_top_level_statements)
+            })
+            .collect()
+    }
+
+    fn generate_imported_user_functions(
+        &mut self,
+        imported_functions: &[(String, FunctionNode)],
+    ) -> Result<(), String> {
+        for (module_name_mangled, func) in imported_functions {
+            if func.type_params.is_empty() {
+                let mangled_name = format!("{}!{}", module_name_mangled, func.name);
+                self.generate_function_with_llvm_name(func, &mangled_name)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn generate_main_user_functions(
+        &mut self,
+        user_functions: &[FunctionNode],
+    ) -> Result<(), String> {
+        for func in user_functions {
+            if func.name == "main" {
+                self.generate_function_with_llvm_name(func, "!user!main")?;
+            } else {
+                self.generate_function(func)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn generate_class_methods_for_node(
+        &mut self,
+        name: &str,
+        methods: &[FunctionNode],
+        type_params: &[(String, Vec<TraitBound>)],
+    ) -> Result<(), String> {
+        if !type_params.is_empty() {
+            let bounds: ClassTypeParamBounds = type_params
+                .iter()
+                .map(|(p, b)| {
+                    (
+                        p.clone(),
+                        b.iter().map(|tb| (tb.name.clone(), Vec::new())).collect(),
+                    )
+                })
+                .collect();
+            self.analyzer.set_class_type_params(bounds);
+        }
+
+        for method in methods {
+            let prefixed_name = format!("{}.{}", name, method.name);
+            if type_params.is_empty() {
+                let mut method_copy = method.clone();
+                method_copy.name = prefixed_name;
+                self.generate_function(&method_copy)?;
+                continue;
+            }
+
+            let class_type_param_names: Vec<&str> =
+                type_params.iter().map(|(p, _)| p.as_str()).collect();
+            if method.is_common
+                && method.type_params.is_empty()
+                && !Self::method_uses_type_params(method, &class_type_param_names)
+            {
+                let mut method_copy = method.clone();
+                method_copy.name = prefixed_name;
+                self.generate_function(&method_copy)?;
+            }
+        }
+
+        if !type_params.is_empty() {
+            self.analyzer.clear_class_type_params();
+        }
+
+        Ok(())
+    }
+
+    fn generate_class_methods_for_all_nodes(&mut self, nodes: &[AstNode]) -> Result<(), String> {
+        for node in nodes {
+            if let AstNode::Class {
+                name,
+                methods,
+                type_params,
+                ..
+            } = node
+            {
+                self.generate_class_methods_for_node(name, methods, type_params)?;
+            }
+        }
+        Ok(())
+    }
+
     // Helper function to sanitize module paths for use in LLVM identifiers
     fn sanitize_module_path(module_path: &str) -> String {
         module_path.replace(['.', '/'], "_")
@@ -340,21 +524,12 @@ impl<'a> CodeGenerator<'a> {
     }
 
     pub fn generate(&mut self, nodes: &[AstNode]) -> Result<(), String> {
-        // Keep reference to main module nodes (for getting module name later)
         let main_module_nodes = nodes;
-
-        // Collect all nodes including imported modules
         let mut all_nodes = Vec::new();
-
-        // Add imported module nodes first (so they're available for main module)
         for module_nodes in self.analyzer.all_module_asts().values() {
             all_nodes.extend(module_nodes.clone());
         }
-
-        // Add main module nodes last
         all_nodes.extend(nodes.to_vec());
-
-        // Now process all nodes together for type generation and function declarations
         let nodes = &all_nodes;
 
         self.generate_user_defined_types(nodes)?;
@@ -371,174 +546,21 @@ impl<'a> CodeGenerator<'a> {
         let user_functions = self.collect_non_generic_main_functions(main_module_nodes);
         let main_top_level_statements = self.collect_top_level_statements(main_module_nodes);
 
-        // First, analyze top-level statements to identify global variable declarations
-        // and create LLVM global variables for them
-        // Use top_level_statements (from all modules) because LLVM globals must be declared at module scope
-        for stmt in &top_level_statements {
-            match &stmt.kind {
-                StatementKind::TypedDecl(name, type_, _)
-                | StatementKind::ConstDecl(name, type_, _) => {
-                    let resolved_type = self
-                        .analyzer
-                        .resolve_type(type_)
-                        .map_err(|e| e.to_string())?;
+        self.declare_top_level_globals(&top_level_statements)?;
 
-                    // determine correct LLVM type based on whether value is boxed
-                    let llvm_type = match &resolved_type {
-                        Type::Primitive(_) => {
-                            // primitives are boxed, use ptr type
-                            self.context.ptr_type(AddressSpace::default()).into()
-                        }
-                        _ => {
-                            // enums, classes, etc. use their actual struct type
-                            self.llvm_type_from_mux_type(type_)?
-                        }
-                    };
+        let modules_data = self.collect_module_init_data();
 
-                    let global = self.module.add_global(llvm_type, None, name);
-                    global.set_initializer(&llvm_type.const_zero());
-
-                    // store in global_variables for later access
-                    self.global_variables.insert(
-                        name.clone(),
-                        (global.as_pointer_value(), llvm_type, resolved_type),
-                    );
-                }
-                StatementKind::AutoDecl(name, _, expr) => {
-                    // for auto declarations, get the inferred type from the expression
-                    // (not from symbol table, since variables are not stored there to avoid collisions)
-                    let resolved_type = self
-                        .resolve_expression_type_with_fallback(expr)
-                        .map_err(|e| format!("Failed to get type for {}: {}", name, e))?;
-
-                    // determine correct LLVM type based on whether value is boxed
-                    let llvm_type = match &resolved_type {
-                        Type::Primitive(_) => {
-                            // primitives are boxed, use ptr type
-                            self.context.ptr_type(AddressSpace::default()).into()
-                        }
-                        _ => {
-                            // enums, classes, etc. use their actual struct type
-                            let type_node = self.type_to_type_node(&resolved_type);
-                            self.llvm_type_from_mux_type(&type_node)?
-                        }
-                    };
-
-                    let global = self.module.add_global(llvm_type, None, name);
-                    global.set_initializer(&llvm_type.const_zero());
-
-                    self.global_variables.insert(
-                        name.clone(),
-                        (global.as_pointer_value(), llvm_type, resolved_type.clone()),
-                    );
-                }
-                _ => {}
-            }
-        }
-
-        // Generate module initialization functions for all imported modules
-        // First collect all module data to avoid borrowing conflicts
-        let modules_data: Vec<(String, Vec<StatementNode>)> = self
-            .analyzer
-            .all_module_asts()
-            .iter()
-            .map(|(module_path, module_nodes)| {
-                let mut module_top_level_statements = vec![];
-
-                // Extract top-level statements from this module
-                for node in module_nodes {
-                    if let AstNode::Statement(stmt) = node {
-                        module_top_level_statements.push(stmt.clone());
-                    }
-                }
-
-                (module_path.replace('/', "_"), module_top_level_statements)
-            })
-            .collect();
-
-        // Now generate init functions for each module
         for (module_name, module_top_level_statements) in modules_data {
             self.generate_module_init(&module_top_level_statements, &module_name)?;
         }
 
-        // Generate module initialization function for the main module
-        // Use main_top_level_statements (only from main module) to avoid re-initializing imported globals
         let module_name = self.get_module_name(main_module_nodes);
         self.generate_module_init(&main_top_level_statements, &module_name)?;
-
-        // Always generate main function (even for modules without top-level statements)
-        // This allows class-only files to be compiled and executed directly
         self.generate_main_function(&module_name)?;
 
-        // Generate user-defined functions for imported modules
-        for (module_name_mangled, func) in imported_functions {
-            if func.type_params.is_empty() {
-                let mangled_name = format!("{}!{}", module_name_mangled, func.name);
-                self.generate_function_with_llvm_name(&func, &mangled_name)?;
-            }
-        }
-
-        // Generate user-defined functions for main module (no mangling except for "main")
-        for func in user_functions {
-            if func.name == "main" {
-                self.generate_function_with_llvm_name(&func, "!user!main")?;
-            } else {
-                self.generate_function(&func)?;
-            }
-        }
-
-        // generate class methods with prefixed names
-        for node in nodes {
-            if let AstNode::Class {
-                name,
-                methods,
-                type_params,
-                ..
-            } = node
-            {
-                // Set class-level type parameter bounds for method generation
-                if !type_params.is_empty() {
-                    let bounds: ClassTypeParamBounds = type_params
-                        .iter()
-                        .map(|(p, b)| {
-                            (
-                                p.clone(),
-                                b.iter().map(|tb| (tb.name.clone(), Vec::new())).collect(),
-                            )
-                        })
-                        .collect();
-                    self.analyzer.set_class_type_params(bounds);
-                }
-
-                for method in methods {
-                    let prefixed_name = format!("{}.{}", name, method.name);
-                    // generate non-generic class methods, OR
-                    // generate static methods with no type parameters that DON'T use class type params
-                    if type_params.is_empty() {
-                        let mut method_copy = method.clone();
-                        method_copy.name = prefixed_name;
-                        self.generate_function(&method_copy)?;
-                    } else {
-                        let class_type_param_names: Vec<&str> =
-                            type_params.iter().map(|(p, _)| p.as_str()).collect();
-                        if method.is_common
-                            && method.type_params.is_empty()
-                            && !Self::method_uses_type_params(method, &class_type_param_names)
-                        {
-                            // static method with no type params and doesn't use class type params - can generate once
-                            let mut method_copy = method.clone();
-                            method_copy.name = prefixed_name;
-                            self.generate_function(&method_copy)?;
-                        }
-                    }
-                }
-
-                // Clear class-level type params after generating all methods for this class
-                if !type_params.is_empty() {
-                    self.analyzer.clear_class_type_params();
-                }
-            }
-        }
+        self.generate_imported_user_functions(&imported_functions)?;
+        self.generate_main_user_functions(&user_functions)?;
+        self.generate_class_methods_for_all_nodes(nodes)?;
 
         Ok(())
     }

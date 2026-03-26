@@ -3322,6 +3322,402 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    fn analyze_auto_decl_statement(
+        &mut self,
+        name: &str,
+        expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(expr)?;
+        let expr_type = self.get_expression_type(expr)?;
+        if matches!(expr_type, Type::EmptyList | Type::EmptyMap | Type::EmptySet) {
+            let collection_type = match expr_type {
+                Type::EmptyList => "list",
+                Type::EmptyMap => "map",
+                Type::EmptySet => "set",
+                _ => unreachable!(),
+            };
+            return Err(SemanticError::with_help(
+                format!("Cannot infer type for empty {} literal", collection_type),
+                expr.span,
+                format!(
+                    "Use an explicit type annotation, e.g. {}<int> myVar = {{}}",
+                    collection_type
+                ),
+            ));
+        }
+        self.symbol_table.add_symbol(
+            name,
+            Self::make_symbol(SymbolKind::Variable, span, Some(expr_type)),
+        )?;
+        Ok(())
+    }
+
+    fn analyze_typed_decl_statement(
+        &mut self,
+        name: &str,
+        type_node: &TypeNode,
+        expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let declared_type = self.resolve_type(type_node)?;
+        self.analyze_expression(expr)?;
+        let expr_type = self.get_expression_type(expr)?;
+        self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
+        self.symbol_table.add_symbol(
+            name,
+            Self::make_symbol(SymbolKind::Variable, span, Some(declared_type)),
+        )?;
+        Ok(())
+    }
+
+    fn analyze_const_decl_statement(
+        &mut self,
+        name: &str,
+        type_node: &TypeNode,
+        expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let declared_type = self.resolve_type(type_node)?;
+        self.analyze_expression(expr)?;
+        let expr_type = self.get_expression_type(expr)?;
+        self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
+        self.symbol_table.add_symbol(
+            name,
+            Self::make_symbol(SymbolKind::Constant, span, Some(declared_type)),
+        )?;
+        Ok(())
+    }
+
+    fn analyze_if_statement(
+        &mut self,
+        cond: &ExpressionNode,
+        then_block: &[StatementNode],
+        else_block: &Option<Vec<StatementNode>>,
+        mut files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(cond)?;
+
+        self.symbol_table.push_scope()?;
+        self.analyze_block(then_block, files.as_deref_mut())?;
+        self.symbol_table.pop_scope()?;
+
+        if let Some(else_block) = else_block {
+            self.symbol_table.push_scope()?;
+            self.analyze_block(else_block, files)?;
+            self.symbol_table.pop_scope()?;
+        }
+
+        Ok(())
+    }
+
+    fn analyze_for_statement(
+        &mut self,
+        var: &str,
+        iter: &ExpressionNode,
+        body: &[StatementNode],
+        span: Span,
+        files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        self.symbol_table.push_scope()?;
+        self.analyze_expression(iter)?;
+        let iter_type = self.get_expression_type(iter)?;
+        let var_type = match iter_type {
+            Type::List(elem_type) => *elem_type,
+            _ => {
+                return Err(SemanticError::with_help(
+                    format!("Cannot iterate over type {}", format_type(&iter_type)),
+                    iter.span,
+                    "The 'for' loop can only iterate over list types. Use .to_list() for sets/maps, or range(start, end) for numeric ranges.",
+                ));
+            }
+        };
+        self.symbol_table.add_symbol(
+            var,
+            Self::make_symbol(SymbolKind::Variable, span, Some(var_type)),
+        )?;
+        self.analyze_block(body, files)?;
+        self.symbol_table.pop_scope()?;
+        Ok(())
+    }
+
+    fn analyze_while_statement(
+        &mut self,
+        cond: &ExpressionNode,
+        body: &[StatementNode],
+        files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(cond)?;
+        self.symbol_table.push_scope()?;
+        self.analyze_block(body, files)?;
+        self.symbol_table.pop_scope()?;
+        Ok(())
+    }
+
+    fn collect_match_arm_returns(
+        &mut self,
+        arm: &crate::ast::MatchArm,
+        expr_span: Span,
+        expecting_return: bool,
+        arm_return_types: &mut Vec<(Type, Span)>,
+    ) -> Result<(), SemanticError> {
+        if !expecting_return {
+            return Ok(());
+        }
+
+        let mut has_return = false;
+        for stmt in &arm.body {
+            if let StatementKind::Return(Some(ret_expr)) = &stmt.kind {
+                let ret_type = self.get_expression_type(ret_expr)?;
+                arm_return_types.push((ret_type, stmt.span));
+                has_return = true;
+                break;
+            }
+            if let StatementKind::Return(None) = &stmt.kind {
+                has_return = true;
+            }
+        }
+
+        if has_return {
+            return Ok(());
+        }
+
+        Err(SemanticError::with_help(
+            "Match arm must return a value in a function with non-void return type",
+            arm.body.first().map(|s| s.span).unwrap_or(expr_span),
+            "Add a return statement to this match arm",
+        ))
+    }
+
+    fn validate_match_arm_return_types(
+        &self,
+        arm_return_types: &[(Type, Span)],
+    ) -> Result<(), SemanticError> {
+        if arm_return_types.is_empty() {
+            return Ok(());
+        }
+
+        let (first_type, _) = &arm_return_types[0];
+        for (i, (arm_type, arm_span)) in arm_return_types.iter().enumerate().skip(1) {
+            if self
+                .check_type_compatibility(first_type, arm_type, *arm_span)
+                .is_err()
+            {
+                return Err(SemanticError::with_help(
+                    format!(
+                        "Match arms have incompatible return types: first arm returns '{}', but arm {} returns '{}'",
+                        format_type(first_type),
+                        i + 1,
+                        format_type(arm_type)
+                    ),
+                    *arm_span,
+                    "All match arms must return the same type when used as an expression or in a returning context",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn analyze_match_statement(
+        &mut self,
+        expr: &ExpressionNode,
+        arms: &[crate::ast::MatchArm],
+        mut files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(expr)?;
+        let expr_type = self.get_expression_type(expr)?;
+
+        let expecting_return = self.current_return_type.is_some()
+            && !matches!(self.current_return_type, Some(Type::Void));
+        let mut arm_return_types = Vec::new();
+
+        for arm in arms {
+            self.symbol_table.push_scope()?;
+            self.set_pattern_types(&arm.pattern, &expr_type, expr.span)?;
+            self.analyze_pattern(&arm.pattern)?;
+            if let Some(guard) = &arm.guard {
+                self.analyze_expression(guard)?;
+            }
+            self.analyze_block(&arm.body, files.as_deref_mut())?;
+            self.collect_match_arm_returns(
+                arm,
+                expr.span,
+                expecting_return,
+                &mut arm_return_types,
+            )?;
+            self.symbol_table.pop_scope()?;
+        }
+
+        self.validate_match_arm_return_types(&arm_return_types)?;
+        self.check_match_exhaustiveness(&expr_type, arms, expr.span)
+    }
+
+    fn analyze_return_with_value(&mut self, expr: &ExpressionNode) -> Result<(), SemanticError> {
+        if self.current_return_type.is_none() {
+            return Err(SemanticError::with_help(
+                "Cannot use 'return' outside of a function",
+                expr.span,
+                "'return' can only be used inside a function body",
+            ));
+        }
+
+        self.analyze_expression(expr)?;
+
+        if matches!(self.current_return_type, Some(Type::Void)) {
+            return Err(SemanticError::with_help(
+                "Cannot return a value from a void function",
+                expr.span,
+                "This function is declared as 'returns void'. Either remove the return value or change the function's return type.",
+            ));
+        }
+
+        if let Some(expected_type) = self.current_return_type.clone() {
+            let actual_type = self.get_expression_type(expr)?;
+            self.check_type_compatibility(&expected_type, &actual_type, expr.span)?;
+        }
+        Ok(())
+    }
+
+    fn analyze_return_without_value(&mut self, span: Span) -> Result<(), SemanticError> {
+        if self.current_return_type.is_none() {
+            return Err(SemanticError::with_help(
+                "Cannot use 'return' outside of a function",
+                span,
+                "'return' can only be used inside a function body",
+            ));
+        }
+
+        if !matches!(self.current_return_type, Some(Type::Void))
+            && let Some(expected_type) = &self.current_return_type
+        {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Missing return value; function expects '{}', but return has no value",
+                    format_type(expected_type)
+                ),
+                span,
+                format!(
+                    "Add a value after 'return' that matches the function's return type '{}'. Example: return some_value",
+                    format_type(expected_type)
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn analyze_import_statement(
+        &mut self,
+        module_path: &str,
+        spec: &ImportSpec,
+        span: Span,
+        files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        if module_path == "std" || module_path.starts_with("std.") {
+            self.handle_std_import(module_path, spec, span, files)?;
+            return Ok(());
+        }
+
+        let resolver = self
+            .module_resolver
+            .clone()
+            .ok_or_else(|| SemanticError::new("Module resolver not available", span))?;
+
+        let (has_file, has_directory) = resolver.borrow().check_module_path(module_path);
+
+        if has_file && has_directory {
+            return Err(SemanticError::with_help(
+                format!("Ambiguous import: '{}'", module_path),
+                span,
+                format!(
+                    "Both {}.mux and {}/ directory exist. Please remove one.",
+                    module_path.replace('.', "/"),
+                    module_path.replace('.', "/")
+                ),
+            ));
+        }
+
+        let files = files.expect("Files registry must be available for import processing");
+
+        if has_directory {
+            self.handle_directory_import(module_path, spec, span, resolver, files)?;
+            return Ok(());
+        }
+
+        let module_nodes = resolver
+            .borrow_mut()
+            .resolve_import_path(module_path, self.current_file.as_deref(), files)
+            .map_err(|e| {
+                SemanticError::with_help(
+                    format!("Failed to import module '{}'", module_path),
+                    span,
+                    e.to_string(),
+                )
+            })?;
+
+        let mut module_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+        module_analyzer.set_current_file(std::path::PathBuf::from(
+            module_path.replace('.', "/") + ".mux",
+        ));
+        let errors = module_analyzer.analyze(&module_nodes, Some(files));
+        if !errors.is_empty() {
+            let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+            return Err(SemanticError::with_help(
+                format!("Errors in imported module '{}'", module_path),
+                span,
+                format!(
+                    "Fix the following errors in '{}':\n  {}",
+                    module_path,
+                    error_messages.join("\n  ")
+                ),
+            ));
+        }
+
+        let module_symbols =
+            self.filter_module_export_symbols(&module_analyzer.symbol_table.all_symbols);
+
+        match spec {
+            ImportSpec::Module { alias } => {
+                if let Some(namespace) = alias {
+                    self.add_module_namespace(namespace, module_symbols, module_path, span)?;
+                }
+            }
+            ImportSpec::Item { item, alias } => {
+                let symbol_name = alias.as_ref().unwrap_or(item);
+                self.import_single_symbol(&module_symbols, item, symbol_name, module_path, span)?;
+            }
+            ImportSpec::Items { items } => {
+                for (item, alias) in items {
+                    let symbol_name = alias.as_ref().unwrap_or(item);
+                    self.import_single_symbol(
+                        &module_symbols,
+                        item,
+                        symbol_name,
+                        module_path,
+                        span,
+                    )?;
+                }
+            }
+            ImportSpec::Wildcard => {
+                self.import_all_symbols(&module_symbols, module_path, span)?;
+            }
+        }
+
+        resolver
+            .borrow_mut()
+            .cache_module(module_path, module_nodes.clone());
+        resolver.borrow_mut().finish_import(module_path);
+
+        self.all_module_asts
+            .insert(module_path.to_string(), module_nodes);
+
+        if !self.module_dependencies.contains(&module_path.to_string()) {
+            self.module_dependencies.push(module_path.to_string());
+        }
+
+        Ok(())
+    }
+
     fn analyze_statement(
         &mut self,
         stmt: &StatementNode,
@@ -3329,38 +3725,10 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
-                self.analyze_expression(expr)?;
-                let expr_type = self.get_expression_type(expr)?;
-                if matches!(expr_type, Type::EmptyList | Type::EmptyMap | Type::EmptySet) {
-                    let collection_type = match expr_type {
-                        Type::EmptyList => "list",
-                        Type::EmptyMap => "map",
-                        Type::EmptySet => "set",
-                        _ => unreachable!(),
-                    };
-                    return Err(SemanticError::with_help(
-                        format!("Cannot infer type for empty {} literal", collection_type),
-                        expr.span,
-                        format!(
-                            "Use an explicit type annotation, e.g. {}<int> myVar = {{}}",
-                            collection_type
-                        ),
-                    ));
-                }
-                self.symbol_table.add_symbol(
-                    name,
-                    Self::make_symbol(SymbolKind::Variable, stmt.span, Some(expr_type)),
-                )?;
+                self.analyze_auto_decl_statement(name, expr, stmt.span)?;
             }
             StatementKind::TypedDecl(name, type_node, expr) => {
-                let declared_type = self.resolve_type(type_node)?;
-                self.analyze_expression(expr)?;
-                let expr_type = self.get_expression_type(expr)?;
-                self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
-                self.symbol_table.add_symbol(
-                    name,
-                    Self::make_symbol(SymbolKind::Variable, stmt.span, Some(declared_type)),
-                )?;
+                self.analyze_typed_decl_statement(name, type_node, expr, stmt.span)?;
             }
             StatementKind::Expression(expr) => {
                 self.analyze_expression(expr)?;
@@ -3371,328 +3739,39 @@ impl SemanticAnalyzer {
                 self.symbol_table.pop_scope()?;
             }
             StatementKind::ConstDecl(name, type_node, expr) => {
-                let declared_type = self.resolve_type(type_node)?;
-                self.analyze_expression(expr)?;
-                let expr_type = self.get_expression_type(expr)?;
-                self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
-                self.symbol_table.add_symbol(
-                    name,
-                    Self::make_symbol(SymbolKind::Constant, stmt.span, Some(declared_type)),
-                )?;
+                self.analyze_const_decl_statement(name, type_node, expr, stmt.span)?;
             }
             StatementKind::If {
                 cond,
                 then_block,
                 else_block,
             } => {
-                self.analyze_expression(cond)?;
-
-                self.symbol_table.push_scope()?;
-                self.analyze_block(then_block, files.as_deref_mut())?;
-                self.symbol_table.pop_scope()?;
-
-                if let Some(else_block) = else_block {
-                    self.symbol_table.push_scope()?;
-                    self.analyze_block(else_block, files.as_deref_mut())?;
-                    self.symbol_table.pop_scope()?;
-                }
+                self.analyze_if_statement(cond, then_block, else_block, files.as_deref_mut())?;
             }
             StatementKind::For {
                 var, iter, body, ..
             } => {
-                self.symbol_table.push_scope()?;
-                self.analyze_expression(iter)?;
-                let iter_type = self.get_expression_type(iter)?;
-                // for now, assume iterator yields the element type directly
-                // Note: Iteration handled via to_list() for sets/maps; no Iterator interface needed.
-                let var_type = match iter_type {
-                    Type::List(elem_type) => *elem_type,
-                    _ => {
-                        return Err(SemanticError::with_help(
-                            format!("Cannot iterate over type {}", format_type(&iter_type)),
-                            iter.span,
-                            "The 'for' loop can only iterate over list types. Use .to_list() for sets/maps, or range(start, end) for numeric ranges.",
-                        ));
-                    }
-                };
-                self.symbol_table.add_symbol(
-                    var,
-                    Self::make_symbol(SymbolKind::Variable, stmt.span, Some(var_type)),
-                )?;
-                self.analyze_block(body, files.as_deref_mut())?;
-                self.symbol_table.pop_scope()?;
+                self.analyze_for_statement(var, iter, body, stmt.span, files.as_deref_mut())?;
             }
             StatementKind::While { cond, body } => {
-                self.analyze_expression(cond)?;
-
-                self.symbol_table.push_scope()?;
-                self.analyze_block(body, files.as_deref_mut())?;
-                self.symbol_table.pop_scope()?;
+                self.analyze_while_statement(cond, body, files.as_deref_mut())?;
             }
             StatementKind::Match { expr, arms } => {
-                self.analyze_expression(expr)?;
-                let expr_type = self.get_expression_type(expr)?;
-
-                // Track return types from each arm if we're in a non-void function context
-                let expecting_return = self.current_return_type.is_some()
-                    && !matches!(self.current_return_type, Some(Type::Void));
-                let mut arm_return_types = Vec::new();
-
-                for arm in arms {
-                    self.symbol_table.push_scope()?;
-                    // set types for pattern variables based on expr_type
-                    self.set_pattern_types(&arm.pattern, &expr_type, expr.span)?;
-                    self.analyze_pattern(&arm.pattern)?;
-                    if let Some(guard) = &arm.guard {
-                        self.analyze_expression(guard)?;
-                    }
-                    self.analyze_block(&arm.body, files.as_deref_mut())?;
-
-                    // Check for return in this arm
-                    if expecting_return {
-                        let mut has_return = false;
-                        for stmt in &arm.body {
-                            if let StatementKind::Return(Some(ret_expr)) = &stmt.kind {
-                                let ret_type = self.get_expression_type(ret_expr)?;
-                                arm_return_types.push((ret_type, stmt.span));
-                                has_return = true;
-                                break;
-                            } else if let StatementKind::Return(None) = &stmt.kind {
-                                has_return = true;
-                                // Void return in non-void context - will be caught by Return validation
-                            }
-                        }
-                        if !has_return {
-                            return Err(SemanticError::with_help(
-                                "Match arm must return a value in a function with non-void return type",
-                                arm.body.first().map(|s| s.span).unwrap_or(expr.span),
-                                "Add a return statement to this match arm",
-                            ));
-                        }
-                    }
-
-                    self.symbol_table.pop_scope()?;
-                }
-
-                // Validate all arms return compatible types
-                if !arm_return_types.is_empty() {
-                    let (first_type, _first_span) = &arm_return_types[0];
-                    for (i, (arm_type, arm_span)) in arm_return_types.iter().enumerate().skip(1) {
-                        if self
-                            .check_type_compatibility(first_type, arm_type, *arm_span)
-                            .is_err()
-                        {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Match arms have incompatible return types: first arm returns '{}', but arm {} returns '{}'",
-                                    format_type(first_type),
-                                    i + 1,
-                                    format_type(arm_type)
-                                ),
-                                *arm_span,
-                                "All match arms must return the same type when used as an expression or in a returning context",
-                            ));
-                        }
-                    }
-                }
-
-                // Check exhaustiveness
-                self.check_match_exhaustiveness(&expr_type, arms, expr.span)?;
-
-                return Ok(());
+                self.analyze_match_statement(expr, arms, files.as_deref_mut())?;
             }
             StatementKind::Return(Some(expr)) => {
-                // Check if we're in a function at all
-                if self.current_return_type.is_none() {
-                    return Err(SemanticError::with_help(
-                        "Cannot use 'return' outside of a function",
-                        expr.span,
-                        "'return' can only be used inside a function body",
-                    ));
-                }
-
-                self.analyze_expression(expr)?;
-
-                // Check if we're in a void function
-                if matches!(self.current_return_type, Some(Type::Void)) {
-                    return Err(SemanticError::with_help(
-                        "Cannot return a value from a void function",
-                        expr.span,
-                        "This function is declared as 'returns void'. Either remove the return value or change the function's return type.",
-                    ));
-                }
-
-                // Validate return type matches function return type
-                if let Some(expected_type) = self.current_return_type.clone() {
-                    let actual_type = self.get_expression_type(expr)?;
-                    self.check_type_compatibility(&expected_type, &actual_type, expr.span)?;
-                }
-                return Ok(());
+                self.analyze_return_with_value(expr)?;
             }
             StatementKind::Return(None) => {
-                // Check if we're in a function at all
-                if self.current_return_type.is_none() {
-                    return Err(SemanticError::with_help(
-                        "Cannot use 'return' outside of a function",
-                        stmt.span,
-                        "'return' can only be used inside a function body",
-                    ));
-                }
-
-                // Check if we're NOT in a void function (missing return value)
-                if !matches!(self.current_return_type, Some(Type::Void))
-                    && let Some(expected_type) = &self.current_return_type
-                {
-                    return Err(SemanticError::with_help(
-                        format!(
-                            "Missing return value; function expects '{}', but return has no value",
-                            format_type(expected_type)
-                        ),
-                        stmt.span,
-                        format!(
-                            "Add a value after 'return' that matches the function's return type '{}'. Example: return some_value",
-                            format_type(expected_type)
-                        ),
-                    ));
-                }
-                return Ok(());
+                self.analyze_return_without_value(stmt.span)?;
             }
             StatementKind::Import { module_path, spec } => {
-                // Handle std library specially
-                if module_path == "std" || module_path.starts_with("std.") {
-                    self.handle_std_import(module_path, spec, stmt.span, files)?;
-                    return Ok(());
-                }
-
-                // Clone the resolver early to avoid borrow issues
-                let resolver = self.module_resolver.clone().ok_or_else(|| {
-                    SemanticError::new("Module resolver not available", stmt.span)
-                })?;
-
-                // Check if module is a file, directory, or both
-                let (has_file, has_directory) = resolver.borrow().check_module_path(module_path);
-
-                if has_file && has_directory {
-                    return Err(SemanticError::with_help(
-                        format!("Ambiguous import: '{}'", module_path),
-                        stmt.span,
-                        format!(
-                            "Both {}.mux and {}/ directory exist. Please remove one.",
-                            module_path.replace('.', "/"),
-                            module_path.replace('.', "/")
-                        ),
-                    ));
-                }
-
-                // Files must be available for import processing
-                let files = files.expect("Files registry must be available for import processing");
-
-                if has_directory {
-                    // Directory-based import - handle submodules
-                    self.handle_directory_import(module_path, spec, stmt.span, resolver, files)?;
-                    return Ok(());
-                }
-
-                let module_nodes = resolver
-                    .borrow_mut()
-                    .resolve_import_path(module_path, self.current_file.as_deref(), files)
-                    .map_err(|e| {
-                        SemanticError::with_help(
-                            format!("Failed to import module '{}'", module_path),
-                            stmt.span,
-                            e.to_string(),
-                        )
-                    })?;
-
-                // Analyze the imported module
-                let mut module_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
-                module_analyzer.set_current_file(std::path::PathBuf::from(
-                    module_path.replace('.', "/") + ".mux",
-                ));
-                let errors = module_analyzer.analyze(&module_nodes, Some(files));
-                if !errors.is_empty() {
-                    let error_messages: Vec<String> =
-                        errors.iter().map(|e| e.message.clone()).collect();
-                    return Err(SemanticError::with_help(
-                        format!("Errors in imported module '{}'", module_path),
-                        stmt.span,
-                        format!(
-                            "Fix the following errors in '{}':\n  {}",
-                            module_path,
-                            error_messages.join("\n  ")
-                        ),
-                    ));
-                }
-
-                // Get exportable symbols from the imported module
-                let module_symbols =
-                    self.filter_module_export_symbols(&module_analyzer.symbol_table.all_symbols);
-
-                // Process import specification
-                match spec {
-                    ImportSpec::Module { alias } => {
-                        if let Some(namespace) = alias {
-                            // import logger (as ns) - add as namespaced module
-                            self.add_module_namespace(
-                                namespace,
-                                module_symbols,
-                                module_path,
-                                stmt.span,
-                            )?;
-                        }
-                        // if alias is None, it's a side-effect import (as _) - don't add symbols
-                    }
-
-                    ImportSpec::Item { item, alias } => {
-                        // import logger.log (as lg)
-                        let symbol_name = alias.as_ref().unwrap_or(item);
-                        self.import_single_symbol(
-                            &module_symbols,
-                            item,
-                            symbol_name,
-                            module_path,
-                            stmt.span,
-                        )?;
-                    }
-
-                    ImportSpec::Items { items } => {
-                        // import logger.(log, error as err)
-                        for (item, alias) in items {
-                            let symbol_name = alias.as_ref().unwrap_or(item);
-                            self.import_single_symbol(
-                                &module_symbols,
-                                item,
-                                symbol_name,
-                                module_path,
-                                stmt.span,
-                            )?;
-                        }
-                    }
-
-                    ImportSpec::Wildcard => {
-                        // import logger.* - import all symbols without namespace
-                        self.import_all_symbols(&module_symbols, module_path, stmt.span)?;
-                    }
-                }
-
-                // Cache module and track dependencies
-                resolver
-                    .borrow_mut()
-                    .cache_module(module_path, module_nodes.clone());
-                resolver.borrow_mut().finish_import(module_path);
-
-                self.all_module_asts
-                    .insert(module_path.to_string(), module_nodes);
-
-                if !self.module_dependencies.contains(&module_path.to_string()) {
-                    self.module_dependencies.push(module_path.to_string());
-                }
+                self.analyze_import_statement(module_path, spec, stmt.span, files)?;
             }
             StatementKind::Function(func) => {
-                // Nested function - analyze its body
                 self.analyze_function(func, None)?;
             }
-            _ => {} // handle other statement types
+            _ => {}
         }
         Ok(())
     }
