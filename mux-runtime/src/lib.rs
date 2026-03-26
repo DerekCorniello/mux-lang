@@ -212,6 +212,23 @@ impl Ord for Value {
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn write_delimited<T>(
+            f: &mut fmt::Formatter<'_>,
+            open: &str,
+            close: &str,
+            items: impl IntoIterator<Item = T>,
+            mut write_item: impl FnMut(&mut fmt::Formatter<'_>, T) -> fmt::Result,
+        ) -> fmt::Result {
+            write!(f, "{}", open)?;
+            for (i, item) in items.into_iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write_item(f, item)?;
+            }
+            write!(f, "{}", close)
+        }
+
         match self {
             Value::Unit => write!(f, "()"),
             Value::Bool(b) => write!(f, "{}", b),
@@ -219,34 +236,13 @@ impl fmt::Display for Value {
             Value::Float(fl) => write!(f, "{}", fl),
             Value::String(s) => write!(f, "{}", s),
             Value::List(list) => {
-                write!(f, "[")?;
-                for (i, item) in list.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", item)?;
-                }
-                write!(f, "]")
+                write_delimited(f, "[", "]", list.iter(), |f, item| write!(f, "{}", item))
             }
-            Value::Map(map) => {
-                write!(f, "{{")?;
-                for (i, (key, val)) in map.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}: {}", key, val)?;
-                }
-                write!(f, "}}")
-            }
+            Value::Map(map) => write_delimited(f, "{", "}", map.iter(), |f, (key, val)| {
+                write!(f, "{}: {}", key, val)
+            }),
             Value::Set(set) => {
-                write!(f, "{{")?;
-                for (i, item) in set.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", item)?;
-                }
-                write!(f, "}}")
+                write_delimited(f, "{", "}", set.iter(), |f, item| write!(f, "{}", item))
             }
             Value::Tuple(tuple) => write!(f, "{}", tuple),
             Value::Optional(opt) => match opt {

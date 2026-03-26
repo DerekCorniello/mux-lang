@@ -19,6 +19,64 @@ use super::CodeGenerator;
 use super::GenericContext;
 
 impl<'a> CodeGenerator<'a> {
+    fn handle_named_signature_type(
+        &self,
+        name: &str,
+        type_args: &[TypeNode],
+        param_type: &TypeNode,
+        arg_type: &Type,
+        type_map: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), String> {
+        if type_args.is_empty() {
+            if name.chars().next().unwrap_or(' ').is_uppercase() || name.len() <= 3 {
+                if let Some(existing) = type_map.get(name) {
+                    if existing != arg_type {
+                        return Err(format!(
+                            "Type mismatch for generic parameter {}: expected {:?}, got {:?}",
+                            name, existing, arg_type
+                        ));
+                    }
+                } else {
+                    type_map.insert(name.to_string(), arg_type.clone());
+                }
+                return Ok(());
+            }
+
+            let expected_concrete = self.type_node_to_type(param_type);
+            if expected_concrete != *arg_type {
+                return Err(format!(
+                    "Type mismatch: expected {:?}, got {:?}",
+                    expected_concrete, arg_type
+                ));
+            }
+            return Ok(());
+        }
+
+        match arg_type {
+            Type::Named(arg_name, arg_type_args) => {
+                if name != arg_name {
+                    return Err(format!(
+                        "Type name mismatch: expected {}, got {}",
+                        name, arg_name
+                    ));
+                }
+                if type_args.len() != arg_type_args.len() {
+                    return Err(format!(
+                        "Type argument count mismatch for {}: expected {}, got {}",
+                        name,
+                        type_args.len(),
+                        arg_type_args.len()
+                    ));
+                }
+                for (param_arg, arg_arg) in type_args.iter().zip(arg_type_args.iter()) {
+                    self.infer_types_from_signature(param_arg, arg_arg, type_map)?;
+                }
+                Ok(())
+            }
+            _ => Err(format!("Expected named type with args, got {:?}", arg_type)),
+        }
+    }
+
     fn lookup_class_symbol(&self, class_name: &str) -> Option<crate::semantics::Symbol> {
         if let Some(symbol) = self.analyzer.symbol_table().lookup(class_name) {
             return Some(symbol);
@@ -540,61 +598,7 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<(), String> {
         match &param_type.kind {
             TypeKind::Named(name, type_args) => {
-                if type_args.is_empty() {
-                    // this is a potential generic parameter or concrete type
-                    if name.chars().next().unwrap_or(' ').is_uppercase() || name.len() <= 3 {
-                        // likely a generic parameter - infer it from the argument type
-                        if let Some(existing) = type_map.get(name) {
-                            if existing != arg_type {
-                                return Err(format!(
-                                    "Type mismatch for generic parameter {}: expected {:?}, got {:?}",
-                                    name, existing, arg_type
-                                ));
-                            }
-                        } else {
-                            type_map.insert(name.clone(), arg_type.clone());
-                        }
-                    } else {
-                        // concrete type - should match exactly
-                        let expected_concrete = self.type_node_to_type(param_type);
-                        if expected_concrete != *arg_type {
-                            return Err(format!(
-                                "Type mismatch: expected {:?}, got {:?}",
-                                expected_concrete, arg_type
-                            ));
-                        }
-                    }
-                } else {
-                    // generic type with arguments (like list<T>)
-                    match arg_type {
-                        Type::Named(arg_name, arg_type_args) => {
-                            if name != arg_name {
-                                return Err(format!(
-                                    "Type name mismatch: expected {}, got {}",
-                                    name, arg_name
-                                ));
-                            }
-                            if type_args.len() != arg_type_args.len() {
-                                return Err(format!(
-                                    "Type argument count mismatch for {}: expected {}, got {}",
-                                    name,
-                                    type_args.len(),
-                                    arg_type_args.len()
-                                ));
-                            }
-                            // recursively match type arguments
-                            for (param_arg, arg_arg) in type_args.iter().zip(arg_type_args.iter()) {
-                                self.infer_types_from_signature(param_arg, arg_arg, type_map)?;
-                            }
-                        }
-                        _ => {
-                            return Err(format!(
-                                "Expected named type with args, got {:?}",
-                                arg_type
-                            ));
-                        }
-                    }
-                }
+                self.handle_named_signature_type(name, type_args, param_type, arg_type, type_map)?;
             }
             TypeKind::List(inner_param_type) => match arg_type {
                 Type::List(inner_arg_type) => {

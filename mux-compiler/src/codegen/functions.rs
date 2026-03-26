@@ -16,6 +16,28 @@ use crate::semantics::Type;
 use super::CodeGenerator;
 
 impl CodeGenerator<'_> {
+    fn resolve_decl_llvm_name(&self, func: &FunctionNode) -> String {
+        if func.name.contains('$') {
+            return func.name.clone();
+        }
+
+        if let Some(symbol) = self.analyzer.symbol_table().lookup(&func.name)
+            && let Some(mangled_name) = &symbol.llvm_name
+        {
+            return mangled_name.clone();
+        }
+
+        for module_syms in self.analyzer.imported_symbols().values() {
+            if let Some(func_symbol) = module_syms.get(&func.name)
+                && let Some(mangled) = &func_symbol.llvm_name
+            {
+                return mangled.clone();
+            }
+        }
+
+        func.name.clone()
+    }
+
     pub(super) fn declare_function(&mut self, func: &FunctionNode) -> Result<(), String> {
         let mut param_types: Vec<BasicMetadataTypeEnum> = func
             .params
@@ -54,27 +76,7 @@ impl CodeGenerator<'_> {
             let return_type = self.llvm_type_from_mux_type(&func.return_type)?;
             return_type.fn_type(&param_types, false)
         };
-
-        let llvm_name = if func.name.contains('$') {
-            func.name.clone()
-        } else if let Some(symbol) = self.analyzer.symbol_table().lookup(&func.name) {
-            if let Some(mangled_name) = &symbol.llvm_name {
-                mangled_name.clone()
-            } else {
-                func.name.clone()
-            }
-        } else {
-            let mut found_name = None;
-            for module_syms in self.analyzer.imported_symbols().values() {
-                if let Some(func_symbol) = module_syms.get(&func.name)
-                    && let Some(mangled) = &func_symbol.llvm_name
-                {
-                    found_name = Some(mangled.clone());
-                    break;
-                }
-            }
-            found_name.unwrap_or_else(|| func.name.clone())
-        };
+        let llvm_name = self.resolve_decl_llvm_name(func);
 
         let function = self.module.add_function(&llvm_name, fn_type, None);
         self.functions.insert(func.name.clone(), function);

@@ -25,6 +25,40 @@ impl<'a> CodeGenerator<'a> {
             .expect("should always return a value")
     }
 
+    fn compute_class_field_default_value(
+        &mut self,
+        field: &Field,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if let Some(default_expr) = &field.default_value {
+            let literal_val = self.generate_expression(default_expr)?;
+            if matches!(field.type_.kind, TypeKind::Primitive(_)) {
+                return Ok(self.box_value(literal_val).into());
+            }
+            return Ok(literal_val);
+        }
+
+        if matches!(field.type_.kind, TypeKind::Primitive(_)) {
+            let llvm_type = self.llvm_type_from_mux_type(&field.type_)?;
+            let zero_val = if llvm_type.is_int_type() {
+                llvm_type.into_int_type().const_zero().into()
+            } else if llvm_type.is_float_type() {
+                llvm_type.into_float_type().const_zero().into()
+            } else {
+                self.context
+                    .ptr_type(AddressSpace::default())
+                    .const_zero()
+                    .into()
+            };
+            return Ok(self.box_value(zero_val).into());
+        }
+
+        Ok(self
+            .context
+            .ptr_type(AddressSpace::default())
+            .const_zero()
+            .into())
+    }
+
     pub(super) fn generate_enum_constructors(
         &mut self,
         name: &str,
@@ -214,43 +248,7 @@ impl<'a> CodeGenerator<'a> {
                 )
                 .map_err(|e| e.to_string())?;
 
-            // Check if field has a default value
-            let default_value: BasicValueEnum = if let Some(default_expr) = &field.default_value {
-                // Generate code for the literal default value
-                let literal_val = self.generate_expression(default_expr)?;
-
-                // Box if primitive
-                if matches!(field.type_.kind, TypeKind::Primitive(_)) {
-                    self.box_value(literal_val).into()
-                } else {
-                    literal_val
-                }
-            } else {
-                // No default value - use zero/null initialization
-                if matches!(field.type_.kind, TypeKind::Primitive(_)) {
-                    // Create default value based on type
-                    let llvm_type = self.llvm_type_from_mux_type(&field.type_)?;
-                    let zero_val = if llvm_type.is_int_type() {
-                        llvm_type.into_int_type().const_zero().into()
-                    } else if llvm_type.is_float_type() {
-                        llvm_type.into_float_type().const_zero().into()
-                    } else {
-                        // For other types, use null pointer
-                        self.context
-                            .ptr_type(AddressSpace::default())
-                            .const_zero()
-                            .into()
-                    };
-                    // Box the zero value
-                    self.box_value(zero_val).into()
-                } else {
-                    // Non-primitive fields: initialize to null
-                    self.context
-                        .ptr_type(AddressSpace::default())
-                        .const_zero()
-                        .into()
-                }
-            };
+            let default_value = self.compute_class_field_default_value(field)?;
 
             self.builder
                 .build_store(field_ptr, default_value)
