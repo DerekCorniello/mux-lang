@@ -3,6 +3,7 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
+const siteVersion = process.env.npm_package_version ?? '0.2.0';
 
 const config: Config = {
   title: 'Mux',
@@ -102,7 +103,8 @@ const config: Config = {
     footer: {
       style: 'dark',
       links: [],
-      copyright: `<p>Copyright © ${new Date().getFullYear()} Derek Corniello. Licensed under MIT.</p><br>
+      copyright: `<p>Copyright © ${new Date().getFullYear()} Derek Corniello. Licensed under MIT.</p>
+        <p>Website version: ${siteVersion}</p><br>
         <a href="https://github.com/derekcorniello/mux-lang" target="_blank" rel="noopener noreferrer">Source Code</a> ·
         <a href="https://github.com/derekcorniello/mux-lang/discussions" target="_blank" rel="noopener noreferrer">Discussions</a> ·
         <a href="https://github.com/derekcorniello/mux-lang/issues" target="_blank" rel="noopener noreferrer">Issues</a> ·
