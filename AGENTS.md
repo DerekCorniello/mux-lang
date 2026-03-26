@@ -9,7 +9,7 @@
 - **Follow Rust best practices** - idiomatic code, proper error handling, clear naming.
 - **Never touch git** - do not run git commands, create commits, or modify git config. Let the user handle version control.
 - **If confused about language design**, check README.md first, then stop and ask for clarification.
-- **No clippy warnings** - code must pass `cargo clippy` without warnings.
+- **No clippy warnings** - code must pass `cargo clippy --all-targets --all-features -- -D warnings` (run this exact command for strict linting).
 - **Remove outdated comments** - ensure comments reflect current code.
 - **NEVER READ THE `.env` FILE** - do not read or parse the `.env` file. If environment variables are needed, ask the user to provide them explicitly.
 

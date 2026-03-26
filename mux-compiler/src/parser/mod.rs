@@ -728,58 +728,60 @@ impl<'a> Parser<'a> {
 
     fn import_declaration(&mut self) -> ParserResult<AstNode> {
         let start_span = self.consume_token(TokenType::Import, "Expected 'import' keyword")?;
-
-        // Parse module path (supports dots, relative ./, absolute /)
         let module_path = self.parse_module_path()?;
-
-        // Parse import specification
-        let spec = if self.matches(&[TokenType::Dot]) {
-            // After dot: could be .item, .(items), or .*
-            if self.matches(&[TokenType::Star]) {
-                // import module.*
-                ImportSpec::Wildcard
-            } else if self.matches(&[TokenType::OpenParen]) {
-                // import module.(item1, item2 as alias, item3)
-                self.parse_import_items()?
-            } else {
-                // import module.item (as alias)
-                let item = self.consume_identifier("Expected item name after '.'")?;
-                let alias = if self.matches(&[TokenType::As]) {
-                    Some(self.consume_identifier("Expected alias after 'as'")?)
-                } else {
-                    None
-                };
-                ImportSpec::Item { item, alias }
-            }
-        } else {
-            // import module (as alias or as _)
-            let alias = if self.matches(&[TokenType::As]) {
-                let alias_name = self.consume_identifier("Expected alias after 'as'")?;
-                // Check for side-effect import (as _)
-                if alias_name == "_" {
-                    None // Side-effect only, don't add symbols
-                } else {
-                    Some(alias_name)
-                }
-            } else {
-                // No alias, use module basename as namespace
-                Some(
-                    module_path
-                        .split('.')
-                        .next_back()
-                        .unwrap_or(&module_path)
-                        .to_string(),
-                )
-            };
-            ImportSpec::Module { alias }
-        };
-
+        let spec = self.parse_import_spec(&module_path)?;
         let end_span = self.previous().span;
-
         Ok(AstNode::Statement(StatementNode {
             kind: StatementKind::Import { module_path, spec },
             span: start_span.combine(&end_span),
         }))
+    }
+
+    /// Extracted: Parses the import spec following an import path.
+    fn parse_import_spec(&mut self, module_path: &str) -> ParserResult<ImportSpec> {
+        if self.matches(&[TokenType::Dot]) {
+            self.parse_dot_import_spec()
+        } else {
+            self.parse_module_import_spec(module_path)
+        }
+    }
+
+    /// Extracted: Handles dot import: .*, .(items), .item (with optional alias)
+    fn parse_dot_import_spec(&mut self) -> ParserResult<ImportSpec> {
+        if self.matches(&[TokenType::Star]) {
+            Ok(ImportSpec::Wildcard)
+        } else if self.matches(&[TokenType::OpenParen]) {
+            self.parse_import_items()
+        } else {
+            let item = self.consume_identifier("Expected item name after '.'")?;
+            let alias = if self.matches(&[TokenType::As]) {
+                Some(self.consume_identifier("Expected alias after 'as'")?)
+            } else {
+                None
+            };
+            Ok(ImportSpec::Item { item, alias })
+        }
+    }
+
+    /// Extracted: Handles import module (as alias or as _)
+    fn parse_module_import_spec(&mut self, module_path: &str) -> ParserResult<ImportSpec> {
+        let alias = if self.matches(&[TokenType::As]) {
+            let alias_name = self.consume_identifier("Expected alias after 'as'")?;
+            if alias_name == "_" {
+                None
+            } else {
+                Some(alias_name)
+            }
+        } else {
+            Some(
+                module_path
+                    .split('.')
+                    .next_back()
+                    .unwrap_or(module_path)
+                    .to_string(),
+            )
+        };
+        Ok(ImportSpec::Module { alias })
     }
 
     // Parse module path with support for dots, relative (./, ../), and absolute (/)
@@ -1315,46 +1317,7 @@ impl<'a> Parser<'a> {
 
         let mut arms = Vec::new();
         while !self.check(TokenType::CloseBrace) && !self.is_at_end() {
-            let pattern = self.parse_pattern()?;
-            let guard = if self.matches(&[TokenType::If]) {
-                Some(self.parse_expression()?)
-            } else {
-                None
-            };
-            self.skip_newlines();
-
-            let body = if self.check(TokenType::OpenBrace) {
-                self.block()?
-            } else if self.matches(&[TokenType::Colon]) {
-                self.skip_newlines();
-                if self.check(TokenType::OpenBrace) {
-                    self.block()?
-                } else {
-                    self.statement()?
-                }
-            } else {
-                self.statement()?
-            };
-
-            let body_statements = match body {
-                AstNode::Statement(stmt) => match stmt.kind {
-                    StatementKind::Block(block) => block,
-                    _ => vec![stmt],
-                },
-                _ => {
-                    return Err(ParserError::new(
-                        "Expected statement for match arm body",
-                        start_span,
-                    ));
-                }
-            };
-
-            arms.push(MatchArm {
-                pattern,
-                guard,
-                body: body_statements,
-            });
-
+            arms.push(self.parse_match_arm(start_span)?);
             self.skip_newlines();
             if self.matches(&[TokenType::Comma]) {
                 self.skip_newlines();
@@ -1372,6 +1335,49 @@ impl<'a> Parser<'a> {
             kind: StatementKind::Match { expr, arms },
             span: start_span.combine(&end_span),
         }))
+    }
+
+    /// Helper: Parses a single match arm, including pattern, optional guard, and arm body.
+    fn parse_match_arm(&mut self, start_span: Span) -> ParserResult<MatchArm> {
+        let pattern = self.parse_pattern()?;
+        let guard = if self.matches(&[TokenType::If]) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        self.skip_newlines();
+        let body = self.parse_match_arm_body(start_span)?;
+        Ok(MatchArm {
+            pattern,
+            guard,
+            body,
+        })
+    }
+
+    /// Helper: Parses the body of a match arm, returning a vector of statement nodes.
+    fn parse_match_arm_body(&mut self, start_span: Span) -> ParserResult<Vec<StatementNode>> {
+        let node = if self.check(TokenType::OpenBrace) {
+            self.block()?
+        } else if self.matches(&[TokenType::Colon]) {
+            self.skip_newlines();
+            if self.check(TokenType::OpenBrace) {
+                self.block()?
+            } else {
+                self.statement()?
+            }
+        } else {
+            self.statement()?
+        };
+        match node {
+            AstNode::Statement(stmt) => match stmt.kind {
+                StatementKind::Block(block) => Ok(block),
+                _ => Ok(vec![stmt]),
+            },
+            _ => Err(ParserError::new(
+                "Expected statement for match arm body",
+                start_span,
+            )),
+        }
     }
 
     fn parse_pattern(&mut self) -> ParserResult<PatternNode> {
@@ -1591,34 +1597,28 @@ impl<'a> Parser<'a> {
 
     #[allow(clippy::only_used_in_recursion)]
     fn check_no_postfix_increment_decrement(&self, expr: &ExpressionNode) -> ParserResult<()> {
-        match &expr.kind {
+        self.check_no_postfix_increment_decrement_kind(&expr.kind, expr.span)
+    }
+
+    fn check_no_postfix_increment_decrement_kind(
+        &self,
+        kind: &ExpressionKind,
+        span: Span,
+    ) -> ParserResult<()> {
+        match kind {
             ExpressionKind::Unary {
                 op,
-                op_span: _,
                 expr: inner,
                 postfix,
-            } => {
-                // If this is a postfix ++ or --, it's nested and invalid
-                if *postfix && matches!(op, UnaryOp::Incr | UnaryOp::Decr) {
-                    return Err(ParserError::with_help(
-                        "Increment/Decrement operator can only be used as a standalone statement",
-                        expr.span,
-                        "Expressions like 'x + y++' are not supported. Use 'y++' as a separate statement before the expression.",
-                    ));
-                }
-                // Otherwise, recurse into the inner expression
-                self.check_no_postfix_increment_decrement(inner)
-            }
+                ..
+            } => self.check_unary_postfix_nesting(op, *postfix, inner, span),
             ExpressionKind::Binary { left, right, .. } => {
                 self.check_no_postfix_increment_decrement(left)?;
                 self.check_no_postfix_increment_decrement(right)
             }
             ExpressionKind::Call { func, args } => {
                 self.check_no_postfix_increment_decrement(func)?;
-                for arg in args {
-                    self.check_no_postfix_increment_decrement(arg)?;
-                }
-                Ok(())
+                self.check_no_postfix_increment_decrement_all(args)
             }
             ExpressionKind::FieldAccess { expr: inner, .. } => {
                 self.check_no_postfix_increment_decrement(inner)
@@ -1627,24 +1627,11 @@ impl<'a> Parser<'a> {
                 self.check_no_postfix_increment_decrement(inner)?;
                 self.check_no_postfix_increment_decrement(index)
             }
-            ExpressionKind::ListLiteral(elems) => {
-                for elem in elems {
-                    self.check_no_postfix_increment_decrement(elem)?;
-                }
-                Ok(())
-            }
-            ExpressionKind::SetLiteral(elems) => {
-                for elem in elems {
-                    self.check_no_postfix_increment_decrement(elem)?;
-                }
-                Ok(())
+            ExpressionKind::ListLiteral(elems) | ExpressionKind::SetLiteral(elems) => {
+                self.check_no_postfix_increment_decrement_all(elems)
             }
             ExpressionKind::MapLiteral { entries, .. } => {
-                for (key, value) in entries {
-                    self.check_no_postfix_increment_decrement(key)?;
-                    self.check_no_postfix_increment_decrement(value)?;
-                }
-                Ok(())
+                self.check_no_postfix_increment_decrement_map_entries(entries)
             }
             ExpressionKind::If {
                 cond,
@@ -1656,17 +1643,61 @@ impl<'a> Parser<'a> {
                 self.check_no_postfix_increment_decrement(else_expr)
             }
             ExpressionKind::Lambda { body, .. } => {
-                // Check all statements in the lambda body
-                for stmt in body {
-                    if let StatementKind::Expression(e) = &stmt.kind {
-                        self.check_no_postfix_increment_decrement(e)?;
-                    }
-                }
-                Ok(())
+                self.check_no_postfix_increment_decrement_lambda_body(body)
             }
-            // For literals, identifiers, and other leaf nodes, they can't contain postfix ops
             _ => Ok(()),
         }
+    }
+
+    fn check_unary_postfix_nesting(
+        &self,
+        op: &UnaryOp,
+        postfix: bool,
+        inner: &ExpressionNode,
+        span: Span,
+    ) -> ParserResult<()> {
+        if postfix && matches!(op, UnaryOp::Incr | UnaryOp::Decr) {
+            return Err(ParserError::with_help(
+                "Increment/Decrement operator can only be used as a standalone statement",
+                span,
+                "Expressions like 'x + y++' are not supported. Use 'y++' as a separate statement before the expression.",
+            ));
+        }
+
+        self.check_no_postfix_increment_decrement(inner)
+    }
+
+    fn check_no_postfix_increment_decrement_all(
+        &self,
+        expressions: &[ExpressionNode],
+    ) -> ParserResult<()> {
+        for expression in expressions {
+            self.check_no_postfix_increment_decrement(expression)?;
+        }
+        Ok(())
+    }
+
+    fn check_no_postfix_increment_decrement_map_entries(
+        &self,
+        entries: &[(ExpressionNode, ExpressionNode)],
+    ) -> ParserResult<()> {
+        for (key, value) in entries {
+            self.check_no_postfix_increment_decrement(key)?;
+            self.check_no_postfix_increment_decrement(value)?;
+        }
+        Ok(())
+    }
+
+    fn check_no_postfix_increment_decrement_lambda_body(
+        &self,
+        body: &[StatementNode],
+    ) -> ParserResult<()> {
+        for stmt in body {
+            if let StatementKind::Expression(expr) = &stmt.kind {
+                self.check_no_postfix_increment_decrement(expr)?;
+            }
+        }
+        Ok(())
     }
 
     fn parse_named_type_with_builtin_support(
@@ -2679,35 +2710,58 @@ impl<'a> Parser<'a> {
         false
     }
 
+    fn try_parse_postfix_operator(
+        &mut self,
+        expr: ExpressionNode,
+    ) -> ParserResult<Option<ExpressionNode>> {
+        if self.matches(&[TokenType::OpenParen]) {
+            return self.parse_call_postfix(expr).map(Some);
+        }
+
+        if self.matches(&[TokenType::Dot]) {
+            return self.parse_field_access_postfix(expr).map(Some);
+        }
+
+        if self.matches(&[TokenType::OpenBracket]) {
+            return self.parse_index_postfix(expr).map(Some);
+        }
+
+        if self.check(TokenType::Lt) {
+            return self
+                .parse_generic_postfix(expr)
+                .map(|maybe_expr| maybe_expr.or(None));
+        }
+
+        if self.matches(&[TokenType::Incr]) {
+            return Ok(Some(self.parse_postfix_update(expr, UnaryOp::Incr)));
+        }
+
+        if self.matches(&[TokenType::Decr]) {
+            return Ok(Some(self.parse_postfix_update(expr, UnaryOp::Decr)));
+        }
+
+        Ok(None)
+    }
+
     fn parse_postfix_operators(
         &mut self,
         mut expr: ExpressionNode,
     ) -> ParserResult<ExpressionNode> {
         loop {
-            if self.matches(&[TokenType::OpenParen]) {
-                expr = self.parse_call_postfix(expr)?;
-            } else if self.matches(&[TokenType::Dot]) {
-                expr = self.parse_field_access_postfix(expr)?;
-            } else if self.matches(&[TokenType::OpenBracket]) {
-                expr = self.parse_index_postfix(expr)?;
-            } else if self.check(TokenType::Lt) {
-                if let Some(generic_expr) = self.parse_generic_postfix(expr.clone())? {
-                    expr = generic_expr;
-                    continue;
-                } else {
-                    // not a generic argument list, leave '<' to be parsed as binary less-than.
-                    break;
-                }
-            } else if self.matches(&[TokenType::Incr]) {
-                expr = self.parse_postfix_update(expr, UnaryOp::Incr);
-            } else if self.matches(&[TokenType::Decr]) {
-                expr = self.parse_postfix_update(expr, UnaryOp::Decr);
-            } else {
-                if self.skip_newline_gap_for_postfix() {
-                    continue;
-                }
+            if let Some(next_expr) = self.try_parse_postfix_operator(expr.clone())? {
+                expr = next_expr;
+                continue;
+            }
+
+            if self.check(TokenType::Lt) {
                 break;
             }
+
+            if self.skip_newline_gap_for_postfix() {
+                continue;
+            }
+
+            break;
         }
 
         Ok(expr)
