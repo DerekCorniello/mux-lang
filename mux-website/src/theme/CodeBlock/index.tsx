@@ -43,7 +43,6 @@ function TerminalCodeContent({
         <pre
           className={className}
           style={style}
-          tabIndex={0}
         >
           <code
             style={{
@@ -87,7 +86,7 @@ function parseMetastring(metastring: string | undefined): { title?: string; show
     // Check if it has a specific number: showLineNumbers=5
     const lineNumMatch = metastring.match(/showLineNumbers=(\d+)/);
     if (lineNumMatch) {
-      result.showLineNumbers = parseInt(lineNumMatch[1], 10);
+      result.showLineNumbers = Number.parseInt(lineNumMatch[1], 10);
     } else {
       result.showLineNumbers = true;
     }

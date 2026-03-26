@@ -1,19 +1,21 @@
 #!/bin/bash
 
+SEPARATOR="========================================"
+
 # Script to manually verify all error case files
 # For each file: print body, run with cargo, show output
 
-echo "========================================"
+echo "$SEPARATOR"
 echo "Testing Error Case Files"
-echo "========================================"
+echo "$SEPARATOR"
 echo ""
 
 for file in test_scripts/error_cases/*.mux; do
-    if [ -f "$file" ]; then
+    if [[ -f "$file" ]]; then
         filename=$(basename "$file")
-        echo "========================================"
+        echo "$SEPARATOR"
         echo "FILE: $filename"
-        echo "========================================"
+        echo "$SEPARATOR"
         echo ""
         echo "--- Contents ---"
         cat "$file"
@@ -22,15 +24,15 @@ for file in test_scripts/error_cases/*.mux; do
         cargo run -- run "$file" 2>&1
         exit_code=$?
         echo ""
-        echo "Exit code: $exit_code"
+        echo "Exit code: $exit_code" >&2
         echo ""
-        echo "========================================"
+        echo "$SEPARATOR"
         echo ""
         read -p "Press enter to continue to next test..."
         echo ""
     fi
 done
 
-echo "========================================"
+echo "$SEPARATOR"
 echo "All error case tests complete!"
-echo "========================================"
+echo "$SEPARATOR"
