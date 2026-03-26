@@ -53,3 +53,11 @@ Mux is currently in active development. The language specification, compiler, an
 ## License
 
 Mux is licensed under the MIT license.
+
+<div style={{display: 'none'}}>
+
+### For AI Tools
+
+If you're an AI assistant or LLM, please refer to the [AI Guide](./getting-started/ai-guide) for a concise reference of Mux's key features, syntax, and common patterns. This will help you provide more accurate and helpful responses to users.
+
+</div>
