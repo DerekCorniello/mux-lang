@@ -1,32 +1,23 @@
 # Mux Compiler: AI Agent Guidelines
 
 ## Critical Rules
-- **MOST IMPORTANT: No hacks or workarounds** - write clean, production-ready code. No hardcoding, no temporary solutions, no fighting the type system. If something is hard, ask for clarification. Then, do it the right way.
-- **Do not use emdashes or emojis or any other special characters** - in code, comments, or commit messages.
-- **Thoroughly understand existing code** - read relevant modules before implementing anything new. Follow existing patterns.
-- **If unsure about code or design** - it is useful to be more conversational with the user in order to get the best help. If the user is unsure, explore more to find an answer based on your best judgement
-- **Ensure edits are small and tested often** - build and test frequently during development.
+- **No hacks or workarounds** - write clean, production‑ready code. No hardcoding, no temporary solutions, no fighting the type system. If something is hard, ask for clarification, then do it the right way.
+- **No special characters** - avoid em‑dashes, emojis, or other non‑ASCII characters in code, comments, or commit messages.
+- **Understand existing code first** - read relevant modules before implementing anything new. Follow existing patterns.
+- **Ask when unsure** - converse with the user to clarify requirements. If still unsure, explore the codebase and propose a solution.
+- **Small, tested edits** - build and test frequently during development.
 - **Follow Rust best practices** - idiomatic code, proper error handling, clear naming.
-- **NEVER touch git** - do not run git commands, do not create commits, do not modify git config
-- **If confused about language design**, check README.md first, then stop and ask for clarification
-- **No clippy errors or warnings** - code must pass `cargo clippy`
-- **Rust-like code** - idiomatic, readable, well-structured
-- **Old Comments** - remove outdated comments, ensure comments reflect current code
+- **Never touch git** - do not run git commands, create commits, or modify git config. Let the user handle version control.
+- **If confused about language design**, check README.md first, then stop and ask for clarification.
+- **No clippy warnings** - code must pass `cargo clippy` without warnings.
+- **Remove outdated comments** - ensure comments reflect current code.
 
 ## Critical Understanding
-The project is a compiler for a programming langauge, mux. The goal of this language is creating a clean, strongly and statically-typed language implementation with zero-cost abstractions. It is meant to be a clean and modern language, with ease of use and learning as a priority.
+Mux is a statically‑typed, reference‑counted language that aims for clean, zero‑cost abstractions. The compiler generates LLVM IR and links with a C/Rust runtime. The goal is a modern, easy‑to‑learn language with strong static typing.
 
-## Quick Reference Commands
+## Development Process
 
-### Recommended Tools:
-- grep -> ripgrep (rg)
-- cat -> bat
-- cd -> zoxide
-
-### Common issues to watch for:
-Executable's output seems to be cutoff -> this is likely a segfault due to incorrect LLVM IR generation. Check codegen changes carefully.
-
-### Building & Testing
+### Quick Reference Commands
 ```bash
 # Build the project
 cargo build
@@ -44,240 +35,115 @@ cargo fmt
 cargo clippy
 ```
 
-### Running Tests (User Will Do These)
-```bash
-# Run all tests - user handles this
-cargo test
+### Testing Approach
+When testing a feature:
+1. Run `cargo build` to verify compilation.
+2. Run `cargo run -- test_scripts/test_file.mux` to test functionality.
+   - Create test files that cover the new feature.
+   - Add them to existing test files if appropriate, or remove ad‑hoc tests.
+3. Run `cargo fmt` for consistent formatting.
+4. Run `cargo clippy` to ensure no warnings/errors.
+5. Use the SonarQube MCP tool to check code quality.
 
-# Run insta snapshot tests - user handles this
-cargo insta test
+The user will run `cargo test` and insta snapshot tests separately.
 
-# Review insta snapshots - user handles this
-cargo insta review
-```
+### Common Issues
+- Executable output seems cut off → likely a segfault due to incorrect LLVM IR generation. Review codegen changes carefully.
 
-### Do not do these test commands (user will handle):
-
-## Testing Approach
-
-When testing a feature, the agent should:
-1. Run `cargo build` to verify compilation succeeds
-2. Run `cargo run -- test_scripts/test_file.mux` to execute and test functionality
-    a. You may create test files that cover the new feature
-    b. After creating these test files, you may either
-         i. add them to existing test files,
-         ii. remove them if they were only for ad-hoc testing, or
-         iii. leave them if they are useful and do not fit into existing tests. this will require tests to be reviewed manually by the user later.
-
-3. Run `cargo fmt` to ensure consistent formatting
-4. Run `cargo clippy` to ensure no warnings or errors
-5. Use your sonarqube mcp tool to check for code quality issues
-
-The user will separately run `cargo test` and insta testing for comprehensive validation.
-
-## Current System Architecture
-
-The Mux compiler is organized as a workspace with three main partitions:
+## System Architecture
+The Mux compiler is a workspace with three main partitions:
 
 ### mux-compiler (Rust)
-Responsible for parsing, semantic analysis, and code generation:
-- **lexer** - Tokenizes source code into tokens
-- **parser** - Builds AST from tokens  
-- **semantics** - Type checking and symbol resolution
-- **codegen** - LLVM IR generation
+Responsible for parsing, semantic analysis, and LLVM IR generation:
+- **lexer** - tokenizes source code
+- **parser** - builds AST
+- **semantics** - type checking and symbol resolution
+- **codegen** - generates LLVM IR (output `.ll` files)
 
-The compiler generates LLVM IR which is compiled to a .ll file, then linked with clang against the runtime.
-If you want to view this .ll file, you must pass the -i option while tunning the file. 
+Use `mux run -i <file.mux>` to view the generated IR.
 
 ### mux-runtime (C/Rust)
 Provides runtime support for compiled Mux programs:
-- **Memory allocation and garbage collection**
-- **String operations** (UTF-8 handling)
-- **Collection implementations** (list, map, set)
-- **Type conversions** and utilities
-- **stdlib**
+- Memory allocation and reference counting
+- String operations (UTF‑8)
+- Collection implementations (list, map, set)
+- Type conversions and utilities
+- Standard library
 
-The compiler generates calls to runtime functions. Understanding this interface is important for any codegen changes.
+The compiler generates calls to runtime functions; understanding this interface is essential for codegen changes.
 
 ## Code Style Guidelines
-
-### General Principles
-- Write idiomatic Rust code - clean, readable, well-structured
-- Use Rust's type system to prevent errors at compile time
-- Prefer Result<T, E> for error handling throughout
-- Document public APIs with rustdoc comments
-- Keep functions small and focused on single tasks
-
-### First: Understand Existing Code
-When working on any feature:
-1. Read relevant existing code in the codebase first
-2. Understand how similar features are implemented
-3. Follow existing patterns and conventions
-4. Only then implement the new feature
+- Write idiomatic Rust – clean, readable, well‑structured.
+- Use Rust's type system to prevent compile‑time errors.
+- Prefer `Result<T, E>` for fallible operations.
+- Document public APIs with rustdoc comments (`///`).
+- Keep functions small and focused.
 
 ### Naming Conventions
-- **Types**: PascalCase (e.g., `SemanticAnalyzer`, `TypeNode`)
-- **Functions/Methods**: snake_case (e.g., `analyze()`, `generate_ir()`)
-- **Variables**: snake_case (e.g., `tokens`, `error_count`)
-- **Constants**: SCREAMING_SNAKE_CASE (e.g., `MAX_BUFFER_SIZE`)
-- **Modules**: snake_case (e.g., `lexer`, `parser`, `semantics`)
-- **Type Parameters**: Single uppercase letter (e.g., `T`, `U`) or descriptive (e.g., `Elem`)
-- **Unused Vars**: Prefix with a _, so it is easier to identify what it is if needed at a later date. 
+- **Types**: `PascalCase`
+- **Functions/Methods**: `snake_case`
+- **Variables**: `snake_case`
+- **Constants**: `SCREAMING_SNAKE_CASE`
+- **Modules**: `snake_case`
+- **Type Parameters**: single uppercase letter (`T`, `U`) or descriptive (`Elem`).
+- **Unused variables**: prefix with `_`.
 
 ### Error Handling
-- Return `Result<T, String>` or `Result<T, Box<dyn Error>>` for fallible operations
-- Use `?` operator for error propagation
-- Provide context in error messages: `Err(format!("failed to {}", action))`
-- Handle all Result variants explicitly (no `.unwrap()` except in tests)
+- Return `Result<T, String>` or `Result<T, Box<dyn Error>>`.
+- Use the `?` operator for propagation.
+- Provide context: `Err(format!("failed to {}", action))`.
+- No `.unwrap()` except in tests.
 
 ### Type System
-- Use concrete LLVM types (i64, f64, *mut c_char) - NO *mut Value boxing
-- Leverage Rust's type system for compile-time safety
-- Avoid unnecessary boxing or dynamic dispatch
-- Use Option<T> for nullable values
+- Use concrete LLVM types (e.g., `i64`, `f64`, `*mut c_char`); do **not** box `*mut Value`.
+- Leverage Rust's type system for compile‑time safety.
+- Avoid unnecessary boxing or dynamic dispatch.
+- Use `Option<T>` for nullable values.
 
-### Comments & Documentation
-- Use `///` for public API documentation
-- Use `//` for implementation notes
-- Document WHY not WHAT
-- DO NOT ADD STUPID COMMENTS THAT STATE THE OBVIOUS
-
-### Git Workflow (DO NOT TOUCH)
-- Never run git commands
-- Never create commits
-- Never modify git config
-- Let the user handle all version control
+### Comments
+- `///` for public API documentation.
+- `//` for implementation notes.
+- Document *why*, not *what*.
+- Do not state the obvious.
 
 ## Project Structure
-```
-mux-compiler/
-├── Cargo.lock
-├── Cargo.toml
-├── src
-│   ├── codegen/
-│   │   ├── mod.rs          # Core module: struct, new(), generate(), emit_ir_to_file()
-│   │   ├── expressions.rs  # Expression generation (~3500 lines)
-│   │   ├── statements.rs   # Statement generation (~1400 lines)
-│   │   ├── functions.rs    # Function declaration and generation
-│   │   ├── methods.rs      # Method call generation
-│   │   ├── classes.rs      # Class/interface/enum type generation
-│   │   ├── constructors.rs # Constructor generation
-│   │   ├── operators.rs    # Binary and logical operators
-│   │   ├── generics.rs     # Generic type instantiation
-│   │   ├── types.rs        # Type conversions
-│   │   ├── memory.rs       # RC memory management
-│   │   └── runtime.rs      # Runtime boxing/unboxing
-│   ├── lexer.rs
-│   ├── lib.rs
-│   ├── main.rs
-│   ├── module_resolver.rs
-│   ├── parser.rs
-│   ├── semantics.rs
-│   └── source.rs
-└── tests
-    ├── executable_integration.rs
-    ├── lexer_integration.rs
-    ├── parser_integration.rs
-    ├── semantics_integration.rs
-    └── snapshots
-        └── ...
-mux-runtime/
-├── Cargo.toml
-└── src
-    ├── lib.rs
-    ├── boxing.rs
-    ├── refcount.rs
-    ├── bool.rs
-    ├── int.rs
-    ├── float.rs
-    ├── string.rs
-    ├── list.rs
-    ├── map.rs
-    ├── set.rs
-    ├── optional.rs
-    ├── result.rs
-    ├── object.rs
-    ├── io.rs
-    ├── math.rs
-    └── std.rs
-```
+Key directories:
+- `mux-compiler/src/` – compiler implementation.
+- `mux-runtime/src/` – runtime library.
+- `mux-website/docs/` – documentation.
+- `test_scripts/` – sample Mux programs.
 
 ## Key Constraints
-- NO dynamic typing
-- NO implicit type conversions
-- NO runtime reflection
-- All generics must monomorphize at compile time
-- Interfaces use static dispatch (no vtables)
+- No dynamic typing.
+- No implicit type conversions.
+- No runtime reflection.
+- All generics monomorphize at compile time.
+- Interfaces use static dispatch (no vtables).
 
-## Codegen Module Architecture Notes
-
-### Import Pattern
-All codegen submodules follow this pattern:
-```rust
-use super::CodeGenerator;
-use crate::ast::{...};  // Import from ast module, NOT parser
-use inkwell::types::{BasicType, ...};
-use inkwell::values::{...};
-
-impl<'a> CodeGenerator<'a> {
-    pub(super) fn function_name(...) { ... }
-}
-```
-
-**Important:** Always import types from `crate::ast` (e.g., `PrimitiveType`, `TypeKind`, `TypeNode`), not from `crate::parser` (which has private re-exports).
-
-### Visibility Rules
-- All functions in submodules should be `pub(super)` to be accessible from `mod.rs`
-- The `CodeGenerator` struct and its impl block are defined in `mod.rs`
-- Helper functions that are only used within a module can be `fn` (private)
-
-### Memory Management (RC)
-RC (reference counting) functions are defined in `memory.rs`:
-- `push_rc_scope()` - Create new scope for RC tracking
-- `track_rc_variable()` - Add variable to current scope
-- `generate_all_scopes_cleanup()` - Clean up all scopes
-- `rc_inc_if_pointer()` - Increment RC before returning values
-- `type_needs_rc_tracking()` - Check if type needs RC
-
-These are core to Mux's memory safety - all heap-allocated values use reference counting.
-
-### Expression vs Statement Distinction
-- **Expressions** return values and can be nested (literals, function calls, binary ops)
-- **Statements** perform actions and don't return values (variable declarations, if/while/for, return)
-- The `generate_expression()` function in `expressions.rs` handles ~30 different expression types
-- The `generate_statement()` function in `statements.rs` handles all statement types
-
-### Boxing/Unboxing
-Mux boxes all primitive values into a uniform `Value*` representation:
-- `box_value()` - Wraps LLVM values into boxed Value pointers
-- Runtime provides typed extractors: `get_raw_int_value()`, `get_raw_float_value()`, etc.
-- This enables uniform handling in collections and generic functions
-
-### Type System Integration
-The codegen works with three type representations:
-1. **Mux AST types** (`TypeNode`, `TypeKind`) - from parser/AST
-2. **Semantic types** (`Type`, `ResolvedType`) - from semantic analyzer
-3. **LLVM types** (`BasicTypeEnum`, `PointerValue`) - for IR generation
-
-Conversion functions in `types.rs` bridge these representations.
+## Codegen Module Architecture
+- Submodules import from `crate::ast`, not `crate::parser`.
+- Visibility: `pub(super)` for submodule functions, `fn` for private helpers.
+- Memory management uses reference counting (see `memory.rs`).
+- Expressions vs. statements: expressions return values; statements perform actions.
+- Boxing/unboxing: all primitive values are boxed into `*mut Value` pointers.
+- Three type representations: AST (`TypeNode`), semantic (`Type`), LLVM (`BasicTypeEnum`).
 
 ## When to Ask for Clarification
-- Unclear requirements or specifications
-- Language design questions - check README.md first
-- Architectural decisions affecting multiple components
-- Trade-offs between correctness and performance
-- Changes to existing public APIs
-- Anything that seems like a "hack" or workaround
+- Unclear requirements or specifications.
+- Language design questions (check README.md first).
+- Architectural decisions affecting multiple components.
+- Trade‑offs between correctness and performance.
+- Changes to existing public APIs.
+- Anything that seems like a "hack" or workaround.
 
 ## Workflow for New Work
-1. Check README.md if confused about language design
-2. Read existing relevant code to understand patterns
-3. Implement the feature using best Rust practices
-4. Run `cargo build` to verify compilation
-5. Run `cargo run -- test_scripts/test_file.mux` to test functionality
-6. Run `cargo clippy` to ensure no warnings/errors
-7. Let user run `cargo test` for comprehensive testing, remind the user that after you are done with tests, you can help update documentation. 
-8. Once the user confirms the tests work, be sure you update each README, one in the runtime, one in the compiler, and one in the base dir. 
-Additionally, find the best, most relevant spot in the mux-website, and update that as well. 
+1. Check README.md if confused about language design.
+2. Read existing relevant code to understand patterns.
+3. Implement the feature using best Rust practices.
+4. Run `cargo build` to verify compilation.
+5. Run `cargo run -- test_scripts/test_file.mux` to test functionality.
+6. Run `cargo clippy` to ensure no warnings/errors.
+7. Let the user run `cargo test` for comprehensive testing.
+8. After tests pass, update documentation (website and root README as needed).
 
-**Feel free to add to this as you learn vital informstion**
+**Add to this document as you learn vital information.**
