@@ -57,6 +57,147 @@ pub struct CodeGenerator<'a> {
 }
 
 impl<'a> CodeGenerator<'a> {
+    fn collect_imported_functions(&self) -> Vec<(String, FunctionNode)> {
+        self.analyzer
+            .all_module_asts()
+            .iter()
+            .flat_map(|(module_path, module_nodes)| {
+                let module_name_for_mangling = Self::sanitize_module_path(module_path);
+                module_nodes
+                    .iter()
+                    .filter_map(|node| {
+                        if let AstNode::Function(func) = node {
+                            Some((module_name_for_mangling.clone(), func.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn collect_non_generic_main_functions(&self, nodes: &[AstNode]) -> Vec<FunctionNode> {
+        nodes
+            .iter()
+            .filter_map(|node| {
+                if let AstNode::Function(func) = node
+                    && func.type_params.is_empty()
+                {
+                    return Some(func.clone());
+                }
+                None
+            })
+            .collect()
+    }
+
+    fn collect_top_level_statements(&self, nodes: &[AstNode]) -> Vec<StatementNode> {
+        nodes
+            .iter()
+            .filter_map(|node| {
+                if let AstNode::Statement(stmt) = node {
+                    Some(stmt.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn collect_class_methods_to_declare(&self, nodes: &[AstNode]) -> Vec<FunctionNode> {
+        let mut methods = Vec::new();
+        for node in nodes {
+            if let AstNode::Class {
+                name,
+                methods: class_methods,
+                ..
+            } = node
+            {
+                for method in class_methods {
+                    let mut method_copy = method.clone();
+                    method_copy.name = format!("{}.{}", name, method.name);
+                    methods.push(method_copy);
+                }
+            }
+        }
+        methods
+    }
+
+    fn declare_imported_functions(
+        &mut self,
+        imported_functions: &[(String, FunctionNode)],
+    ) -> Result<(), String> {
+        for (module_name, func) in imported_functions {
+            self.function_nodes.insert(func.name.clone(), func.clone());
+            if func.type_params.is_empty() {
+                let mangled_name = format!("{}!{}", module_name, func.name);
+                self.declare_function_with_name(func, &mangled_name)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn declare_main_functions(&mut self, main_module_nodes: &[AstNode]) -> Result<(), String> {
+        for node in main_module_nodes {
+            if let AstNode::Function(func) = node {
+                self.function_nodes.insert(func.name.clone(), func.clone());
+
+                if func.type_params.is_empty() {
+                    let llvm_name = if func.name == "main" {
+                        "!user!main".to_string()
+                    } else {
+                        func.name.clone()
+                    };
+                    self.declare_function_with_name(func, &llvm_name)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn declare_class_methods(&mut self, nodes: &[AstNode]) -> Result<(), String> {
+        for method in self.collect_class_methods_to_declare(nodes) {
+            self.declare_function(&method)?;
+        }
+        Ok(())
+    }
+
+    fn generate_vtables(&mut self, nodes: &[AstNode]) -> Result<(), String> {
+        for node in nodes {
+            if let AstNode::Class { name, .. } = node {
+                let interfaces = self
+                    .analyzer
+                    .all_symbols()
+                    .get(name)
+                    .map(|sym| sym.interfaces.clone())
+                    .unwrap_or_default();
+                self.generate_class_vtables(name, &interfaces)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn generate_enum_and_class_constructors(&mut self, nodes: &[AstNode]) -> Result<(), String> {
+        for node in nodes {
+            match node {
+                AstNode::Enum { name, variants, .. } => {
+                    self.generate_enum_constructors(name, variants)?;
+                }
+                AstNode::Class { name, fields, .. } => {
+                    let interfaces = self
+                        .analyzer
+                        .all_symbols()
+                        .get(name)
+                        .map(|sym| sym.interfaces.clone())
+                        .unwrap_or_default();
+                    self.generate_class_constructors(name, fields, &interfaces)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     // Helper function to sanitize module paths for use in LLVM identifiers
     fn sanitize_module_path(module_path: &str) -> String {
         module_path.replace(['.', '/'], "_")
@@ -218,122 +359,17 @@ impl<'a> CodeGenerator<'a> {
 
         self.generate_user_defined_types(nodes)?;
 
-        let imported_functions: Vec<(String, FunctionNode)> = self
-            .analyzer
-            .all_module_asts()
-            .iter()
-            .flat_map(|(module_path, module_nodes)| {
-                let module_name_for_mangling = Self::sanitize_module_path(module_path);
-                module_nodes
-                    .iter()
-                    .filter_map(|node| {
-                        if let AstNode::Function(func) = node {
-                            Some((module_name_for_mangling.clone(), func.clone()))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        let imported_functions = self.collect_imported_functions();
 
-        // Declare functions from imported modules with mangled names
-        for (module_name, func) in &imported_functions {
-            // Store function nodes
-            self.function_nodes.insert(func.name.clone(), func.clone());
+        self.declare_imported_functions(&imported_functions)?;
+        self.declare_main_functions(main_module_nodes)?;
+        self.declare_class_methods(nodes)?;
+        self.generate_vtables(nodes)?;
+        self.generate_enum_and_class_constructors(nodes)?;
 
-            if func.type_params.is_empty() {
-                // Declare with mangled name
-                let mangled_name = format!("{}!{}", module_name, func.name);
-                self.declare_function_with_name(func, &mangled_name)?;
-            }
-        }
-
-        // Declare functions from main module (no mangling needed)
-        for node in main_module_nodes {
-            if let AstNode::Function(func) = node {
-                // Store function nodes
-                self.function_nodes.insert(func.name.clone(), func.clone());
-
-                // Declare non-generic functions
-                if func.type_params.is_empty() {
-                    // Mangled name to avoid conflict with entry point if function is named "main"
-                    let llvm_name = if func.name == "main" {
-                        "!user!main".to_string()
-                    } else {
-                        func.name.clone()
-                    };
-                    self.declare_function_with_name(func, &llvm_name)?;
-                }
-            }
-        }
-
-        // declare class methods with prefixed names
-        for node in nodes {
-            if let AstNode::Class { name, methods, .. } = node {
-                for method in methods {
-                    let prefixed_name = format!("{}.{}", name, method.name);
-                    let mut method_copy = method.clone();
-                    method_copy.name = prefixed_name;
-                    self.declare_function(&method_copy)?;
-                }
-            }
-        }
-
-        // generate vtables after all functions are declared
-        for node in nodes {
-            if let AstNode::Class { name, .. } = node {
-                let interfaces = self
-                    .analyzer
-                    .all_symbols()
-                    .get(name)
-                    .map(|sym| sym.interfaces.clone())
-                    .unwrap_or_default();
-                self.generate_class_vtables(name, &interfaces)?;
-            }
-        }
-
-        // generate constructor functions after vtables
-        for node in nodes {
-            match node {
-                AstNode::Enum { name, variants, .. } => {
-                    self.generate_enum_constructors(name, variants)?;
-                }
-                AstNode::Class { name, fields, .. } => {
-                    let interfaces = self
-                        .analyzer
-                        .all_symbols()
-                        .get(name)
-                        .map(|sym| sym.interfaces.clone())
-                        .unwrap_or_default();
-                    self.generate_class_constructors(name, fields, &interfaces)?;
-                }
-                _ => {}
-            }
-        }
-
-        let mut top_level_statements = vec![];
-        for node in nodes {
-            if let AstNode::Statement(stmt) = node {
-                top_level_statements.push(stmt.clone());
-            }
-        }
-
-        let mut user_functions = vec![];
-        for node in main_module_nodes {
-            if let AstNode::Function(func) = node
-                && func.type_params.is_empty()
-            {
-                user_functions.push(func.clone());
-            }
-        }
-
-        let mut main_top_level_statements = vec![];
-        for node in main_module_nodes {
-            if let AstNode::Statement(stmt) = node {
-                main_top_level_statements.push(stmt.clone());
-            }
-        }
+        let top_level_statements = self.collect_top_level_statements(nodes);
+        let user_functions = self.collect_non_generic_main_functions(main_module_nodes);
+        let main_top_level_statements = self.collect_top_level_statements(main_module_nodes);
 
         // First, analyze top-level statements to identify global variable declarations
         // and create LLVM global variables for them
