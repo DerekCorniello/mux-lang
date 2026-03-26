@@ -16,9 +16,9 @@ pub use unifier::Unifier;
 
 // Internal imports
 use crate::ast::{
-    AstNode, BinaryOp, ExpressionKind, ExpressionNode, Field, FunctionNode, ImportSpec,
-    LiteralNode, PatternNode, PrimitiveType, Spanned, StatementKind, StatementNode, TraitBound,
-    TypeKind, TypeNode, UnaryOp,
+    AstNode, BinaryOp, EnumVariant, ExpressionKind, ExpressionNode, Field, FunctionNode,
+    ImportSpec, LiteralNode, Param, PatternNode, PrimitiveType, Spanned, StatementKind,
+    StatementNode, TraitBound, TraitRef, TypeKind, TypeNode, UnaryOp,
 };
 use crate::diagnostic::Files;
 use crate::lexer::Span;
@@ -28,6 +28,8 @@ use std::rc::Rc;
 
 type GenericBound = (String, Vec<Type>);
 type GenericBounds = Vec<GenericBound>;
+type ResolvedInterface = (Vec<Type>, HashMap<String, MethodSig>);
+type ClassFieldInfo = (Type, bool);
 
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
@@ -681,309 +683,388 @@ impl SemanticAnalyzer {
                 self.resolve_call_expression_type(func, args, expr.span)
             }
             ExpressionKind::FieldAccess { expr, field } => {
-                // Try to get the type of the base expression. If that fails because the
-                // identifier is undefined, attempt a conservative lookup into imported
-                // stdlib module symbols to resolve class-qualified accesses like
-                // `Mutex.new()` when `import std.sync` was used.
-                let expr_type_res = self.get_expression_type(expr);
-                let expr_type = match expr_type_res {
-                    Ok(t) => t,
-                    Err(e) => {
-                        // Only try the fallback when the expression is a simple identifier
-                        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
-                            // Restrict to stdlib namespaces
-                            let stdlib_names: std::collections::HashSet<String> =
-                                Self::stdlib_modules()
-                                    .iter()
-                                    .map(|(_, n)| n.to_string())
-                                    .collect();
-                            for (ns, module_symbols) in &self.imported_symbols {
-                                if !stdlib_names.contains(ns) {
-                                    continue;
-                                }
-                                if let Some(class_sym) = module_symbols.get(name)
-                                    && matches!(class_sym.kind, SymbolKind::Class)
-                                {
-                                    // If the class defines the method, return its function type
-                                    if let Some(method_sig) = class_sym.methods.get(field) {
-                                        return Ok(Type::Function {
-                                            params: method_sig.params.clone(),
-                                            returns: Box::new(method_sig.return_type.clone()),
-                                            default_count: 0,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        return Err(e);
-                    }
-                };
-
-                if let Type::Module(module_name) = &expr_type {
-                    self.resolve_module_field(module_name, field, expr.span)
-                } else if let Type::Reference(inner) = &expr_type {
-                    let inner_type = *inner.clone();
-                    self.resolve_reference_field(&inner_type, field, expr.span)
-                } else if let Some(method_sig) = self.get_method_sig(&expr_type, field) {
-                    Ok(Type::Function {
-                        params: method_sig.params,
-                        returns: Box::new(method_sig.return_type),
-                        default_count: 0,
-                    })
-                } else if let Type::Named(name, args) = &expr_type {
-                    self.resolve_named_field(&expr_type, name, args, field, expr.span)
-                } else if let Type::Tuple(left_type, right_type) = &expr_type {
-                    match field.as_str() {
-                        "left" => Ok(*left_type.clone()),
-                        "right" => Ok(*right_type.clone()),
-                        _ => Err(SemanticError::with_help(
-                            format!("Unknown field '{}' on tuple type", field),
-                            expr.span,
-                            "Tuples only have two fields: 'left' and 'right'. Example: auto pair = (1, 2); print(int_to_string(pair.left))",
-                        )),
-                    }
-                } else {
-                    let type_name = format_type(&expr_type);
-                    Err(self.method_not_found_error(field, &type_name, expr.span))
-                }
+                self.resolve_field_access_type(expr, field, expr.span)
             }
             ExpressionKind::ListAccess { expr, index: _ } => {
-                // list/map access returns direct element_type (runtime error if out of bounds/key not found)
-                // Use .get() method for safe Optional access
-                let target_type = self.get_expression_type(expr)?;
-                match target_type {
-                    Type::List(elem_type) => Ok(*elem_type),
-                    Type::Map(_, value_type) => Ok(*value_type),
-                    Type::EmptyMap => Err(SemanticError::with_help(
-                        "Cannot index empty map",
-                        expr.span,
-                        "The map type is unknown. Provide type annotations or add entries to the map literal.",
-                    )),
-                    _ => Err(SemanticError::with_help(
-                        "Cannot index non-list type",
-                        expr.span,
-                        "Only lists and maps can be indexed with '[]'. Examples: my_list[0], my_map['key']",
-                    )),
-                }
+                self.resolve_list_access_type(expr, expr.span)
             }
-            ExpressionKind::ListLiteral(elements) => {
-                if elements.is_empty() {
-                    Ok(Type::EmptyList)
-                } else {
-                    // Check that all elements have the same type
-                    let first_type = self.get_expression_type(&elements[0])?;
-
-                    // Validate ALL elements match the first element's type
-                    for (index, element) in elements.iter().enumerate() {
-                        let element_type = self.get_expression_type(element)?;
-                        if self
-                            .check_type_compatibility(&first_type, &element_type, element.span)
-                            .is_err()
-                        {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "List element type mismatch: expected {}, but element at index {} has type {}",
-                                    format_type(&first_type),
-                                    index,
-                                    format_type(&element_type)
-                                ),
-                                element.span,
-                                "All elements in a list must have the same type. The list type is inferred from the first element.",
-                            ));
-                        }
-                    }
-
-                    Ok(Type::List(Box::new(first_type)))
-                }
-            }
-            ExpressionKind::MapLiteral { entries, .. } => {
-                if entries.is_empty() {
-                    Ok(Type::EmptyMap)
-                } else {
-                    let (key, value) = &entries[0];
-                    let key_type = self.get_expression_type(key)?;
-                    let value_type = self.get_expression_type(value)?;
-                    Ok(Type::Map(Box::new(key_type), Box::new(value_type)))
-                }
-            }
+            ExpressionKind::ListLiteral(elements) => self.resolve_list_literal_type(elements),
+            ExpressionKind::MapLiteral { entries, .. } => self.resolve_map_literal_type(entries),
             ExpressionKind::If {
                 then_expr,
                 else_expr,
                 ..
-            } => {
-                let then_type = self.get_expression_type(then_expr)?;
-                let else_type = self.get_expression_type(else_expr)?;
-                if then_type == else_type {
-                    Ok(then_type)
-                } else {
-                    Err(SemanticError::with_help(
-                        "If expression branches must have the same type",
-                        expr.span,
-                        format!(
-                            "Then branch has type {}, else branch has type {}",
-                            format_type(&then_type),
-                            format_type(&else_type)
-                        ),
-                    ))
-                }
-            }
+            } => self.resolve_if_expression_type(then_expr, else_expr, expr.span),
             ExpressionKind::Lambda {
                 params,
                 return_type,
                 body,
-            } => {
-                // Check if this lambda has already been analyzed (captures detected)
-                // If so, just return its type without re-analyzing to avoid scope issues
-                if self.lambda_captures.contains_key(&expr.span) {
-                    let param_types = params
-                        .iter()
-                        .map(|p| self.resolve_type(&p.type_))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let resolved_return_type = self.resolve_type(return_type)?;
-                    let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
-                    return Ok(Type::Function {
-                        params: param_types,
-                        returns: Box::new(resolved_return_type),
-                        default_count,
-                    });
-                }
-
-                // Collect parameter names to identify what's local vs captured
-                let mut local_vars = std::collections::HashSet::new();
-                for param in params {
-                    local_vars.insert(param.name.clone());
-                }
-
-                self.symbol_table.push_scope()?;
-                for param in params {
-                    let param_type = self.resolve_type(&param.type_)?;
-                    self.symbol_table.add_symbol(
-                        &param.name,
-                        Self::make_symbol(SymbolKind::Variable, param.type_.span, Some(param_type)),
-                    )?;
-                }
-                self.analyze_block(body, None)?;
-
-                // Detect free variables (captured variables)
-                let captures = self.find_free_variables_in_block(body, &local_vars)?;
-
-                // Store captures for this lambda using its span as key
-                self.lambda_captures.insert(expr.span, captures);
-
-                let param_types = params
-                    .iter()
-                    .map(|p| self.resolve_type(&p.type_))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let return_type_resolved = if body.is_empty() {
-                    Type::Void
-                } else {
-                    match &body
-                        .last()
-                        .expect("body is not empty (checked above), so last() should return Some")
-                        .kind
-                    {
-                        StatementKind::Expression(expr) => self.get_expression_type(expr)?,
-                        StatementKind::Return(Some(expr)) => self.get_expression_type(expr)?,
-                        _ => Type::Void,
-                    }
-                };
-                self.symbol_table.pop_scope()?;
-                let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
-                Ok(Type::Function {
-                    params: param_types,
-                    returns: Box::new(return_type_resolved),
-                    default_count,
-                })
-            }
-            ExpressionKind::SetLiteral(elements) => {
-                if elements.is_empty() {
-                    Ok(Type::EmptySet)
-                } else {
-                    let elem_type = self.get_expression_type(&elements[0])?;
-                    Ok(Type::Set(Box::new(elem_type)))
-                }
-            }
+            } => self.resolve_lambda_type(params, return_type, body, expr.span),
+            ExpressionKind::SetLiteral(elements) => self.resolve_set_literal_type(elements),
             ExpressionKind::TupleLiteral(elements) => {
-                if elements.len() != 2 {
-                    return Err(SemanticError::with_help(
-                        format!(
-                            "Tuple must have exactly 2 elements, found {}",
-                            elements.len()
-                        ),
-                        expr.span,
-                        "Tuples in Mux always contain exactly 2 elements: (left, right). Example: auto pair = (1, \"hello\")",
-                    ));
-                }
-                let left_type = self.get_expression_type(&elements[0])?;
-                let right_type = self.get_expression_type(&elements[1])?;
-                Ok(Type::Tuple(Box::new(left_type), Box::new(right_type)))
+                self.resolve_tuple_literal_type(elements, expr.span)
             }
             ExpressionKind::GenericType(name, type_args) => {
-                if name == "tuple" {
-                    if type_args.len() != 2 {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Tuple type requires exactly 2 type arguments, got {}",
-                                type_args.len()
-                            ),
-                            expr.span,
-                            "Tuple types always have exactly 2 type parameters. Example: tuple<int, string>",
-                        ));
-                    }
-                    let left_type = Box::new(self.resolve_type(&type_args[0])?);
-                    let right_type = Box::new(self.resolve_type(&type_args[1])?);
-                    return Ok(Type::Tuple(left_type, right_type));
-                }
-                let (lookup_name, symbol): (String, Symbol) =
-                    if let Some((module_name, type_name)) = name.split_once('.') {
-                        let module_symbols =
-                            self.imported_symbols.get(module_name).ok_or_else(|| {
-                                self.undefined_symbol_error("module", module_name, expr.span)
-                            })?;
-                        let symbol = module_symbols.get(type_name).ok_or_else(|| {
-                            self.undefined_symbol_error("type", type_name, expr.span)
-                        })?;
-                        if self.symbol_table.lookup(type_name).is_none() {
-                            let _ = self.symbol_table.add_symbol(type_name, symbol.clone());
-                        }
-                        (type_name.to_string(), symbol.clone())
-                    } else if let Some(symbol) = self.symbol_table.lookup(name) {
-                        (name.clone(), symbol)
-                    } else {
-                        return Err(self.undefined_symbol_error("type", name, expr.span));
-                    };
-
-                let expected_count = symbol.type_params.len();
-                let actual_count = type_args.len();
-                if expected_count != actual_count {
-                    return Err(SemanticError::with_help(
-                        format!(
-                            "Generic type '{}' requires {} type argument(s), got {}",
-                            lookup_name, expected_count, actual_count
-                        ),
-                        expr.span,
-                        format!(
-                            "Provide exactly {} type argument{} in angle brackets, e.g. {}<{}>",
-                            expected_count,
-                            if expected_count == 1 { "" } else { "s" },
-                            lookup_name,
-                            symbol
-                                .type_params
-                                .iter()
-                                .map(|(p, _)| p.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ),
-                    ));
-                }
-
-                let resolved_args = type_args
-                    .iter()
-                    .map(|arg| self.resolve_type(arg))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Type::Named(lookup_name, resolved_args))
+                self.resolve_generic_type(name, type_args, expr.span)
             }
         }
+    }
+
+    fn resolve_field_access_type(
+        &mut self,
+        expr: &ExpressionNode,
+        field: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let expr_type_res = self.get_expression_type(expr);
+        let expr_type = match expr_type_res {
+            Ok(t) => t,
+            Err(e) => {
+                if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind
+                    && let Some(func_type) = self.try_stdlib_method_lookup(name, field)
+                {
+                    return Ok(func_type);
+                }
+                return Err(e);
+            }
+        };
+
+        self.resolve_field_access_by_type(&expr_type, field, span)
+    }
+
+    fn try_stdlib_method_lookup(&self, name: &str, field: &str) -> Option<Type> {
+        let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
+            .iter()
+            .map(|(_, n)| n.to_string())
+            .collect();
+        for (ns, module_symbols) in &self.imported_symbols {
+            if !stdlib_names.contains(ns) {
+                continue;
+            }
+            if let Some(class_sym) = module_symbols.get(name)
+                && matches!(class_sym.kind, SymbolKind::Class)
+                && let Some(method_sig) = class_sym.methods.get(field)
+            {
+                return Some(Type::Function {
+                    params: method_sig.params.clone(),
+                    returns: Box::new(method_sig.return_type.clone()),
+                    default_count: 0,
+                });
+            }
+        }
+        None
+    }
+
+    fn resolve_field_access_by_type(
+        &mut self,
+        expr_type: &Type,
+        field: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if let Type::Module(module_name) = expr_type {
+            return self.resolve_module_field(module_name, field, span);
+        }
+        if let Type::Reference(inner) = expr_type {
+            let inner_type = (*inner).clone();
+            return self.resolve_reference_field(&inner_type, field, span);
+        }
+        if let Some(method_sig) = self.get_method_sig(expr_type, field) {
+            return Ok(Type::Function {
+                params: method_sig.params,
+                returns: Box::new(method_sig.return_type),
+                default_count: 0,
+            });
+        }
+        if let Type::Named(name, args) = expr_type {
+            return self.resolve_named_field(expr_type, name, args, field, span);
+        }
+        if let Type::Tuple(left_type, right_type) = expr_type {
+            return match field {
+                "left" => Ok(*left_type.clone()),
+                "right" => Ok(*right_type.clone()),
+                _ => Err(SemanticError::with_help(
+                    format!("Unknown field '{}' on tuple type", field),
+                    span,
+                    "Tuples only have two fields: 'left' and 'right'. Example: auto pair = (1, 2); print(int_to_string(pair.left))",
+                )),
+            };
+        }
+        let type_name = format_type(expr_type);
+        Err(self.method_not_found_error(field, &type_name, span))
+    }
+
+    fn resolve_list_access_type(
+        &mut self,
+        expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let target_type = self.get_expression_type(expr)?;
+        match target_type {
+            Type::List(elem_type) => Ok(*elem_type),
+            Type::Map(_, value_type) => Ok(*value_type),
+            Type::EmptyMap => Err(SemanticError::with_help(
+                "Cannot index empty map",
+                span,
+                "The map type is unknown. Provide type annotations or add entries to the map literal.",
+            )),
+            _ => Err(SemanticError::with_help(
+                "Cannot index non-list type",
+                span,
+                "Only lists and maps can be indexed with '[]'. Examples: my_list[0], my_map['key']",
+            )),
+        }
+    }
+
+    fn resolve_list_literal_type(
+        &mut self,
+        elements: &[ExpressionNode],
+    ) -> Result<Type, SemanticError> {
+        if elements.is_empty() {
+            return Ok(Type::EmptyList);
+        }
+        let first_type = self.get_expression_type(&elements[0])?;
+        for (index, element) in elements.iter().enumerate() {
+            let element_type = self.get_expression_type(element)?;
+            if self
+                .check_type_compatibility(&first_type, &element_type, element.span)
+                .is_err()
+            {
+                return Err(SemanticError::with_help(
+                    format!(
+                        "List element type mismatch: expected {}, but element at index {} has type {}",
+                        format_type(&first_type),
+                        index,
+                        format_type(&element_type)
+                    ),
+                    element.span,
+                    "All elements in a list must have the same type. The list type is inferred from the first element.",
+                ));
+            }
+        }
+        Ok(Type::List(Box::new(first_type)))
+    }
+
+    fn resolve_map_literal_type(
+        &mut self,
+        entries: &[(ExpressionNode, ExpressionNode)],
+    ) -> Result<Type, SemanticError> {
+        if entries.is_empty() {
+            return Ok(Type::EmptyMap);
+        }
+        let (key, value) = &entries[0];
+        let key_type = self.get_expression_type(key)?;
+        let value_type = self.get_expression_type(value)?;
+        Ok(Type::Map(Box::new(key_type), Box::new(value_type)))
+    }
+
+    fn resolve_if_expression_type(
+        &mut self,
+        then_expr: &ExpressionNode,
+        else_expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let then_type = self.get_expression_type(then_expr)?;
+        let else_type = self.get_expression_type(else_expr)?;
+        if then_type == else_type {
+            Ok(then_type)
+        } else {
+            Err(SemanticError::with_help(
+                "If expression branches must have the same type",
+                span,
+                format!(
+                    "Then branch has type {}, else branch has type {}",
+                    format_type(&then_type),
+                    format_type(&else_type)
+                ),
+            ))
+        }
+    }
+
+    fn resolve_lambda_type(
+        &mut self,
+        params: &[Param],
+        return_type: &TypeNode,
+        body: &[StatementNode],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if self.lambda_captures.contains_key(&span) {
+            let param_types = params
+                .iter()
+                .map(|p| self.resolve_type(&p.type_))
+                .collect::<Result<Vec<_>, _>>()?;
+            let resolved_return_type = self.resolve_type(return_type)?;
+            let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
+            return Ok(Type::Function {
+                params: param_types,
+                returns: Box::new(resolved_return_type),
+                default_count,
+            });
+        }
+
+        let mut local_vars = std::collections::HashSet::new();
+        for param in params {
+            local_vars.insert(param.name.clone());
+        }
+
+        self.symbol_table.push_scope()?;
+        for param in params {
+            let param_type = self.resolve_type(&param.type_)?;
+            self.symbol_table.add_symbol(
+                &param.name,
+                Self::make_symbol(SymbolKind::Variable, param.type_.span, Some(param_type)),
+            )?;
+        }
+        self.analyze_block(body, None)?;
+
+        let captures = self.find_free_variables_in_block(body, &local_vars)?;
+        self.lambda_captures.insert(span, captures);
+
+        let param_types = params
+            .iter()
+            .map(|p| self.resolve_type(&p.type_))
+            .collect::<Result<Vec<_>, _>>()?;
+        let return_type_resolved = if body.is_empty() {
+            Type::Void
+        } else {
+            match &body.last().expect("body is not empty").kind {
+                StatementKind::Expression(expr) => self.get_expression_type(expr)?,
+                StatementKind::Return(Some(expr)) => self.get_expression_type(expr)?,
+                _ => Type::Void,
+            }
+        };
+        self.symbol_table.pop_scope()?;
+        let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
+        Ok(Type::Function {
+            params: param_types,
+            returns: Box::new(return_type_resolved),
+            default_count,
+        })
+    }
+
+    fn resolve_set_literal_type(
+        &mut self,
+        elements: &[ExpressionNode],
+    ) -> Result<Type, SemanticError> {
+        if elements.is_empty() {
+            return Ok(Type::EmptySet);
+        }
+        let elem_type = self.get_expression_type(&elements[0])?;
+        Ok(Type::Set(Box::new(elem_type)))
+    }
+
+    fn resolve_tuple_literal_type(
+        &mut self,
+        elements: &[ExpressionNode],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if elements.len() != 2 {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Tuple must have exactly 2 elements, found {}",
+                    elements.len()
+                ),
+                span,
+                "Tuples in Mux always contain exactly 2 elements: (left, right). Example: auto pair = (1, \"hello\")",
+            ));
+        }
+        let left_type = self.get_expression_type(&elements[0])?;
+        let right_type = self.get_expression_type(&elements[1])?;
+        Ok(Type::Tuple(Box::new(left_type), Box::new(right_type)))
+    }
+
+    fn resolve_generic_type(
+        &mut self,
+        name: &str,
+        type_args: &[TypeNode],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if name == "tuple" {
+            return self.resolve_tuple_type_annotation(type_args, span);
+        }
+        let (lookup_name, symbol) = self.resolve_generic_type_symbol(name, span)?;
+        self.validate_type_argument_count(&lookup_name, &symbol, type_args, span)?;
+        let resolved_args = type_args
+            .iter()
+            .map(|arg| self.resolve_type(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Type::Named(lookup_name, resolved_args))
+    }
+
+    fn resolve_tuple_type_annotation(
+        &self,
+        type_args: &[TypeNode],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if type_args.len() != 2 {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Tuple type requires exactly 2 type arguments, got {}",
+                    type_args.len()
+                ),
+                span,
+                "Tuple types always have exactly 2 type parameters. Example: tuple<int, string>",
+            ));
+        }
+        let left_type = Box::new(self.resolve_type(&type_args[0])?);
+        let right_type = Box::new(self.resolve_type(&type_args[1])?);
+        Ok(Type::Tuple(left_type, right_type))
+    }
+
+    fn resolve_generic_type_symbol(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> Result<(String, Symbol), SemanticError> {
+        if let Some((module_name, type_name)) = name.split_once('.') {
+            let module_symbols = self
+                .imported_symbols
+                .get(module_name)
+                .ok_or_else(|| self.undefined_symbol_error("module", module_name, span))?;
+            let symbol = module_symbols
+                .get(type_name)
+                .ok_or_else(|| self.undefined_symbol_error("type", type_name, span))?;
+            if self.symbol_table.lookup(type_name).is_none() {
+                let _ = self.symbol_table.add_symbol(type_name, symbol.clone());
+            }
+            Ok((type_name.to_string(), symbol.clone()))
+        } else if let Some(symbol) = self.symbol_table.lookup(name) {
+            Ok((name.to_string(), symbol))
+        } else {
+            Err(self.undefined_symbol_error("type", name, span))
+        }
+    }
+
+    fn validate_type_argument_count(
+        &self,
+        lookup_name: &str,
+        symbol: &Symbol,
+        type_args: &[TypeNode],
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let expected_count = symbol.type_params.len();
+        let actual_count = type_args.len();
+        if expected_count != actual_count {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Generic type '{}' requires {} type argument(s), got {}",
+                    lookup_name, expected_count, actual_count
+                ),
+                span,
+                format!(
+                    "Provide exactly {} type argument{} in angle brackets, e.g. {}<{}>",
+                    expected_count,
+                    if expected_count == 1 { "" } else { "s" },
+                    lookup_name,
+                    symbol
+                        .type_params
+                        .iter()
+                        .map(|(p, _)| p.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        }
+        Ok(())
     }
 
     fn resolve_unary_expression_type(
@@ -2701,50 +2782,7 @@ impl SemanticAnalyzer {
         for node in ast {
             match node {
                 AstNode::Function(func) => {
-                    if func.is_common {
-                        return Err(SemanticError::with_help(
-                            "Common methods are only allowed in classes",
-                            func.span,
-                            "The 'common' modifier creates a static method. Move this function inside a class definition, or remove the 'common' keyword.",
-                        ));
-                    }
-                    // resolve function type
-                    let param_types = func
-                        .params
-                        .iter()
-                        .map(|p| self.resolve_type(&p.type_))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let return_type = self.resolve_type(&func.return_type)?;
-                    let mut func_type = Type::Function {
-                        params: param_types,
-                        returns: Box::new(return_type),
-                        default_count: 0,
-                    };
-
-                    // substitute type params with variables
-                    for (type_param_name, _) in &func.type_params {
-                        let var = Type::Variable(type_param_name.clone());
-                        func_type = self.substitute_type_param(&func_type, type_param_name, &var);
-                    }
-
-                    // Count parameters with default values
-                    let default_count = func
-                        .params
-                        .iter()
-                        .filter(|p| p.default_value.is_some())
-                        .count();
-
-                    if let Err(e) = self.symbol_table.add_symbol(
-                        &func.name,
-                        self.make_function_symbol(
-                            func.span,
-                            func_type,
-                            &func.type_params,
-                            default_count,
-                        ),
-                    ) {
-                        self.errors.push(e);
-                    }
+                    self.collect_function_symbol(func)?;
                 }
                 AstNode::Class {
                     name,
@@ -2754,272 +2792,17 @@ impl SemanticAnalyzer {
                     type_params,
                     ..
                 } => {
-                    let mut implemented_interfaces = std::collections::HashMap::new();
-                    for trait_ref in traits {
-                        // lookup the interface and get its methods
-                        if let Some(interface_symbol) = self.symbol_table.lookup(&trait_ref.name)
-                            && let Some((_, interface_methods)) =
-                                interface_symbol.interfaces.get(&trait_ref.name)
-                        {
-                            // Substitute type_args into interface methods
-                            let resolved_args = trait_ref
-                                .type_args
-                                .iter()
-                                .map(|arg| self.resolve_type(arg))
-                                .collect::<Result<Vec<_>, _>>()?;
-                            let interface_type_params = &interface_symbol.type_params;
-                            let mut substituted_methods = std::collections::HashMap::new();
-                            for (method_name, method_sig) in interface_methods {
-                                let sub_params = method_sig
-                                    .params
-                                    .iter()
-                                    .map(|p| {
-                                        self.substitute_type_params(
-                                            p,
-                                            interface_type_params,
-                                            &resolved_args,
-                                        )
-                                    })
-                                    .collect();
-                                let sub_return = self.substitute_type_params(
-                                    &method_sig.return_type,
-                                    interface_type_params,
-                                    &resolved_args,
-                                );
-                                substituted_methods.insert(
-                                    method_name.clone(),
-                                    MethodSig {
-                                        params: sub_params,
-                                        return_type: sub_return,
-                                        is_static: method_sig.is_static,
-                                    },
-                                );
-                            }
-                            implemented_interfaces.insert(
-                                trait_ref.name.clone(),
-                                (resolved_args, substituted_methods),
-                            );
-                        }
-                    }
-                    let type_param_bounds: Vec<(String, Vec<String>)> = type_params
-                        .iter()
-                        .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
-                        .collect();
-
-                    // Add class type parameters to symbol table so they can be resolved in field types
-                    for (param_name, _) in type_params {
-                        let _ = self.symbol_table.add_symbol(
-                            param_name,
-                            Self::make_symbol(
-                                SymbolKind::Type,
-                                *node.span(),
-                                Some(Type::Generic(param_name.clone())),
-                            ),
-                        );
-                    }
-
-                    // collect field types for constructor and fields map
-                    let mut field_types = Vec::new();
-                    let mut fields_map = std::collections::HashMap::new();
-                    for field in fields {
-                        // Check for duplicate field
-                        if fields_map.contains_key(&field.name) {
-                            return Err(SemanticError::with_help(
-                                format!("Duplicate field '{}' in class '{}'", field.name, name),
-                                field.type_.span,
-                                "Each field name must be unique within a class. Rename or remove the duplicate field.",
-                            ));
-                        }
-                        match self.resolve_type(&field.type_) {
-                            Ok(t) => {
-                                field_types.push(t.clone());
-                                fields_map.insert(field.name.clone(), (t, field.is_const));
-                            }
-                            Err(e) => self.errors.push(e),
-                        }
-                    }
-                    if field_types.is_empty() {
-                        None
-                    } else {
-                        Some(Type::Function {
-                            params: field_types.clone(),
-                            returns: Box::new(Type::Named(name.clone(), vec![])),
-                            default_count: 0,
-                        })
-                    };
-
-                    // collect methods
-                    let mut methods_map = std::collections::HashMap::new();
-                    for method in methods {
-                        let mut param_types = Vec::new();
-                        for p in &method.params {
-                            match self.resolve_type(&p.type_) {
-                                Ok(t) => param_types.push(t),
-                                Err(e) => self.errors.push(e),
-                            }
-                        }
-                        let ret = match self.resolve_type(&method.return_type) {
-                            Ok(t) => t,
-                            Err(e) => {
-                                self.errors.push(e);
-                                continue;
-                            }
-                        };
-                        let method_sig = MethodSig {
-                            params: param_types,
-                            return_type: ret,
-                            is_static: method.is_common,
-                        };
-                        methods_map.insert(method.name.clone(), method_sig);
-                    }
-                    // add "new" as static method for constructor
-                    let new_sig = MethodSig {
-                        params: vec![], // Default constructor takes no args
-                        return_type: Type::Named(
-                            name.clone(),
-                            type_param_bounds
-                                .iter()
-                                .map(|(p, _)| Type::Variable(p.clone()))
-                                .collect::<Vec<_>>(),
-                        ),
-                        is_static: true,
-                    };
-                    methods_map.insert("new".to_string(), new_sig);
-
-                    // Validate interface implementations
-                    for (interface_name, (_, interface_methods)) in &implemented_interfaces {
-                        for (method_name, interface_sig) in interface_methods {
-                            if let Some(class_sig) = methods_map.get(method_name) {
-                                if let Err(e) = self.check_method_compatibility(
-                                    interface_sig,
-                                    class_sig,
-                                    *node.span(),
-                                ) {
-                                    self.errors.push(e);
-                                }
-                            } else {
-                                self.errors.push(SemanticError::with_help(
-                                    format!(
-                                        "Class '{}' does not implement method '{}' required by interface '{}'",
-                                        name, method_name, interface_name
-                                    ),
-                                    *node.span(),
-                                    format!("Add a method '{}' to class '{}' with the signature required by interface '{}'", method_name, name, interface_name),
-                                ));
-                            }
-                        }
-
-                        // Validate interface field requirements
-                        if let Some(interface_symbol) = self.symbol_table.lookup(interface_name) {
-                            for (field_name, (interface_field_type, interface_is_const)) in
-                                &interface_symbol.fields
-                            {
-                                if let Some((class_field_type, class_is_const)) =
-                                    fields_map.get(field_name)
-                                {
-                                    // Check type compatibility
-                                    if !self
-                                        .types_compatible(class_field_type, interface_field_type)
-                                    {
-                                        self.errors.push(SemanticError::with_help(
-                                            format!(
-                                                "Field '{}' type mismatch in class '{}': class has {}, interface '{}' requires {}",
-                                                field_name,
-                                                name,
-                                                format_type(class_field_type),
-                                                interface_name,
-                                                format_type(interface_field_type)
-                                            ),
-                                            *node.span(),
-                                            format!("Change the type of field '{}' to {} to match interface '{}'", field_name, format_type(interface_field_type), interface_name),
-                                        ));
-                                    }
-
-                                    // Check const compatibility
-                                    if *interface_is_const && !*class_is_const {
-                                        self.errors.push(SemanticError::with_help(
-                                            format!(
-                                                "Field '{}' must be const in class '{}' to implement interface '{}'",
-                                                field_name, name, interface_name
-                                            ),
-                                            *node.span(),
-                                            format!("Add the 'const' modifier to field '{}' in class '{}'", field_name, name),
-                                        ));
-                                    }
-                                } else {
-                                    // Field missing in class
-                                    self.errors.push(SemanticError::with_help(
-                                        format!(
-                                            "Class '{}' is missing required field '{}' from interface '{}'",
-                                            name, field_name, interface_name
-                                        ),
-                                        *node.span(),
-                                        format!("Add field '{}: {}' to class '{}'", field_name, format_type(interface_field_type), name),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-
-                    if let Err(e) = self.symbol_table.add_symbol(
+                    self.collect_class_symbol(
                         name,
-                        Symbol {
-                            kind: SymbolKind::Class,
-                            span: *node.span(),
-                            type_: Some(Type::Named(name.clone(), vec![])),
-                            interfaces: implemented_interfaces,
-                            methods: methods_map,
-                            fields: fields_map,
-                            type_params: type_param_bounds,
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    ) {
-                        self.errors.push(e);
-                    }
+                        traits,
+                        fields,
+                        methods,
+                        type_params,
+                        node.span(),
+                    )?;
                 }
                 AstNode::Enum { name, variants, .. } => {
-                    let mut methods = std::collections::HashMap::new();
-                    let mut variant_names = Vec::new();
-                    for variant in variants {
-                        variant_names.push(variant.name.clone());
-                        let params = variant
-                            .data
-                            .clone()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|t| self.resolve_type(&t).unwrap_or(Type::Void))
-                            .collect();
-                        let return_type = Type::Named(name.clone(), vec![]);
-                        methods.insert(
-                            variant.name.clone(),
-                            MethodSig {
-                                params,
-                                return_type,
-                                is_static: true,
-                            },
-                        );
-                    }
-                    if let Err(e) = self.symbol_table.add_symbol(
-                        name,
-                        Symbol {
-                            kind: SymbolKind::Enum,
-                            span: *node.span(),
-                            type_: Some(Type::Named(name.clone(), vec![])),
-                            interfaces: std::collections::HashMap::new(),
-                            methods,
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: Some(variant_names),
-                        },
-                    ) {
-                        self.errors.push(e);
-                    }
+                    self.collect_enum_symbol(name, variants, node.span());
                 }
                 AstNode::Interface {
                     name,
@@ -3028,77 +2811,488 @@ impl SemanticAnalyzer {
                     methods,
                     ..
                 } => {
-                    let mut interface_methods = std::collections::HashMap::new();
-                    for method in methods {
-                        let param_types = method
-                            .params
-                            .iter()
-                            .map(|p| self.resolve_type(&p.type_))
-                            .collect::<Result<Vec<_>, _>>()?;
-                        let return_type = self.resolve_type(&method.return_type)?;
-                        let method_sig = MethodSig {
-                            params: param_types,
-                            return_type,
-                            is_static: false,
-                        };
-                        interface_methods.insert(method.name.clone(), method_sig);
-                    }
-
-                    // Process interface fields
-                    let mut interface_fields = std::collections::HashMap::new();
-                    for field in fields {
-                        let field_type = self.resolve_type(&field.type_)?;
-
-                        // Validate default value type if present
-                        if let Some(default_expr) = &field.default_value {
-                            let default_type = self.infer_literal_type(default_expr)?;
-                            if !self.types_compatible(&default_type, &field_type) {
-                                self.errors.push(SemanticError::with_help(
-                                    format!(
-                                        "Default value type mismatch for field '{}': expected {}, got {}",
-                                        field.name,
-                                        format_type(&field_type),
-                                        format_type(&default_type)
-                                    ),
-                                    default_expr.span,
-                                    format!("The default value must match the field's declared type of {}", format_type(&field_type)),
-                                ));
-                            }
-                        }
-
-                        interface_fields.insert(field.name.clone(), (field_type, field.is_const));
-                    }
-
-                    let mut interfaces_map = std::collections::HashMap::new();
-                    interfaces_map.insert(name.clone(), (vec![], interface_methods));
-                    if let Err(e) = self.symbol_table.add_symbol(
-                        name,
-                        Symbol {
-                            kind: SymbolKind::Interface,
-                            span: *node.span(),
-                            type_: None,
-                            interfaces: interfaces_map,
-                            methods: std::collections::HashMap::new(),
-                            fields: interface_fields,
-                            type_params: type_params
-                                .iter()
-                                .map(|(p, b)| {
-                                    (p.clone(), b.iter().map(|tb| tb.name.clone()).collect())
-                                })
-                                .collect::<Vec<(String, Vec<String>)>>(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    ) {
-                        self.errors.push(e);
-                    }
+                    self.collect_interface_symbol(name, type_params, fields, methods, node.span());
                 }
                 _ => {}
             }
         }
         Ok(())
+    }
+
+    fn collect_function_symbol(&mut self, func: &FunctionNode) -> Result<(), SemanticError> {
+        if func.is_common {
+            return Err(SemanticError::with_help(
+                "Common methods are only allowed in classes",
+                func.span,
+                "The 'common' modifier creates a static method. Move this function inside a class definition, or remove the 'common' keyword.",
+            ));
+        }
+        let param_types = func
+            .params
+            .iter()
+            .map(|p| self.resolve_type(&p.type_))
+            .collect::<Result<Vec<_>, _>>()?;
+        let return_type = self.resolve_type(&func.return_type)?;
+        let mut func_type = Type::Function {
+            params: param_types,
+            returns: Box::new(return_type),
+            default_count: 0,
+        };
+
+        for (type_param_name, _) in &func.type_params {
+            let var = Type::Variable(type_param_name.clone());
+            func_type = self.substitute_type_param(&func_type, type_param_name, &var);
+        }
+
+        let default_count = func
+            .params
+            .iter()
+            .filter(|p| p.default_value.is_some())
+            .count();
+
+        if let Err(e) = self.symbol_table.add_symbol(
+            &func.name,
+            self.make_function_symbol(func.span, func_type, &func.type_params, default_count),
+        ) {
+            self.errors.push(e);
+        }
+        Ok(())
+    }
+
+    fn collect_class_symbol(
+        &mut self,
+        name: &str,
+        traits: &[TraitRef],
+        fields: &[Field],
+        methods: &[FunctionNode],
+        type_params: &[(String, Vec<TraitBound>)],
+        span: &Span,
+    ) -> Result<(), SemanticError> {
+        let implemented_interfaces = self.resolve_implemented_interfaces(traits, span)?;
+        let type_param_bounds: Vec<(String, Vec<String>)> = type_params
+            .iter()
+            .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
+            .collect();
+
+        for (param_name, _) in type_params {
+            let _ = self.symbol_table.add_symbol(
+                param_name,
+                Self::make_symbol(
+                    SymbolKind::Type,
+                    *span,
+                    Some(Type::Generic(param_name.clone())),
+                ),
+            );
+        }
+
+        let (fields_map, _) = self.collect_class_fields(name, fields, span)?;
+        let methods_map = self.collect_class_methods(methods, name, type_params)?;
+
+        self.validate_interface_implementations(
+            name,
+            &implemented_interfaces,
+            &fields_map,
+            &methods_map,
+            span,
+        );
+
+        if let Err(e) = self.symbol_table.add_symbol(
+            name,
+            Symbol {
+                kind: SymbolKind::Class,
+                span: *span,
+                type_: Some(Type::Named(name.to_string(), vec![])),
+                interfaces: implemented_interfaces,
+                methods: methods_map,
+                fields: fields_map,
+                type_params: type_param_bounds,
+                original_name: None,
+                llvm_name: None,
+                default_param_count: 0,
+                variants: None,
+            },
+        ) {
+            self.errors.push(e);
+        }
+        Ok(())
+    }
+
+    fn resolve_implemented_interfaces(
+        &self,
+        traits: &[TraitRef],
+        _span: &Span,
+    ) -> Result<HashMap<String, ResolvedInterface>, SemanticError> {
+        let mut implemented_interfaces = std::collections::HashMap::new();
+        for trait_ref in traits {
+            if let Some(interface_symbol) = self.symbol_table.lookup(&trait_ref.name)
+                && let Some((_, interface_methods)) =
+                    interface_symbol.interfaces.get(&trait_ref.name)
+            {
+                let resolved_args = trait_ref
+                    .type_args
+                    .iter()
+                    .map(|arg| self.resolve_type(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let interface_type_params = &interface_symbol.type_params;
+                let mut substituted_methods = std::collections::HashMap::new();
+                for (method_name, method_sig) in interface_methods {
+                    let sub_params = method_sig
+                        .params
+                        .iter()
+                        .map(|p| {
+                            self.substitute_type_params(p, interface_type_params, &resolved_args)
+                        })
+                        .collect();
+                    let sub_return = self.substitute_type_params(
+                        &method_sig.return_type,
+                        interface_type_params,
+                        &resolved_args,
+                    );
+                    substituted_methods.insert(
+                        method_name.clone(),
+                        MethodSig {
+                            params: sub_params,
+                            return_type: sub_return,
+                            is_static: method_sig.is_static,
+                        },
+                    );
+                }
+                implemented_interfaces
+                    .insert(trait_ref.name.clone(), (resolved_args, substituted_methods));
+            }
+        }
+        Ok(implemented_interfaces)
+    }
+
+    fn collect_class_fields(
+        &mut self,
+        name: &str,
+        fields: &[Field],
+        _span: &Span,
+    ) -> Result<(HashMap<String, ClassFieldInfo>, Vec<Type>), SemanticError> {
+        let mut field_types = Vec::new();
+        let mut fields_map = std::collections::HashMap::new();
+        for field in fields {
+            if fields_map.contains_key(&field.name) {
+                return Err(SemanticError::with_help(
+                    format!("Duplicate field '{}' in class '{}'", field.name, name),
+                    field.type_.span,
+                    "Each field name must be unique within a class. Rename or remove the duplicate field.",
+                ));
+            }
+            match self.resolve_type(&field.type_) {
+                Ok(t) => {
+                    field_types.push(t.clone());
+                    fields_map.insert(field.name.clone(), (t, field.is_const));
+                }
+                Err(e) => self.errors.push(e),
+            }
+        }
+        Ok((fields_map, field_types))
+    }
+
+    fn collect_class_methods(
+        &mut self,
+        methods: &[FunctionNode],
+        class_name: &str,
+        type_params: &[(String, Vec<TraitBound>)],
+    ) -> Result<HashMap<String, MethodSig>, SemanticError> {
+        let mut methods_map = HashMap::new();
+        for method in methods {
+            let mut param_types = Vec::new();
+            for p in &method.params {
+                match self.resolve_type(&p.type_) {
+                    Ok(t) => param_types.push(t),
+                    Err(e) => self.errors.push(e),
+                }
+            }
+            let ret = match self.resolve_type(&method.return_type) {
+                Ok(t) => t,
+                Err(e) => {
+                    self.errors.push(e);
+                    continue;
+                }
+            };
+            let method_sig = MethodSig {
+                params: param_types,
+                return_type: ret,
+                is_static: method.is_common,
+            };
+            methods_map.insert(method.name.clone(), method_sig);
+        }
+
+        let type_args: Vec<Type> = type_params
+            .iter()
+            .map(|(p, _)| Type::Variable(p.clone()))
+            .collect();
+        let new_sig = MethodSig {
+            params: vec![],
+            return_type: Type::Named(class_name.to_string(), type_args),
+            is_static: true,
+        };
+        methods_map.insert("new".to_string(), new_sig);
+        Ok(methods_map)
+    }
+
+    fn validate_interface_implementations(
+        &mut self,
+        class_name: &str,
+        implemented_interfaces: &HashMap<String, ResolvedInterface>,
+        fields_map: &HashMap<String, ClassFieldInfo>,
+        methods_map: &HashMap<String, MethodSig>,
+        span: &Span,
+    ) {
+        for (interface_name, (_, interface_methods)) in implemented_interfaces {
+            self.validate_interface_methods(
+                class_name,
+                interface_name,
+                interface_methods,
+                methods_map,
+                *span,
+            );
+            self.validate_interface_fields(class_name, interface_name, fields_map, *span);
+        }
+    }
+
+    fn validate_interface_methods(
+        &mut self,
+        class_name: &str,
+        interface_name: &str,
+        interface_methods: &HashMap<String, MethodSig>,
+        methods_map: &HashMap<String, MethodSig>,
+        span: Span,
+    ) {
+        for (method_name, interface_sig) in interface_methods {
+            if let Some(class_sig) = methods_map.get(method_name) {
+                if let Err(e) = self.check_method_compatibility(interface_sig, class_sig, span) {
+                    self.errors.push(e);
+                }
+            } else {
+                self.errors.push(SemanticError::with_help(
+                    format!(
+                        "Class '{}' does not implement method '{}' required by interface '{}'",
+                        class_name, method_name, interface_name
+                    ),
+                    span,
+                    format!("Add a method '{}' to class '{}' with the signature required by interface '{}'", method_name, class_name, interface_name),
+                ));
+            }
+        }
+    }
+
+    fn validate_interface_fields(
+        &mut self,
+        class_name: &str,
+        interface_name: &str,
+        fields_map: &HashMap<String, ClassFieldInfo>,
+        span: Span,
+    ) {
+        if let Some(interface_symbol) = self.symbol_table.lookup(interface_name) {
+            for (field_name, (interface_field_type, interface_is_const)) in &interface_symbol.fields
+            {
+                if let Some((class_field_type, class_is_const)) = fields_map.get(field_name) {
+                    self.validate_field_type(
+                        class_name,
+                        interface_name,
+                        field_name,
+                        interface_field_type,
+                        class_field_type,
+                        span,
+                    );
+                    self.validate_field_const(
+                        class_name,
+                        interface_name,
+                        field_name,
+                        *interface_is_const,
+                        *class_is_const,
+                        span,
+                    );
+                } else {
+                    self.errors.push(SemanticError::with_help(
+                        format!(
+                            "Class '{}' is missing required field '{}' from interface '{}'",
+                            class_name, field_name, interface_name
+                        ),
+                        span,
+                        format!(
+                            "Add field '{}: {}' to class '{}'",
+                            field_name,
+                            format_type(interface_field_type),
+                            class_name
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    fn validate_field_type(
+        &mut self,
+        class_name: &str,
+        interface_name: &str,
+        field_name: &str,
+        interface_field_type: &Type,
+        class_field_type: &Type,
+        span: Span,
+    ) {
+        if !self.types_compatible(class_field_type, interface_field_type) {
+            self.errors.push(SemanticError::with_help(
+                format!(
+                    "Field '{}' type mismatch in class '{}': class has {}, interface '{}' requires {}",
+                    field_name,
+                    class_name,
+                    format_type(class_field_type),
+                    interface_name,
+                    format_type(interface_field_type)
+                ),
+                span,
+                format!("Change the type of field '{}' to {} to match interface '{}'", field_name, format_type(interface_field_type), interface_name),
+            ));
+        }
+    }
+
+    fn validate_field_const(
+        &mut self,
+        class_name: &str,
+        interface_name: &str,
+        field_name: &str,
+        interface_is_const: bool,
+        class_is_const: bool,
+        span: Span,
+    ) {
+        if interface_is_const && !class_is_const {
+            self.errors.push(SemanticError::with_help(
+                format!(
+                    "Field '{}' must be const in class '{}' to implement interface '{}'",
+                    field_name, class_name, interface_name
+                ),
+                span,
+                format!(
+                    "Add the 'const' modifier to field '{}' in class '{}'",
+                    field_name, class_name
+                ),
+            ));
+        }
+    }
+
+    fn collect_enum_symbol(&mut self, name: &str, variants: &[EnumVariant], span: &Span) {
+        let mut methods = std::collections::HashMap::new();
+        let mut variant_names = Vec::new();
+        for variant in variants {
+            variant_names.push(variant.name.clone());
+            let params = variant
+                .data
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|t| self.resolve_type(&t).unwrap_or(Type::Void))
+                .collect();
+            let return_type = Type::Named(name.to_string(), vec![]);
+            methods.insert(
+                variant.name.clone(),
+                MethodSig {
+                    params,
+                    return_type,
+                    is_static: true,
+                },
+            );
+        }
+        if let Err(e) = self.symbol_table.add_symbol(
+            name,
+            Symbol {
+                kind: SymbolKind::Enum,
+                span: *span,
+                type_: Some(Type::Named(name.to_string(), vec![])),
+                interfaces: std::collections::HashMap::new(),
+                methods,
+                fields: std::collections::HashMap::new(),
+                type_params: Vec::new(),
+                original_name: None,
+                llvm_name: None,
+                default_param_count: 0,
+                variants: Some(variant_names),
+            },
+        ) {
+            self.errors.push(e);
+        }
+    }
+
+    fn collect_interface_symbol(
+        &mut self,
+        name: &str,
+        type_params: &[(String, Vec<TraitBound>)],
+        fields: &[Field],
+        methods: &[FunctionNode],
+        span: &Span,
+    ) {
+        let mut interface_methods = std::collections::HashMap::new();
+        for method in methods {
+            let param_types = method
+                .params
+                .iter()
+                .map(|p| self.resolve_type(&p.type_))
+                .collect::<Result<Vec<_>, _>>();
+            if let Ok(param_types) = param_types {
+                let return_type = self.resolve_type(&method.return_type);
+                if let Ok(return_type) = return_type {
+                    let method_sig = MethodSig {
+                        params: param_types,
+                        return_type,
+                        is_static: false,
+                    };
+                    interface_methods.insert(method.name.clone(), method_sig);
+                }
+            }
+        }
+
+        let mut interface_fields = std::collections::HashMap::new();
+        for field in fields {
+            if let Ok(field_type) = self.resolve_type(&field.type_) {
+                if let Some(default_expr) = &field.default_value
+                    && let Ok(default_type) = self.infer_literal_type(default_expr)
+                    && !self.types_compatible(&default_type, &field_type)
+                {
+                    self.errors.push(SemanticError::with_help(
+                        format!(
+                            "Default value type mismatch for field '{}': expected {}, got {}",
+                            field.name,
+                            format_type(&field_type),
+                            format_type(&default_type)
+                        ),
+                        default_expr.span,
+                        format!(
+                            "The default value must match the field's declared type of {}",
+                            format_type(&field_type)
+                        ),
+                    ));
+                }
+                interface_fields.insert(field.name.clone(), (field_type, field.is_const));
+            }
+        }
+
+        let mut interfaces_map = std::collections::HashMap::new();
+        interfaces_map.insert(name.to_string(), (vec![], interface_methods));
+        if let Err(e) = self.symbol_table.add_symbol(
+            name,
+            Symbol {
+                kind: SymbolKind::Interface,
+                span: *span,
+                type_: None,
+                interfaces: interfaces_map,
+                methods: std::collections::HashMap::new(),
+                fields: interface_fields,
+                type_params: type_params
+                    .iter()
+                    .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
+                    .collect::<Vec<(String, Vec<String>)>>(),
+                original_name: None,
+                llvm_name: None,
+                default_param_count: 0,
+                variants: None,
+            },
+        ) {
+            self.errors.push(e);
+        }
     }
 
     // second pass, analyze all nodes with full symbol information.
@@ -3852,150 +4046,179 @@ impl SemanticAnalyzer {
         expr_span: Span,
     ) -> Result<(), SemanticError> {
         match expr_type {
-            Type::Result(_, _) => {
-                let has_ok = arms.iter().any(|arm| {
-                    arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "ok")
-                });
-                let has_err = arms.iter().any(|arm| {
-                    arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "err")
-                });
-                let has_wildcard = arms
-                    .iter()
-                    .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
-                if has_wildcard || (has_ok && has_err) {
-                    Ok(())
-                } else {
-                    let mut missing = Vec::new();
-                    if !has_ok {
-                        missing.push("ok");
-                    }
-                    if !has_err {
-                        missing.push("err");
-                    }
-                    Err(SemanticError::with_help(
-                        format!(
-                            "Non-exhaustive match: missing pattern{} for Result: {}",
-                            if missing.len() > 1 { "s" } else { "" },
-                            missing.join(", ")
-                        ),
-                        expr_span,
-                        format!(
-                            "Add match arm{} for: {}, or add a wildcard '_' pattern to cover all remaining cases",
-                            if missing.len() > 1 { "s" } else { "" },
-                            missing.join(", ")
-                        ),
-                    ))
-                }
-            }
+            Type::Result(_, _) => self.check_result_exhaustiveness(arms, expr_span),
             Type::Named(type_name, _) => {
-                // Check if this is an enum type
-                if let Some(symbol) = self.symbol_table.lookup(type_name)
-                    && let Some(variant_names) = &symbol.variants
-                {
-                    // Enum exhaustiveness: check all variants covered
-                    let mut covered: std::collections::HashSet<String> =
-                        std::collections::HashSet::new();
-                    let mut has_wildcard = false;
-
-                    for arm in arms {
-                        match &arm.pattern {
-                            PatternNode::Wildcard => {
-                                has_wildcard = true;
-                                break;
-                            }
-                            PatternNode::EnumVariant { name, .. } => {
-                                // Only count variant as covered if NO guard
-                                if arm.guard.is_none() {
-                                    covered.insert(name.clone());
-                                }
-                            }
-                            PatternNode::Identifier(name) => {
-                                // Only count variant as covered if NO guard
-                                if arm.guard.is_none() && variant_names.contains(name) {
-                                    covered.insert(name.clone());
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    if has_wildcard {
-                        return Ok(());
-                    }
-
-                    let uncovered: Vec<&String> = variant_names
-                        .iter()
-                        .filter(|v| !covered.contains(*v))
-                        .collect();
-
-                    if !uncovered.is_empty() {
-                        let uncovered_list = uncovered
-                            .iter()
-                            .map(|s| s.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Non-exhaustive match: missing variant{} of '{}': {}",
-                                if uncovered.len() > 1 { "s" } else { "" },
-                                type_name,
-                                uncovered_list
-                            ),
-                            expr_span,
-                            format!(
-                                "Add match arm{} for: {}, or add a wildcard '_' pattern",
-                                if uncovered.len() > 1 { "s" } else { "" },
-                                uncovered_list
-                            ),
-                        ));
-                    }
-                    return Ok(());
-                }
-                // Named type but not an enum and not Result: require wildcard
-                self.require_wildcard_pattern(arms, expr_type, expr_span)
+                self.check_named_enum_exhaustiveness(type_name, arms, expr_type, expr_span)
             }
-            Type::Optional(_) => {
-                let has_some = arms.iter().any(|arm| {
-                    arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "some")
-                });
-                let has_none = arms.iter().any(|arm| {
-                    arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "none")
-                });
-                let has_wildcard = arms
-                    .iter()
-                    .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
-                if has_wildcard || (has_some && has_none) {
-                    Ok(())
-                } else {
-                    let mut missing = Vec::new();
-                    if !has_some {
-                        missing.push("some");
-                    }
-                    if !has_none {
-                        missing.push("none");
-                    }
-                    Err(SemanticError::with_help(
-                        format!(
-                            "Non-exhaustive match: missing pattern{} for Optional: {}",
-                            if missing.len() > 1 { "s" } else { "" },
-                            missing.join(", ")
-                        ),
-                        expr_span,
-                        format!(
-                            "Add match arm{} for: {}, or add a wildcard '_' pattern",
-                            if missing.len() > 1 { "s" } else { "" },
-                            missing.join(", ")
-                        ),
-                    ))
-                }
-            }
-            // Non-enum types: require wildcard pattern for exhaustiveness
+            Type::Optional(_) => self.check_optional_exhaustiveness(arms, expr_span),
             _ => self.require_wildcard_pattern(arms, expr_type, expr_span),
         }
+    }
+
+    fn check_result_exhaustiveness(
+        &self,
+        arms: &[crate::ast::MatchArm],
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let has_ok = arms.iter().any(|arm| {
+            arm.guard.is_none()
+                && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "ok")
+        });
+        let has_err = arms.iter().any(|arm| {
+            arm.guard.is_none()
+                && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "err")
+        });
+        let has_wildcard = arms
+            .iter()
+            .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
+
+        if has_wildcard || (has_ok && has_err) {
+            return Ok(());
+        }
+
+        let mut missing = Vec::new();
+        if !has_ok {
+            missing.push("ok");
+        }
+        if !has_err {
+            missing.push("err");
+        }
+        Err(SemanticError::with_help(
+            format!(
+                "Non-exhaustive match: missing pattern{} for Result: {}",
+                if missing.len() > 1 { "s" } else { "" },
+                missing.join(", ")
+            ),
+            expr_span,
+            format!(
+                "Add match arm{} for: {}, or add a wildcard '_' pattern to cover all remaining cases",
+                if missing.len() > 1 { "s" } else { "" },
+                missing.join(", ")
+            ),
+        ))
+    }
+
+    fn check_optional_exhaustiveness(
+        &self,
+        arms: &[crate::ast::MatchArm],
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let has_some = arms.iter().any(|arm| {
+            arm.guard.is_none()
+                && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "some")
+        });
+        let has_none = arms.iter().any(|arm| {
+            arm.guard.is_none()
+                && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "none")
+        });
+        let has_wildcard = arms
+            .iter()
+            .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
+
+        if has_wildcard || (has_some && has_none) {
+            return Ok(());
+        }
+
+        let mut missing = Vec::new();
+        if !has_some {
+            missing.push("some");
+        }
+        if !has_none {
+            missing.push("none");
+        }
+        Err(SemanticError::with_help(
+            format!(
+                "Non-exhaustive match: missing pattern{} for Optional: {}",
+                if missing.len() > 1 { "s" } else { "" },
+                missing.join(", ")
+            ),
+            expr_span,
+            format!(
+                "Add match arm{} for: {}, or add a wildcard '_' pattern",
+                if missing.len() > 1 { "s" } else { "" },
+                missing.join(", ")
+            ),
+        ))
+    }
+
+    fn check_named_enum_exhaustiveness(
+        &self,
+        type_name: &str,
+        arms: &[crate::ast::MatchArm],
+        expr_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let Some(symbol) = self.symbol_table.lookup(type_name) else {
+            return self.require_wildcard_pattern(arms, expr_type, expr_span);
+        };
+        let Some(variant_names) = &symbol.variants else {
+            return self.require_wildcard_pattern(arms, expr_type, expr_span);
+        };
+
+        let (covered, has_wildcard) = self.collect_enum_covered_variants(arms, variant_names);
+
+        if has_wildcard {
+            return Ok(());
+        }
+
+        let uncovered: Vec<&String> = variant_names
+            .iter()
+            .filter(|v| !covered.contains(*v))
+            .collect();
+
+        if !uncovered.is_empty() {
+            let uncovered_list = uncovered
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(SemanticError::with_help(
+                format!(
+                    "Non-exhaustive match: missing variant{} of '{}': {}",
+                    if uncovered.len() > 1 { "s" } else { "" },
+                    type_name,
+                    uncovered_list
+                ),
+                expr_span,
+                format!(
+                    "Add match arm{} for: {}, or add a wildcard '_' pattern",
+                    if uncovered.len() > 1 { "s" } else { "" },
+                    uncovered_list
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn collect_enum_covered_variants(
+        &self,
+        arms: &[crate::ast::MatchArm],
+        variant_names: &[String],
+    ) -> (std::collections::HashSet<String>, bool) {
+        let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut has_wildcard = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                PatternNode::Wildcard => {
+                    has_wildcard = true;
+                    break;
+                }
+                PatternNode::EnumVariant { name, .. } => {
+                    if arm.guard.is_none() {
+                        covered.insert(name.clone());
+                    }
+                }
+                PatternNode::Identifier(name) => {
+                    if arm.guard.is_none() && variant_names.contains(name) {
+                        covered.insert(name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        (covered, has_wildcard)
     }
 
     fn require_wildcard_pattern(
@@ -4027,139 +4250,192 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         match pattern {
             PatternNode::Identifier(name) => {
-                // Check if this identifier is a constant (used as a value pattern)
-                let is_constant = self
-                    .symbol_table
-                    .lookup(name)
-                    .map(|s| s.kind == SymbolKind::Constant)
-                    .unwrap_or(false);
-
-                if is_constant {
-                    // Constant pattern: validate type compatibility, no variable binding
-                    let const_type = self
-                        .symbol_table
-                        .lookup(name)
-                        .and_then(|s| s.type_.clone())
-                        .ok_or_else(|| {
-                            SemanticError::new(
-                                format!("Constant '{}' has no type information", name),
-                                span,
-                            )
-                        })?;
-                    self.check_type_compatibility(&const_type, expected_type, span)?;
-                } else {
-                    // Variable binding pattern
-                    self.symbol_table.add_symbol(
-                        name,
-                        Symbol {
-                            kind: SymbolKind::Variable,
-                            span,
-                            type_: Some(expected_type.clone()),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    )?;
-                }
+                self.handle_identifier_pattern(name, expected_type, span)?;
             }
             PatternNode::EnumVariant { name, args } => {
-                match expected_type {
-                    Type::Optional(inner) => {
-                        if name == "some" && args.len() == 1 {
-                            self.set_pattern_types(&args[0], inner, span)?;
-                        } else if name == "none" && args.is_empty() {
-                            // no vars
-                        } else {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Pattern '{}' does not match type {}",
-                                    name,
-                                    format_type(expected_type)
-                                ),
-                                span,
-                                "Optional values can only be matched with Some(value) or None",
-                            ));
-                        }
-                    }
-                    Type::Result(ok_type, err_type) => {
-                        if name == "ok" && args.len() == 1 {
-                            self.set_pattern_types(&args[0], ok_type, span)?;
-                        } else if name == "err" && args.len() == 1 {
-                            self.set_pattern_types(&args[0], err_type, span)?;
-                        } else {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Pattern '{}' does not match type {}",
-                                    name,
-                                    format_type(expected_type)
-                                ),
-                                span,
-                                "Result values can only be matched with Ok(value) or Err(value)",
-                            ));
-                        }
-                    }
-                    Type::Named(enum_name, _) => {
-                        let symbol = self
-                            .symbol_table
-                            .lookup(enum_name)
-                            .ok_or_else(|| self.undefined_symbol_error("type", enum_name, span))?;
-                        self.match_enum_variant(name, args, enum_name, &symbol, span)?;
-                    }
-                    _ => {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Enum variant patterns are not supported for type {}",
-                                format_type(expected_type)
-                            ),
-                            span,
-                            "Variant patterns can only be used with enum, Optional, or Result types",
-                        ));
-                    }
-                }
+                self.handle_enum_variant_pattern(name, args, expected_type, span)?;
             }
             PatternNode::Literal(lit) => {
-                // Validate type compatibility between literal and match expression
-                let literal_type = match lit {
-                    crate::ast::LiteralNode::Integer(_) => Type::Primitive(PrimitiveType::Int),
-                    crate::ast::LiteralNode::Float(_) => Type::Primitive(PrimitiveType::Float),
-                    crate::ast::LiteralNode::String(_) => Type::Primitive(PrimitiveType::Str),
-                    crate::ast::LiteralNode::Boolean(_) => Type::Primitive(PrimitiveType::Bool),
-                    crate::ast::LiteralNode::Char(_) => Type::Primitive(PrimitiveType::Char),
-                };
-                self.check_type_compatibility(&literal_type, expected_type, span)?;
+                self.handle_literal_pattern(lit, expected_type, span)?;
             }
             PatternNode::List { elements, rest } => {
-                // Validate that expected type is a list type
-                let inner_type = match expected_type {
-                    Type::List(inner) => (**inner).clone(),
-                    Type::EmptyList => Type::Void,
-                    _ => {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "List pattern cannot match type {}",
-                                format_type(expected_type)
-                            ),
-                            span,
-                            "List patterns (e.g. [head, ...rest]) can only match list types",
-                        ));
-                    }
-                };
-                // Set types for each element pattern
-                for elem in elements {
-                    self.set_pattern_types(elem, &inner_type, span)?;
-                }
-                // Handle rest pattern (..rest binds to a list of the same inner type)
-                if let Some(rest_pat) = rest {
-                    let rest_type = Type::List(Box::new(inner_type));
-                    self.set_pattern_types(rest_pat, &rest_type, span)?;
-                }
+                self.handle_list_pattern(elements, rest, expected_type, span)?;
             }
             PatternNode::Wildcard => {} // no binding
+        }
+        Ok(())
+    }
+
+    fn handle_identifier_pattern(
+        &mut self,
+        name: &str,
+        expected_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let is_constant = self
+            .symbol_table
+            .lookup(name)
+            .map(|s| s.kind == SymbolKind::Constant)
+            .unwrap_or(false);
+
+        if is_constant {
+            let const_type = self
+                .symbol_table
+                .lookup(name)
+                .and_then(|s| s.type_.clone())
+                .ok_or_else(|| {
+                    SemanticError::new(format!("Constant '{}' has no type information", name), span)
+                })?;
+            self.check_type_compatibility(&const_type, expected_type, span)?;
+        } else {
+            self.symbol_table.add_symbol(
+                name,
+                Symbol {
+                    kind: SymbolKind::Variable,
+                    span,
+                    type_: Some(expected_type.clone()),
+                    interfaces: std::collections::HashMap::new(),
+                    methods: std::collections::HashMap::new(),
+                    fields: std::collections::HashMap::new(),
+                    type_params: Vec::new(),
+                    original_name: None,
+                    llvm_name: None,
+                    default_param_count: 0,
+                    variants: None,
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    fn handle_enum_variant_pattern(
+        &mut self,
+        name: &str,
+        args: &[PatternNode],
+        expected_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        match expected_type {
+            Type::Optional(inner) => self.match_optional_variant(name, args, inner, span),
+            Type::Result(ok_type, err_type) => {
+                self.match_result_variant(name, args, ok_type, err_type, span)
+            }
+            Type::Named(enum_name, _) => {
+                let symbol = self
+                    .symbol_table
+                    .lookup(enum_name)
+                    .ok_or_else(|| self.undefined_symbol_error("type", enum_name, span))?;
+                self.match_enum_variant(name, args, enum_name, &symbol, span)
+            }
+            _ => Err(SemanticError::with_help(
+                format!(
+                    "Enum variant patterns are not supported for type {}",
+                    format_type(expected_type)
+                ),
+                span,
+                "Variant patterns can only be used with enum, Optional, or Result types",
+            )),
+        }
+    }
+
+    fn match_optional_variant(
+        &mut self,
+        name: &str,
+        args: &[PatternNode],
+        inner: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        if name == "some" && args.len() == 1 {
+            self.set_pattern_types(&args[0], inner, span)?;
+            Ok(())
+        } else if name == "none" && args.is_empty() {
+            Ok(())
+        } else {
+            Err(SemanticError::with_help(
+                format!(
+                    "Pattern '{}' does not match type {}",
+                    name,
+                    format_type(&Type::Optional(Box::new(inner.clone())))
+                ),
+                span,
+                "Optional values can only be matched with Some(value) or None",
+            ))
+        }
+    }
+
+    fn match_result_variant(
+        &mut self,
+        name: &str,
+        args: &[PatternNode],
+        ok_type: &Type,
+        err_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        if name == "ok" && args.len() == 1 {
+            self.set_pattern_types(&args[0], ok_type, span)?;
+            Ok(())
+        } else if name == "err" && args.len() == 1 {
+            self.set_pattern_types(&args[0], err_type, span)?;
+            Ok(())
+        } else {
+            Err(SemanticError::with_help(
+                format!(
+                    "Pattern '{}' does not match type {}",
+                    name,
+                    format_type(&Type::Result(
+                        Box::new(ok_type.clone()),
+                        Box::new(err_type.clone())
+                    ))
+                ),
+                span,
+                "Result values can only be matched with Ok(value) or Err(value)",
+            ))
+        }
+    }
+
+    fn handle_literal_pattern(
+        &mut self,
+        lit: &crate::ast::LiteralNode,
+        expected_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let literal_type = match lit {
+            crate::ast::LiteralNode::Integer(_) => Type::Primitive(PrimitiveType::Int),
+            crate::ast::LiteralNode::Float(_) => Type::Primitive(PrimitiveType::Float),
+            crate::ast::LiteralNode::String(_) => Type::Primitive(PrimitiveType::Str),
+            crate::ast::LiteralNode::Boolean(_) => Type::Primitive(PrimitiveType::Bool),
+            crate::ast::LiteralNode::Char(_) => Type::Primitive(PrimitiveType::Char),
+        };
+        self.check_type_compatibility(&literal_type, expected_type, span)
+    }
+
+    fn handle_list_pattern(
+        &mut self,
+        elements: &[PatternNode],
+        rest: &Option<Box<PatternNode>>,
+        expected_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let inner_type = match expected_type {
+            Type::List(inner) => (**inner).clone(),
+            Type::EmptyList => Type::Void,
+            _ => {
+                return Err(SemanticError::with_help(
+                    format!(
+                        "List pattern cannot match type {}",
+                        format_type(expected_type)
+                    ),
+                    span,
+                    "List patterns (e.g. [head, ...rest]) can only match list types",
+                ));
+            }
+        };
+        for elem in elements {
+            self.set_pattern_types(elem, &inner_type, span)?;
+        }
+        if let Some(rest_pat) = rest {
+            let rest_type = Type::List(Box::new(inner_type));
+            self.set_pattern_types(rest_pat, &rest_type, span)?;
         }
         Ok(())
     }
@@ -5922,56 +6198,110 @@ impl SemanticAnalyzer {
                 self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
             }
             StatementKind::AutoDecl(name, _, expr) => {
-                // First analyze the expression (uses happen before the decl is in scope)
-                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
-                // Then add the variable to local scope
-                local_vars.insert(name.clone());
+                self.handle_variable_declaration(name, expr, local_vars, free_vars)?;
             }
             StatementKind::TypedDecl(name, _, expr) => {
-                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
-                local_vars.insert(name.clone());
+                self.handle_variable_declaration(name, expr, local_vars, free_vars)?;
             }
             StatementKind::ConstDecl(name, _, expr) => {
-                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
-                local_vars.insert(name.clone());
+                self.handle_variable_declaration(name, expr, local_vars, free_vars)?;
             }
             StatementKind::If {
                 cond,
                 then_block,
                 else_block,
             } => {
-                self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
-                for s in then_block {
-                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                }
-                if let Some(else_stmts) = else_block {
-                    for s in else_stmts {
-                        self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                    }
-                }
+                self.handle_if_statement(cond, then_block, else_block, local_vars, free_vars)?;
             }
             StatementKind::While { cond, body } => {
-                self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
-                for s in body {
-                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                }
+                self.handle_while_statement(cond, body, local_vars, free_vars)?;
             }
             StatementKind::For {
                 var, iter, body, ..
             } => {
-                self.find_free_variables_in_expression(iter, local_vars, free_vars)?;
-                // Iterator variable is local to the for loop
-                local_vars.insert(var.clone());
-                for s in body {
-                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                }
+                self.handle_for_statement(var, iter, body, local_vars, free_vars)?;
             }
             StatementKind::Block(stmts) => {
-                for s in stmts {
-                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                }
+                self.handle_block_statement(stmts, local_vars, free_vars)?;
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_variable_declaration(
+        &self,
+        name: &str,
+        expr: &ExpressionNode,
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        // First analyze the expression (uses happen before the decl is in scope)
+        self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
+        // Then add the variable to local scope
+        local_vars.insert(name.to_string());
+        Ok(())
+    }
+
+    fn handle_if_statement(
+        &self,
+        cond: &ExpressionNode,
+        then_block: &[StatementNode],
+        else_block: &Option<Vec<StatementNode>>,
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
+        for s in then_block {
+            self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+        }
+        if let Some(else_stmts) = else_block {
+            for s in else_stmts {
+                self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_while_statement(
+        &self,
+        cond: &ExpressionNode,
+        body: &[StatementNode],
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
+        for s in body {
+            self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_for_statement(
+        &self,
+        var: &str,
+        iter: &ExpressionNode,
+        body: &[StatementNode],
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(iter, local_vars, free_vars)?;
+        // Iterator variable is local to the for loop
+        local_vars.insert(var.to_string());
+        for s in body {
+            self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_block_statement(
+        &self,
+        stmts: &[StatementNode],
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for s in stmts {
+            self.find_free_variables_in_statement(s, local_vars, free_vars)?;
         }
         Ok(())
     }
@@ -5984,81 +6314,207 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         match &expr.kind {
             ExpressionKind::Identifier(name) => {
-                // Check if it's a local variable (parameter or declared in lambda body)
-                if !local_vars.contains(name) {
-                    // Check if it exists in outer scopes
-                    if let Some(symbol) = self.symbol_table.lookup(name)
-                        && matches!(symbol.kind, SymbolKind::Variable)
-                        && let Some(var_type) = &symbol.type_
-                    {
-                        free_vars.insert(name.clone(), var_type.clone());
-                    }
-                }
+                self.handle_identifier_expression(name, local_vars, free_vars)?;
             }
             ExpressionKind::Binary { left, right, .. } => {
-                self.find_free_variables_in_expression(left, local_vars, free_vars)?;
-                self.find_free_variables_in_expression(right, local_vars, free_vars)?;
+                self.handle_binary_expression(left, right, local_vars, free_vars)?;
             }
             ExpressionKind::Unary {
                 expr: inner,
                 op_span: _,
                 ..
             } => {
-                self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+                self.handle_unary_expression(inner, local_vars, free_vars)?;
             }
             ExpressionKind::Call { func, args } => {
-                self.find_free_variables_in_expression(func, local_vars, free_vars)?;
-                for arg in args {
-                    self.find_free_variables_in_expression(arg, local_vars, free_vars)?;
-                }
+                self.handle_call_expression(func, args, local_vars, free_vars)?;
             }
             ExpressionKind::FieldAccess { expr: inner, .. } => {
-                self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+                self.handle_field_access_expression(inner, local_vars, free_vars)?;
             }
             ExpressionKind::ListAccess { expr: inner, index } => {
-                self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
-                self.find_free_variables_in_expression(index, local_vars, free_vars)?;
+                self.handle_list_access_expression(inner, index, local_vars, free_vars)?;
             }
             ExpressionKind::ListLiteral(elements) => {
-                for elem in elements {
-                    self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
-                }
+                self.handle_list_literal_expression(elements, local_vars, free_vars)?;
             }
             ExpressionKind::MapLiteral { entries, .. } => {
-                for (key, val) in entries {
-                    self.find_free_variables_in_expression(key, local_vars, free_vars)?;
-                    self.find_free_variables_in_expression(val, local_vars, free_vars)?;
-                }
+                self.handle_map_literal_expression(entries, local_vars, free_vars)?;
             }
             ExpressionKind::SetLiteral(elements) => {
-                for elem in elements {
-                    self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
-                }
+                self.handle_set_literal_expression(elements, local_vars, free_vars)?;
             }
             ExpressionKind::TupleLiteral(elements) => {
-                for elem in elements {
-                    self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
-                }
+                self.handle_tuple_literal_expression(elements, local_vars, free_vars)?;
             }
             ExpressionKind::If {
                 cond,
                 then_expr,
                 else_expr,
             } => {
-                self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
-                self.find_free_variables_in_expression(then_expr, local_vars, free_vars)?;
-                self.find_free_variables_in_expression(else_expr, local_vars, free_vars)?;
+                self.handle_if_expression(cond, then_expr, else_expr, local_vars, free_vars)?;
             }
             ExpressionKind::Lambda { params, body, .. } => {
-                let mut inner_local_vars = local_vars.clone();
-                for param in params {
-                    inner_local_vars.insert(param.name.clone());
-                }
-                for stmt in body {
-                    self.find_free_variables_in_statement(stmt, &mut inner_local_vars, free_vars)?;
-                }
+                self.handle_lambda_expression(params, body, local_vars, free_vars)?;
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_identifier_expression(
+        &self,
+        name: &str,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        // Check if it's a local variable (parameter or declared in lambda body)
+        if !local_vars.contains(name) {
+            // Check if it exists in outer scopes
+            if let Some(symbol) = self.symbol_table.lookup(name)
+                && matches!(symbol.kind, SymbolKind::Variable)
+                && let Some(var_type) = &symbol.type_
+            {
+                free_vars.insert(name.to_string(), var_type.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_binary_expression(
+        &self,
+        left: &ExpressionNode,
+        right: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(left, local_vars, free_vars)?;
+        self.find_free_variables_in_expression(right, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_unary_expression(
+        &self,
+        inner: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_call_expression(
+        &self,
+        func: &ExpressionNode,
+        args: &[ExpressionNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(func, local_vars, free_vars)?;
+        for arg in args {
+            self.find_free_variables_in_expression(arg, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_field_access_expression(
+        &self,
+        inner: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_list_access_expression(
+        &self,
+        inner: &ExpressionNode,
+        index: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+        self.find_free_variables_in_expression(index, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_list_literal_expression(
+        &self,
+        elements: &[ExpressionNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for elem in elements {
+            self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_map_literal_expression(
+        &self,
+        entries: &[(ExpressionNode, ExpressionNode)],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for (key, val) in entries {
+            self.find_free_variables_in_expression(key, local_vars, free_vars)?;
+            self.find_free_variables_in_expression(val, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_set_literal_expression(
+        &self,
+        elements: &[ExpressionNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for elem in elements {
+            self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_tuple_literal_expression(
+        &self,
+        elements: &[ExpressionNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for elem in elements {
+            self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_if_expression(
+        &self,
+        cond: &ExpressionNode,
+        then_expr: &ExpressionNode,
+        else_expr: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
+        self.find_free_variables_in_expression(then_expr, local_vars, free_vars)?;
+        self.find_free_variables_in_expression(else_expr, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_lambda_expression(
+        &self,
+        params: &[Param],
+        body: &[StatementNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        let mut inner_local_vars = local_vars.clone();
+        for param in params {
+            inner_local_vars.insert(param.name.clone());
+        }
+        for stmt in body {
+            self.find_free_variables_in_statement(stmt, &mut inner_local_vars, free_vars)?;
         }
         Ok(())
     }
