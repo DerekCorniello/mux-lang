@@ -15,7 +15,11 @@ pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type}
 pub use unifier::Unifier;
 
 // Internal imports
-use crate::ast::*;
+use crate::ast::{
+    AstNode, BinaryOp, ExpressionKind, ExpressionNode, Field, FunctionNode, ImportSpec,
+    LiteralNode, PatternNode, PrimitiveType, Spanned, StatementKind, StatementNode, TraitBound,
+    TypeKind, TypeNode, UnaryOp,
+};
 use crate::diagnostic::Files;
 use crate::lexer::Span;
 use std::cell::RefCell;

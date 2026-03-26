@@ -6,7 +6,7 @@ SEPARATOR="========================================"
 # For each file: print body, run with cargo, show output
 
 echo "$SEPARATOR"
-echo "Testing Error Case Files"
+echo "Testing Error Case Files" >&2
 echo "$SEPARATOR"
 echo ""
 
@@ -34,5 +34,5 @@ for file in test_scripts/error_cases/*.mux; do
 done
 
 echo "$SEPARATOR"
-echo "All error case tests complete!"
+echo "All error case tests complete!" >&2
 echo "$SEPARATOR"
