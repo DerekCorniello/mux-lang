@@ -676,170 +676,9 @@ impl SemanticAnalyzer {
             } => self.resolve_binary_expression_type(left, right, op, op_span, expr.span),
             ExpressionKind::Unary {
                 expr, op, op_span, ..
-            } => match op {
-                UnaryOp::Not => Ok(Type::Primitive(crate::ast::PrimitiveType::Bool)),
-                UnaryOp::Neg => {
-                    let operand_type = self.get_expression_type(expr)?;
-                    match operand_type {
-                        Type::Primitive(crate::ast::PrimitiveType::Int)
-                        | Type::Primitive(crate::ast::PrimitiveType::Float) => Ok(operand_type),
-                        _ => Err(SemanticError::with_help(
-                            format!(
-                                "Negation operator '-' requires a numeric operand, found {}",
-                                format_type(&operand_type)
-                            ),
-                            *op_span,
-                            "The unary '-' operator can only be applied to int or float values",
-                        )),
-                    }
-                }
-                UnaryOp::Ref => {
-                    let operand_type = self.get_expression_type(expr)?;
-                    Ok(Type::Reference(Box::new(operand_type)))
-                }
-                UnaryOp::Deref => {
-                    let operand_type = self.get_expression_type(expr)?;
-                    if let Type::Reference(inner) = operand_type {
-                        Ok(*inner)
-                    } else {
-                        Err(SemanticError::with_help(
-                            format!(
-                                "Cannot dereference type {}, which is not a reference",
-                                format_type(&operand_type)
-                            ),
-                            *op_span,
-                            "The dereference operator '*' can only be applied to reference types (e.g., ref int)",
-                        ))
-                    }
-                }
-                UnaryOp::Incr | UnaryOp::Decr => {
-                    self.check_not_modifying_constant(expr, op_span)?;
-                    let operand_type = self.get_expression_type(expr)?;
-                    match operand_type {
-                        Type::Primitive(crate::ast::PrimitiveType::Int) => Ok(operand_type),
-                        _ => Err(SemanticError::with_help(
-                            format!(
-                                "Increment/decrement operators require an int operand, found {}",
-                                format_type(&operand_type)
-                            ),
-                            *op_span,
-                            "The '++' and '--' operators can only be applied to int variables",
-                        )),
-                    }
-                }
-            },
+            } => self.resolve_unary_expression_type(expr, op, op_span),
             ExpressionKind::Call { func, args } => {
-                // get function type
-                let func_type = match &func.kind {
-                    ExpressionKind::GenericType(name, type_args) => {
-                        self.get_instantiated_constructor_type(name, type_args, func.span)?
-                    }
-                    ExpressionKind::Identifier(name) => match self.get_expression_type(func) {
-                        Ok(t) => t,
-                        Err(e) if e.message.contains("Undefined variable") => {
-                            return Err(self.undefined_symbol_error("function", name, func.span));
-                        }
-                        Err(e) => return Err(e),
-                    },
-                    _ => self.get_expression_type(func)?,
-                };
-                match func_type {
-                    Type::Function {
-                        params,
-                        returns,
-                        default_count,
-                        ..
-                    } => {
-                        // For named functions, verify the symbol's default_count matches
-                        let actual_default_count = match &func.kind {
-                            ExpressionKind::Identifier(name) => {
-                                // Use the greater of type default_count and symbol default_count
-                                // (they should be the same for functions, but type carries lambda defaults)
-                                let symbol_default = self
-                                    .symbol_table
-                                    .lookup(name)
-                                    .map(|s| s.default_param_count)
-                                    .unwrap_or(0);
-                                std::cmp::max(default_count, symbol_default)
-                            }
-                            _ => default_count, // For lambdas and other expressions, use type's default_count
-                        };
-
-                        let min_args = params.len() - actual_default_count;
-                        let max_args = params.len();
-
-                        if args.len() < min_args || args.len() > max_args {
-                            let func_name = match &func.kind {
-                                ExpressionKind::Identifier(name) => format!("'{}'", name),
-                                ExpressionKind::FieldAccess { field, .. } => format!("'{}'", field),
-                                _ => "this function".to_string(),
-                            };
-                            if actual_default_count > 0 {
-                                return Err(SemanticError::with_help(
-                                    format!(
-                                        "{} expects {} to {} arguments, but {} {} provided",
-                                        func_name,
-                                        min_args,
-                                        max_args,
-                                        args.len(),
-                                        if args.len() == 1 { "was" } else { "were" }
-                                    ),
-                                    expr.span,
-                                    format!(
-                                        "{} has {} required parameter(s) and {} optional parameter(s) with defaults",
-                                        func_name, min_args, actual_default_count
-                                    ),
-                                ));
-                            } else {
-                                return Err(SemanticError::with_help(
-                                    format!(
-                                        "{} expects {} argument(s), but {} {} provided",
-                                        func_name,
-                                        params.len(),
-                                        args.len(),
-                                        if args.len() == 1 { "was" } else { "were" }
-                                    ),
-                                    expr.span,
-                                    if args.len() > params.len() {
-                                        "Too many arguments. Remove the extra argument(s)."
-                                            .to_string()
-                                    } else {
-                                        format!(
-                                            "Not enough arguments. {} requires {} argument(s).",
-                                            func_name,
-                                            params.len()
-                                        )
-                                    },
-                                ));
-                            }
-                        }
-
-                        let mut unifier = Unifier::new();
-                        // Only validate provided arguments, missing ones will use defaults
-                        for (param, arg) in params.iter().zip(args.iter()) {
-                            let arg_type = self.get_expression_type(arg)?;
-                            unifier.unify(param, &arg_type, expr.span)?;
-                        }
-                        let maybe_func_name = match &func.kind {
-                            ExpressionKind::Identifier(name) => Some(name.as_str()),
-                            ExpressionKind::FieldAccess { field, .. } => Some(field.as_str()),
-                            _ => None,
-                        };
-                        if let Some(func_name) = maybe_func_name {
-                            self.infer_missing_type_params_from_function_bounds(
-                                func_name,
-                                &mut unifier.substitutions,
-                            );
-                        }
-                        let unified_returns = unifier.apply(&returns);
-                        Ok(unified_returns)
-                    }
-                    _ => Err(SemanticError::with_help(
-                        "Cannot call non-function type",
-                        expr.span,
-                        "Only functions can be called with '()'. Ensure the expression before '()' is a function.",
-                    )),
-                }
+                self.resolve_call_expression_type(func, args, expr.span)
             }
             ExpressionKind::FieldAccess { expr, field } => {
                 // Try to get the type of the base expression. If that fails because the
@@ -1144,6 +983,230 @@ impl SemanticAnalyzer {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Type::Named(lookup_name, resolved_args))
             }
+        }
+    }
+
+    fn resolve_unary_expression_type(
+        &mut self,
+        expr: &ExpressionNode,
+        op: &UnaryOp,
+        op_span: &Span,
+    ) -> Result<Type, SemanticError> {
+        match op {
+            UnaryOp::Not => Ok(Type::Primitive(crate::ast::PrimitiveType::Bool)),
+            UnaryOp::Neg => {
+                let operand_type = self.get_expression_type(expr)?;
+                match operand_type {
+                    Type::Primitive(crate::ast::PrimitiveType::Int)
+                    | Type::Primitive(crate::ast::PrimitiveType::Float) => Ok(operand_type),
+                    _ => Err(SemanticError::with_help(
+                        format!(
+                            "Negation operator '-' requires a numeric operand, found {}",
+                            format_type(&operand_type)
+                        ),
+                        *op_span,
+                        "The unary '-' operator can only be applied to int or float values",
+                    )),
+                }
+            }
+            UnaryOp::Ref => {
+                let operand_type = self.get_expression_type(expr)?;
+                Ok(Type::Reference(Box::new(operand_type)))
+            }
+            UnaryOp::Deref => {
+                let operand_type = self.get_expression_type(expr)?;
+                if let Type::Reference(inner) = operand_type {
+                    Ok(*inner)
+                } else {
+                    Err(SemanticError::with_help(
+                        format!(
+                            "Cannot dereference type {}, which is not a reference",
+                            format_type(&operand_type)
+                        ),
+                        *op_span,
+                        "The dereference operator '*' can only be applied to reference types (e.g., ref int)",
+                    ))
+                }
+            }
+            UnaryOp::Incr | UnaryOp::Decr => {
+                self.check_not_modifying_constant(expr, op_span)?;
+                let operand_type = self.get_expression_type(expr)?;
+                match operand_type {
+                    Type::Primitive(crate::ast::PrimitiveType::Int) => Ok(operand_type),
+                    _ => Err(SemanticError::with_help(
+                        format!(
+                            "Increment/decrement operators require an int operand, found {}",
+                            format_type(&operand_type)
+                        ),
+                        *op_span,
+                        "The '++' and '--' operators can only be applied to int variables",
+                    )),
+                }
+            }
+        }
+    }
+
+    fn resolve_call_expression_type(
+        &mut self,
+        func: &ExpressionNode,
+        args: &[ExpressionNode],
+        expr_span: Span,
+    ) -> Result<Type, SemanticError> {
+        let func_type = self.resolve_called_function_type(func)?;
+
+        match func_type {
+            Type::Function {
+                params,
+                returns,
+                default_count,
+                ..
+            } => self.resolve_function_call_type(
+                func,
+                args,
+                params,
+                returns,
+                default_count,
+                expr_span,
+            ),
+            _ => Err(SemanticError::with_help(
+                "Cannot call non-function type",
+                expr_span,
+                "Only functions can be called with '()'. Ensure the expression before '()' is a function.",
+            )),
+        }
+    }
+
+    fn resolve_called_function_type(
+        &mut self,
+        func: &ExpressionNode,
+    ) -> Result<Type, SemanticError> {
+        match &func.kind {
+            ExpressionKind::GenericType(name, type_args) => {
+                self.get_instantiated_constructor_type(name, type_args, func.span)
+            }
+            ExpressionKind::Identifier(name) => match self.get_expression_type(func) {
+                Ok(t) => Ok(t),
+                Err(e) if e.message.contains("Undefined variable") => {
+                    Err(self.undefined_symbol_error("function", name, func.span))
+                }
+                Err(e) => Err(e),
+            },
+            _ => self.get_expression_type(func),
+        }
+    }
+
+    fn resolve_function_call_type(
+        &mut self,
+        func: &ExpressionNode,
+        args: &[ExpressionNode],
+        params: Vec<Type>,
+        returns: Box<Type>,
+        default_count: usize,
+        expr_span: Span,
+    ) -> Result<Type, SemanticError> {
+        let actual_default_count = self.call_default_param_count(func, default_count);
+        let min_args = params.len() - actual_default_count;
+        let max_args = params.len();
+
+        if args.len() < min_args || args.len() > max_args {
+            self.report_call_arity_error(
+                func,
+                args.len(),
+                min_args,
+                max_args,
+                actual_default_count,
+                expr_span,
+            )?;
+        }
+
+        let mut unifier = Unifier::new();
+        for (param, arg) in params.iter().zip(args.iter()) {
+            let arg_type = self.get_expression_type(arg)?;
+            unifier.unify(param, &arg_type, expr_span)?;
+        }
+
+        if let Some(func_name) = self.call_function_name(func) {
+            self.infer_missing_type_params_from_function_bounds(
+                func_name,
+                &mut unifier.substitutions,
+            );
+        }
+
+        Ok(unifier.apply(&returns))
+    }
+
+    fn call_default_param_count(&self, func: &ExpressionNode, default_count: usize) -> usize {
+        match &func.kind {
+            ExpressionKind::Identifier(name) => {
+                let symbol_default = self
+                    .symbol_table
+                    .lookup(name)
+                    .map(|s| s.default_param_count)
+                    .unwrap_or(0);
+                std::cmp::max(default_count, symbol_default)
+            }
+            _ => default_count,
+        }
+    }
+
+    fn call_function_name<'a>(&self, func: &'a ExpressionNode) -> Option<&'a str> {
+        match &func.kind {
+            ExpressionKind::Identifier(name) => Some(name.as_str()),
+            ExpressionKind::FieldAccess { field, .. } => Some(field.as_str()),
+            _ => None,
+        }
+    }
+
+    fn report_call_arity_error(
+        &self,
+        func: &ExpressionNode,
+        arg_count: usize,
+        min_args: usize,
+        max_args: usize,
+        actual_default_count: usize,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let func_name = match &func.kind {
+            ExpressionKind::Identifier(name) => format!("'{}'", name),
+            ExpressionKind::FieldAccess { field, .. } => format!("'{}'", field),
+            _ => "this function".to_string(),
+        };
+
+        if actual_default_count > 0 {
+            Err(SemanticError::with_help(
+                format!(
+                    "{} expects {} to {} arguments, but {} {} provided",
+                    func_name,
+                    min_args,
+                    max_args,
+                    arg_count,
+                    if arg_count == 1 { "was" } else { "were" }
+                ),
+                expr_span,
+                format!(
+                    "{} has {} required parameter(s) and {} optional parameter(s) with defaults",
+                    func_name, min_args, actual_default_count
+                ),
+            ))
+        } else {
+            Err(SemanticError::with_help(
+                format!(
+                    "{} expects {} argument(s), but {} {} provided",
+                    func_name,
+                    max_args,
+                    arg_count,
+                    if arg_count == 1 { "was" } else { "were" }
+                ),
+                expr_span,
+                if arg_count > max_args {
+                    "Too many arguments. Remove the extra argument(s).".to_string()
+                } else {
+                    format!(
+                        "Not enough arguments. {} requires {} argument(s).",
+                        func_name, max_args
+                    )
+                },
+            ))
         }
     }
 
@@ -2525,106 +2588,111 @@ impl SemanticAnalyzer {
         right_type: &Type,
         op: &BinaryOp,
     ) -> Option<Type> {
-        // Handle 'in' operator separately since it doesn't require same types
-        if let BinaryOp::In = op {
-            // 'in' operator checks if left operand is contained in right operand
-            // Right operand should be a collection type (list, set, or map)
-            match right_type {
-                Type::List(_) | Type::Set(_) => {
-                    // For list and set, left operand should be compatible with element type
-                    Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
-                }
-                Type::Map(key_type, _) => {
-                    // For map, left operand should be compatible with key type
-                    if left_type == key_type.as_ref() {
-                        Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
-                    } else {
-                        None
-                    }
-                }
-                Type::Primitive(PrimitiveType::Str) => {
-                    // For string, left operand should be a character or string
-                    if matches!(
-                        left_type,
-                        Type::Primitive(PrimitiveType::Char | PrimitiveType::Str)
-                    ) {
-                        Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        } else {
-            // No implicit type promotion: operands must have the same type (or be supported by
-            // explicit interfaces/overloads elsewhere in the type system).
-            if left_type != right_type {
-                return None;
-            }
+        if matches!(op, BinaryOp::In) {
+            return self.resolve_in_binary_operator(left_type, right_type);
+        }
 
-            match op {
-                BinaryOp::Add => {
-                    // built-in support for primitives and collections
-                    if matches!(
-                        left_type,
-                        Type::Primitive(
-                            PrimitiveType::Str | PrimitiveType::Int | PrimitiveType::Float
-                        ) | Type::List(_)
-                            | Type::Map(_, _)
-                            | Type::Set(_)
-                    ) {
-                        Some(left_type.clone())
-                    } else {
-                        None
-                    }
-                }
-                BinaryOp::Subtract
-                | BinaryOp::Multiply
-                | BinaryOp::Divide
-                | BinaryOp::Modulo
-                | BinaryOp::Exponent => {
-                    // built-in support for numeric primitives
-                    if matches!(
-                        left_type,
-                        Type::Primitive(PrimitiveType::Int | PrimitiveType::Float)
-                    ) {
-                        Some(left_type.clone())
-                    } else {
-                        None
-                    }
-                }
-                BinaryOp::Equal | BinaryOp::NotEqual => {
-                    // equality is supported for all types
+        if left_type != right_type {
+            return None;
+        }
+
+        self.resolve_equal_type_binary_operator(left_type, right_type, op)
+    }
+
+    fn resolve_in_binary_operator(&self, left_type: &Type, right_type: &Type) -> Option<Type> {
+        match right_type {
+            Type::List(_) | Type::Set(_) => Some(Type::Primitive(crate::ast::PrimitiveType::Bool)),
+            Type::Map(key_type, _) => {
+                if left_type == key_type.as_ref() {
                     Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+                } else {
+                    None
                 }
-                BinaryOp::Less
-                | BinaryOp::LessEqual
-                | BinaryOp::Greater
-                | BinaryOp::GreaterEqual => {
-                    // comparison operators for ordered types
-                    if matches!(
-                        left_type,
-                        Type::Primitive(
-                            PrimitiveType::Int | PrimitiveType::Float | PrimitiveType::Str
-                        )
-                    ) || self.type_implements_interface(left_type, "Comparable")
-                    {
-                        Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
-                    } else {
-                        None
-                    }
-                }
-                BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
-                    if matches!(left_type, Type::Primitive(PrimitiveType::Bool))
-                        && matches!(right_type, Type::Primitive(PrimitiveType::Bool))
-                    {
-                        Some(Type::Primitive(PrimitiveType::Bool))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
             }
+            Type::Primitive(PrimitiveType::Str) => {
+                if matches!(
+                    left_type,
+                    Type::Primitive(PrimitiveType::Char | PrimitiveType::Str)
+                ) {
+                    Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn resolve_equal_type_binary_operator(
+        &self,
+        left_type: &Type,
+        right_type: &Type,
+        op: &BinaryOp,
+    ) -> Option<Type> {
+        match op {
+            BinaryOp::Add => self.resolve_add_binary_operator(left_type),
+            BinaryOp::Subtract
+            | BinaryOp::Multiply
+            | BinaryOp::Divide
+            | BinaryOp::Modulo
+            | BinaryOp::Exponent => self.resolve_numeric_binary_operator(left_type),
+            BinaryOp::Equal | BinaryOp::NotEqual => {
+                Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+            }
+            BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
+                self.resolve_comparison_binary_operator(left_type)
+            }
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
+                self.resolve_logical_binary_operator(left_type, right_type)
+            }
+            _ => None,
+        }
+    }
+
+    fn resolve_add_binary_operator(&self, left_type: &Type) -> Option<Type> {
+        if matches!(
+            left_type,
+            Type::Primitive(PrimitiveType::Str | PrimitiveType::Int | PrimitiveType::Float)
+                | Type::List(_)
+                | Type::Map(_, _)
+                | Type::Set(_)
+        ) {
+            Some(left_type.clone())
+        } else {
+            None
+        }
+    }
+
+    fn resolve_numeric_binary_operator(&self, left_type: &Type) -> Option<Type> {
+        if matches!(
+            left_type,
+            Type::Primitive(PrimitiveType::Int | PrimitiveType::Float)
+        ) {
+            Some(left_type.clone())
+        } else {
+            None
+        }
+    }
+
+    fn resolve_comparison_binary_operator(&self, left_type: &Type) -> Option<Type> {
+        if matches!(
+            left_type,
+            Type::Primitive(PrimitiveType::Int | PrimitiveType::Float | PrimitiveType::Str)
+        ) || self.type_implements_interface(left_type, "Comparable")
+        {
+            Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+        } else {
+            None
+        }
+    }
+
+    fn resolve_logical_binary_operator(&self, left_type: &Type, right_type: &Type) -> Option<Type> {
+        if matches!(left_type, Type::Primitive(PrimitiveType::Bool))
+            && matches!(right_type, Type::Primitive(PrimitiveType::Bool))
+        {
+            Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+        } else {
+            None
         }
     }
 

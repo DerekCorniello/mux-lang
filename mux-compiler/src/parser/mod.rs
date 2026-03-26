@@ -3180,25 +3180,40 @@ mod tests {
 
     fn parse_stmts(source: &str) -> Vec<StatementNode> {
         let mut test_parser = create_parser(source);
-        let parse_result = test_parser.parse();
-
-        match parse_result {
-            Ok(nodes) => {
-                let mut statements = Vec::new();
-                for node in nodes {
-                    if let Some(stmt) = node.into_statement() {
-                        statements.push(stmt);
-                    }
-                }
-                statements
-            }
+        match test_parser.parse() {
+            Ok(nodes) => collect_statements(nodes),
             Err((nodes, errors)) => {
                 eprintln!("Parse errors: {:?}", errors);
-                nodes
-                    .into_iter()
-                    .filter_map(|node| node.into_statement())
-                    .collect()
+                collect_statements(nodes)
             }
+        }
+    }
+
+    fn collect_statements(nodes: Vec<AstNode>) -> Vec<StatementNode> {
+        nodes
+            .into_iter()
+            .filter_map(AstNode::into_statement)
+            .collect()
+    }
+
+    fn assert_auto_decl_literal_statement(
+        stmt: &StatementNode,
+        expected_row: usize,
+        expected_value: &LiteralNode,
+    ) {
+        if let StatementKind::AutoDecl(_, _, expr) = &stmt.kind {
+            assert_eq!(stmt.span.row_start, expected_row);
+            assert!(stmt.span.col_start > 0);
+            assert_eq!(expr.span.row_start, expected_row);
+            assert!(expr.span.col_start > 0);
+
+            if let ExpressionKind::Literal(lit) = &expr.kind {
+                assert_eq!(lit, expected_value);
+            } else {
+                panic!("Expected literal expression, got {:?}", expr.kind);
+            }
+        } else {
+            panic!("Expected AutoDecl statement, got {:?}", stmt.kind);
         }
     }
 
@@ -3214,49 +3229,8 @@ mod tests {
         assert!(!stmts.is_empty(), "No statements were parsed");
         assert!(stmts.len() >= 2, "Expected at least 2 statements");
 
-        // Test first variable declaration span
-        if let StatementKind::AutoDecl(_, _, expr) = &stmts[0].kind {
-            assert_eq!(stmts[0].span.row_start, 2);
-            assert!(stmts[0].span.col_start > 0);
-
-            // The expression should have its own span
-            assert_eq!(expr.span.row_start, 2);
-            assert!(expr.span.col_start > 0);
-
-            if let ExpressionKind::Literal(lit) = &expr.kind {
-                // The literal value should be 42
-                if let LiteralNode::Integer(val) = lit {
-                    assert_eq!(*val, 42);
-                } else {
-                    panic!("Expected Integer literal, got {:?}", lit);
-                }
-            } else {
-                panic!("Expected literal expression, got {:?}", expr.kind);
-            }
-        } else {
-            panic!("Expected AutoDecl statement, got {:?}", stmts[0].kind);
-        }
-
-        // Test second variable declaration with string literal
-        if let StatementKind::AutoDecl(_, _, expr) = &stmts[1].kind {
-            assert_eq!(stmts[1].span.row_start, 3);
-            assert!(stmts[1].span.col_start > 0);
-
-            if let ExpressionKind::Literal(lit) = &expr.kind {
-                assert_eq!(expr.span.row_start, 3);
-                assert!(expr.span.col_start > 0);
-
-                if let LiteralNode::String(s) = lit {
-                    assert_eq!(s, "hello");
-                } else {
-                    panic!("Expected String literal, got {:?}", lit);
-                }
-            } else {
-                panic!("Expected literal expression, got {:?}", expr.kind);
-            }
-        } else {
-            panic!("Expected AutoDecl statement, got {:?}", stmts[1].kind);
-        }
+        assert_auto_decl_literal_statement(&stmts[0], 2, &LiteralNode::Integer(42));
+        assert_auto_decl_literal_statement(&stmts[1], 3, &LiteralNode::String("hello".to_string()));
     }
 
     #[test]
