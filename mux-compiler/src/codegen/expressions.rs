@@ -887,214 +887,200 @@ impl<'a> CodeGenerator<'a> {
         expr: &ExpressionNode,
     ) -> Result<BasicValueEnum<'a>, String> {
         match op {
-            UnaryOp::Ref => {
-                if let ExpressionKind::Identifier(name) = &expr.kind {
-                    if let Some((ptr, _, _)) = self
-                        .variables
-                        .get(name)
-                        .or_else(|| self.global_variables.get(name))
-                    {
-                        Ok((*ptr).into())
-                    } else {
-                        Err(format!("Undefined variable {}", name))
-                    }
-                } else {
-                    let expr_val = self.generate_expression(expr)?;
-                    let boxed_val = if expr_val.is_pointer_value() {
-                        expr_val.into_pointer_value()
-                    } else {
-                        self.box_value(expr_val)
-                    };
-                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let temp = self
-                        .builder
-                        .build_alloca(ptr_type, "ref_temp")
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_store(temp, boxed_val)
-                        .map_err(|e| e.to_string())?;
-                    Ok(temp.into())
-                }
-            }
-            UnaryOp::Deref => {
-                let ref_val = self.generate_expression(expr)?;
-                let boxed_ptr = self
-                    .builder
-                    .build_load(
-                        self.context.ptr_type(AddressSpace::default()),
-                        ref_val.into_pointer_value(),
-                        "boxed_ptr",
-                    )
-                    .map_err(|e| e.to_string())?;
-                if let ExpressionKind::Identifier(name) = &expr.kind {
-                    if let Some((_, _, var_type)) = self
-                        .variables
-                        .get(name)
-                        .or_else(|| self.global_variables.get(name))
-                    {
-                        match var_type {
-                            Type::Reference(inner_type) => match inner_type.as_ref() {
-                                Type::Primitive(PrimitiveType::Int) => {
-                                    let raw_int = self.get_raw_int_value(boxed_ptr)?;
-                                    Ok(raw_int.into())
-                                }
-                                Type::Primitive(PrimitiveType::Float) => {
-                                    let raw_float = self.get_raw_float_value(boxed_ptr)?;
-                                    Ok(raw_float.into())
-                                }
-                                Type::Primitive(PrimitiveType::Bool) => {
-                                    let raw_bool = self.get_raw_bool_value(boxed_ptr)?;
-                                    Ok(raw_bool.into())
-                                }
-                                _ => Ok(boxed_ptr),
-                            },
-                            _ => Ok(boxed_ptr),
-                        }
-                    } else {
-                        Ok(boxed_ptr)
-                    }
-                } else {
-                    Ok(boxed_ptr)
-                }
-            }
-            UnaryOp::Incr => {
-                if let ExpressionKind::Identifier(name) = &expr.kind {
-                    if let Some((ptr, _, _)) = self
-                        .variables
-                        .get(name)
-                        .or_else(|| self.global_variables.get(name))
-                    {
-                        let ptr_copy = *ptr;
-                        let value_ptr = self
-                            .builder
-                            .build_load(
-                                self.context.ptr_type(AddressSpace::default()),
-                                ptr_copy,
-                                &format!("{}_load", name),
-                            )
-                            .map_err(|e| e.to_string())?
-                            .into_pointer_value();
-                        let get_int_func = self
-                            .module
-                            .get_function("mux_value_get_int")
-                            .ok_or("mux_value_get_int not found")?;
-                        let current_val = self
-                            .builder
-                            .build_call(
-                                get_int_func,
-                                &[value_ptr.into()],
-                                &format!("{}_get_int", name),
-                            )
-                            .map_err(|e| e.to_string())?
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_value_get_int should return a basic value")
-                            .into_int_value();
-                        let one = self.context.i64_type().const_int(1, false);
-                        let new_val = self
-                            .builder
-                            .build_int_add(current_val, one, "incr_result")
-                            .map_err(|e| e.to_string())?;
-                        let boxed_val = self.box_value(new_val.into());
-                        self.builder
-                            .build_store(ptr_copy, boxed_val)
-                            .map_err(|e| e.to_string())?;
-                        Ok(new_val.into())
-                    } else {
-                        Err(format!("Undefined variable {}", name))
-                    }
-                } else {
-                    Err("Increment operator only supports simple variables for now".to_string())
-                }
-            }
-            UnaryOp::Decr => {
-                if let ExpressionKind::Identifier(name) = &expr.kind {
-                    if let Some((ptr, _, _)) = self.variables.get(name) {
-                        let ptr_copy = *ptr;
-                        let value_ptr = self
-                            .builder
-                            .build_load(
-                                self.context.ptr_type(AddressSpace::default()),
-                                ptr_copy,
-                                &format!("{}_load", name),
-                            )
-                            .map_err(|e| e.to_string())?
-                            .into_pointer_value();
-                        let get_int_func = self
-                            .module
-                            .get_function("mux_value_get_int")
-                            .ok_or("mux_value_get_int not found")?;
-                        let current_val = self
-                            .builder
-                            .build_call(
-                                get_int_func,
-                                &[value_ptr.into()],
-                                &format!("{}_get_int", name),
-                            )
-                            .map_err(|e| e.to_string())?
-                            .try_as_basic_value()
-                            .left()
-                            .expect("mux_value_get_int should return a basic value")
-                            .into_int_value();
-                        let one = self.context.i64_type().const_int(1, false);
-                        let new_val = self
-                            .builder
-                            .build_int_sub(current_val, one, "decr_result")
-                            .map_err(|e| e.to_string())?;
-                        let boxed_val = self.box_value(new_val.into());
-                        self.builder
-                            .build_store(ptr_copy, boxed_val)
-                            .map_err(|e| e.to_string())?;
-                        Ok(new_val.into())
-                    } else {
-                        Err(format!("Undefined variable {}", name))
-                    }
-                } else {
-                    Err("Decrement operator only supports simple variables for now".to_string())
-                }
-            }
-            UnaryOp::Not => {
-                let expr_val = self.generate_expression(expr)?;
-                let bool_val = self.get_raw_bool_value(expr_val)?;
-                let not_result = self
-                    .builder
-                    .build_not(bool_val, "not")
-                    .map_err(|e| e.to_string())?;
-                Ok(not_result.into())
-            }
-            UnaryOp::Neg => {
-                let expr_val = self.generate_expression(expr)?;
-                if expr_val.is_int_value() {
-                    let int_val = expr_val.into_int_value();
-                    let neg = self
-                        .builder
-                        .build_int_neg(int_val, "neg")
-                        .map_err(|e| e.to_string())?;
-                    Ok(neg.into())
-                } else if expr_val.is_float_value() {
-                    let float_val = expr_val.into_float_value();
-                    let neg = self
-                        .builder
-                        .build_float_neg(float_val, "neg")
-                        .map_err(|e| e.to_string())?;
-                    Ok(neg.into())
-                } else if let Ok(int_val) = self.get_raw_int_value(expr_val) {
-                    let neg = self
-                        .builder
-                        .build_int_neg(int_val, "neg")
-                        .map_err(|e| e.to_string())?;
-                    Ok(neg.into())
-                } else if let Ok(float_val) = self.get_raw_float_value(expr_val) {
-                    let neg = self
-                        .builder
-                        .build_float_neg(float_val, "neg")
-                        .map_err(|e| e.to_string())?;
-                    Ok(neg.into())
-                } else {
-                    Err("Negation only works on int or float values".to_string())
-                }
-            }
+            UnaryOp::Ref => self.generate_ref_unary_expression(expr),
+            UnaryOp::Deref => self.generate_deref_unary_expression(expr),
+            UnaryOp::Incr => self.generate_update_unary_expression(expr, true, true),
+            UnaryOp::Decr => self.generate_update_unary_expression(expr, false, false),
+            UnaryOp::Not => self.generate_not_unary_expression(expr),
+            UnaryOp::Neg => self.generate_neg_unary_expression(expr),
         }
+    }
+
+    fn generate_ref_unary_expression(
+        &mut self,
+        expr: &ExpressionNode,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        if let ExpressionKind::Identifier(name) = &expr.kind {
+            if let Some((ptr, _, _)) = self
+                .variables
+                .get(name)
+                .or_else(|| self.global_variables.get(name))
+            {
+                return Ok((*ptr).into());
+            }
+            return Err(format!("Undefined variable {}", name));
+        }
+
+        let expr_val = self.generate_expression(expr)?;
+        let boxed_val = if expr_val.is_pointer_value() {
+            expr_val.into_pointer_value()
+        } else {
+            self.box_value(expr_val)
+        };
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let temp = self
+            .builder
+            .build_alloca(ptr_type, "ref_temp")
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(temp, boxed_val)
+            .map_err(|e| e.to_string())?;
+        Ok(temp.into())
+    }
+
+    fn generate_deref_unary_expression(
+        &mut self,
+        expr: &ExpressionNode,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let ref_val = self.generate_expression(expr)?;
+        let boxed_ptr = self
+            .builder
+            .build_load(
+                self.context.ptr_type(AddressSpace::default()),
+                ref_val.into_pointer_value(),
+                "boxed_ptr",
+            )
+            .map_err(|e| e.to_string())?;
+
+        if let ExpressionKind::Identifier(name) = &expr.kind
+            && let Some((_, _, Type::Reference(inner_type))) = self
+                .variables
+                .get(name)
+                .or_else(|| self.global_variables.get(name))
+        {
+            return match inner_type.as_ref() {
+                Type::Primitive(PrimitiveType::Int) => {
+                    self.get_raw_int_value(boxed_ptr).map(Into::into)
+                }
+                Type::Primitive(PrimitiveType::Float) => {
+                    self.get_raw_float_value(boxed_ptr).map(Into::into)
+                }
+                Type::Primitive(PrimitiveType::Bool) => {
+                    self.get_raw_bool_value(boxed_ptr).map(Into::into)
+                }
+                _ => Ok(boxed_ptr),
+            };
+        }
+
+        Ok(boxed_ptr)
+    }
+
+    fn generate_update_unary_expression(
+        &mut self,
+        expr: &ExpressionNode,
+        increment: bool,
+        allow_global: bool,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let ExpressionKind::Identifier(name) = &expr.kind else {
+            return Err(if increment {
+                "Increment operator only supports simple variables for now".to_string()
+            } else {
+                "Decrement operator only supports simple variables for now".to_string()
+            });
+        };
+
+        let ptr = if allow_global {
+            self.variables
+                .get(name)
+                .or_else(|| self.global_variables.get(name))
+                .map(|(p, _, _)| *p)
+        } else {
+            self.variables.get(name).map(|(p, _, _)| *p)
+        }
+        .ok_or_else(|| format!("Undefined variable {}", name))?;
+
+        let value_ptr = self
+            .builder
+            .build_load(
+                self.context.ptr_type(AddressSpace::default()),
+                ptr,
+                &format!("{}_load", name),
+            )
+            .map_err(|e| e.to_string())?
+            .into_pointer_value();
+        let get_int_func = self
+            .module
+            .get_function("mux_value_get_int")
+            .ok_or("mux_value_get_int not found")?;
+        let current_val = self
+            .builder
+            .build_call(
+                get_int_func,
+                &[value_ptr.into()],
+                &format!("{}_get_int", name),
+            )
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .expect("mux_value_get_int should return a basic value")
+            .into_int_value();
+
+        let one = self.context.i64_type().const_int(1, false);
+        let new_val = if increment {
+            self.builder
+                .build_int_add(current_val, one, "incr_result")
+                .map_err(|e| e.to_string())?
+        } else {
+            self.builder
+                .build_int_sub(current_val, one, "decr_result")
+                .map_err(|e| e.to_string())?
+        };
+        let boxed_val = self.box_value(new_val.into());
+        self.builder
+            .build_store(ptr, boxed_val)
+            .map_err(|e| e.to_string())?;
+        Ok(new_val.into())
+    }
+
+    fn generate_not_unary_expression(
+        &mut self,
+        expr: &ExpressionNode,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let expr_val = self.generate_expression(expr)?;
+        let bool_val = self.get_raw_bool_value(expr_val)?;
+        let not_result = self
+            .builder
+            .build_not(bool_val, "not")
+            .map_err(|e| e.to_string())?;
+        Ok(not_result.into())
+    }
+
+    fn generate_neg_unary_expression(
+        &mut self,
+        expr: &ExpressionNode,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let expr_val = self.generate_expression(expr)?;
+        if expr_val.is_int_value() {
+            let int_val = expr_val.into_int_value();
+            let neg = self
+                .builder
+                .build_int_neg(int_val, "neg")
+                .map_err(|e| e.to_string())?;
+            return Ok(neg.into());
+        }
+        if expr_val.is_float_value() {
+            let float_val = expr_val.into_float_value();
+            let neg = self
+                .builder
+                .build_float_neg(float_val, "neg")
+                .map_err(|e| e.to_string())?;
+            return Ok(neg.into());
+        }
+        if let Ok(int_val) = self.get_raw_int_value(expr_val) {
+            let neg = self
+                .builder
+                .build_int_neg(int_val, "neg")
+                .map_err(|e| e.to_string())?;
+            return Ok(neg.into());
+        }
+        if let Ok(float_val) = self.get_raw_float_value(expr_val) {
+            let neg = self
+                .builder
+                .build_float_neg(float_val, "neg")
+                .map_err(|e| e.to_string())?;
+            return Ok(neg.into());
+        }
+        Err("Negation only works on int or float values".to_string())
     }
 
     fn ok_builtin_constructor_name(arg_type: &Type) -> Option<&'static str> {
@@ -1231,6 +1217,234 @@ impl<'a> CodeGenerator<'a> {
         let arg_val = self.generate_expression(&args[0])?;
         let boxed_arg = self.box_value(arg_val);
         self.call_single_arg_builtin("mux_result_err_value", boxed_arg.into(), "err_call")
+    }
+
+    fn call_result_or_default_i32(
+        &self,
+        call: inkwell::values::CallSiteValue<'a>,
+    ) -> BasicValueEnum<'a> {
+        match call.try_as_basic_value().left() {
+            Some(val) => val,
+            None => self.context.i32_type().const_int(0, false).into(),
+        }
+    }
+
+    fn build_args_with_class_copy(
+        &mut self,
+        args: &[ExpressionNode],
+    ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
+        let mut call_args = vec![];
+        for arg in args {
+            let arg_type = self
+                .analyzer
+                .get_expression_type(arg)
+                .map_err(|e| e.message)?;
+
+            let needs_copy = if let Type::Named(class_name, _) = &arg_type {
+                if let Some(symbol) = self.analyzer.symbol_table().lookup(class_name) {
+                    symbol.kind == crate::semantics::SymbolKind::Class
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if needs_copy {
+                let arg_value = self.generate_expression(arg)?;
+                let ptr = arg_value.into_pointer_value();
+                let copy_func = self
+                    .module
+                    .get_function("mux_copy_object")
+                    .ok_or("mux_copy_object not found")?;
+                let copied_ptr = self
+                    .builder
+                    .build_call(copy_func, &[ptr.into()], "copy_arg")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_copy_object should return a value")
+                    .into_pointer_value();
+                call_args.push(copied_ptr.into());
+            } else {
+                call_args.push(self.generate_expression(arg)?.into());
+            }
+        }
+        Ok(call_args)
+    }
+
+    fn append_default_call_args(
+        &mut self,
+        function_name: &str,
+        provided_args_len: usize,
+        call_args: &mut Vec<BasicMetadataValueEnum<'a>>,
+    ) -> Result<(), String> {
+        let default_exprs: Vec<Option<ExpressionNode>> = self
+            .function_nodes
+            .get(function_name)
+            .map(|func_node| {
+                let total_params = func_node.params.len();
+                if provided_args_len < total_params {
+                    func_node.params[provided_args_len..total_params]
+                        .iter()
+                        .map(|p| p.default_value.clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                }
+            })
+            .unwrap_or_default();
+
+        for default_expr_opt in default_exprs {
+            if let Some(default_expr) = default_expr_opt {
+                let default_val = self.generate_expression(&default_expr)?;
+                call_args.push(default_val.into());
+            } else {
+                return Err(format!(
+                    "Missing argument for parameter in function '{}'",
+                    function_name
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn call_closure_with_optional_captures(
+        &mut self,
+        closure_ptr: PointerValue<'a>,
+        params: &[Type],
+        returns: &Type,
+        args: &[ExpressionNode],
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let closure_struct_type = self
+            .context
+            .struct_type(&[ptr_type.into(), ptr_type.into()], false);
+
+        let fn_ptr_field = self
+            .builder
+            .build_struct_gep(closure_struct_type, closure_ptr, 0, "fn_ptr_field")
+            .map_err(|e| e.to_string())?;
+        let func_ptr = self
+            .builder
+            .build_load(ptr_type, fn_ptr_field, "fn_ptr")
+            .map_err(|e| e.to_string())?
+            .into_pointer_value();
+
+        let captures_field = self
+            .builder
+            .build_struct_gep(closure_struct_type, closure_ptr, 1, "captures_field")
+            .map_err(|e| e.to_string())?;
+        let captures_ptr = self
+            .builder
+            .build_load(ptr_type, captures_field, "captures_ptr")
+            .map_err(|e| e.to_string())?
+            .into_pointer_value();
+
+        let is_null = self
+            .builder
+            .build_is_null(captures_ptr, "captures_is_null")
+            .map_err(|e| e.to_string())?;
+
+        let mut user_args: Vec<BasicMetadataValueEnum> = vec![];
+        for arg in args {
+            user_args.push(self.generate_expression(arg)?.into());
+        }
+
+        let mut param_types_without: Vec<BasicMetadataTypeEnum> = Vec::new();
+        for param in params {
+            let type_node = self.type_to_type_node(param);
+            param_types_without.push(self.llvm_type_from_mux_type(&type_node)?.into());
+        }
+
+        let mut param_types_with: Vec<BasicMetadataTypeEnum> = vec![ptr_type.into()];
+        param_types_with.extend(param_types_without.clone());
+
+        let fn_type_with = if matches!(returns, Type::Void) {
+            self.context.void_type().fn_type(&param_types_with, false)
+        } else {
+            let return_type_node = self.type_to_type_node(returns);
+            let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
+            return_type.fn_type(&param_types_with, false)
+        };
+
+        let fn_type_without = if matches!(returns, Type::Void) {
+            self.context
+                .void_type()
+                .fn_type(&param_types_without, false)
+        } else {
+            let return_type_node = self.type_to_type_node(returns);
+            let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
+            return_type.fn_type(&param_types_without, false)
+        };
+
+        let current_fn = self
+            .builder
+            .get_insert_block()
+            .and_then(|b| b.get_parent())
+            .ok_or("No current function")?;
+        let with_captures_bb = self.context.append_basic_block(current_fn, "with_captures");
+        let without_captures_bb = self
+            .context
+            .append_basic_block(current_fn, "without_captures");
+        let merge_bb = self.context.append_basic_block(current_fn, "call_merge");
+
+        self.builder
+            .build_conditional_branch(is_null, without_captures_bb, with_captures_bb)
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(with_captures_bb);
+        let mut args_with_captures: Vec<BasicMetadataValueEnum> = vec![captures_ptr.into()];
+        args_with_captures.extend(user_args.clone());
+        let call_with = self
+            .builder
+            .build_indirect_call(
+                fn_type_with,
+                func_ptr,
+                &args_with_captures,
+                "call_with_captures",
+            )
+            .map_err(|e| e.to_string())?;
+        let result_with = call_with.try_as_basic_value().left();
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| e.to_string())?;
+        let with_captures_end_bb = self
+            .builder
+            .get_insert_block()
+            .expect("Builder should have an insertion block after positioning and building branch");
+
+        self.builder.position_at_end(without_captures_bb);
+        let call_without = self
+            .builder
+            .build_indirect_call(
+                fn_type_without,
+                func_ptr,
+                &user_args,
+                "call_without_captures",
+            )
+            .map_err(|e| e.to_string())?;
+        let result_without = call_without.try_as_basic_value().left();
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| e.to_string())?;
+        let without_captures_end_bb = self
+            .builder
+            .get_insert_block()
+            .expect("Builder should have an insertion block after positioning and building branch");
+
+        self.builder.position_at_end(merge_bb);
+        match (result_with, result_without) {
+            (Some(r1), Some(r2)) => {
+                let phi = self
+                    .builder
+                    .build_phi(r1.get_type(), "call_result")
+                    .map_err(|e| e.to_string())?;
+                phi.add_incoming(&[(&r1, with_captures_end_bb), (&r2, without_captures_end_bb)]);
+                Ok(phi.as_basic_value())
+            }
+            _ => Ok(self.context.i32_type().const_int(0, false).into()),
+        }
     }
     pub(super) fn generate_expression(
         &mut self,
@@ -2422,14 +2636,7 @@ impl<'a> CodeGenerator<'a> {
                                                     &format!("{}_call", field),
                                                 )
                                                 .map_err(|e| e.to_string())?;
-                                            return match call.try_as_basic_value().left() {
-                                                Some(val) => Ok(val),
-                                                None => Ok(self
-                                                    .context
-                                                    .i32_type()
-                                                    .const_int(0, false)
-                                                    .into()),
-                                            };
+                                            return Ok(self.call_result_or_default_i32(call));
                                         } else {
                                             if let Some(generic_func) =
                                                 self.function_nodes.get(field)
@@ -2723,7 +2930,6 @@ impl<'a> CodeGenerator<'a> {
                             {
                                 let var_type_clone = var_type.clone();
                                 if matches!(var_type, Type::Function { .. }) {
-                                    // Load closure pointer (points to {fn_ptr, captures_ptr} struct)
                                     let closure_ptr = self
                                         .builder
                                         .build_load(
@@ -2733,291 +2939,34 @@ impl<'a> CodeGenerator<'a> {
                                         )
                                         .map_err(|e| e.to_string())?
                                         .into_pointer_value();
-
-                                    // Define closure struct type
-                                    let ptr_type = self.context.ptr_type(AddressSpace::default());
-                                    let closure_struct_type = self
-                                        .context
-                                        .struct_type(&[ptr_type.into(), ptr_type.into()], false);
-
-                                    // Extract function pointer from closure
-                                    let fn_ptr_field = self
-                                        .builder
-                                        .build_struct_gep(
-                                            closure_struct_type,
+                                    if let Type::Function {
+                                        params, returns, ..
+                                    } = var_type_clone
+                                    {
+                                        self.call_closure_with_optional_captures(
                                             closure_ptr,
-                                            0,
-                                            "fn_ptr_field",
+                                            &params,
+                                            &returns,
+                                            args,
                                         )
-                                        .map_err(|e| e.to_string())?;
-                                    let func_ptr = self
-                                        .builder
-                                        .build_load(ptr_type, fn_ptr_field, "fn_ptr")
-                                        .map_err(|e| e.to_string())?
-                                        .into_pointer_value();
-
-                                    // Extract captures pointer from closure
-                                    let captures_field = self
-                                        .builder
-                                        .build_struct_gep(
-                                            closure_struct_type,
-                                            closure_ptr,
-                                            1,
-                                            "captures_field",
-                                        )
-                                        .map_err(|e| e.to_string())?;
-                                    let captures_ptr = self
-                                        .builder
-                                        .build_load(ptr_type, captures_field, "captures_ptr")
-                                        .map_err(|e| e.to_string())?
-                                        .into_pointer_value();
-
-                                    // Check if captures_ptr is null
-                                    let is_null = self
-                                        .builder
-                                        .build_is_null(captures_ptr, "captures_is_null")
-                                        .map_err(|e| e.to_string())?;
-
-                                    // Generate user arguments
-                                    let mut user_args: Vec<BasicMetadataValueEnum> = vec![];
-                                    for arg in args {
-                                        user_args.push(self.generate_expression(arg)?.into());
-                                    }
-
-                                    // Get function type from resolved type
-                                    let (fn_type_with_captures, fn_type_without_captures) =
-                                        if let Type::Function {
-                                            params, returns, ..
-                                        } = var_type_clone
-                                        {
-                                            // Parameter types for user params
-                                            let mut param_types_without: Vec<
-                                                BasicMetadataTypeEnum,
-                                            > = Vec::new();
-                                            for param in &params {
-                                                let type_node = self.type_to_type_node(param);
-                                                param_types_without.push(
-                                                    self.llvm_type_from_mux_type(&type_node)?
-                                                        .into(),
-                                                );
-                                            }
-
-                                            // Parameter types with captures as first param
-                                            let mut param_types_with: Vec<BasicMetadataTypeEnum> =
-                                                vec![ptr_type.into()];
-                                            param_types_with.extend(param_types_without.clone());
-
-                                            let fn_type_with = if matches!(*returns, Type::Void) {
-                                                self.context
-                                                    .void_type()
-                                                    .fn_type(&param_types_with, false)
-                                            } else {
-                                                let return_type_node =
-                                                    self.type_to_type_node(&returns);
-                                                let return_type = self
-                                                    .llvm_type_from_mux_type(&return_type_node)?;
-                                                return_type.fn_type(&param_types_with, false)
-                                            };
-
-                                            let fn_type_without = if matches!(*returns, Type::Void)
-                                            {
-                                                self.context
-                                                    .void_type()
-                                                    .fn_type(&param_types_without, false)
-                                            } else {
-                                                let return_type_node =
-                                                    self.type_to_type_node(&returns);
-                                                let return_type = self
-                                                    .llvm_type_from_mux_type(&return_type_node)?;
-                                                return_type.fn_type(&param_types_without, false)
-                                            };
-
-                                            (fn_type_with, fn_type_without)
-                                        } else {
-                                            return Err("Expected function type".to_string());
-                                        };
-
-                                    // Branch based on whether we have captures
-                                    let current_fn = self
-                                        .builder
-                                        .get_insert_block()
-                                        .and_then(|b| b.get_parent())
-                                        .ok_or("No current function")?;
-                                    let with_captures_bb = self
-                                        .context
-                                        .append_basic_block(current_fn, "with_captures");
-                                    let without_captures_bb = self
-                                        .context
-                                        .append_basic_block(current_fn, "without_captures");
-                                    let merge_bb =
-                                        self.context.append_basic_block(current_fn, "call_merge");
-
-                                    self.builder
-                                        .build_conditional_branch(
-                                            is_null,
-                                            without_captures_bb,
-                                            with_captures_bb,
-                                        )
-                                        .map_err(|e| e.to_string())?;
-
-                                    // With captures: call with captures_ptr as first arg
-                                    self.builder.position_at_end(with_captures_bb);
-                                    let mut args_with_captures: Vec<BasicMetadataValueEnum> =
-                                        vec![captures_ptr.into()];
-                                    args_with_captures.extend(user_args.clone());
-                                    let call_with = self
-                                        .builder
-                                        .build_indirect_call(
-                                            fn_type_with_captures,
-                                            func_ptr,
-                                            &args_with_captures,
-                                            "call_with_captures",
-                                        )
-                                        .map_err(|e| e.to_string())?;
-                                    let result_with = call_with.try_as_basic_value().left();
-                                    self.builder
-                                        .build_unconditional_branch(merge_bb)
-                                        .map_err(|e| e.to_string())?;
-                                    let with_captures_end_bb =
-                                        self.builder.get_insert_block().expect("Builder should have an insertion block after positioning and building branch");
-
-                                    // Without captures: call directly
-                                    self.builder.position_at_end(without_captures_bb);
-                                    let call_without = self
-                                        .builder
-                                        .build_indirect_call(
-                                            fn_type_without_captures,
-                                            func_ptr,
-                                            &user_args,
-                                            "call_without_captures",
-                                        )
-                                        .map_err(|e| e.to_string())?;
-                                    let result_without = call_without.try_as_basic_value().left();
-                                    self.builder
-                                        .build_unconditional_branch(merge_bb)
-                                        .map_err(|e| e.to_string())?;
-                                    let without_captures_end_bb =
-                                        self.builder.get_insert_block().expect("Builder should have an insertion block after positioning and building branch");
-
-                                    // Merge block with phi
-                                    self.builder.position_at_end(merge_bb);
-                                    match (result_with, result_without) {
-                                        (Some(r1), Some(r2)) => {
-                                            let phi = self
-                                                .builder
-                                                .build_phi(r1.get_type(), "call_result")
-                                                .map_err(|e| e.to_string())?;
-                                            phi.add_incoming(&[
-                                                (&r1, with_captures_end_bb),
-                                                (&r2, without_captures_end_bb),
-                                            ]);
-                                            Ok(phi.as_basic_value())
-                                        }
-                                        _ => {
-                                            // Void return
-                                            Ok(self.context.i32_type().const_int(0, false).into())
-                                        }
+                                    } else {
+                                        Err("Expected function type".to_string())
                                     }
                                 } else {
                                     // not a function pointer, try global function lookup
                                     if let Some(func) = self.module.get_function(name) {
-                                        // print some info about the found function
-                                        let mut call_args = vec![];
-
-                                        // Generate provided arguments
-                                        for arg in args {
-                                            let arg_type = self
-                                                .analyzer
-                                                .get_expression_type(arg)
-                                                .map_err(|e| e.message)?;
-
-                                            // Check if we need to copy a class instance
-                                            let needs_copy = if let Type::Named(class_name, _) =
-                                                &arg_type
-                                            {
-                                                if let Some(symbol) =
-                                                    self.analyzer.symbol_table().lookup(class_name)
-                                                {
-                                                    symbol.kind
-                                                        == crate::semantics::SymbolKind::Class
-                                                } else {
-                                                    false
-                                                }
-                                            } else {
-                                                false
-                                            };
-
-                                            if needs_copy {
-                                                // Generate the argument and copy the object
-                                                let arg_value = self.generate_expression(arg)?;
-                                                let ptr = arg_value.into_pointer_value();
-                                                let copy_func = self
-                                                    .module
-                                                    .get_function("mux_copy_object")
-                                                    .ok_or("mux_copy_object not found")?;
-                                                let copied_ptr = self
-                                                    .builder
-                                                    .build_call(
-                                                        copy_func,
-                                                        &[ptr.into()],
-                                                        "copy_arg",
-                                                    )
-                                                    .map_err(|e| e.to_string())?
-                                                    .try_as_basic_value()
-                                                    .left()
-                                                    .expect("mux_copy_object should return a value")
-                                                    .into_pointer_value();
-                                                call_args.push(copied_ptr.into());
-                                            } else {
-                                                call_args
-                                                    .push(self.generate_expression(arg)?.into());
-                                            }
-                                        }
-
-                                        // Handle default parameters
-                                        // Clone default expressions first to avoid borrow issues
-                                        let default_exprs: Vec<Option<ExpressionNode>> = self
-                                            .function_nodes
-                                            .get(name)
-                                            .map(|func_node| {
-                                                let total_params = func_node.params.len();
-                                                let provided_args = args.len();
-                                                if provided_args < total_params {
-                                                    func_node.params[provided_args..total_params]
-                                                        .iter()
-                                                        .map(|p| p.default_value.clone())
-                                                        .collect()
-                                                } else {
-                                                    Vec::new()
-                                                }
-                                            })
-                                            .unwrap_or_default();
-
-                                        for default_expr_opt in default_exprs {
-                                            if let Some(default_expr) = default_expr_opt {
-                                                let default_val =
-                                                    self.generate_expression(&default_expr)?;
-                                                call_args.push(default_val.into());
-                                            } else {
-                                                return Err(format!(
-                                                    "Missing argument for parameter in function '{}'",
-                                                    name
-                                                ));
-                                            }
-                                        }
-
+                                        let mut call_args =
+                                            self.build_args_with_class_copy(args)?;
+                                        self.append_default_call_args(
+                                            name,
+                                            args.len(),
+                                            &mut call_args,
+                                        )?;
                                         let call = self
                                             .builder
                                             .build_call(func, &call_args, "user_func_call")
                                             .map_err(|e| e.to_string())?;
-                                        match call.try_as_basic_value().left() {
-                                            Some(val) => Ok(val),
-                                            None => Ok(self
-                                                .context
-                                                .i32_type()
-                                                .const_int(0, false)
-                                                .into()),
-                                        }
+                                        Ok(self.call_result_or_default_i32(call))
                                     } else {
                                         Err(format!("Undefined function: {}", name))
                                     }
@@ -3104,95 +3053,17 @@ impl<'a> CodeGenerator<'a> {
                                 }
 
                                 if let Some(func) = self.module.get_function(&lookup_name) {
-                                    let mut call_args = vec![];
-
-                                    // Generate provided arguments
-                                    for arg in args {
-                                        let arg_type = self
-                                            .analyzer
-                                            .get_expression_type(arg)
-                                            .map_err(|e| e.message)?;
-
-                                        // Check if we need to copy a class instance
-                                        let needs_copy = if let Type::Named(class_name, _) =
-                                            &arg_type
-                                        {
-                                            if let Some(symbol) =
-                                                self.analyzer.symbol_table().lookup(class_name)
-                                            {
-                                                symbol.kind == crate::semantics::SymbolKind::Class
-                                            } else {
-                                                false
-                                            }
-                                        } else {
-                                            false
-                                        };
-
-                                        if needs_copy {
-                                            // Generate the argument and copy the object
-                                            let arg_value = self.generate_expression(arg)?;
-                                            let ptr = arg_value.into_pointer_value();
-                                            let copy_func = self
-                                                .module
-                                                .get_function("mux_copy_object")
-                                                .ok_or("mux_copy_object not found")?;
-                                            let copied_ptr = self
-                                                .builder
-                                                .build_call(copy_func, &[ptr.into()], "copy_arg")
-                                                .map_err(|e| e.to_string())?
-                                                .try_as_basic_value()
-                                                .left()
-                                                .expect("mux_copy_object should return a value")
-                                                .into_pointer_value();
-                                            call_args.push(copied_ptr.into());
-                                        } else {
-                                            call_args.push(self.generate_expression(arg)?.into());
-                                        }
-                                    }
-
-                                    // Handle default parameters - look up FunctionNode to get param info
-                                    // Use original name for lookup (not mangled lookup_name)
-                                    // Clone default expressions first to avoid borrow issues
-                                    let default_exprs: Vec<Option<ExpressionNode>> = self
-                                        .function_nodes
-                                        .get(name)
-                                        .map(|func_node| {
-                                            let total_params = func_node.params.len();
-                                            let provided_args = args.len();
-                                            if provided_args < total_params {
-                                                func_node.params[provided_args..total_params]
-                                                    .iter()
-                                                    .map(|p| p.default_value.clone())
-                                                    .collect()
-                                            } else {
-                                                Vec::new()
-                                            }
-                                        })
-                                        .unwrap_or_default();
-
-                                    for default_expr_opt in default_exprs {
-                                        if let Some(default_expr) = default_expr_opt {
-                                            let default_val =
-                                                self.generate_expression(&default_expr)?;
-                                            call_args.push(default_val.into());
-                                        } else {
-                                            return Err(format!(
-                                                "Missing argument for parameter in function '{}'",
-                                                name
-                                            ));
-                                        }
-                                    }
-
+                                    let mut call_args = self.build_args_with_class_copy(args)?;
+                                    self.append_default_call_args(
+                                        name,
+                                        args.len(),
+                                        &mut call_args,
+                                    )?;
                                     let call = self
                                         .builder
                                         .build_call(func, &call_args, "user_func_call")
                                         .map_err(|e| e.to_string())?;
-                                    match call.try_as_basic_value().left() {
-                                        Some(val) => Ok(val),
-                                        None => {
-                                            Ok(self.context.i32_type().const_int(0, false).into())
-                                        }
-                                    }
+                                    Ok(self.call_result_or_default_i32(call))
                                 } else {
                                     Err(format!(
                                         "Undefined function: {} (looked for LLVM name: {})",
@@ -3217,155 +3088,12 @@ impl<'a> CodeGenerator<'a> {
                         params, returns, ..
                     } = func_type
                     {
-                        // Use the closure calling mechanism (similar to function pointer variable calls)
-                        let ptr_type = self.context.ptr_type(AddressSpace::default());
-
-                        // Define closure struct type: { fn_ptr, captures_ptr }
-                        let closure_struct_type = self
-                            .context
-                            .struct_type(&[ptr_type.into(), ptr_type.into()], false);
-
-                        // Extract function pointer from closure
-                        let fn_ptr_field = self
-                            .builder
-                            .build_struct_gep(closure_struct_type, closure_ptr, 0, "fn_ptr_field")
-                            .map_err(|e| e.to_string())?;
-                        let func_ptr = self
-                            .builder
-                            .build_load(ptr_type, fn_ptr_field, "fn_ptr")
-                            .map_err(|e| e.to_string())?
-                            .into_pointer_value();
-
-                        // Extract captures pointer from closure
-                        let captures_field = self
-                            .builder
-                            .build_struct_gep(closure_struct_type, closure_ptr, 1, "captures_field")
-                            .map_err(|e| e.to_string())?;
-                        let captures_ptr = self
-                            .builder
-                            .build_load(ptr_type, captures_field, "captures_ptr")
-                            .map_err(|e| e.to_string())?
-                            .into_pointer_value();
-
-                        // Check if captures_ptr is null
-                        let is_null = self
-                            .builder
-                            .build_is_null(captures_ptr, "captures_is_null")
-                            .map_err(|e| e.to_string())?;
-
-                        // Generate user arguments
-                        let mut user_args: Vec<BasicMetadataValueEnum> = vec![];
-                        for arg in args {
-                            user_args.push(self.generate_expression(arg)?.into());
-                        }
-
-                        // Build function types
-                        let mut param_types_without: Vec<BasicMetadataTypeEnum> = Vec::new();
-                        for param in &params {
-                            let type_node = self.type_to_type_node(param);
-                            param_types_without
-                                .push(self.llvm_type_from_mux_type(&type_node)?.into());
-                        }
-
-                        let mut param_types_with: Vec<BasicMetadataTypeEnum> =
-                            vec![ptr_type.into()];
-                        param_types_with.extend(param_types_without.clone());
-
-                        let fn_type_with = if matches!(*returns, Type::Void) {
-                            self.context.void_type().fn_type(&param_types_with, false)
-                        } else {
-                            let return_type_node = self.type_to_type_node(&returns);
-                            let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
-                            return_type.fn_type(&param_types_with, false)
-                        };
-
-                        let fn_type_without = if matches!(*returns, Type::Void) {
-                            self.context
-                                .void_type()
-                                .fn_type(&param_types_without, false)
-                        } else {
-                            let return_type_node = self.type_to_type_node(&returns);
-                            let return_type = self.llvm_type_from_mux_type(&return_type_node)?;
-                            return_type.fn_type(&param_types_without, false)
-                        };
-
-                        // Branch based on whether we have captures
-                        let current_fn = self
-                            .builder
-                            .get_insert_block()
-                            .and_then(|b| b.get_parent())
-                            .ok_or("No current function")?;
-                        let with_captures_bb =
-                            self.context.append_basic_block(current_fn, "with_captures");
-                        let without_captures_bb = self
-                            .context
-                            .append_basic_block(current_fn, "without_captures");
-                        let merge_bb = self.context.append_basic_block(current_fn, "call_merge");
-
-                        self.builder
-                            .build_conditional_branch(
-                                is_null,
-                                without_captures_bb,
-                                with_captures_bb,
-                            )
-                            .map_err(|e| e.to_string())?;
-
-                        // With captures: call with captures_ptr as first arg
-                        self.builder.position_at_end(with_captures_bb);
-                        let mut args_with_captures: Vec<BasicMetadataValueEnum> =
-                            vec![captures_ptr.into()];
-                        args_with_captures.extend(user_args.clone());
-                        let call_with = self
-                            .builder
-                            .build_indirect_call(
-                                fn_type_with,
-                                func_ptr,
-                                &args_with_captures,
-                                "call_with_captures",
-                            )
-                            .map_err(|e| e.to_string())?;
-                        let result_with = call_with.try_as_basic_value().left();
-                        self.builder
-                            .build_unconditional_branch(merge_bb)
-                            .map_err(|e| e.to_string())?;
-                        let with_captures_end_bb = self.builder.get_insert_block().expect("Builder should have an insertion block after positioning and building branch");
-
-                        // Without captures: call directly
-                        self.builder.position_at_end(without_captures_bb);
-                        let call_without = self
-                            .builder
-                            .build_indirect_call(
-                                fn_type_without,
-                                func_ptr,
-                                &user_args,
-                                "call_without_captures",
-                            )
-                            .map_err(|e| e.to_string())?;
-                        let result_without = call_without.try_as_basic_value().left();
-                        self.builder
-                            .build_unconditional_branch(merge_bb)
-                            .map_err(|e| e.to_string())?;
-                        let without_captures_end_bb = self.builder.get_insert_block().expect("Builder should have an insertion block after positioning and building branch");
-
-                        // Merge block with phi
-                        self.builder.position_at_end(merge_bb);
-                        match (result_with, result_without) {
-                            (Some(r1), Some(r2)) => {
-                                let phi = self
-                                    .builder
-                                    .build_phi(r1.get_type(), "call_result")
-                                    .map_err(|e| e.to_string())?;
-                                phi.add_incoming(&[
-                                    (&r1, with_captures_end_bb),
-                                    (&r2, without_captures_end_bb),
-                                ]);
-                                Ok(phi.as_basic_value())
-                            }
-                            _ => {
-                                // Void return
-                                Ok(self.context.i32_type().const_int(0, false).into())
-                            }
-                        }
+                        self.call_closure_with_optional_captures(
+                            closure_ptr,
+                            &params,
+                            &returns,
+                            args,
+                        )
                     } else {
                         Err(format!("Cannot call non-function type: {:?}", func_type))
                     }

@@ -350,61 +350,90 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         match_expr: &ExpressionNode,
     ) -> Result<Type, String> {
-        match &match_expr.kind {
-            ExpressionKind::Identifier(name) => {
-                if name == "self" || name.starts_with("match_temp_") {
-                    if let Some((_, _, var_type)) = self
-                        .variables
-                        .get(name)
-                        .or_else(|| self.global_variables.get(name))
-                    {
-                        return Ok(var_type.clone());
-                    }
-                    let label = if name == "self" {
-                        "Self"
-                    } else {
-                        "Temporary variable"
-                    };
-                    return Err(format!("{} {} not found", label, name));
-                }
-                self.analyzer
-                    .get_expression_type(match_expr)
-                    .map_err(|e| format!("Type inference failed: {}", e))
-            }
-            ExpressionKind::FieldAccess { expr, field } => {
-                if let ExpressionKind::Identifier(obj) = &expr.kind
-                    && obj == "self"
-                {
-                    if let Some((_, _, Type::Named(class_name, _))) = self
-                        .variables
-                        .get("self")
-                        .or_else(|| self.global_variables.get("self"))
-                    {
-                        if let Some(fields) = self.classes.get(class_name) {
-                            if let Some(f) = fields.iter().find(|f| f.name == *field) {
-                                return self
-                                    .analyzer
-                                    .resolve_type(&f.type_)
-                                    .map_err(|e| format!("Type resolution failed: {}", e));
-                            }
-                            return Err(format!(
-                                "Field {} not found in class {}",
-                                field, class_name
-                            ));
-                        }
-                        return Err(format!("Class {} not found", class_name));
-                    }
-                    return Err("Self not found".to_string());
-                }
-                self.analyzer
-                    .get_expression_type(match_expr)
-                    .map_err(|e| format!("Type inference failed: {}", e))
-            }
-            _ => self
-                .analyzer
-                .get_expression_type(match_expr)
-                .map_err(|e| format!("Type inference failed: {}", e)),
+        if let Some(t) = self.resolve_match_identifier_type(match_expr) {
+            return t;
         }
+
+        if let Some(t) = self.resolve_match_self_field_type(match_expr) {
+            return t;
+        }
+
+        self.analyzer
+            .get_expression_type(match_expr)
+            .map_err(|e| format!("Type inference failed: {}", e))
+    }
+
+    fn resolve_match_identifier_type(
+        &mut self,
+        match_expr: &ExpressionNode,
+    ) -> Option<Result<Type, String>> {
+        let ExpressionKind::Identifier(name) = &match_expr.kind else {
+            return None;
+        };
+
+        if name == "self" || name.starts_with("match_temp_") {
+            return Some(
+                self.variables
+                    .get(name)
+                    .or_else(|| self.global_variables.get(name))
+                    .map(|(_, _, var_type)| var_type.clone())
+                    .ok_or_else(|| {
+                        let label = if name == "self" {
+                            "Self"
+                        } else {
+                            "Temporary variable"
+                        };
+                        format!("{} {} not found", label, name)
+                    }),
+            );
+        }
+
+        None
+    }
+
+    fn resolve_match_self_field_type(
+        &mut self,
+        match_expr: &ExpressionNode,
+    ) -> Option<Result<Type, String>> {
+        let ExpressionKind::FieldAccess { expr, field } = &match_expr.kind else {
+            return None;
+        };
+        let ExpressionKind::Identifier(obj) = &expr.kind else {
+            return None;
+        };
+        if obj != "self" {
+            return None;
+        }
+
+        Some(
+            self.variables
+                .get("self")
+                .or_else(|| self.global_variables.get("self"))
+                .ok_or_else(|| "Self not found".to_string())
+                .and_then(|(_, _, t)| match t {
+                    Type::Named(class_name, _) => self
+                        .classes
+                        .get(class_name)
+                        .ok_or_else(|| format!("Class {} not found", class_name))
+                        .and_then(|fields| {
+                            fields
+                                .iter()
+                                .find(|f| f.name == *field)
+                                .ok_or_else(|| {
+                                    format!("Field {} not found in class {}", field, class_name)
+                                })
+                                .and_then(|f| {
+                                    self.analyzer
+                                        .resolve_type(&f.type_)
+                                        .map_err(|e| format!("Type resolution failed: {}", e))
+                                })
+                        }),
+                    _ => self
+                        .analyzer
+                        .get_expression_type(match_expr)
+                        .map_err(|e| format!("Type inference failed: {}", e)),
+                }),
+        )
     }
 
     fn generate_match_statement_inner(
