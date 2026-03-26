@@ -1274,102 +1274,139 @@ impl SemanticAnalyzer {
         right_type: &Type,
         expr_span: Span,
     ) -> Result<(), SemanticError> {
-        if let crate::ast::ExpressionKind::Identifier(name) = &left.kind {
-            let symbol = self
-                .symbol_table
-                .lookup(name)
-                .ok_or_else(|| self.undefined_symbol_error("variable", name, left.span))?;
-
-            if symbol.kind == SymbolKind::Constant {
-                return Err(SemanticError::with_help(
-                    format!("Cannot assign to constant '{}'", name),
-                    expr_span,
-                    "Constants cannot be modified after initialization",
-                ));
+        match &left.kind {
+            crate::ast::ExpressionKind::Identifier(name) => {
+                self.validate_identifier_assignment_target(name, left.span, right_type, expr_span)
             }
-
-            let var_type = symbol.type_.as_ref().ok_or_else(|| {
-                SemanticError::new(
-                    format!("Variable '{}' has no type information", name),
-                    left.span,
-                )
-            })?;
-            if let Type::Reference(inner) = var_type {
-                self.check_type_compatibility(inner, right_type, expr_span)?;
-            } else {
-                self.check_type_compatibility(var_type, right_type, expr_span)?;
-            }
-            return Ok(());
+            crate::ast::ExpressionKind::FieldAccess {
+                expr: obj_expr,
+                field,
+            } => self.validate_field_assignment_target(
+                obj_expr, field, left.span, right_type, expr_span,
+            ),
+            crate::ast::ExpressionKind::Unary {
+                op: crate::ast::UnaryOp::Deref,
+                ..
+            } => Ok(()),
+            crate::ast::ExpressionKind::ListAccess {
+                expr: target_expr, ..
+            } => self.validate_index_assignment_target(target_expr, right_type, expr_span),
+            _ => Err(SemanticError::with_help(
+                "Cannot assign to this expression",
+                expr_span,
+                "Only variables, fields, dereferences, and indexed expressions can be assigned to",
+            )),
         }
+    }
 
-        if let crate::ast::ExpressionKind::FieldAccess {
-            expr: obj_expr,
-            field,
-        } = &left.kind
+    fn resolve_lvalue_class_symbol(
+        &mut self,
+        obj_expr: &ExpressionNode,
+    ) -> Result<Option<(String, crate::semantics::Symbol)>, SemanticError> {
+        let obj_type = self.get_expression_type(obj_expr)?;
+        if let Type::Named(class_name, _) = &obj_type
+            && let Some(symbol) = self.symbol_table.lookup(class_name)
         {
-            let obj_type = self.get_expression_type(obj_expr)?;
-
-            if let Type::Named(class_name, _) = &obj_type
-                && let Some(symbol) = self.symbol_table.lookup(class_name)
-            {
-                if let Some((_field_type, is_const)) = symbol.fields.get(field)
-                    && *is_const
-                {
-                    return Err(SemanticError::with_help(
-                        format!("Cannot assign to const field '{}'", field),
-                        expr_span,
-                        "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
-                    ));
-                }
-
-                if let Some((field_type, _)) = symbol.fields.get(field) {
-                    self.check_type_compatibility(field_type, right_type, expr_span)?;
-                    return Ok(());
-                }
-                return Err(self.field_not_found_error(field, class_name, left.span));
-            }
-            return Ok(());
+            return Ok(Some((class_name.clone(), symbol)));
         }
+        Ok(None)
+    }
 
-        if let crate::ast::ExpressionKind::Unary {
-            op: crate::ast::UnaryOp::Deref,
-            ..
-        } = &left.kind
+    fn check_const_field_assignment(
+        &self,
+        field: &str,
+        fields: &std::collections::HashMap<String, (Type, bool)>,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        if let Some((_field_type, is_const)) = fields.get(field)
+            && *is_const
         {
-            return Ok(());
+            return Err(SemanticError::with_help(
+                format!("Cannot assign to const field '{}'", field),
+                expr_span,
+                "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_identifier_assignment_target(
+        &mut self,
+        name: &str,
+        left_span: Span,
+        right_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let symbol = self
+            .symbol_table
+            .lookup(name)
+            .ok_or_else(|| self.undefined_symbol_error("variable", name, left_span))?;
+
+        if symbol.kind == SymbolKind::Constant {
+            return Err(SemanticError::with_help(
+                format!("Cannot assign to constant '{}'", name),
+                expr_span,
+                "Constants cannot be modified after initialization",
+            ));
         }
 
-        if let crate::ast::ExpressionKind::ListAccess {
-            expr: target_expr, ..
-        } = &left.kind
-        {
-            let target_type = self.get_expression_type(target_expr)?;
-            match target_type {
-                Type::List(ref elem_type) => {
-                    self.check_type_compatibility(elem_type, right_type, expr_span)?;
-                }
-                Type::Map(_, ref value_type) => {
-                    self.check_type_compatibility(value_type, right_type, expr_span)?;
-                }
-                _ => {
-                    return Err(SemanticError::with_help(
-                        format!(
-                            "Cannot assign to index on type {}",
-                            format_type(&target_type)
-                        ),
-                        expr_span,
-                        "Only lists and maps support index assignment. Example: my_list[0] = value, my_map[\"key\"] = value",
-                    ));
-                }
+        let var_type = symbol.type_.as_ref().ok_or_else(|| {
+            SemanticError::new(
+                format!("Variable '{}' has no type information", name),
+                left_span,
+            )
+        })?;
+        if let Type::Reference(inner) = var_type {
+            self.check_type_compatibility(inner, right_type, expr_span)
+        } else {
+            self.check_type_compatibility(var_type, right_type, expr_span)
+        }
+    }
+
+    fn validate_field_assignment_target(
+        &mut self,
+        obj_expr: &ExpressionNode,
+        field: &str,
+        left_span: Span,
+        right_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let Some((class_name, symbol)) = self.resolve_lvalue_class_symbol(obj_expr)? else {
+            return Ok(());
+        };
+
+        self.check_const_field_assignment(field, &symbol.fields, expr_span)?;
+
+        if let Some((field_type, _)) = symbol.fields.get(field) {
+            self.check_type_compatibility(field_type, right_type, expr_span)?;
+            return Ok(());
+        }
+        Err(self.field_not_found_error(field, &class_name, left_span))
+    }
+
+    fn validate_index_assignment_target(
+        &mut self,
+        target_expr: &ExpressionNode,
+        right_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let target_type = self.get_expression_type(target_expr)?;
+        match target_type {
+            Type::List(ref elem_type) => {
+                self.check_type_compatibility(elem_type, right_type, expr_span)
             }
-            return Ok(());
+            Type::Map(_, ref value_type) => {
+                self.check_type_compatibility(value_type, right_type, expr_span)
+            }
+            _ => Err(SemanticError::with_help(
+                format!(
+                    "Cannot assign to index on type {}",
+                    format_type(&target_type)
+                ),
+                expr_span,
+                "Only lists and maps support index assignment. Example: my_list[0] = value, my_map[\"key\"] = value",
+            )),
         }
-
-        Err(SemanticError::with_help(
-            "Cannot assign to this expression",
-            expr_span,
-            "Only variables, fields, dereferences, and indexed expressions can be assigned to",
-        ))
     }
 
     fn validate_compound_assignment_target(
@@ -1381,66 +1418,98 @@ impl SemanticAnalyzer {
         expr_span: Span,
         op_span: &Span,
     ) -> Result<(), SemanticError> {
-        if let crate::ast::ExpressionKind::Identifier(name) = &left.kind {
-            let symbol = self
-                .symbol_table
-                .lookup(name)
-                .ok_or_else(|| self.undefined_symbol_error("variable", name, left.span))?;
-
-            if symbol.kind == SymbolKind::Constant {
-                return Err(SemanticError::with_help(
-                    format!("Cannot modify constant '{}'", name),
-                    expr_span,
-                    "Constants cannot be modified after initialization. Declare the variable with 'auto' instead of 'const' if you need to change its value.",
-                ));
+        match &left.kind {
+            crate::ast::ExpressionKind::Identifier(name) => {
+                self.validate_identifier_compound_target(name, left.span, expr_span)?;
             }
-        } else if let crate::ast::ExpressionKind::FieldAccess {
+            crate::ast::ExpressionKind::FieldAccess { .. } => {
+                self.validate_field_compound_target(
+                    left, left_type, right_type, op, expr_span, op_span,
+                )?;
+            }
+            crate::ast::ExpressionKind::Unary {
+                op: crate::ast::UnaryOp::Deref,
+                ..
+            } => {}
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn validate_identifier_compound_target(
+        &self,
+        name: &str,
+        left_span: Span,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let symbol = self
+            .symbol_table
+            .lookup(name)
+            .ok_or_else(|| self.undefined_symbol_error("variable", name, left_span))?;
+
+        if symbol.kind == SymbolKind::Constant {
+            return Err(SemanticError::with_help(
+                format!("Cannot modify constant '{}'", name),
+                expr_span,
+                "Constants cannot be modified after initialization. Declare the variable with 'auto' instead of 'const' if you need to change its value.",
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn validate_field_compound_target(
+        &mut self,
+        left: &ExpressionNode,
+        left_type: &Type,
+        right_type: &Type,
+        op: &crate::ast::BinaryOp,
+        expr_span: Span,
+        op_span: &Span,
+    ) -> Result<(), SemanticError> {
+        let crate::ast::ExpressionKind::FieldAccess {
             expr: obj_expr,
             field,
         } = &left.kind
-        {
-            let obj_type = self.get_expression_type(obj_expr)?;
+        else {
+            return Ok(());
+        };
 
-            if let Type::Named(class_name, _) = &obj_type
-                && let Some(symbol) = self.symbol_table.lookup(class_name)
-            {
-                if let Some((_field_type, is_const)) = symbol.fields.get(field) {
-                    if *is_const {
-                        return Err(SemanticError::with_help(
-                            format!("Cannot modify const field '{}'", field),
-                            expr_span,
-                            "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
-                        ));
-                    }
+        let Some((class_name, symbol)) = self.resolve_lvalue_class_symbol(obj_expr)? else {
+            return Ok(());
+        };
 
-                    let base_op = Self::compound_base_op(op);
-                    self.resolve_binary_operator(left_type, right_type, &base_op)
-                        .ok_or_else(|| {
-                            SemanticError::with_help(
-                                format!(
-                                    "Operator '{}' is not supported between types {} and {}",
-                                    format_binary_op(&base_op),
-                                    format_type(left_type),
-                                    format_type(right_type)
-                                ),
-                                *op_span,
-                                format!(
-                                    "The '{}' operator cannot be applied to {} and {}. Ensure both operands have compatible types.",
-                                    format_binary_op(&base_op),
-                                    format_type(left_type),
-                                    format_type(right_type)
-                                ),
-                            )
-                        })?;
-                } else {
-                    return Err(self.field_not_found_error(field, class_name, left.span));
-                }
+        if let Some((_field_type, is_const)) = symbol.fields.get(field) {
+            if *is_const {
+                return Err(SemanticError::with_help(
+                    format!("Cannot modify const field '{}'", field),
+                    expr_span,
+                    "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
+                ));
             }
-        } else if let crate::ast::ExpressionKind::Unary {
-            op: crate::ast::UnaryOp::Deref,
-            ..
-        } = &left.kind
-        {
+
+            let base_op = Self::compound_base_op(op);
+            self.resolve_binary_operator(left_type, right_type, &base_op)
+                .ok_or_else(|| {
+                    SemanticError::with_help(
+                        format!(
+                            "Operator '{}' is not supported between types {} and {}",
+                            format_binary_op(&base_op),
+                            format_type(left_type),
+                            format_type(right_type)
+                        ),
+                        *op_span,
+                        format!(
+                            "The '{}' operator cannot be applied to {} and {}. Ensure both operands have compatible types.",
+                            format_binary_op(&base_op),
+                            format_type(left_type),
+                            format_type(right_type)
+                        ),
+                    )
+                })?;
+        } else {
+            return Err(self.field_not_found_error(field, &class_name, left.span));
         }
 
         Ok(())

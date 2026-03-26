@@ -2188,49 +2188,60 @@ impl<'a> Parser<'a> {
                         break;
                     }
                     self.skip_newlines();
-                } else {
-                    let mut i = 0;
-                    let mut found_newlines = false;
-                    while let Some(t) = self.peek_ahead(i) {
-                        if t.token_type == TokenType::NewLine {
-                            found_newlines = true;
-                            i += 1;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    if found_newlines
-                        && self
-                            .peek_ahead(i)
-                            .is_some_and(|t| t.token_type == TokenType::Comma)
-                        && self.peek_ahead(i + 1).is_some_and(|t| {
-                            !matches!(
-                                t.token_type,
-                                TokenType::CloseBracket | TokenType::NewLine | TokenType::Comma
-                            )
-                        })
-                    {
-                        for _ in 0..=i {
-                            self.current += 1;
-                        }
-                        self.skip_newlines();
-                    } else {
-                        break;
-                    }
+                } else if !self.consume_newline_delimited_comma() {
+                    break;
                 }
             }
         }
 
         self.skip_newlines();
 
-        let end_span =
-            self.consume_token(TokenType::CloseBracket, "Expected ']' after list elements")?;
         let expr = ExpressionNode {
             kind: ExpressionKind::ListLiteral(elements),
-            span: start_span.combine(&end_span),
+            span: start_span.combine(&self.consume_list_literal_close_span()?),
         };
         self.parse_postfix_operators(expr)
+    }
+
+    fn consume_list_literal_close_span(&mut self) -> ParserResult<Span> {
+        self.consume_token(TokenType::CloseBracket, "Expected ']' after list elements")
+    }
+
+    fn consume_newline_delimited_comma(&mut self) -> bool {
+        let mut i = 0;
+        let mut found_newlines = false;
+        while let Some(t) = self.peek_ahead(i) {
+            if t.token_type == TokenType::NewLine {
+                found_newlines = true;
+                i += 1;
+            } else {
+                break;
+            }
+        }
+
+        if !found_newlines {
+            return false;
+        }
+
+        let comma_after_newlines = self
+            .peek_ahead(i)
+            .is_some_and(|t| t.token_type == TokenType::Comma);
+        let has_expression_after_comma = self.peek_ahead(i + 1).is_some_and(|t| {
+            !matches!(
+                t.token_type,
+                TokenType::CloseBracket | TokenType::NewLine | TokenType::Comma
+            )
+        });
+
+        if !(comma_after_newlines && has_expression_after_comma) {
+            return false;
+        }
+
+        for _ in 0..=i {
+            self.current += 1;
+        }
+        self.skip_newlines();
+        true
     }
 
     fn parse_lambda_expression(&mut self, start_span: Span) -> ParserResult<ExpressionNode> {
@@ -2478,7 +2489,16 @@ impl<'a> Parser<'a> {
     }
 
     fn should_consume_generic_type_args(&self, expr: &ExpressionNode) -> Option<(String, bool)> {
-        let generic_target_name = match &expr.kind {
+        let generic_target_name = self.generic_target_name(expr)?;
+
+        let gt_idx = self.find_matching_generic_gt_index()?;
+        let should_consume = self.should_consume_generics_for_target(&generic_target_name, gt_idx);
+
+        Some((generic_target_name, should_consume))
+    }
+
+    fn generic_target_name(&self, expr: &ExpressionNode) -> Option<String> {
+        match &expr.kind {
             ExpressionKind::Identifier(id) => Some(id.clone()),
             ExpressionKind::FieldAccess { expr, field } => {
                 if let ExpressionKind::Identifier(base) = &expr.kind {
@@ -2488,54 +2508,51 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => None,
-        }?;
+        }
+    }
 
+    fn find_matching_generic_gt_index(&self) -> Option<usize> {
         let mut i = self.current + 1;
         let mut depth = 1usize;
-        let mut gt_idx: Option<usize> = None;
         while i < self.tokens.len() {
             match self.tokens[i].token_type {
                 TokenType::Lt => depth += 1,
                 TokenType::Gt => {
                     depth -= 1;
                     if depth == 0 {
-                        gt_idx = Some(i);
-                        break;
+                        return Some(i);
                     }
                 }
                 TokenType::Eof
                 | TokenType::NewLine
                 | TokenType::OpenBrace
                 | TokenType::CloseBrace => {
-                    break;
+                    return None;
                 }
                 _ => {}
             }
             i += 1;
         }
+        None
+    }
 
-        let should_consume = if let Some(end) = gt_idx {
-            if let Some(next) = self.tokens.get(end + 1) {
-                matches!(
-                    next.token_type,
-                    TokenType::Dot
-                        | TokenType::OpenParen
-                        | TokenType::CloseParen
-                        | TokenType::Eq
-                        | TokenType::NewLine
-                        | TokenType::Eof
-                ) || generic_target_name
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_uppercase())
-            } else {
-                true
-            }
+    fn should_consume_generics_for_target(&self, generic_target_name: &str, gt_idx: usize) -> bool {
+        if let Some(next) = self.tokens.get(gt_idx + 1) {
+            matches!(
+                next.token_type,
+                TokenType::Dot
+                    | TokenType::OpenParen
+                    | TokenType::CloseParen
+                    | TokenType::Eq
+                    | TokenType::NewLine
+                    | TokenType::Eof
+            ) || generic_target_name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase())
         } else {
-            false
-        };
-
-        Some((generic_target_name, should_consume))
+            true
+        }
     }
 
     fn parse_generic_postfix(

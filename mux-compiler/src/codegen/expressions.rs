@@ -305,6 +305,62 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
+    fn call_import_or_runtime_function(
+        &mut self,
+        llvm_function_name: &str,
+        display_name: &str,
+        args: &[ExpressionNode],
+        func_type: Option<&Type>,
+    ) -> Result<Option<BasicValueEnum<'a>>, String> {
+        match llvm_function_name {
+            "mux_print" => return self.generate_print_call(args).map(Some),
+            "mux_read_line" => return self.generate_read_line_call(args).map(Some),
+            _ => {}
+        }
+
+        let Some(func) = self.module.get_function(llvm_function_name) else {
+            return Ok(None);
+        };
+
+        let call_args = self.build_import_call_args(args, func_type, Some(func))?;
+        let call = self
+            .builder
+            .build_call(func, &call_args, &format!("{}_call", display_name))
+            .map_err(|e| e.to_string())?;
+        Ok(Some(self.call_result_or_default_i32(call)))
+    }
+
+    fn call_imported_symbol_function(
+        &mut self,
+        function_symbol: Option<crate::semantics::Symbol>,
+        fallback_name: &str,
+        display_name: &str,
+        args: &[ExpressionNode],
+    ) -> Result<Option<BasicValueEnum<'a>>, String> {
+        let func_type = function_symbol.as_ref().and_then(|s| s.type_.clone());
+        let llvm_function_name = function_symbol
+            .as_ref()
+            .and_then(|s| s.llvm_name.clone())
+            .unwrap_or_else(|| fallback_name.to_string());
+        self.call_import_or_runtime_function(
+            &llvm_function_name,
+            display_name,
+            args,
+            func_type.as_ref(),
+        )
+    }
+
+    fn build_call_args_from_expressions(
+        &mut self,
+        args: &[ExpressionNode],
+    ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
+        let mut call_args = vec![];
+        for arg in args {
+            call_args.push(self.generate_expression(arg)?.into());
+        }
+        Ok(call_args)
+    }
+
     fn generate_if_expression(
         &mut self,
         cond: &ExpressionNode,
@@ -2508,47 +2564,15 @@ impl<'a> CodeGenerator<'a> {
                                                         })
                                                 });
                                             if let Some(function_symbol) = function_symbol {
-                                                let func_type = function_symbol.type_.clone();
-                                                let llvm_function_name = function_symbol
-                                                    .llvm_name
-                                                    .clone()
-                                                    .unwrap_or_else(|| field.to_string());
-
-                                                // Handle std library functions that need special codegen
-                                                match llvm_function_name.as_str() {
-                                                    "mux_print" => {
-                                                        return self.generate_print_call(args);
-                                                    }
-                                                    "mux_read_line" => {
-                                                        return self.generate_read_line_call(args);
-                                                    }
-                                                    _ => {}
-                                                }
-
-                                                if let Some(func) =
-                                                    self.module.get_function(&llvm_function_name)
-                                                {
-                                                    let call_args = self.build_import_call_args(
+                                                if let Some(call_result) = self
+                                                    .call_imported_symbol_function(
+                                                        Some(function_symbol.clone()),
+                                                        field,
+                                                        field,
                                                         args,
-                                                        func_type.as_ref(),
-                                                        Some(func),
-                                                    )?;
-                                                    let call = self
-                                                        .builder
-                                                        .build_call(
-                                                            func,
-                                                            &call_args,
-                                                            &format!("{}_call", field),
-                                                        )
-                                                        .map_err(|e| e.to_string())?;
-                                                    return match call.try_as_basic_value().left() {
-                                                        Some(val) => Ok(val),
-                                                        None => Ok(self
-                                                            .context
-                                                            .i32_type()
-                                                            .const_int(0, false)
-                                                            .into()),
-                                                    };
+                                                    )?
+                                                {
+                                                    return Ok(call_result);
                                                 }
                                             }
                                         }
@@ -2596,47 +2620,15 @@ impl<'a> CodeGenerator<'a> {
                                             .imported_symbols()
                                             .get(name)
                                             .and_then(|module_syms| module_syms.get(field));
-                                        let func_type =
-                                            function_symbol.and_then(|s| s.type_.clone());
-
-                                        let llvm_function_name =
-                                            if let Some(func_sym) = function_symbol {
-                                                func_sym
-                                                    .llvm_name
-                                                    .clone()
-                                                    .unwrap_or_else(|| field.to_string())
-                                            } else {
-                                                field.to_string()
-                                            };
-
-                                        // Handle std library functions that need special codegen
-                                        match llvm_function_name.as_str() {
-                                            "mux_print" => {
-                                                return self.generate_print_call(args);
-                                            }
-                                            "mux_read_line" => {
-                                                return self.generate_read_line_call(args);
-                                            }
-                                            _ => {}
-                                        }
-
-                                        if let Some(func) =
-                                            self.module.get_function(&llvm_function_name)
-                                        {
-                                            let call_args = self.build_import_call_args(
+                                        if let Some(call_result) = self
+                                            .call_imported_symbol_function(
+                                                function_symbol.cloned(),
+                                                field,
+                                                field,
                                                 args,
-                                                func_type.as_ref(),
-                                                Some(func),
-                                            )?;
-                                            let call = self
-                                                .builder
-                                                .build_call(
-                                                    func,
-                                                    &call_args,
-                                                    &format!("{}_call", field),
-                                                )
-                                                .map_err(|e| e.to_string())?;
-                                            return Ok(self.call_result_or_default_i32(call));
+                                            )?
+                                        {
+                                            return Ok(call_result);
                                         } else {
                                             if let Some(generic_func) =
                                                 self.function_nodes.get(field)
@@ -2700,11 +2692,8 @@ impl<'a> CodeGenerator<'a> {
                                                 ));
                                             }
                                             // generate static method call (no self parameter)
-                                            let mut call_args = vec![];
-                                            for arg in args {
-                                                call_args
-                                                    .push(self.generate_expression(arg)?.into());
-                                            }
+                                            let call_args =
+                                                self.build_call_args_from_expressions(args)?;
                                             let call = self
                                                 .builder
                                                 .build_call(
@@ -2735,11 +2724,8 @@ impl<'a> CodeGenerator<'a> {
                                         if let Some(constructor_func) =
                                             self.module.get_function(&constructor_name)
                                         {
-                                            let mut call_args = vec![];
-                                            for arg in args {
-                                                call_args
-                                                    .push(self.generate_expression(arg)?.into());
-                                            }
+                                            let call_args =
+                                                self.build_call_args_from_expressions(args)?;
                                             let call = self
                                                 .builder
                                                 .build_call(

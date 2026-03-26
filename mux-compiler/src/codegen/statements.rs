@@ -870,117 +870,13 @@ impl<'a> CodeGenerator<'a> {
 
     fn resolve_enum_match_name(&self, match_expr: &ExpressionNode) -> Result<String, String> {
         match &match_expr.kind {
-            ExpressionKind::Identifier(name) => {
-                if name.starts_with("match_temp_") {
-                    if let Some((_, _, var_type)) = self.variables.get(name) {
-                        return match var_type {
-                            Type::Named(n, _) => Ok(n.clone()),
-                            Type::Optional(_) => Ok("optional".to_string()),
-                            Type::Result(_, _) => Ok("result".to_string()),
-                            _ => Err(format!(
-                                "Match expression must be an enum type, got {:?}",
-                                var_type
-                            )),
-                        };
-                    }
-                    return Err(format!("Temporary variable {} not found", name));
-                }
-
-                if let Some((_, _, var_type)) = self.variables.get(name) {
-                    return match var_type {
-                        Type::Named(n, _) => Ok(n.clone()),
-                        Type::Optional(_) => Ok("optional".to_string()),
-                        Type::Result(_, _) => Ok("result".to_string()),
-                        _ => Err("Match expression must be an enum type".to_string()),
-                    };
-                }
-
-                if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
-                    if let Some(symbol_type) = &symbol.type_ {
-                        return match symbol_type {
-                            Type::Named(n, _) => Ok(n.clone()),
-                            Type::Optional(_) => Ok("optional".to_string()),
-                            Type::Result(_, _) => Ok("result".to_string()),
-                            _ => Err("Match expression must be an enum type".to_string()),
-                        };
-                    }
-                    return Err("Match expression must be an enum type".to_string());
-                }
-
-                Err(format!("Symbol {} not found", name))
-            }
+            ExpressionKind::Identifier(name) => self.resolve_enum_match_name_from_identifier(name),
             ExpressionKind::FieldAccess { expr, field } => {
-                if let ExpressionKind::Identifier(obj) = &expr.kind {
-                    if obj == "self" {
-                        if let Some((_, _, Type::Named(class_name, _))) = self
-                            .variables
-                            .get("self")
-                            .or_else(|| self.global_variables.get("self"))
-                        {
-                            if let Some(fields) = self.classes.get(class_name) {
-                                if let Some(f) = fields.iter().find(|f| f.name == *field) {
-                                    if let TypeKind::Named(n, _) = &f.type_.kind {
-                                        return Ok(n.clone());
-                                    }
-                                    return Err("Match field must be enum type".to_string());
-                                }
-                                return Err(format!(
-                                    "Field {} not found in class {}",
-                                    field, class_name
-                                ));
-                            }
-                            return Err(format!("Class {} not found", class_name));
-                        }
-                        return Err("Self not found".to_string());
-                    }
-
-                    if let Some((_, _, var_type)) = self
-                        .variables
-                        .get(obj)
-                        .or_else(|| self.global_variables.get(obj))
-                    {
-                        if let Type::Named(class_name, _) = var_type {
-                            if let Some(fields) = self.classes.get(class_name) {
-                                if let Some(f) = fields.iter().find(|f| f.name == *field) {
-                                    if let TypeKind::Named(n, _) = &f.type_.kind {
-                                        return Ok(n.clone());
-                                    }
-                                    return Err("Match field must be enum type".to_string());
-                                }
-                                return Err(format!(
-                                    "Field {} not found in class {}",
-                                    field, class_name
-                                ));
-                            }
-                            return Err(format!("Class {} not found", class_name));
-                        }
-                        return Err(format!("Variable {} is not a class instance", obj));
-                    }
-
-                    return Err(format!("Variable {} not found", obj));
-                }
-
-                Err("Match expression must be identifier, self.field, or obj.field".to_string())
+                self.resolve_enum_match_name_from_field_access(expr, field)
             }
             ExpressionKind::Call { func, .. } => {
                 if let ExpressionKind::Identifier(constructor_name) = &func.kind {
-                    return match constructor_name.as_str() {
-                        "some" | "none" => Ok("optional".to_string()),
-                        "ok" | "err" => Ok("result".to_string()),
-                        _ => {
-                            if let Some(symbol) =
-                                self.analyzer.symbol_table().lookup(constructor_name)
-                            {
-                                if let Some(Type::Named(type_name, _)) = &symbol.type_ {
-                                    Ok(type_name.clone())
-                                } else {
-                                    Err("Constructor must be enum type".to_string())
-                                }
-                            } else {
-                                Err(format!("Constructor {} not found", constructor_name))
-                            }
-                        }
-                    };
+                    return self.resolve_enum_constructor_match_name(constructor_name);
                 }
 
                 Err("Match expression constructor calls must be simple identifiers".to_string())
@@ -990,6 +886,126 @@ impl<'a> CodeGenerator<'a> {
                     .to_string(),
             ),
         }
+    }
+
+    fn enum_name_from_type(
+        &self,
+        value_type: &Type,
+        unknown_type_msg: &str,
+    ) -> Result<String, String> {
+        match value_type {
+            Type::Named(n, _) => Ok(n.clone()),
+            Type::Optional(_) => Ok("optional".to_string()),
+            Type::Result(_, _) => Ok("result".to_string()),
+            _ => Err(unknown_type_msg.to_string()),
+        }
+    }
+
+    fn resolve_enum_match_name_from_identifier(&self, name: &str) -> Result<String, String> {
+        if let Some((_, _, var_type)) = self.variables.get(name) {
+            let unknown_msg = if name.starts_with("match_temp_") {
+                format!("Match expression must be an enum type, got {:?}", var_type)
+            } else {
+                "Match expression must be an enum type".to_string()
+            };
+            return self.enum_name_from_type(var_type, &unknown_msg);
+        }
+
+        if name.starts_with("match_temp_") {
+            return Err(format!("Temporary variable {} not found", name));
+        }
+
+        if let Some(symbol) = self.analyzer.symbol_table().lookup(name) {
+            if let Some(symbol_type) = &symbol.type_ {
+                return self
+                    .enum_name_from_type(symbol_type, "Match expression must be an enum type");
+            }
+            return Err("Match expression must be an enum type".to_string());
+        }
+
+        Err(format!("Symbol {} not found", name))
+    }
+
+    fn resolve_enum_constructor_match_name(
+        &self,
+        constructor_name: &str,
+    ) -> Result<String, String> {
+        match constructor_name {
+            "some" | "none" => Ok("optional".to_string()),
+            "ok" | "err" => Ok("result".to_string()),
+            _ => {
+                if let Some(symbol) = self.analyzer.symbol_table().lookup(constructor_name) {
+                    if let Some(Type::Named(type_name, _)) = &symbol.type_ {
+                        Ok(type_name.clone())
+                    } else {
+                        Err("Constructor must be enum type".to_string())
+                    }
+                } else {
+                    Err(format!("Constructor {} not found", constructor_name))
+                }
+            }
+        }
+    }
+
+    fn resolve_enum_match_name_from_field_access(
+        &self,
+        expr: &ExpressionNode,
+        field: &str,
+    ) -> Result<String, String> {
+        let ExpressionKind::Identifier(obj) = &expr.kind else {
+            return Err(
+                "Match expression must be identifier, self.field, or obj.field".to_string(),
+            );
+        };
+
+        if obj == "self" {
+            if let Some((_, _, Type::Named(class_name, _))) = self
+                .variables
+                .get("self")
+                .or_else(|| self.global_variables.get("self"))
+            {
+                return self.resolve_enum_name_from_class_field(class_name, field);
+            }
+            return Err("Self not found".to_string());
+        }
+
+        if let Some((_, _, Type::Named(class_name, _))) = self
+            .variables
+            .get(obj)
+            .or_else(|| self.global_variables.get(obj))
+        {
+            return self.resolve_enum_name_from_class_field(class_name, field);
+        }
+
+        if self
+            .variables
+            .get(obj)
+            .or_else(|| self.global_variables.get(obj))
+            .is_some()
+        {
+            return Err(format!("Variable {} is not a class instance", obj));
+        }
+
+        Err(format!("Variable {} not found", obj))
+    }
+
+    fn resolve_enum_name_from_class_field(
+        &self,
+        class_name: &str,
+        field: &str,
+    ) -> Result<String, String> {
+        let fields = self
+            .classes
+            .get(class_name)
+            .ok_or_else(|| format!("Class {} not found", class_name))?;
+        let field_info = fields
+            .iter()
+            .find(|f| f.name == field)
+            .ok_or_else(|| format!("Field {} not found in class {}", field, class_name))?;
+        if let TypeKind::Named(n, _) = &field_info.type_.kind {
+            return Ok(n.clone());
+        }
+        Err("Match field must be enum type".to_string())
     }
 
     fn emit_match_guard_and_body(
