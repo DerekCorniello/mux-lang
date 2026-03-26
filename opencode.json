@@ -1,14 +1,23 @@
 {
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "sonarqube": {
-      "type": "local",
-      "command": [
-        "bash",
-        "-c",
-        "set -a; source /home/derekcorn/code/mux-lang/.env; set +a; exec docker run --init --pull=always -i --rm -e SONARQUBE_TOKEN -e SONARQUBE_ORG -e SONARQUBE_URL -e SONARQUBE_PROJECT_KEY -e SONARQUBE_DEBUG_ENABLED mcp/sonarqube"
-      ],
-      "enabled": true
+    "$schema": "https://opencode.ai/config.json",
+    "mcp": {
+        "sonarqube": {
+            "type": "local",
+            "command": [
+                "bash",
+                "-c",
+                "set -a; source .env; set +a; exec docker run --init --pull=always -i --rm -e SONARQUBE_TOKEN -e SONARQUBE_ORG -e SONARQUBE_URL -e SONARQUBE_PROJECT_KEY -e SONARQUBE_DEBUG_ENABLED mcp/sonarqube"
+            ],
+            "enabled": true
+        },
+        "github": {
+            "type": "local",
+            "command": [
+                "bash",
+                "-c",
+                "set -a; source .env; set +a; exec npx -y @modelcontextprotocol/server-github"
+            ],
+            "enabled": true
+        }
     }
-  }
 }
