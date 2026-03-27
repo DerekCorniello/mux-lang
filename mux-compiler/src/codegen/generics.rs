@@ -19,6 +19,135 @@ use super::CodeGenerator;
 use super::GenericContext;
 
 impl<'a> CodeGenerator<'a> {
+    fn build_variant_key(&self, class_name: &str, type_args: &[Type]) -> String {
+        let variant_suffix = type_args
+            .iter()
+            .map(|t| self.sanitize_type_name(t))
+            .collect::<Vec<_>>()
+            .join("$");
+        format!("{}${}", class_name, variant_suffix)
+    }
+
+    fn mark_variant_processing(&mut self, variant_key: &str) -> bool {
+        if self.generated_methods.contains_key(variant_key) {
+            return false;
+        }
+        self.generated_methods.insert(variant_key.to_string(), true);
+        true
+    }
+
+    fn build_type_param_map_for_class(
+        &self,
+        class_symbol: &crate::semantics::Symbol,
+        type_args: &[Type],
+    ) -> Result<HashMap<String, Type>, String> {
+        let mut type_param_map = HashMap::new();
+        for (i, param) in class_symbol.type_params.iter().enumerate() {
+            let resolved_type_arg = self.resolve_type(&type_args[i])?;
+            type_param_map.insert(param.0.clone(), resolved_type_arg);
+        }
+        Ok(type_param_map)
+    }
+
+    fn set_class_type_param_bounds_if_needed(&mut self, class_symbol: &crate::semantics::Symbol) {
+        if !class_symbol.type_params.is_empty() {
+            let bounds: ClassTypeParamBounds = class_symbol
+                .type_params
+                .iter()
+                .map(|(param, bound_names)| {
+                    (
+                        param.clone(),
+                        bound_names
+                            .iter()
+                            .map(|bound_name| (bound_name.clone(), Vec::new()))
+                            .collect(),
+                    )
+                })
+                .collect();
+            self.analyzer.set_class_type_params(bounds);
+        }
+    }
+
+    fn handle_named_signature_type(
+        &self,
+        name: &str,
+        type_args: &[TypeNode],
+        param_type: &TypeNode,
+        arg_type: &Type,
+        type_map: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), String> {
+        if type_args.is_empty() {
+            return self
+                .infer_or_validate_simple_named_signature(name, param_type, arg_type, type_map);
+        }
+
+        self.infer_named_type_args_signature(name, type_args, arg_type, type_map)
+    }
+
+    fn infer_or_validate_simple_named_signature(
+        &self,
+        name: &str,
+        param_type: &TypeNode,
+        arg_type: &Type,
+        type_map: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), String> {
+        if name.chars().next().unwrap_or(' ').is_uppercase() || name.len() <= 3 {
+            if let Some(existing) = type_map.get(name) {
+                if existing != arg_type {
+                    return Err(format!(
+                        "Type mismatch for generic parameter {}: expected {:?}, got {:?}",
+                        name, existing, arg_type
+                    ));
+                }
+            } else {
+                type_map.insert(name.to_string(), arg_type.clone());
+            }
+            return Ok(());
+        }
+
+        let expected_concrete = self.type_node_to_type(param_type);
+        if expected_concrete != *arg_type {
+            return Err(format!(
+                "Type mismatch: expected {:?}, got {:?}",
+                expected_concrete, arg_type
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn infer_named_type_args_signature(
+        &self,
+        name: &str,
+        type_args: &[TypeNode],
+        arg_type: &Type,
+        type_map: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), String> {
+        match arg_type {
+            Type::Named(arg_name, arg_type_args) => {
+                if name != arg_name {
+                    return Err(format!(
+                        "Type name mismatch: expected {}, got {}",
+                        name, arg_name
+                    ));
+                }
+                if type_args.len() != arg_type_args.len() {
+                    return Err(format!(
+                        "Type argument count mismatch for {}: expected {}, got {}",
+                        name,
+                        type_args.len(),
+                        arg_type_args.len()
+                    ));
+                }
+                for (param_arg, arg_arg) in type_args.iter().zip(arg_type_args.iter()) {
+                    self.infer_types_from_signature(param_arg, arg_arg, type_map)?;
+                }
+                Ok(())
+            }
+            _ => Err(format!("Expected named type with args, got {:?}", arg_type)),
+        }
+    }
+
     fn lookup_class_symbol(&self, class_name: &str) -> Option<crate::semantics::Symbol> {
         if let Some(symbol) = self.analyzer.symbol_table().lookup(class_name) {
             return Some(symbol);
@@ -42,20 +171,12 @@ impl<'a> CodeGenerator<'a> {
         let saved_insert_block = self.builder.get_insert_block();
 
         // check if we need to generate specialized methods for this variant
-        let variant_suffix = type_args
-            .iter()
-            .map(|t| self.sanitize_type_name(t))
-            .collect::<Vec<_>>()
-            .join("$");
-        let variant_key = format!("{}${}", class_name, variant_suffix);
+        let variant_key = self.build_variant_key(class_name, type_args);
 
         // skip if we've already generated methods for this variant
-        if self.generated_methods.contains_key(&variant_key) {
+        if !self.mark_variant_processing(&variant_key) {
             return Ok(());
         }
-
-        // mark this variant as being processed to prevent infinite recursion
-        self.generated_methods.insert(variant_key.clone(), true);
 
         // get the class symbol to access methods
         let class_symbol = self
@@ -63,28 +184,9 @@ impl<'a> CodeGenerator<'a> {
             .ok_or(format!("Class {} not found", class_name))?;
 
         // Set class-level type parameter bounds for specialized method generation
-        if !class_symbol.type_params.is_empty() {
-            let bounds: ClassTypeParamBounds = class_symbol
-                .type_params
-                .iter()
-                .map(|(param, bound_names)| {
-                    (
-                        param.clone(),
-                        bound_names
-                            .iter()
-                            .map(|bound_name| (bound_name.clone(), Vec::new()))
-                            .collect(),
-                    )
-                })
-                .collect();
-            self.analyzer.set_class_type_params(bounds);
-        }
+        self.set_class_type_param_bounds_if_needed(&class_symbol);
 
-        let mut type_param_map = HashMap::new();
-        for (i, param) in class_symbol.type_params.iter().enumerate() {
-            let resolved_type_arg = self.resolve_type(&type_args[i])?;
-            type_param_map.insert(param.0.clone(), resolved_type_arg);
-        }
+        let type_param_map = self.build_type_param_map_for_class(&class_symbol, type_args)?;
 
         let mut specialized_methods = Vec::new();
 
@@ -540,61 +642,7 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<(), String> {
         match &param_type.kind {
             TypeKind::Named(name, type_args) => {
-                if type_args.is_empty() {
-                    // this is a potential generic parameter or concrete type
-                    if name.chars().next().unwrap_or(' ').is_uppercase() || name.len() <= 3 {
-                        // likely a generic parameter - infer it from the argument type
-                        if let Some(existing) = type_map.get(name) {
-                            if existing != arg_type {
-                                return Err(format!(
-                                    "Type mismatch for generic parameter {}: expected {:?}, got {:?}",
-                                    name, existing, arg_type
-                                ));
-                            }
-                        } else {
-                            type_map.insert(name.clone(), arg_type.clone());
-                        }
-                    } else {
-                        // concrete type - should match exactly
-                        let expected_concrete = self.type_node_to_type(param_type);
-                        if expected_concrete != *arg_type {
-                            return Err(format!(
-                                "Type mismatch: expected {:?}, got {:?}",
-                                expected_concrete, arg_type
-                            ));
-                        }
-                    }
-                } else {
-                    // generic type with arguments (like list<T>)
-                    match arg_type {
-                        Type::Named(arg_name, arg_type_args) => {
-                            if name != arg_name {
-                                return Err(format!(
-                                    "Type name mismatch: expected {}, got {}",
-                                    name, arg_name
-                                ));
-                            }
-                            if type_args.len() != arg_type_args.len() {
-                                return Err(format!(
-                                    "Type argument count mismatch for {}: expected {}, got {}",
-                                    name,
-                                    type_args.len(),
-                                    arg_type_args.len()
-                                ));
-                            }
-                            // recursively match type arguments
-                            for (param_arg, arg_arg) in type_args.iter().zip(arg_type_args.iter()) {
-                                self.infer_types_from_signature(param_arg, arg_arg, type_map)?;
-                            }
-                        }
-                        _ => {
-                            return Err(format!(
-                                "Expected named type with args, got {:?}",
-                                arg_type
-                            ));
-                        }
-                    }
-                }
+                self.handle_named_signature_type(name, type_args, param_type, arg_type, type_map)?;
             }
             TypeKind::List(inner_param_type) => match arg_type {
                 Type::List(inner_arg_type) => {

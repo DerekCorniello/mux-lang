@@ -4,7 +4,7 @@
 # For each file: compile with cargo run --  run <file>, wait for enter, then run the binary
 
 for file in test_scripts/*.mux; do
-    if [ -f "$file" ]; then
+    if [[ -f "$file" ]]; then
         echo "Testing $file"
         cargo run -- run "$file"
         read -p "Press enter to run the binary..."

@@ -4,7 +4,8 @@
   ![LLVM](https://img.shields.io/badge/LLVM-262D3A?style=for-the-badge&logo=llvm&logoColor=white&link=https://llvm.org/)&nbsp;
   ![crates.io](https://img.shields.io/badge/crates.io-MuxLang-orange?style=for-the-badge&logo=rust&link=https://crates.io/crates/mux-lang)&nbsp;
   ![Docs](https://img.shields.io/badge/docs-online-blue?style=for-the-badge&logo=readthedocs&logoColor=white&link=https://mux-lang.dev)&nbsp;
-  ![Status](https://img.shields.io/badge/status-alpha-lightgrey?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang)
+  ![Status](https://img.shields.io/badge/status-alpha-lightgrey?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang)&nbsp;
+  [![Sonar Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=DerekCorniello_mux-lang&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=DerekCorniello_mux-lang)
 
 <p align="center">
   <img src="./mux-website/static/img/mux-logo.png" alt="Mux Logo" style="width: 10%; height: auto;">

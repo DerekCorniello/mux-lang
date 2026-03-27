@@ -8,6 +8,13 @@ import Line from '@theme/CodeBlock/Line';
 
 import styles from './styles.module.css';
 
+type PrismToken = { content: string };
+
+function getLineKey(line: PrismToken[], index: number): string {
+  const content = line.map(token => token.content).join('');
+  return `${index}-${content}`;
+}
+
 // TODO Docusaurus v4: remove useless forwardRef
 const Pre = React.forwardRef<HTMLPreElement, ComponentProps<'pre'>>(
   (props, ref) => {
@@ -47,7 +54,7 @@ function Code(props: ComponentProps<'code'>) {
 
 export default function CodeBlockContent({
   className: classNameProp,
-}: Props): ReactNode {
+}: Readonly<Props>): ReactNode {
   const {metadata, wordWrap} = useCodeBlockContext();
   const prismTheme = usePrismTheme();
   const {code, language, lineNumbersStart, lineClassNames} = metadata;
@@ -61,7 +68,7 @@ export default function CodeBlockContent({
           <Code>
             {lines.map((line, i) => (
               <Line
-                key={i}
+                key={getLineKey(line, i)}
                 line={line}
                 getLineProps={getLineProps}
                 getTokenProps={getTokenProps}

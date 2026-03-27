@@ -167,6 +167,285 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn consume_identifier_tail(&mut self, ident: &mut String) {
+        while let Some(ch) = self.source.peek() {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ident.push(ch);
+                self.source.next_char();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn keyword_or_identifier_token_type(ident: String) -> TokenType {
+        match ident.as_str() {
+            "auto" => TokenType::Auto,
+            "func" => TokenType::Func,
+            "return" => TokenType::Return,
+            "returns" => TokenType::Returns,
+            "if" => TokenType::If,
+            "else" => TokenType::Else,
+            "for" => TokenType::For,
+            "while" => TokenType::While,
+            "match" => TokenType::Match,
+            "const" => TokenType::Const,
+            "class" => TokenType::Class,
+            "interface" => TokenType::Interface,
+            "enum" => TokenType::Enum,
+            "import" => TokenType::Import,
+            "is" => TokenType::Is,
+            "as" => TokenType::As,
+            "in" => TokenType::In,
+            "break" => TokenType::Break,
+            "continue" => TokenType::Continue,
+            "none" => TokenType::None,
+            "true" => TokenType::Bool(true),
+            "false" => TokenType::Bool(false),
+            "common" => TokenType::Common,
+            _ => TokenType::Id(ident),
+        }
+    }
+
+    fn read_identifier_or_keyword(&mut self, first_char: char, mut start_span: Span) -> Token {
+        let mut ident = first_char.to_string();
+        self.consume_identifier_tail(&mut ident);
+        start_span.complete(self.source.line, self.source.col);
+        Token::new(Self::keyword_or_identifier_token_type(ident), start_span)
+    }
+
+    fn read_nested_multiline_comment_body(
+        &mut self,
+        start_span: Span,
+    ) -> Result<String, LexerError> {
+        let mut comment = String::new();
+        let mut depth = 1;
+        while depth > 0 {
+            match self.source.next_char() {
+                Some('*') => {
+                    if self.source.peek() == Some('/') {
+                        self.source.next_char();
+                        depth -= 1;
+                        if depth > 0 {
+                            comment.push('*');
+                        }
+                    } else {
+                        comment.push('*');
+                    }
+                }
+                Some('/') => {
+                    if self.source.peek() == Some('*') {
+                        self.source.next_char();
+                        depth += 1;
+                        comment.push_str("/*");
+                    } else {
+                        comment.push('/');
+                    }
+                }
+                Some(ch) => comment.push(ch),
+                None => {
+                    return Err(LexerError::with_help(
+                        "Unterminated block comment",
+                        start_span,
+                        "Add a closing '*/' to end the block comment",
+                    ));
+                }
+            }
+        }
+        Ok(comment)
+    }
+
+    fn read_slash_token(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('/') {
+            self.source.next_char();
+            let mut comment = String::new();
+            while let Some(ch) = self.source.next_char() {
+                if ch == '\n' || ch == '\r' {
+                    break;
+                }
+                comment.push(ch);
+            }
+            start_span.complete(self.source.line, self.source.col);
+            return Ok(Token::new(
+                TokenType::LineComment(comment.trim().to_string()),
+                start_span,
+            ));
+        }
+
+        if self.source.peek() == Some('*') {
+            self.source.next_char();
+            let comment = self.read_nested_multiline_comment_body(start_span)?;
+            start_span.complete(self.source.line, self.source.col);
+            return Ok(Token::new(
+                TokenType::MultilineComment(comment.trim().to_string()),
+                start_span,
+            ));
+        }
+
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            return Ok(Token::new(TokenType::SlashEq, start_span));
+        }
+
+        Ok(Token::new(TokenType::Slash, start_span))
+    }
+
+    fn decode_escape(c: char) -> Option<char> {
+        match c {
+            'n' => Some('\n'),
+            't' => Some('\t'),
+            'r' => Some('\r'),
+            '0' => Some('\0'),
+            '\\' => Some('\\'),
+            '\'' => Some('\''),
+            '"' => Some('"'),
+            _ => None,
+        }
+    }
+
+    fn consume_digits_and_underscores(&mut self, out: &mut String) -> bool {
+        let mut has_digit = false;
+        while let Some(c) = self.source.peek() {
+            if c.is_ascii_digit() {
+                out.push(self.consume_char());
+                has_digit = true;
+            } else if c == '_' {
+                self.source.next_char();
+            } else {
+                break;
+            }
+        }
+        has_digit
+    }
+
+    fn consume_fraction_if_present(
+        &mut self,
+        num: &mut String,
+        is_float: &mut bool,
+    ) -> Result<(), LexerError> {
+        if self.source.peek() != Some('.') {
+            return Ok(());
+        }
+
+        let after_dot = self.source.peek_nth(1);
+        if after_dot.is_some_and(|c| c.is_ascii_digit()) {
+            *is_float = true;
+        } else if after_dot.is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
+            return Ok(());
+        } else {
+            return Err(LexerError::new(
+                "Expected digit after decimal point",
+                Span::new(self.source.line, self.source.col),
+            ));
+        }
+
+        num.push(self.consume_char());
+        if !self.consume_digits_and_underscores(num) {
+            return Err(LexerError::new(
+                "Expected digit after decimal point",
+                Span::new(self.source.line, self.source.col),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn consume_exponent_if_present(
+        &mut self,
+        num: &mut String,
+        is_float: &mut bool,
+    ) -> Result<(), LexerError> {
+        if !matches!(self.source.peek(), Some('e') | Some('E')) {
+            return Ok(());
+        }
+
+        *is_float = true;
+        num.push(self.consume_char());
+
+        if let Some('+') | Some('-') = self.source.peek() {
+            num.push(self.consume_char());
+        }
+
+        if !self.consume_digits_and_underscores(num) {
+            return Err(LexerError::with_help(
+                "Missing exponent in scientific notation",
+                Span::new(self.source.line, self.source.col),
+                "The 'e' notation requires digits after it, e.g. 1e10, 2.5e-3",
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn parse_float_token(
+        &mut self,
+        mut num: String,
+        mut start_span: Span,
+    ) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('.')
+            && self.source.peek_nth(1).is_some_and(|c| c.is_ascii_digit())
+        {
+            self.consume_remaining_invalid(&mut num, &mut start_span);
+            return Err(LexerError::with_help(
+                format!("Invalid float literal: {}", num),
+                start_span,
+                "A number can only have one decimal point. Use separate expressions for chained field access.",
+            ));
+        }
+
+        if self
+            .source
+            .peek()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
+            self.consume_remaining_invalid(&mut num, &mut start_span);
+            return Err(LexerError::with_help(
+                format!("Invalid float literal: {}", num),
+                start_span,
+                "Float literals cannot contain letters. Use a space or separate expression.",
+            ));
+        }
+
+        let clean_num: String = num.chars().filter(|c| *c != '_').collect();
+        clean_num
+            .parse::<f64>()
+            .map(OrderedFloat)
+            .map(|f| Token::new(TokenType::Float(f), start_span))
+            .map_err(|_| LexerError::new(format!("Invalid float literal: {}", num), start_span))
+    }
+
+    fn parse_int_token(
+        &mut self,
+        mut num: String,
+        mut start_span: Span,
+    ) -> Result<Token, LexerError> {
+        if self
+            .source
+            .peek()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
+            self.consume_remaining_invalid(&mut num, &mut start_span);
+            return Err(LexerError::with_help(
+                format!("Invalid integer literal: {}", num),
+                start_span,
+                "Integer literals cannot contain letters. Variable names must not start with a digit.",
+            ));
+        }
+
+        let clean_num: String = num.chars().filter(|c| *c != '_').collect();
+        clean_num
+            .parse::<i64>()
+            .map(|i| Token::new(TokenType::Int(i), start_span))
+            .map_err(|_| {
+                LexerError::with_help(
+                    format!("Invalid integer literal: {}", num),
+                    start_span,
+                    "The integer value is out of range. Valid integers are between -9223372036854775808 and 9223372036854775807.",
+                )
+            })
+    }
+
     fn get_multichar_token(
         &mut self,
         first_char: char,
@@ -175,227 +454,154 @@ impl<'a> Lexer<'a> {
         start_span.complete(self.source.line, self.source.col);
 
         match first_char {
-            '*' => {
-                if self.source.peek() == Some('*') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::StarStar, start_span))
-                } else if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::StarEq, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Star, start_span))
-                }
-            }
-            '=' => {
-                if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::EqEq, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Eq, start_span))
-                }
-            }
-            '!' => {
-                if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::NotEq, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Bang, start_span))
-                }
-            }
-            '+' => match self.source.peek() {
-                Some('+') => {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Incr, start_span))
-                }
-                Some('=') => {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::PlusEq, start_span))
-                }
-                _ => Ok(Token::new(TokenType::Plus, start_span)),
-            },
-            '-' => match self.source.peek() {
-                Some('-') => {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Decr, start_span))
-                }
-                Some('=') => {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::MinusEq, start_span))
-                }
-                Some(c) if c.is_ascii_digit() => {
-                    // Negative number: include the minus sign and parse as number
-                    self.read_number(first_char, start_span)
-                }
-                _ => Ok(Token::new(TokenType::Minus, start_span)),
-            },
-            '<' => {
-                if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Le, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Lt, start_span))
-                }
-            }
-            '>' => {
-                if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Ge, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Gt, start_span))
-                }
-            }
-            '|' => {
-                if self.source.peek() == Some('|') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Or, start_span))
-                } else {
-                    Err(LexerError::with_help(
-                        "Unexpected character '|'",
-                        start_span,
-                        "Single '|' is not a valid operator. Use '||' for logical OR",
-                    ))
-                }
-            }
-            '&' => {
-                if self.source.peek() == Some('&') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::And, start_span))
-                } else {
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::Ref, start_span))
-                }
-            }
-            '/' => {
-                if self.source.peek() == Some('/') {
-                    self.source.next_char();
-                    let mut comment = String::new();
-                    while let Some(ch) = self.source.next_char() {
-                        if ch == '\n' || ch == '\r' {
-                            break;
-                        }
-                        comment.push(ch);
-                    }
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(
-                        TokenType::LineComment(comment.trim().to_string()),
-                        start_span,
-                    ))
-                } else if self.source.peek() == Some('*') {
-                    self.source.next_char();
-                    let mut comment = String::new();
-                    let mut depth = 1;
-                    while depth > 0 {
-                        match self.source.next_char() {
-                            Some('*') => {
-                                if self.source.peek() == Some('/') {
-                                    self.source.next_char();
-                                    depth -= 1;
-                                    if depth > 0 {
-                                        comment.push('*');
-                                    }
-                                } else {
-                                    comment.push('*');
-                                }
-                            }
-                            Some('/') => {
-                                if self.source.peek() == Some('*') {
-                                    self.source.next_char();
-                                    depth += 1;
-                                    comment.push_str("/*");
-                                } else {
-                                    comment.push('/');
-                                }
-                            }
-                            Some(ch) => comment.push(ch),
-                            None => {
-                                return Err(LexerError::with_help(
-                                    "Unterminated block comment",
-                                    start_span,
-                                    "Add a closing '*/' to end the block comment",
-                                ));
-                            }
-                        }
-                    }
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(
-                        TokenType::MultilineComment(comment.trim().to_string()),
-                        start_span,
-                    ))
-                } else if self.source.peek() == Some('=') {
-                    self.source.next_char();
-                    start_span.complete(self.source.line, self.source.col);
-                    Ok(Token::new(TokenType::SlashEq, start_span))
-                } else {
-                    Ok(Token::new(TokenType::Slash, start_span))
-                }
-            }
+            '*' => self.handle_star_operator(start_span),
+            '=' => self.handle_eq_operator(start_span),
+            '!' => self.handle_bang_operator(start_span),
+            '+' => self.handle_plus_operator(start_span),
+            '-' => self.handle_minus_operator(first_char, start_span),
+            '<' => self.handle_lt_operator(start_span),
+            '>' => self.handle_gt_operator(start_span),
+            '|' => self.handle_or_operator(start_span),
+            '&' => self.handle_and_operator(start_span),
+            '/' => self.read_slash_token(start_span),
             '0'..='9' => self.read_number(first_char, start_span),
             '\'' => self.read_char(start_span),
-            '"' => {
-                if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
-                    self.source.next_char();
-                    self.source.next_char();
-                    self.read_string(start_span)
-                } else {
-                    self.read_string(start_span)
-                }
-            }
+            '"' => self.handle_string_start(start_span),
             'a'..='z' | 'A'..='Z' | '_' => {
-                let mut ident = first_char.to_string();
-                while let Some(ch) = self.source.peek() {
-                    if ch.is_ascii_alphanumeric() || ch == '_' {
-                        ident.push(ch);
-                        self.source.next_char();
-                    } else {
-                        break;
-                    }
-                }
-                start_span.complete(self.source.line, self.source.col);
-                let token_type = match ident.as_str() {
-                    "auto" => TokenType::Auto,
-                    "func" => TokenType::Func,
-                    "return" => TokenType::Return,
-                    "returns" => TokenType::Returns,
-                    "if" => TokenType::If,
-                    "else" => TokenType::Else,
-                    "for" => TokenType::For,
-                    "while" => TokenType::While,
-                    "match" => TokenType::Match,
-                    "const" => TokenType::Const,
-                    "class" => TokenType::Class,
-                    "interface" => TokenType::Interface,
-                    "enum" => TokenType::Enum,
-                    "import" => TokenType::Import,
-                    "is" => TokenType::Is,
-                    "as" => TokenType::As,
-                    "in" => TokenType::In,
-                    "break" => TokenType::Break,
-                    "continue" => TokenType::Continue,
-                    "none" => TokenType::None,
-                    "true" => TokenType::Bool(true),
-                    "false" => TokenType::Bool(false),
-                    "common" => TokenType::Common,
-                    _ => TokenType::Id(ident),
-                };
-                Ok(Token::new(token_type, start_span))
+                Ok(self.read_identifier_or_keyword(first_char, start_span))
             }
             _ => Err(LexerError::with_help(
                 format!("Unexpected character: '{}'", first_char),
                 start_span,
                 "This character is not recognized as valid Mux syntax. Check for accidental special characters or encoding issues.",
             )),
+        }
+    }
+
+    fn handle_star_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('*') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::StarStar, start_span))
+        } else if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::StarEq, start_span))
+        } else {
+            Ok(Token::new(TokenType::Star, start_span))
+        }
+    }
+
+    fn handle_eq_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::EqEq, start_span))
+        } else {
+            Ok(Token::new(TokenType::Eq, start_span))
+        }
+    }
+
+    fn handle_bang_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::NotEq, start_span))
+        } else {
+            Ok(Token::new(TokenType::Bang, start_span))
+        }
+    }
+
+    fn handle_plus_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        match self.source.peek() {
+            Some('+') => {
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Ok(Token::new(TokenType::Incr, start_span))
+            }
+            Some('=') => {
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Ok(Token::new(TokenType::PlusEq, start_span))
+            }
+            _ => Ok(Token::new(TokenType::Plus, start_span)),
+        }
+    }
+
+    fn handle_minus_operator(
+        &mut self,
+        first_char: char,
+        mut start_span: Span,
+    ) -> Result<Token, LexerError> {
+        match self.source.peek() {
+            Some('-') => {
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Ok(Token::new(TokenType::Decr, start_span))
+            }
+            Some('=') => {
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Ok(Token::new(TokenType::MinusEq, start_span))
+            }
+            Some(c) if c.is_ascii_digit() => self.read_number(first_char, start_span),
+            _ => Ok(Token::new(TokenType::Minus, start_span)),
+        }
+    }
+
+    fn handle_lt_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::Le, start_span))
+        } else {
+            Ok(Token::new(TokenType::Lt, start_span))
+        }
+    }
+
+    fn handle_gt_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('=') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::Ge, start_span))
+        } else {
+            Ok(Token::new(TokenType::Gt, start_span))
+        }
+    }
+
+    fn handle_or_operator(&mut self, start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('|') {
+            self.source.next_char();
+            let mut span = start_span;
+            span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::Or, span))
+        } else {
+            Err(LexerError::with_help(
+                "Unexpected character '|'",
+                start_span,
+                "Single '|' is not a valid operator. Use '||' for logical OR",
+            ))
+        }
+    }
+
+    fn handle_and_operator(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('&') {
+            self.source.next_char();
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::And, start_span))
+        } else {
+            start_span.complete(self.source.line, self.source.col);
+            Ok(Token::new(TokenType::Ref, start_span))
+        }
+    }
+
+    fn handle_string_start(&mut self, start_span: Span) -> Result<Token, LexerError> {
+        if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
+            self.source.next_char();
+            self.source.next_char();
+            self.read_string(start_span)
+        } else {
+            self.read_string(start_span)
         }
     }
 
@@ -406,7 +612,7 @@ impl<'a> Lexer<'a> {
         next1 == Some('"') && next2 == Some('"')
     }
 
-    fn read_string(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
+    fn read_string(&mut self, start_span: Span) -> Result<Token, LexerError> {
         let mut s = String::new();
         let mut escaped = false;
         let is_triple = self.is_triple_quote();
@@ -423,53 +629,75 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c == '"' && !escaped {
-                if is_triple {
-                    if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
-                        self.source.next_char();
-                        self.source.next_char();
-                        start_span.complete(self.source.line, self.source.col);
-                        return Ok(Token::new(TokenType::Str(s), start_span));
-                    }
-                } else {
-                    start_span.complete(self.source.line, self.source.col);
-                    return Ok(Token::new(TokenType::Str(s), start_span));
-                }
+            if let Some(result) = self.try_end_string(c, escaped, is_triple, &s, start_span) {
+                return result;
             }
 
-            if escaped {
-                match c {
-                    'n' => s.push('\n'),
-                    't' => s.push('\t'),
-                    'r' => s.push('\r'),
-                    '0' => s.push('\0'),
-                    '\\' => s.push('\\'),
-                    '\'' => s.push('\''),
-                    '"' => s.push('"'),
-                    _ => {
-                        return Err(LexerError::with_help(
-                            format!("Unknown escape sequence: \\{}", c),
-                            Span::new(self.source.line, self.source.col - 1),
-                            "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\', \\\"",
-                        ));
-                    }
-                }
-                escaped = false;
-            } else {
-                s.push(c);
-            }
+            self.process_string_char(c, &mut escaped, &mut s)?;
         }
 
-        // If we get here, the string wasn't properly terminated
-        // We read until EOF, so s contains all content including newlines
-        // The string content before the first newline is what we care about
-        let string_content = s.as_str();
+        self.handle_unterminated_string(&s, start_col, start_span)
+    }
+
+    fn try_end_string(
+        &mut self,
+        c: char,
+        escaped: bool,
+        is_triple: bool,
+        s: &str,
+        mut start_span: Span,
+    ) -> Option<Result<Token, LexerError>> {
+        if c != '"' || escaped {
+            return None;
+        }
+
+        if is_triple {
+            if self.source.peek() == Some('"') && self.source.peek_nth(1) == Some('"') {
+                self.source.next_char();
+                self.source.next_char();
+                start_span.complete(self.source.line, self.source.col);
+                Some(Ok(Token::new(TokenType::Str(s.to_string()), start_span)))
+            } else {
+                None
+            }
+        } else {
+            start_span.complete(self.source.line, self.source.col);
+            Some(Ok(Token::new(TokenType::Str(s.to_string()), start_span)))
+        }
+    }
+
+    fn process_string_char(
+        &mut self,
+        c: char,
+        escaped: &mut bool,
+        s: &mut String,
+    ) -> Result<(), LexerError> {
+        if *escaped {
+            if let Some(decoded) = Self::decode_escape(c) {
+                s.push(decoded);
+            } else {
+                return Err(LexerError::with_help(
+                    format!("Unknown escape sequence: \\{}", c),
+                    Span::new(self.source.line, self.source.col - 1),
+                    "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\', \\\"",
+                ));
+            }
+            *escaped = false;
+        } else {
+            s.push(c);
+        }
+        Ok(())
+    }
+
+    fn handle_unterminated_string(
+        &self,
+        string_content: &str,
+        start_col: usize,
+        mut start_span: Span,
+    ) -> Result<Token, LexerError> {
         let first_newline = string_content.find('\n').unwrap_or(string_content.len());
         let error_col = start_col + first_newline;
-
-        // Complete span at the end of the string content (where the unterminated part ends)
         start_span.complete(self.source.line, error_col);
-
         Err(LexerError::with_help(
             "Unterminated string",
             start_span,
@@ -477,8 +705,8 @@ impl<'a> Lexer<'a> {
         ))
     }
 
-    fn read_char(&mut self, mut start_span: Span) -> Result<Token, LexerError> {
-        let start_col = self.source.col - 1; // adjust for the opening quote
+    fn read_char(&mut self, start_span: Span) -> Result<Token, LexerError> {
+        let start_col = self.source.col - 1;
         let mut chars = Vec::new();
         let mut escaped = false;
 
@@ -489,38 +717,10 @@ impl<'a> Lexer<'a> {
             }
 
             if c == '\'' && !escaped {
-                if chars.len() != 1 {
-                    return Err(LexerError::with_help(
-                        "Char literal must be exactly one character",
-                        Span::new(start_span.row_start, start_col + 1),
-                        "Example: 'a', '\\n', '\\''",
-                    ));
-                }
-                start_span.complete(self.source.line, self.source.col);
-                return Ok(Token::new(TokenType::Char(chars[0]), start_span));
+                return self.finish_char_literal(chars, start_span, start_col);
             }
 
-            if escaped {
-                match c {
-                    'n' => chars.push('\n'),
-                    't' => chars.push('\t'),
-                    'r' => chars.push('\r'),
-                    '0' => chars.push('\0'),
-                    '\\' => chars.push('\\'),
-                    '\'' => chars.push('\''),
-                    '"' => chars.push('"'),
-                    _ => {
-                        return Err(LexerError::with_help(
-                            format!("Unknown escape sequence: \\{}", c),
-                            Span::new(self.source.line, self.source.col - 1),
-                            "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\'",
-                        ));
-                    }
-                }
-                escaped = false;
-            } else {
-                chars.push(c);
-            }
+            self.process_char_literal_char(c, &mut escaped, &mut chars, start_span, start_col)?;
 
             if chars.len() > 1 && !escaped {
                 return Err(LexerError::with_help(
@@ -538,6 +738,48 @@ impl<'a> Lexer<'a> {
         ))
     }
 
+    fn finish_char_literal(
+        &mut self,
+        chars: Vec<char>,
+        mut start_span: Span,
+        start_col: usize,
+    ) -> Result<Token, LexerError> {
+        if chars.len() != 1 {
+            return Err(LexerError::with_help(
+                "Char literal must be exactly one character",
+                Span::new(start_span.row_start, start_col + 1),
+                "Example: 'a', '\\n', '\\''",
+            ));
+        }
+        start_span.complete(self.source.line, self.source.col);
+        Ok(Token::new(TokenType::Char(chars[0]), start_span))
+    }
+
+    fn process_char_literal_char(
+        &mut self,
+        c: char,
+        escaped: &mut bool,
+        chars: &mut Vec<char>,
+        _start_span: Span,
+        _start_col: usize,
+    ) -> Result<(), LexerError> {
+        if *escaped {
+            if let Some(decoded) = Self::decode_escape(c) {
+                chars.push(decoded);
+            } else {
+                return Err(LexerError::with_help(
+                    format!("Unknown escape sequence: \\{}", c),
+                    Span::new(self.source.line, self.source.col - 1),
+                    "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\'",
+                ));
+            }
+            *escaped = false;
+        } else {
+            chars.push(c);
+        }
+        Ok(())
+    }
+
     fn read_number(&mut self, first_char: char, mut start_span: Span) -> Result<Token, LexerError> {
         let mut num = String::new();
         let mut is_float = false;
@@ -548,19 +790,7 @@ impl<'a> Lexer<'a> {
             is_float = true;
             num.push('0');
             num.push('.');
-            let mut has_digit = false;
-            while let Some(c) = self.source.peek() {
-                if c.is_ascii_digit() {
-                    num.push(self.consume_char());
-                    has_digit = true;
-                } else if c == '_' {
-                    self.source.next_char(); // skip underscores
-                } else {
-                    break;
-                }
-            }
-
-            if !has_digit {
+            if !self.consume_digits_and_underscores(&mut num) {
                 return Err(LexerError::with_help(
                     "Expected digit after decimal point",
                     Span::new(self.source.line, self.source.col),
@@ -574,156 +804,18 @@ impl<'a> Lexer<'a> {
                 num.push(first_char);
             }
 
-            while let Some(c) = self.source.peek() {
-                if c.is_ascii_digit() {
-                    num.push(self.consume_char());
-                } else if c == '_' {
-                    self.source.next_char(); // skip underscores
-                } else {
-                    break;
-                }
-            }
-
-            if self.source.peek() == Some('.') {
-                // Disambiguation:
-                // - If the '.' is followed by a digit, it's a float literal.
-                // - If the '.' is followed by an identifier start (e.g. `1.to_string()`),
-                //   it's a field/method access and the '.' is NOT part of the number.
-                // - Otherwise (e.g. `1.` or `1..2`) this is an invalid numeric literal.
-                let after_dot = self.source.peek_nth(1);
-                if after_dot.is_some_and(|c| c.is_ascii_digit()) {
-                    is_float = true;
-                } else if after_dot.is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
-                    // Leave '.' to be tokenized separately.
-                } else {
-                    return Err(LexerError::new(
-                        "Expected digit after decimal point",
-                        Span::new(self.source.line, self.source.col),
-                    ));
-                }
-            }
-
-            if is_float {
-                num.push(self.consume_char());
-
-                // read digits after decimal point (required)
-                let mut has_digit = false;
-                while let Some(c) = self.source.peek() {
-                    if c.is_ascii_digit() {
-                        num.push(
-                            self.source
-                                .next_char()
-                                .expect("peek returned Some, so next_char should return Some"),
-                        );
-                        has_digit = true;
-                    } else if c == '_' {
-                        self.source.next_char(); // skip underscores
-                    } else {
-                        break;
-                    }
-                }
-
-                if !has_digit {
-                    return Err(LexerError::new(
-                        "Expected digit after decimal point",
-                        Span::new(self.source.line, self.source.col),
-                    ));
-                }
-            }
+            self.consume_digits_and_underscores(&mut num);
+            self.consume_fraction_if_present(&mut num, &mut is_float)?;
         }
 
-        // handle scientific notation (e.g., 1.23e4, 1e-10, 1.23e+10)
-        if let Some('e') | Some('E') = self.source.peek() {
-            is_float = true;
-            num.push(self.consume_char());
-
-            if let Some('+') | Some('-') = self.source.peek() {
-                num.push(self.consume_char());
-            }
-
-            // Require at least one digit after 'e' and optional sign
-            let mut has_exponent_digit = false;
-            while let Some(c) = self.source.peek() {
-                if c.is_ascii_digit() {
-                    num.push(self.consume_char());
-                    has_exponent_digit = true;
-                } else if c == '_' {
-                    self.source.next_char(); // skip underscores
-                } else {
-                    break;
-                }
-            }
-
-            if !has_exponent_digit {
-                return Err(LexerError::with_help(
-                    "Missing exponent in scientific notation",
-                    Span::new(self.source.line, self.source.col),
-                    "The 'e' notation requires digits after it, e.g. 1e10, 2.5e-3",
-                ));
-            }
-        }
+        self.consume_exponent_if_present(&mut num, &mut is_float)?;
 
         start_span.complete(self.source.line, self.source.col);
 
         if is_float {
-            // Catch cases like 1.2.3 early: a second dot followed by a digit.
-            if self.source.peek() == Some('.')
-                && self.source.peek_nth(1).is_some_and(|c| c.is_ascii_digit())
-            {
-                self.consume_remaining_invalid(&mut num, &mut start_span);
-                return Err(LexerError::with_help(
-                    format!("Invalid float literal: {}", num),
-                    start_span,
-                    "A number can only have one decimal point. Use separate expressions for chained field access.",
-                ));
-            }
-
-            // Reject suffixes like 1.2abc
-            if self
-                .source
-                .peek()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            {
-                self.consume_remaining_invalid(&mut num, &mut start_span);
-                return Err(LexerError::with_help(
-                    format!("Invalid float literal: {}", num),
-                    start_span,
-                    "Float literals cannot contain letters. Use a space or separate expression.",
-                ));
-            }
-
-            let clean_num: String = num.chars().filter(|c| *c != '_').collect();
-            clean_num
-                .parse::<f64>()
-                .map(OrderedFloat)
-                .map(|f| Token::new(TokenType::Float(f), start_span))
-                .map_err(|_| LexerError::new(format!("Invalid float literal: {}", num), start_span))
+            self.parse_float_token(num, start_span)
         } else {
-            // Reject suffixes like 123abc
-            if self
-                .source
-                .peek()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            {
-                self.consume_remaining_invalid(&mut num, &mut start_span);
-                return Err(LexerError::with_help(
-                    format!("Invalid integer literal: {}", num),
-                    start_span,
-                    "Integer literals cannot contain letters. Variable names must not start with a digit.",
-                ));
-            }
-
-            let clean_num: String = num.chars().filter(|c| *c != '_').collect();
-            clean_num
-                .parse::<i64>()
-                .map(|i| Token::new(TokenType::Int(i), start_span))
-                .map_err(|_| {
-                    LexerError::with_help(
-                        format!("Invalid integer literal: {}", num),
-                        start_span,
-                        "The integer value is out of range. Valid integers are between -9223372036854775808 and 9223372036854775807.",
-                    )
-                })
+            self.parse_int_token(num, start_span)
         }
     }
 }

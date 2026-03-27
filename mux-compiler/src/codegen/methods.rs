@@ -868,27 +868,7 @@ impl<'a> CodeGenerator<'a> {
             },
             PrimitiveType::Bool => match method_name {
                 "to_string" => {
-                    let bool_i32 = if obj_value.is_int_value() {
-                        let i1_val = obj_value.into_int_value();
-                        self.builder
-                            .build_int_z_extend(i1_val, self.context.i32_type(), "i1_to_i32")
-                            .map_err(|e| e.to_string())?
-                    } else if obj_value.is_pointer_value() {
-                        let extract_func = self
-                            .module
-                            .get_function("mux_value_get_bool")
-                            .ok_or("mux_value_get_bool not found".to_string())?;
-                        let extracted = self
-                            .builder
-                            .build_call(extract_func, &[obj_value.into()], "extract_bool")
-                            .map_err(|e| e.to_string())?
-                            .try_as_basic_value()
-                            .left()
-                            .ok_or_else(|| "Call returned no value".to_string())?;
-                        extracted.into_int_value()
-                    } else {
-                        return Err("Invalid boolean value type".to_string());
-                    };
+                    let bool_i32 = self.bool_to_i32(obj_value)?;
                     let bool_func = self
                         .module
                         .get_function("mux_bool_to_string")
@@ -900,7 +880,7 @@ impl<'a> CodeGenerator<'a> {
                     self.call_runtime_to_string_from_call(call)
                 }
                 "to_int" => {
-                    let bool_i32 = obj_value.into_int_value();
+                    let bool_i32 = self.bool_to_i32(obj_value)?.into_int_value();
                     let int_val = self
                         .builder
                         .build_int_z_extend(bool_i32, self.context.i64_type(), "bool_to_int")
@@ -908,7 +888,7 @@ impl<'a> CodeGenerator<'a> {
                     Ok(int_val.into())
                 }
                 "to_float" => {
-                    let bool_i32 = obj_value.into_int_value();
+                    let bool_i32 = self.bool_to_i32(obj_value)?.into_int_value();
                     let float_val = self
                         .builder
                         .build_unsigned_int_to_float(

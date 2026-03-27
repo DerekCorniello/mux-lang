@@ -94,6 +94,68 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
     (exec_stdout, exec_stderr)
 }
 
+fn collect_mux_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                files.extend(collect_mux_files(&path));
+            } else if path.extension().and_then(|s| s.to_str()) == Some("mux") {
+                files.push(path);
+            }
+        }
+    }
+    files
+}
+
+fn run_snapshot_test(path: &Path, ipv4_re: &Regex, ipv6_re: &Regex) {
+    println!("Compiling and executing file: {}", path.display());
+    let (stdout, stderr) = compile_and_execute_file(path);
+
+    let snapshot_name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown_file");
+
+    let output_to_snapshot = if stderr.is_empty() {
+        stdout.clone()
+    } else {
+        stderr.clone()
+    };
+
+    println!("Creating executable snapshot for: {}", snapshot_name);
+
+    let normalized = ipv4_re.replace_all(&output_to_snapshot, "$host:PORT");
+    let normalized = ipv6_re.replace_all(&normalized, "[$host]:PORT");
+    assert_snapshot!(
+        format!("executable_integration__{}", snapshot_name),
+        normalized
+    );
+}
+
+fn process_test_file(path: &Path, ipv4_re: &Regex, ipv6_re: &Regex) {
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+    println!("\n=== Testing executable for file: {} ===", file_name);
+
+    match std::panic::catch_unwind(|| {
+        run_snapshot_test(path, ipv4_re, ipv6_re);
+        println!("✓ Successfully processed executable for: {}", file_name);
+    }) {
+        Ok(_) => {}
+        Err(e) => {
+            println!(
+                "❌ Error processing executable for file {}: {:?}",
+                file_name, e
+            );
+            panic!("Executable test failed while processing: {}", file_name);
+        }
+    }
+}
+
 #[test]
 fn test_executable_all_mux_files_in_dir() {
     let test_dir = "../test_scripts";
@@ -107,74 +169,14 @@ fn test_executable_all_mux_files_in_dir() {
         "Scanning directory for executable tests: {}",
         dir_path.display()
     );
-    fn collect_mux_files(dir: &Path) -> Vec<PathBuf> {
-        let mut files = Vec::new();
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    files.extend(collect_mux_files(&path));
-                } else if path.extension().and_then(|s| s.to_str()) == Some("mux") {
-                    files.push(path);
-                }
-            }
-        }
-        files
-    }
 
     let mut test_files = collect_mux_files(&dir_path);
-
-    // Sort files for consistent test order
     test_files.sort();
 
-    // Precompile regexes once to avoid recompiling them in the loop
     let ipv4_re = Regex::new(r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}):\d+\b").unwrap();
     let ipv6_re = Regex::new(r"\[(?P<host>[0-9a-fA-F:]+)\]:\d+\b").unwrap();
 
     for path in test_files {
-        let file_name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown");
-        println!("\n=== Testing executable for file: {} ===", file_name);
-
-        match std::panic::catch_unwind(|| {
-            println!("Compiling and executing file: {}", path.display());
-            let (stdout, stderr) = compile_and_execute_file(&path);
-
-            let snapshot_name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown_file");
-
-            // Capture stdout for runtime output, stderr for compile errors
-            let output_to_snapshot = if stderr.is_empty() {
-                stdout.clone()
-            } else {
-                stderr.clone()
-            };
-
-            println!("Creating executable snapshot for: {}", snapshot_name);
-
-            // Normalize ephemeral ports in output so snapshots are deterministic.
-            // Replace IPv4 addresses like 127.0.0.1:12345 -> 127.0.0.1:PORT
-            // and IPv6 addresses like [::1]:12345 -> [::1]:PORT
-            let normalized = ipv4_re.replace_all(&output_to_snapshot, "$host:PORT");
-            let normalized = ipv6_re.replace_all(&normalized, "[$host]:PORT");
-            assert_snapshot!(
-                format!("executable_integration__{}", snapshot_name),
-                normalized
-            );
-            println!("✓ Successfully processed executable for: {}", file_name);
-        }) {
-            Ok(_) => {}
-            Err(e) => {
-                println!(
-                    "❌ Error processing executable for file {}: {:?}",
-                    file_name, e
-                );
-                panic!("Executable test failed while processing: {}", file_name);
-            }
-        }
+        process_test_file(&path, &ipv4_re, &ipv6_re);
     }
 }

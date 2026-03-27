@@ -15,7 +15,11 @@ pub use types::{BuiltInSig, GenericContext, MethodSig, Symbol, SymbolKind, Type}
 pub use unifier::Unifier;
 
 // Internal imports
-use crate::ast::*;
+use crate::ast::{
+    AstNode, BinaryOp, EnumVariant, ExpressionKind, ExpressionNode, Field, FunctionNode,
+    ImportSpec, LiteralNode, Param, PatternNode, PrimitiveType, Spanned, StatementKind,
+    StatementNode, TraitBound, TraitRef, TypeKind, TypeNode, UnaryOp,
+};
 use crate::diagnostic::Files;
 use crate::lexer::Span;
 use std::cell::RefCell;
@@ -24,6 +28,8 @@ use std::rc::Rc;
 
 type GenericBound = (String, Vec<Type>);
 type GenericBounds = Vec<GenericBound>;
+type ResolvedInterface = (Vec<Type>, HashMap<String, MethodSig>);
+type ClassFieldInfo = (Type, bool);
 
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
@@ -658,74 +664,10 @@ impl SemanticAnalyzer {
 
     pub fn get_expression_type(&mut self, expr: &ExpressionNode) -> Result<Type, SemanticError> {
         match &expr.kind {
-            ExpressionKind::Literal(lit) => match lit {
-                LiteralNode::Integer(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Int)),
-                LiteralNode::Float(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Float)),
-                LiteralNode::String(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Str)),
-                LiteralNode::Boolean(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Bool)),
-                LiteralNode::Char(_) => Ok(Type::Primitive(crate::ast::PrimitiveType::Char)),
-            },
+            ExpressionKind::Literal(_) => self.infer_literal_type(expr),
             ExpressionKind::None => Ok(Type::Optional(Box::new(Type::Never))),
             ExpressionKind::Identifier(name) => {
-                if name == "self" {
-                    // For 'self', use the current self type if available
-                    if let Some(self_type) = &self.current_self_type {
-                        Ok(self_type.clone())
-                    } else {
-                        // placeholder type to allow analysis to continue when self type is unavailable
-                        Ok(Type::Named("Unknown".to_string(), vec![]))
-                    }
-                } else {
-                    // For other identifiers, check current scope first, then global symbols
-                    let symbol = self
-                        .symbol_table
-                        .get_cloned(name)
-                        .or_else(|| self.symbol_table.lookup(name));
-
-                    if let Some(symbol) = symbol {
-                        let type_ = symbol.type_.clone().ok_or_else(|| {
-                            SemanticError::new(
-                                format!("Symbol '{}' has no type information", name),
-                                expr.span,
-                            )
-                        })?;
-                        // For type parameters, return Type::Variable instead of Type::Generic
-                        let type_ = match &type_ {
-                            Type::Generic(n) if n == name => Type::Variable(name.clone()),
-                            _ => type_,
-                        };
-                        Ok(type_)
-                    } else if let Some(sig) = self.get_builtin_sig(name) {
-                        Ok(Type::Function {
-                            params: sig.params.clone(),
-                            returns: Box::new(sig.return_type.clone()),
-                            default_count: 0,
-                        })
-                    } else {
-                        // Conservative fallback: allow unqualified references to class
-                        // names exported by imported stdlib modules (e.g., when doing
-                        // `import std.sync` let `Mutex.new()` resolve). This does not
-                        // consult user modules and avoids introducing wildcard imports.
-                        let stdlib_names: std::collections::HashSet<String> =
-                            Self::stdlib_modules()
-                                .iter()
-                                .map(|(_, short_name)| short_name.to_string())
-                                .collect();
-
-                        for (module_ns, module_symbols) in &self.imported_symbols {
-                            if !stdlib_names.contains(module_ns) {
-                                continue;
-                            }
-                            if let Some(sym) = module_symbols.get(name)
-                                && matches!(sym.kind, SymbolKind::Class)
-                            {
-                                return Ok(Type::Named(name.clone(), Vec::new()));
-                            }
-                        }
-
-                        Err(self.undefined_symbol_error("variable", name, expr.span))
-                    }
-                }
+                self.resolve_identifier_expression_type(name, expr.span)
             }
             ExpressionKind::Binary {
                 left,
@@ -733,706 +675,998 @@ impl SemanticAnalyzer {
                 op,
                 op_span,
                 ..
-            } => {
-                let left_type = self.get_expression_type(left)?;
-                let right_type = self.get_expression_type(right)?;
-
-                if *op == crate::ast::BinaryOp::Assign {
-                    if let crate::ast::ExpressionKind::Identifier(name) = &left.kind {
-                        let symbol = self.symbol_table.lookup(name).ok_or_else(|| {
-                            self.undefined_symbol_error("variable", name, left.span)
-                        })?;
-
-                        // Check if trying to assign to a constant
-                        if symbol.kind == SymbolKind::Constant {
-                            return Err(SemanticError::with_help(
-                                format!("Cannot assign to constant '{}'", name),
-                                expr.span,
-                                "Constants cannot be modified after initialization",
-                            ));
-                        }
-
-                        let var_type = symbol.type_.as_ref().ok_or_else(|| {
-                            SemanticError::new(
-                                format!("Variable '{}' has no type information", name),
-                                left.span,
-                            )
-                        })?;
-                        if let Type::Reference(inner) = var_type {
-                            self.check_type_compatibility(inner, &right_type, expr.span)?;
-                        } else {
-                            self.check_type_compatibility(var_type, &right_type, expr.span)?;
-                        }
-                    } else if let crate::ast::ExpressionKind::FieldAccess {
-                        expr: obj_expr,
-                        field,
-                    } = &left.kind
-                    {
-                        // Check if trying to assign to a const field
-                        let obj_type = self.get_expression_type(obj_expr)?;
-
-                        if let Type::Named(class_name, _) = &obj_type
-                            && let Some(symbol) = self.symbol_table.lookup(class_name)
-                        {
-                            if let Some((_field_type, is_const)) = symbol.fields.get(field)
-                                && *is_const
-                            {
-                                return Err(SemanticError::with_help(
-                                    format!("Cannot assign to const field '{}'", field),
-                                    expr.span,
-                                    "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
-                                ));
-                            }
-
-                            if let Some((field_type, _)) = symbol.fields.get(field) {
-                                self.check_type_compatibility(field_type, &right_type, expr.span)?;
-                            } else {
-                                return Err(
-                                    self.field_not_found_error(field, class_name, left.span)
-                                );
-                            }
-                        }
-                    } else if let crate::ast::ExpressionKind::Unary {
-                        op: crate::ast::UnaryOp::Deref,
-                        op_span: _,
-                        expr: _,
-                        postfix: _,
-                    } = &left.kind
-                    {
-                    } else if let crate::ast::ExpressionKind::ListAccess {
-                        expr: target_expr,
-                        index: _,
-                    } = &left.kind
-                    {
-                        // Index assignment: list[index] = value or map[key] = value
-                        let target_type = self.get_expression_type(target_expr)?;
-                        match target_type {
-                            Type::List(ref elem_type) => {
-                                self.check_type_compatibility(elem_type, &right_type, expr.span)?;
-                            }
-                            Type::Map(_, ref value_type) => {
-                                self.check_type_compatibility(value_type, &right_type, expr.span)?;
-                            }
-                            _ => {
-                                return Err(SemanticError::with_help(
-                                    format!(
-                                        "Cannot assign to index on type {}",
-                                        format_type(&target_type)
-                                    ),
-                                    expr.span,
-                                    "Only lists and maps support index assignment. Example: my_list[0] = value, my_map[\"key\"] = value",
-                                ));
-                            }
-                        }
-                    } else {
-                        return Err(SemanticError::with_help(
-                            "Cannot assign to this expression",
-                            expr.span,
-                            "Only variables, fields, dereferences, and indexed expressions can be assigned to",
-                        ));
-                    }
-                    Ok(right_type) // assignment returns the assigned value
-                } else if matches!(
-                    op,
-                    crate::ast::BinaryOp::AddAssign
-                        | crate::ast::BinaryOp::SubtractAssign
-                        | crate::ast::BinaryOp::MultiplyAssign
-                        | crate::ast::BinaryOp::DivideAssign
-                        | crate::ast::BinaryOp::ModuloAssign
-                ) {
-                    if let crate::ast::ExpressionKind::Identifier(name) = &left.kind {
-                        let symbol = self.symbol_table.lookup(name).ok_or_else(|| {
-                            self.undefined_symbol_error("variable", name, left.span)
-                        })?;
-
-                        // Check if trying to modify a constant
-                        if symbol.kind == SymbolKind::Constant {
-                            return Err(SemanticError::with_help(
-                                format!("Cannot modify constant '{}'", name),
-                                expr.span,
-                                "Constants cannot be modified after initialization. Declare the variable with 'auto' instead of 'const' if you need to change its value.",
-                            ));
-                        }
-                    } else if let crate::ast::ExpressionKind::FieldAccess {
-                        expr: obj_expr,
-                        field,
-                    } = &left.kind
-                    {
-                        let obj_type = self.get_expression_type(obj_expr)?;
-
-                        if let Type::Named(class_name, _) = &obj_type
-                            && let Some(symbol) = self.symbol_table.lookup(class_name)
-                        {
-                            if let Some((_field_type, is_const)) = symbol.fields.get(field) {
-                                // Check if trying to modify a const field
-                                if *is_const {
-                                    return Err(SemanticError::with_help(
-                                        format!("Cannot modify const field '{}'", field),
-                                        expr.span,
-                                        "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
-                                    ));
-                                }
-
-                                let base_op = match op {
-                                    crate::ast::BinaryOp::AddAssign => crate::ast::BinaryOp::Add,
-                                    crate::ast::BinaryOp::SubtractAssign => {
-                                        crate::ast::BinaryOp::Subtract
-                                    }
-                                    crate::ast::BinaryOp::MultiplyAssign => {
-                                        crate::ast::BinaryOp::Multiply
-                                    }
-                                    crate::ast::BinaryOp::DivideAssign => {
-                                        crate::ast::BinaryOp::Divide
-                                    }
-                                    crate::ast::BinaryOp::ModuloAssign => {
-                                        crate::ast::BinaryOp::Modulo
-                                    }
-                                    _ => unreachable!(),
-                                };
-
-                                self.resolve_binary_operator(&left_type, &right_type, &base_op)
-                                        .ok_or_else(|| SemanticError::with_help(
-                                            format!(
-                                                "Operator '{}' is not supported between types {} and {}",
-                                                format_binary_op(&base_op),
-                                                format_type(&left_type),
-                                                format_type(&right_type)
-                                            ),
-                                            *op_span,
-                                            format!(
-                                                "The '{}' operator cannot be applied to {} and {}. Ensure both operands have compatible types.",
-                                                format_binary_op(&base_op),
-                                                format_type(&left_type),
-                                                format_type(&right_type)
-                                            ),
-                                        ))?;
-                            } else {
-                                return Err(
-                                    self.field_not_found_error(field, class_name, left.span)
-                                );
-                            }
-                        }
-                    } else if let crate::ast::ExpressionKind::Unary {
-                        op: crate::ast::UnaryOp::Deref,
-                        op_span: _,
-                        expr: _,
-                        postfix: _,
-                    } = &left.kind
-                    {
-                    }
-
-                    let base_op = match op {
-                        crate::ast::BinaryOp::AddAssign => crate::ast::BinaryOp::Add,
-                        crate::ast::BinaryOp::SubtractAssign => crate::ast::BinaryOp::Subtract,
-                        crate::ast::BinaryOp::MultiplyAssign => crate::ast::BinaryOp::Multiply,
-                        crate::ast::BinaryOp::DivideAssign => crate::ast::BinaryOp::Divide,
-                        crate::ast::BinaryOp::ModuloAssign => crate::ast::BinaryOp::Modulo,
-                        _ => unreachable!(),
-                    };
-
-                    if let Some(result_type) =
-                        self.resolve_binary_operator(&left_type, &right_type, &base_op)
-                    {
-                        Ok(result_type)
-                    } else {
-                        Err(SemanticError::with_help(
-                            format!(
-                                "Operator '{}' is not supported between types {} and {}",
-                                format_binary_op(&base_op),
-                                format_type(&left_type),
-                                format_type(&right_type)
-                            ),
-                            *op_span,
-                            Self::binary_op_help(&left_type, &right_type, &base_op),
-                        ))
-                    }
-                } else if let Some(result_type) =
-                    self.resolve_binary_operator(&left_type, &right_type, op)
-                {
-                    Ok(result_type)
-                } else {
-                    Err(SemanticError::with_help(
-                        format!(
-                            "Operator '{}' is not supported between types {} and {}",
-                            format_binary_op(op),
-                            format_type(&left_type),
-                            format_type(&right_type)
-                        ),
-                        *op_span,
-                        Self::binary_op_help(&left_type, &right_type, op),
-                    ))
-                }
-            }
+            } => self.resolve_binary_expression_type(left, right, op, op_span, expr.span),
             ExpressionKind::Unary {
                 expr, op, op_span, ..
-            } => match op {
-                UnaryOp::Not => Ok(Type::Primitive(crate::ast::PrimitiveType::Bool)),
-                UnaryOp::Neg => {
-                    let operand_type = self.get_expression_type(expr)?;
-                    match operand_type {
-                        Type::Primitive(crate::ast::PrimitiveType::Int)
-                        | Type::Primitive(crate::ast::PrimitiveType::Float) => Ok(operand_type),
-                        _ => Err(SemanticError::with_help(
-                            format!(
-                                "Negation operator '-' requires a numeric operand, found {}",
-                                format_type(&operand_type)
-                            ),
-                            *op_span,
-                            "The unary '-' operator can only be applied to int or float values",
-                        )),
-                    }
-                }
-                UnaryOp::Ref => {
-                    let operand_type = self.get_expression_type(expr)?;
-                    Ok(Type::Reference(Box::new(operand_type)))
-                }
-                UnaryOp::Deref => {
-                    let operand_type = self.get_expression_type(expr)?;
-                    if let Type::Reference(inner) = operand_type {
-                        Ok(*inner)
-                    } else {
-                        Err(SemanticError::with_help(
-                            format!(
-                                "Cannot dereference type {}, which is not a reference",
-                                format_type(&operand_type)
-                            ),
-                            *op_span,
-                            "The dereference operator '*' can only be applied to reference types (e.g., ref int)",
-                        ))
-                    }
-                }
-                UnaryOp::Incr | UnaryOp::Decr => {
-                    self.check_not_modifying_constant(expr, op_span)?;
-                    let operand_type = self.get_expression_type(expr)?;
-                    match operand_type {
-                        Type::Primitive(crate::ast::PrimitiveType::Int) => Ok(operand_type),
-                        _ => Err(SemanticError::with_help(
-                            format!(
-                                "Increment/decrement operators require an int operand, found {}",
-                                format_type(&operand_type)
-                            ),
-                            *op_span,
-                            "The '++' and '--' operators can only be applied to int variables",
-                        )),
-                    }
-                }
-            },
+            } => self.resolve_unary_expression_type(expr, op, op_span),
             ExpressionKind::Call { func, args } => {
-                // get function type
-                let func_type = match &func.kind {
-                    ExpressionKind::GenericType(name, type_args) => {
-                        self.get_instantiated_constructor_type(name, type_args, func.span)?
-                    }
-                    ExpressionKind::Identifier(name) => match self.get_expression_type(func) {
-                        Ok(t) => t,
-                        Err(e) if e.message.contains("Undefined variable") => {
-                            return Err(self.undefined_symbol_error("function", name, func.span));
-                        }
-                        Err(e) => return Err(e),
-                    },
-                    _ => self.get_expression_type(func)?,
-                };
-                match func_type {
-                    Type::Function {
-                        params,
-                        returns,
-                        default_count,
-                        ..
-                    } => {
-                        // For named functions, verify the symbol's default_count matches
-                        let actual_default_count = match &func.kind {
-                            ExpressionKind::Identifier(name) => {
-                                // Use the greater of type default_count and symbol default_count
-                                // (they should be the same for functions, but type carries lambda defaults)
-                                let symbol_default = self
-                                    .symbol_table
-                                    .lookup(name)
-                                    .map(|s| s.default_param_count)
-                                    .unwrap_or(0);
-                                std::cmp::max(default_count, symbol_default)
-                            }
-                            _ => default_count, // For lambdas and other expressions, use type's default_count
-                        };
-
-                        let min_args = params.len() - actual_default_count;
-                        let max_args = params.len();
-
-                        if args.len() < min_args || args.len() > max_args {
-                            let func_name = match &func.kind {
-                                ExpressionKind::Identifier(name) => format!("'{}'", name),
-                                ExpressionKind::FieldAccess { field, .. } => format!("'{}'", field),
-                                _ => "this function".to_string(),
-                            };
-                            if actual_default_count > 0 {
-                                return Err(SemanticError::with_help(
-                                    format!(
-                                        "{} expects {} to {} arguments, but {} {} provided",
-                                        func_name,
-                                        min_args,
-                                        max_args,
-                                        args.len(),
-                                        if args.len() == 1 { "was" } else { "were" }
-                                    ),
-                                    expr.span,
-                                    format!(
-                                        "{} has {} required parameter(s) and {} optional parameter(s) with defaults",
-                                        func_name, min_args, actual_default_count
-                                    ),
-                                ));
-                            } else {
-                                return Err(SemanticError::with_help(
-                                    format!(
-                                        "{} expects {} argument(s), but {} {} provided",
-                                        func_name,
-                                        params.len(),
-                                        args.len(),
-                                        if args.len() == 1 { "was" } else { "were" }
-                                    ),
-                                    expr.span,
-                                    if args.len() > params.len() {
-                                        "Too many arguments. Remove the extra argument(s)."
-                                            .to_string()
-                                    } else {
-                                        format!(
-                                            "Not enough arguments. {} requires {} argument(s).",
-                                            func_name,
-                                            params.len()
-                                        )
-                                    },
-                                ));
-                            }
-                        }
-
-                        let mut unifier = Unifier::new();
-                        // Only validate provided arguments, missing ones will use defaults
-                        for (param, arg) in params.iter().zip(args.iter()) {
-                            let arg_type = self.get_expression_type(arg)?;
-                            unifier.unify(param, &arg_type, expr.span)?;
-                        }
-                        let maybe_func_name = match &func.kind {
-                            ExpressionKind::Identifier(name) => Some(name.as_str()),
-                            ExpressionKind::FieldAccess { field, .. } => Some(field.as_str()),
-                            _ => None,
-                        };
-                        if let Some(func_name) = maybe_func_name {
-                            self.infer_missing_type_params_from_function_bounds(
-                                func_name,
-                                &mut unifier.substitutions,
-                            );
-                        }
-                        let unified_returns = unifier.apply(&returns);
-                        Ok(unified_returns)
-                    }
-                    _ => Err(SemanticError::with_help(
-                        "Cannot call non-function type",
-                        expr.span,
-                        "Only functions can be called with '()'. Ensure the expression before '()' is a function.",
-                    )),
-                }
+                self.resolve_call_expression_type(func, args, expr.span)
             }
             ExpressionKind::FieldAccess { expr, field } => {
-                // Try to get the type of the base expression. If that fails because the
-                // identifier is undefined, attempt a conservative lookup into imported
-                // stdlib module symbols to resolve class-qualified accesses like
-                // `Mutex.new()` when `import std.sync` was used.
-                let expr_type_res = self.get_expression_type(expr);
-                let expr_type = match expr_type_res {
-                    Ok(t) => t,
-                    Err(e) => {
-                        // Only try the fallback when the expression is a simple identifier
-                        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind {
-                            // Restrict to stdlib namespaces
-                            let stdlib_names: std::collections::HashSet<String> =
-                                Self::stdlib_modules()
-                                    .iter()
-                                    .map(|(_, n)| n.to_string())
-                                    .collect();
-                            for (ns, module_symbols) in &self.imported_symbols {
-                                if !stdlib_names.contains(ns) {
-                                    continue;
-                                }
-                                if let Some(class_sym) = module_symbols.get(name)
-                                    && matches!(class_sym.kind, SymbolKind::Class)
-                                {
-                                    // If the class defines the method, return its function type
-                                    if let Some(method_sig) = class_sym.methods.get(field) {
-                                        return Ok(Type::Function {
-                                            params: method_sig.params.clone(),
-                                            returns: Box::new(method_sig.return_type.clone()),
-                                            default_count: 0,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        return Err(e);
-                    }
-                };
-
-                if let Type::Module(module_name) = &expr_type {
-                    self.resolve_module_field(module_name, field, expr.span)
-                } else if let Type::Reference(inner) = &expr_type {
-                    let inner_type = *inner.clone();
-                    self.resolve_reference_field(&inner_type, field, expr.span)
-                } else if let Some(method_sig) = self.get_method_sig(&expr_type, field) {
-                    Ok(Type::Function {
-                        params: method_sig.params,
-                        returns: Box::new(method_sig.return_type),
-                        default_count: 0,
-                    })
-                } else if let Type::Named(name, args) = &expr_type {
-                    self.resolve_named_field(&expr_type, name, args, field, expr.span)
-                } else if let Type::Tuple(left_type, right_type) = &expr_type {
-                    match field.as_str() {
-                        "left" => Ok(*left_type.clone()),
-                        "right" => Ok(*right_type.clone()),
-                        _ => Err(SemanticError::with_help(
-                            format!("Unknown field '{}' on tuple type", field),
-                            expr.span,
-                            "Tuples only have two fields: 'left' and 'right'. Example: auto pair = (1, 2); print(int_to_string(pair.left))",
-                        )),
-                    }
-                } else {
-                    let type_name = format_type(&expr_type);
-                    Err(self.method_not_found_error(field, &type_name, expr.span))
-                }
+                self.resolve_field_access_type(expr, field, expr.span)
             }
             ExpressionKind::ListAccess { expr, index: _ } => {
-                // list/map access returns direct element_type (runtime error if out of bounds/key not found)
-                // Use .get() method for safe Optional access
-                let target_type = self.get_expression_type(expr)?;
-                match target_type {
-                    Type::List(elem_type) => Ok(*elem_type),
-                    Type::Map(_, value_type) => Ok(*value_type),
-                    Type::EmptyMap => Err(SemanticError::with_help(
-                        "Cannot index empty map",
-                        expr.span,
-                        "The map type is unknown. Provide type annotations or add entries to the map literal.",
-                    )),
-                    _ => Err(SemanticError::with_help(
-                        "Cannot index non-list type",
-                        expr.span,
-                        "Only lists and maps can be indexed with '[]'. Examples: my_list[0], my_map['key']",
-                    )),
-                }
+                self.resolve_list_access_type(expr, expr.span)
             }
-            ExpressionKind::ListLiteral(elements) => {
-                if elements.is_empty() {
-                    Ok(Type::EmptyList)
-                } else {
-                    // Check that all elements have the same type
-                    let first_type = self.get_expression_type(&elements[0])?;
-
-                    // Validate ALL elements match the first element's type
-                    for (index, element) in elements.iter().enumerate() {
-                        let element_type = self.get_expression_type(element)?;
-                        if self
-                            .check_type_compatibility(&first_type, &element_type, element.span)
-                            .is_err()
-                        {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "List element type mismatch: expected {}, but element at index {} has type {}",
-                                    format_type(&first_type),
-                                    index,
-                                    format_type(&element_type)
-                                ),
-                                element.span,
-                                "All elements in a list must have the same type. The list type is inferred from the first element.",
-                            ));
-                        }
-                    }
-
-                    Ok(Type::List(Box::new(first_type)))
-                }
-            }
-            ExpressionKind::MapLiteral { entries, .. } => {
-                if entries.is_empty() {
-                    Ok(Type::EmptyMap)
-                } else {
-                    let (key, value) = &entries[0];
-                    let key_type = self.get_expression_type(key)?;
-                    let value_type = self.get_expression_type(value)?;
-                    Ok(Type::Map(Box::new(key_type), Box::new(value_type)))
-                }
-            }
+            ExpressionKind::ListLiteral(elements) => self.resolve_list_literal_type(elements),
+            ExpressionKind::MapLiteral { entries, .. } => self.resolve_map_literal_type(entries),
             ExpressionKind::If {
                 then_expr,
                 else_expr,
                 ..
-            } => {
-                let then_type = self.get_expression_type(then_expr)?;
-                let else_type = self.get_expression_type(else_expr)?;
-                if then_type == else_type {
-                    Ok(then_type)
-                } else {
-                    Err(SemanticError::with_help(
-                        "If expression branches must have the same type",
-                        expr.span,
-                        format!(
-                            "Then branch has type {}, else branch has type {}",
-                            format_type(&then_type),
-                            format_type(&else_type)
-                        ),
-                    ))
-                }
-            }
+            } => self.resolve_if_expression_type(then_expr, else_expr, expr.span),
             ExpressionKind::Lambda {
                 params,
                 return_type,
                 body,
-            } => {
-                // Check if this lambda has already been analyzed (captures detected)
-                // If so, just return its type without re-analyzing to avoid scope issues
-                if self.lambda_captures.contains_key(&expr.span) {
-                    let param_types = params
-                        .iter()
-                        .map(|p| self.resolve_type(&p.type_))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let resolved_return_type = self.resolve_type(return_type)?;
-                    let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
-                    return Ok(Type::Function {
-                        params: param_types,
-                        returns: Box::new(resolved_return_type),
-                        default_count,
-                    });
-                }
-
-                // Collect parameter names to identify what's local vs captured
-                let mut local_vars = std::collections::HashSet::new();
-                for param in params {
-                    local_vars.insert(param.name.clone());
-                }
-
-                self.symbol_table.push_scope()?;
-                for param in params {
-                    let param_type = self.resolve_type(&param.type_)?;
-                    self.symbol_table.add_symbol(
-                        &param.name,
-                        Self::make_symbol(SymbolKind::Variable, param.type_.span, Some(param_type)),
-                    )?;
-                }
-                self.analyze_block(body, None)?;
-
-                // Detect free variables (captured variables)
-                let captures = self.find_free_variables_in_block(body, &local_vars)?;
-
-                // Store captures for this lambda using its span as key
-                self.lambda_captures.insert(expr.span, captures);
-
-                let param_types = params
-                    .iter()
-                    .map(|p| self.resolve_type(&p.type_))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let return_type_resolved = if body.is_empty() {
-                    Type::Void
-                } else {
-                    match &body
-                        .last()
-                        .expect("body is not empty (checked above), so last() should return Some")
-                        .kind
-                    {
-                        StatementKind::Expression(expr) => self.get_expression_type(expr)?,
-                        StatementKind::Return(Some(expr)) => self.get_expression_type(expr)?,
-                        _ => Type::Void,
-                    }
-                };
-                self.symbol_table.pop_scope()?;
-                let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
-                Ok(Type::Function {
-                    params: param_types,
-                    returns: Box::new(return_type_resolved),
-                    default_count,
-                })
-            }
-            ExpressionKind::SetLiteral(elements) => {
-                if elements.is_empty() {
-                    Ok(Type::EmptySet)
-                } else {
-                    let elem_type = self.get_expression_type(&elements[0])?;
-                    Ok(Type::Set(Box::new(elem_type)))
-                }
-            }
+            } => self.resolve_lambda_type(params, return_type, body, expr.span),
+            ExpressionKind::SetLiteral(elements) => self.resolve_set_literal_type(elements),
             ExpressionKind::TupleLiteral(elements) => {
-                if elements.len() != 2 {
-                    return Err(SemanticError::with_help(
-                        format!(
-                            "Tuple must have exactly 2 elements, found {}",
-                            elements.len()
-                        ),
-                        expr.span,
-                        "Tuples in Mux always contain exactly 2 elements: (left, right). Example: auto pair = (1, \"hello\")",
-                    ));
-                }
-                let left_type = self.get_expression_type(&elements[0])?;
-                let right_type = self.get_expression_type(&elements[1])?;
-                Ok(Type::Tuple(Box::new(left_type), Box::new(right_type)))
+                self.resolve_tuple_literal_type(elements, expr.span)
             }
             ExpressionKind::GenericType(name, type_args) => {
-                if name == "tuple" {
-                    if type_args.len() != 2 {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Tuple type requires exactly 2 type arguments, got {}",
-                                type_args.len()
-                            ),
-                            expr.span,
-                            "Tuple types always have exactly 2 type parameters. Example: tuple<int, string>",
-                        ));
-                    }
-                    let left_type = Box::new(self.resolve_type(&type_args[0])?);
-                    let right_type = Box::new(self.resolve_type(&type_args[1])?);
-                    return Ok(Type::Tuple(left_type, right_type));
-                }
-                let (lookup_name, symbol): (String, Symbol) =
-                    if let Some((module_name, type_name)) = name.split_once('.') {
-                        let module_symbols =
-                            self.imported_symbols.get(module_name).ok_or_else(|| {
-                                self.undefined_symbol_error("module", module_name, expr.span)
-                            })?;
-                        let symbol = module_symbols.get(type_name).ok_or_else(|| {
-                            self.undefined_symbol_error("type", type_name, expr.span)
-                        })?;
-                        if self.symbol_table.lookup(type_name).is_none() {
-                            let _ = self.symbol_table.add_symbol(type_name, symbol.clone());
-                        }
-                        (type_name.to_string(), symbol.clone())
-                    } else if let Some(symbol) = self.symbol_table.lookup(name) {
-                        (name.clone(), symbol)
-                    } else {
-                        return Err(self.undefined_symbol_error("type", name, expr.span));
-                    };
-
-                let expected_count = symbol.type_params.len();
-                let actual_count = type_args.len();
-                if expected_count != actual_count {
-                    return Err(SemanticError::with_help(
-                        format!(
-                            "Generic type '{}' requires {} type argument(s), got {}",
-                            lookup_name, expected_count, actual_count
-                        ),
-                        expr.span,
-                        format!(
-                            "Provide exactly {} type argument{} in angle brackets, e.g. {}<{}>",
-                            expected_count,
-                            if expected_count == 1 { "" } else { "s" },
-                            lookup_name,
-                            symbol
-                                .type_params
-                                .iter()
-                                .map(|(p, _)| p.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ),
-                    ));
-                }
-
-                let resolved_args = type_args
-                    .iter()
-                    .map(|arg| self.resolve_type(arg))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Type::Named(lookup_name, resolved_args))
+                self.resolve_generic_type(name, type_args, expr.span)
             }
+        }
+    }
+
+    fn resolve_field_access_type(
+        &mut self,
+        expr: &ExpressionNode,
+        field: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let expr_type_res = self.get_expression_type(expr);
+        let expr_type = match expr_type_res {
+            Ok(t) => t,
+            Err(e) => {
+                if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind
+                    && let Some(func_type) = self.try_stdlib_method_lookup(name, field)
+                {
+                    return Ok(func_type);
+                }
+                return Err(e);
+            }
+        };
+
+        self.resolve_field_access_by_type(&expr_type, field, span)
+    }
+
+    fn try_stdlib_method_lookup(&self, name: &str, field: &str) -> Option<Type> {
+        let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
+            .iter()
+            .map(|(_, n)| n.to_string())
+            .collect();
+        for (ns, module_symbols) in &self.imported_symbols {
+            if !stdlib_names.contains(ns) {
+                continue;
+            }
+            if let Some(class_sym) = module_symbols.get(name)
+                && matches!(class_sym.kind, SymbolKind::Class)
+                && let Some(method_sig) = class_sym.methods.get(field)
+            {
+                return Some(Type::Function {
+                    params: method_sig.params.clone(),
+                    returns: Box::new(method_sig.return_type.clone()),
+                    default_count: 0,
+                });
+            }
+        }
+        None
+    }
+
+    fn resolve_field_access_by_type(
+        &mut self,
+        expr_type: &Type,
+        field: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if let Type::Module(module_name) = expr_type {
+            return self.resolve_module_field(module_name, field, span);
+        }
+        if let Type::Reference(inner) = expr_type {
+            let inner_type = (*inner).clone();
+            return self.resolve_reference_field(&inner_type, field, span);
+        }
+        if let Some(method_sig) = self.get_method_sig(expr_type, field) {
+            return Ok(Type::Function {
+                params: method_sig.params,
+                returns: Box::new(method_sig.return_type),
+                default_count: 0,
+            });
+        }
+        if let Type::Named(name, args) = expr_type {
+            return self.resolve_named_field(expr_type, name, args, field, span);
+        }
+        if let Type::Tuple(left_type, right_type) = expr_type {
+            return match field {
+                "left" => Ok(*left_type.clone()),
+                "right" => Ok(*right_type.clone()),
+                _ => Err(SemanticError::with_help(
+                    format!("Unknown field '{}' on tuple type", field),
+                    span,
+                    "Tuples only have two fields: 'left' and 'right'. Example: auto pair = (1, 2); print(int_to_string(pair.left))",
+                )),
+            };
+        }
+        let type_name = format_type(expr_type);
+        Err(self.method_not_found_error(field, &type_name, span))
+    }
+
+    fn resolve_list_access_type(
+        &mut self,
+        expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let target_type = self.get_expression_type(expr)?;
+        match target_type {
+            Type::List(elem_type) => Ok(*elem_type),
+            Type::Map(_, value_type) => Ok(*value_type),
+            Type::EmptyMap => Err(SemanticError::with_help(
+                "Cannot index empty map",
+                span,
+                "The map type is unknown. Provide type annotations or add entries to the map literal.",
+            )),
+            _ => Err(SemanticError::with_help(
+                "Cannot index non-list type",
+                span,
+                "Only lists and maps can be indexed with '[]'. Examples: my_list[0], my_map['key']",
+            )),
+        }
+    }
+
+    fn resolve_list_literal_type(
+        &mut self,
+        elements: &[ExpressionNode],
+    ) -> Result<Type, SemanticError> {
+        if elements.is_empty() {
+            return Ok(Type::EmptyList);
+        }
+        let first_type = self.get_expression_type(&elements[0])?;
+        for (index, element) in elements.iter().enumerate() {
+            let element_type = self.get_expression_type(element)?;
+            if self
+                .check_type_compatibility(&first_type, &element_type, element.span)
+                .is_err()
+            {
+                return Err(SemanticError::with_help(
+                    format!(
+                        "List element type mismatch: expected {}, but element at index {} has type {}",
+                        format_type(&first_type),
+                        index,
+                        format_type(&element_type)
+                    ),
+                    element.span,
+                    "All elements in a list must have the same type. The list type is inferred from the first element.",
+                ));
+            }
+        }
+        Ok(Type::List(Box::new(first_type)))
+    }
+
+    fn resolve_map_literal_type(
+        &mut self,
+        entries: &[(ExpressionNode, ExpressionNode)],
+    ) -> Result<Type, SemanticError> {
+        if entries.is_empty() {
+            return Ok(Type::EmptyMap);
+        }
+        let (key, value) = &entries[0];
+        let key_type = self.get_expression_type(key)?;
+        let value_type = self.get_expression_type(value)?;
+        Ok(Type::Map(Box::new(key_type), Box::new(value_type)))
+    }
+
+    fn resolve_if_expression_type(
+        &mut self,
+        then_expr: &ExpressionNode,
+        else_expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let then_type = self.get_expression_type(then_expr)?;
+        let else_type = self.get_expression_type(else_expr)?;
+        if then_type == else_type {
+            Ok(then_type)
+        } else {
+            Err(SemanticError::with_help(
+                "If expression branches must have the same type",
+                span,
+                format!(
+                    "Then branch has type {}, else branch has type {}",
+                    format_type(&then_type),
+                    format_type(&else_type)
+                ),
+            ))
+        }
+    }
+
+    fn resolve_lambda_type(
+        &mut self,
+        params: &[Param],
+        return_type: &TypeNode,
+        body: &[StatementNode],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if self.lambda_captures.contains_key(&span) {
+            let param_types = params
+                .iter()
+                .map(|p| self.resolve_type(&p.type_))
+                .collect::<Result<Vec<_>, _>>()?;
+            let resolved_return_type = self.resolve_type(return_type)?;
+            let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
+            return Ok(Type::Function {
+                params: param_types,
+                returns: Box::new(resolved_return_type),
+                default_count,
+            });
+        }
+
+        let mut local_vars = std::collections::HashSet::new();
+        for param in params {
+            local_vars.insert(param.name.clone());
+        }
+
+        self.symbol_table.push_scope()?;
+        for param in params {
+            let param_type = self.resolve_type(&param.type_)?;
+            self.symbol_table.add_symbol(
+                &param.name,
+                Self::make_symbol(SymbolKind::Variable, param.type_.span, Some(param_type)),
+            )?;
+        }
+        self.analyze_block(body, None)?;
+
+        let captures = self.find_free_variables_in_block(body, &local_vars)?;
+        self.lambda_captures.insert(span, captures);
+
+        let param_types = params
+            .iter()
+            .map(|p| self.resolve_type(&p.type_))
+            .collect::<Result<Vec<_>, _>>()?;
+        let return_type_resolved = if body.is_empty() {
+            Type::Void
+        } else {
+            match &body.last().expect("body is not empty").kind {
+                StatementKind::Expression(expr) => self.get_expression_type(expr)?,
+                StatementKind::Return(Some(expr)) => self.get_expression_type(expr)?,
+                _ => Type::Void,
+            }
+        };
+        self.symbol_table.pop_scope()?;
+        let default_count = params.iter().filter(|p| p.default_value.is_some()).count();
+        Ok(Type::Function {
+            params: param_types,
+            returns: Box::new(return_type_resolved),
+            default_count,
+        })
+    }
+
+    fn resolve_set_literal_type(
+        &mut self,
+        elements: &[ExpressionNode],
+    ) -> Result<Type, SemanticError> {
+        if elements.is_empty() {
+            return Ok(Type::EmptySet);
+        }
+        let elem_type = self.get_expression_type(&elements[0])?;
+        Ok(Type::Set(Box::new(elem_type)))
+    }
+
+    fn resolve_tuple_literal_type(
+        &mut self,
+        elements: &[ExpressionNode],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if elements.len() != 2 {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Tuple must have exactly 2 elements, found {}",
+                    elements.len()
+                ),
+                span,
+                "Tuples in Mux always contain exactly 2 elements: (left, right). Example: auto pair = (1, \"hello\")",
+            ));
+        }
+        let left_type = self.get_expression_type(&elements[0])?;
+        let right_type = self.get_expression_type(&elements[1])?;
+        Ok(Type::Tuple(Box::new(left_type), Box::new(right_type)))
+    }
+
+    fn resolve_generic_type(
+        &mut self,
+        name: &str,
+        type_args: &[TypeNode],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if name == "tuple" {
+            return self.resolve_tuple_type_annotation(type_args, span);
+        }
+        let (lookup_name, symbol) = self.resolve_generic_type_symbol(name, span)?;
+        self.validate_type_argument_count(&lookup_name, &symbol, type_args, span)?;
+        let resolved_args = type_args
+            .iter()
+            .map(|arg| self.resolve_type(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Type::Named(lookup_name, resolved_args))
+    }
+
+    fn resolve_tuple_type_annotation(
+        &self,
+        type_args: &[TypeNode],
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if type_args.len() != 2 {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Tuple type requires exactly 2 type arguments, got {}",
+                    type_args.len()
+                ),
+                span,
+                "Tuple types always have exactly 2 type parameters. Example: tuple<int, string>",
+            ));
+        }
+        let left_type = Box::new(self.resolve_type(&type_args[0])?);
+        let right_type = Box::new(self.resolve_type(&type_args[1])?);
+        Ok(Type::Tuple(left_type, right_type))
+    }
+
+    fn resolve_generic_type_symbol(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> Result<(String, Symbol), SemanticError> {
+        if let Some((module_name, type_name)) = name.split_once('.') {
+            let module_symbols = self
+                .imported_symbols
+                .get(module_name)
+                .ok_or_else(|| self.undefined_symbol_error("module", module_name, span))?;
+            let symbol = module_symbols
+                .get(type_name)
+                .ok_or_else(|| self.undefined_symbol_error("type", type_name, span))?;
+            if self.symbol_table.lookup(type_name).is_none() {
+                let _ = self.symbol_table.add_symbol(type_name, symbol.clone());
+            }
+            Ok((type_name.to_string(), symbol.clone()))
+        } else if let Some(symbol) = self.symbol_table.lookup(name) {
+            Ok((name.to_string(), symbol))
+        } else {
+            Err(self.undefined_symbol_error("type", name, span))
+        }
+    }
+
+    fn validate_type_argument_count(
+        &self,
+        lookup_name: &str,
+        symbol: &Symbol,
+        type_args: &[TypeNode],
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let expected_count = symbol.type_params.len();
+        let actual_count = type_args.len();
+        if expected_count != actual_count {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Generic type '{}' requires {} type argument(s), got {}",
+                    lookup_name, expected_count, actual_count
+                ),
+                span,
+                format!(
+                    "Provide exactly {} type argument{} in angle brackets, e.g. {}<{}>",
+                    expected_count,
+                    if expected_count == 1 { "" } else { "s" },
+                    lookup_name,
+                    symbol
+                        .type_params
+                        .iter()
+                        .map(|(p, _)| p.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn resolve_unary_expression_type(
+        &mut self,
+        expr: &ExpressionNode,
+        op: &UnaryOp,
+        op_span: &Span,
+    ) -> Result<Type, SemanticError> {
+        match op {
+            UnaryOp::Not => Ok(Type::Primitive(crate::ast::PrimitiveType::Bool)),
+            UnaryOp::Neg => {
+                let operand_type = self.get_expression_type(expr)?;
+                match operand_type {
+                    Type::Primitive(crate::ast::PrimitiveType::Int)
+                    | Type::Primitive(crate::ast::PrimitiveType::Float) => Ok(operand_type),
+                    _ => Err(SemanticError::with_help(
+                        format!(
+                            "Negation operator '-' requires a numeric operand, found {}",
+                            format_type(&operand_type)
+                        ),
+                        *op_span,
+                        "The unary '-' operator can only be applied to int or float values",
+                    )),
+                }
+            }
+            UnaryOp::Ref => {
+                let operand_type = self.get_expression_type(expr)?;
+                Ok(Type::Reference(Box::new(operand_type)))
+            }
+            UnaryOp::Deref => {
+                let operand_type = self.get_expression_type(expr)?;
+                if let Type::Reference(inner) = operand_type {
+                    Ok(*inner)
+                } else {
+                    Err(SemanticError::with_help(
+                        format!(
+                            "Cannot dereference type {}, which is not a reference",
+                            format_type(&operand_type)
+                        ),
+                        *op_span,
+                        "The dereference operator '*' can only be applied to reference types (e.g., ref int)",
+                    ))
+                }
+            }
+            UnaryOp::Incr | UnaryOp::Decr => {
+                self.check_not_modifying_constant(expr, op_span)?;
+                let operand_type = self.get_expression_type(expr)?;
+                match operand_type {
+                    Type::Primitive(crate::ast::PrimitiveType::Int) => Ok(operand_type),
+                    _ => Err(SemanticError::with_help(
+                        format!(
+                            "Increment/decrement operators require an int operand, found {}",
+                            format_type(&operand_type)
+                        ),
+                        *op_span,
+                        "The '++' and '--' operators can only be applied to int variables",
+                    )),
+                }
+            }
+        }
+    }
+
+    fn resolve_call_expression_type(
+        &mut self,
+        func: &ExpressionNode,
+        args: &[ExpressionNode],
+        expr_span: Span,
+    ) -> Result<Type, SemanticError> {
+        let func_type = self.resolve_called_function_type(func)?;
+
+        match func_type {
+            Type::Function {
+                params,
+                returns,
+                default_count,
+                ..
+            } => self.resolve_function_call_type(
+                func,
+                args,
+                params,
+                returns,
+                default_count,
+                expr_span,
+            ),
+            _ => Err(SemanticError::with_help(
+                "Cannot call non-function type",
+                expr_span,
+                "Only functions can be called with '()'. Ensure the expression before '()' is a function.",
+            )),
+        }
+    }
+
+    fn resolve_called_function_type(
+        &mut self,
+        func: &ExpressionNode,
+    ) -> Result<Type, SemanticError> {
+        match &func.kind {
+            ExpressionKind::GenericType(name, type_args) => {
+                self.get_instantiated_constructor_type(name, type_args, func.span)
+            }
+            ExpressionKind::Identifier(name) => match self.get_expression_type(func) {
+                Ok(t) => Ok(t),
+                Err(e) if e.message.contains("Undefined variable") => {
+                    Err(self.undefined_symbol_error("function", name, func.span))
+                }
+                Err(e) => Err(e),
+            },
+            _ => self.get_expression_type(func),
+        }
+    }
+
+    fn resolve_function_call_type(
+        &mut self,
+        func: &ExpressionNode,
+        args: &[ExpressionNode],
+        params: Vec<Type>,
+        returns: Box<Type>,
+        default_count: usize,
+        expr_span: Span,
+    ) -> Result<Type, SemanticError> {
+        let actual_default_count = self.call_default_param_count(func, default_count);
+        let min_args = params.len() - actual_default_count;
+        let max_args = params.len();
+
+        if args.len() < min_args || args.len() > max_args {
+            self.report_call_arity_error(
+                func,
+                args.len(),
+                min_args,
+                max_args,
+                actual_default_count,
+                expr_span,
+            )?;
+        }
+
+        let mut unifier = Unifier::new();
+        for (param, arg) in params.iter().zip(args.iter()) {
+            let arg_type = self.get_expression_type(arg)?;
+            unifier.unify(param, &arg_type, expr_span)?;
+        }
+
+        if let Some(func_name) = self.call_function_name(func) {
+            self.infer_missing_type_params_from_function_bounds(
+                func_name,
+                &mut unifier.substitutions,
+            );
+        }
+
+        Ok(unifier.apply(&returns))
+    }
+
+    fn call_default_param_count(&self, func: &ExpressionNode, default_count: usize) -> usize {
+        match &func.kind {
+            ExpressionKind::Identifier(name) => {
+                let symbol_default = self
+                    .symbol_table
+                    .lookup(name)
+                    .map(|s| s.default_param_count)
+                    .unwrap_or(0);
+                std::cmp::max(default_count, symbol_default)
+            }
+            _ => default_count,
+        }
+    }
+
+    fn call_function_name<'a>(&self, func: &'a ExpressionNode) -> Option<&'a str> {
+        match &func.kind {
+            ExpressionKind::Identifier(name) => Some(name.as_str()),
+            ExpressionKind::FieldAccess { field, .. } => Some(field.as_str()),
+            _ => None,
+        }
+    }
+
+    fn report_call_arity_error(
+        &self,
+        func: &ExpressionNode,
+        arg_count: usize,
+        min_args: usize,
+        max_args: usize,
+        actual_default_count: usize,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let func_name = match &func.kind {
+            ExpressionKind::Identifier(name) => format!("'{}'", name),
+            ExpressionKind::FieldAccess { field, .. } => format!("'{}'", field),
+            _ => "this function".to_string(),
+        };
+
+        if actual_default_count > 0 {
+            Err(SemanticError::with_help(
+                format!(
+                    "{} expects {} to {} arguments, but {} {} provided",
+                    func_name,
+                    min_args,
+                    max_args,
+                    arg_count,
+                    if arg_count == 1 { "was" } else { "were" }
+                ),
+                expr_span,
+                format!(
+                    "{} has {} required parameter(s) and {} optional parameter(s) with defaults",
+                    func_name, min_args, actual_default_count
+                ),
+            ))
+        } else {
+            Err(SemanticError::with_help(
+                format!(
+                    "{} expects {} argument(s), but {} {} provided",
+                    func_name,
+                    max_args,
+                    arg_count,
+                    if arg_count == 1 { "was" } else { "were" }
+                ),
+                expr_span,
+                if arg_count > max_args {
+                    "Too many arguments. Remove the extra argument(s).".to_string()
+                } else {
+                    format!(
+                        "Not enough arguments. {} requires {} argument(s).",
+                        func_name, max_args
+                    )
+                },
+            ))
+        }
+    }
+
+    fn resolve_identifier_expression_type(
+        &self,
+        name: &str,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if name == "self" {
+            if let Some(self_type) = &self.current_self_type {
+                return Ok(self_type.clone());
+            }
+            return Ok(Type::Named("Unknown".to_string(), vec![]));
+        }
+
+        let symbol = self
+            .symbol_table
+            .get_cloned(name)
+            .or_else(|| self.symbol_table.lookup(name));
+
+        if let Some(symbol) = symbol {
+            let type_ = symbol.type_.clone().ok_or_else(|| {
+                SemanticError::new(format!("Symbol '{}' has no type information", name), span)
+            })?;
+            let type_ = match &type_ {
+                Type::Generic(n) if n == name => Type::Variable(name.to_string()),
+                _ => type_,
+            };
+            return Ok(type_);
+        }
+
+        if let Some(sig) = self.get_builtin_sig(name) {
+            return Ok(Type::Function {
+                params: sig.params.clone(),
+                returns: Box::new(sig.return_type.clone()),
+                default_count: 0,
+            });
+        }
+
+        let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
+            .iter()
+            .map(|(_, short_name)| short_name.to_string())
+            .collect();
+
+        for (module_ns, module_symbols) in &self.imported_symbols {
+            if !stdlib_names.contains(module_ns) {
+                continue;
+            }
+            if let Some(sym) = module_symbols.get(name)
+                && matches!(sym.kind, SymbolKind::Class)
+            {
+                return Ok(Type::Named(name.to_string(), Vec::new()));
+            }
+        }
+
+        Err(self.undefined_symbol_error("variable", name, span))
+    }
+
+    fn resolve_binary_expression_type(
+        &mut self,
+        left: &ExpressionNode,
+        right: &ExpressionNode,
+        op: &crate::ast::BinaryOp,
+        op_span: &Span,
+        expr_span: Span,
+    ) -> Result<Type, SemanticError> {
+        let left_type = self.get_expression_type(left)?;
+        let right_type = self.get_expression_type(right)?;
+
+        if *op == crate::ast::BinaryOp::Assign {
+            self.validate_assignment_target(left, &right_type, expr_span)?;
+            return Ok(right_type);
+        }
+
+        if matches!(
+            op,
+            crate::ast::BinaryOp::AddAssign
+                | crate::ast::BinaryOp::SubtractAssign
+                | crate::ast::BinaryOp::MultiplyAssign
+                | crate::ast::BinaryOp::DivideAssign
+                | crate::ast::BinaryOp::ModuloAssign
+        ) {
+            self.validate_compound_assignment_target(
+                left,
+                &left_type,
+                &right_type,
+                op,
+                expr_span,
+                op_span,
+            )?;
+            let base_op = Self::compound_base_op(op);
+            if let Some(result_type) =
+                self.resolve_binary_operator(&left_type, &right_type, &base_op)
+            {
+                return Ok(result_type);
+            }
+            return Err(SemanticError::with_help(
+                format!(
+                    "Operator '{}' is not supported between types {} and {}",
+                    format_binary_op(&base_op),
+                    format_type(&left_type),
+                    format_type(&right_type)
+                ),
+                *op_span,
+                Self::binary_op_help(&left_type, &right_type, &base_op),
+            ));
+        }
+
+        if let Some(result_type) = self.resolve_binary_operator(&left_type, &right_type, op) {
+            return Ok(result_type);
+        }
+
+        Err(SemanticError::with_help(
+            format!(
+                "Operator '{}' is not supported between types {} and {}",
+                format_binary_op(op),
+                format_type(&left_type),
+                format_type(&right_type)
+            ),
+            *op_span,
+            Self::binary_op_help(&left_type, &right_type, op),
+        ))
+    }
+
+    fn validate_assignment_target(
+        &mut self,
+        left: &ExpressionNode,
+        right_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        match &left.kind {
+            crate::ast::ExpressionKind::Identifier(name) => {
+                self.validate_identifier_assignment_target(name, left.span, right_type, expr_span)
+            }
+            crate::ast::ExpressionKind::FieldAccess {
+                expr: obj_expr,
+                field,
+            } => self.validate_field_assignment_target(
+                obj_expr, field, left.span, right_type, expr_span,
+            ),
+            crate::ast::ExpressionKind::Unary {
+                op: crate::ast::UnaryOp::Deref,
+                ..
+            } => Ok(()),
+            crate::ast::ExpressionKind::ListAccess {
+                expr: target_expr, ..
+            } => self.validate_index_assignment_target(target_expr, right_type, expr_span),
+            _ => Err(SemanticError::with_help(
+                "Cannot assign to this expression",
+                expr_span,
+                "Only variables, fields, dereferences, and indexed expressions can be assigned to",
+            )),
+        }
+    }
+
+    fn resolve_lvalue_class_symbol(
+        &mut self,
+        obj_expr: &ExpressionNode,
+    ) -> Result<Option<(String, crate::semantics::Symbol)>, SemanticError> {
+        let obj_type = self.get_expression_type(obj_expr)?;
+        if let Type::Named(class_name, _) = &obj_type
+            && let Some(symbol) = self.symbol_table.lookup(class_name)
+        {
+            return Ok(Some((class_name.clone(), symbol)));
+        }
+        Ok(None)
+    }
+
+    fn check_const_field_assignment(
+        &self,
+        field: &str,
+        fields: &std::collections::HashMap<String, (Type, bool)>,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        if let Some((_field_type, is_const)) = fields.get(field)
+            && *is_const
+        {
+            return Err(SemanticError::with_help(
+                format!("Cannot assign to const field '{}'", field),
+                expr_span,
+                "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_identifier_assignment_target(
+        &mut self,
+        name: &str,
+        left_span: Span,
+        right_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let symbol = self
+            .symbol_table
+            .lookup(name)
+            .ok_or_else(|| self.undefined_symbol_error("variable", name, left_span))?;
+
+        if symbol.kind == SymbolKind::Constant {
+            return Err(SemanticError::with_help(
+                format!("Cannot assign to constant '{}'", name),
+                expr_span,
+                "Constants cannot be modified after initialization",
+            ));
+        }
+
+        let var_type = symbol.type_.as_ref().ok_or_else(|| {
+            SemanticError::new(
+                format!("Variable '{}' has no type information", name),
+                left_span,
+            )
+        })?;
+        if let Type::Reference(inner) = var_type {
+            self.check_type_compatibility(inner, right_type, expr_span)
+        } else {
+            self.check_type_compatibility(var_type, right_type, expr_span)
+        }
+    }
+
+    fn validate_field_assignment_target(
+        &mut self,
+        obj_expr: &ExpressionNode,
+        field: &str,
+        left_span: Span,
+        right_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let Some((class_name, symbol)) = self.resolve_lvalue_class_symbol(obj_expr)? else {
+            return Ok(());
+        };
+
+        self.check_const_field_assignment(field, &symbol.fields, expr_span)?;
+
+        if let Some((field_type, _)) = symbol.fields.get(field) {
+            self.check_type_compatibility(field_type, right_type, expr_span)?;
+            return Ok(());
+        }
+        Err(self.field_not_found_error(field, &class_name, left_span))
+    }
+
+    fn validate_index_assignment_target(
+        &mut self,
+        target_expr: &ExpressionNode,
+        right_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let target_type = self.get_expression_type(target_expr)?;
+        match target_type {
+            Type::List(ref elem_type) => {
+                self.check_type_compatibility(elem_type, right_type, expr_span)
+            }
+            Type::Map(_, ref value_type) => {
+                self.check_type_compatibility(value_type, right_type, expr_span)
+            }
+            _ => Err(SemanticError::with_help(
+                format!(
+                    "Cannot assign to index on type {}",
+                    format_type(&target_type)
+                ),
+                expr_span,
+                "Only lists and maps support index assignment. Example: my_list[0] = value, my_map[\"key\"] = value",
+            )),
+        }
+    }
+
+    fn validate_compound_assignment_target(
+        &mut self,
+        left: &ExpressionNode,
+        left_type: &Type,
+        right_type: &Type,
+        op: &crate::ast::BinaryOp,
+        expr_span: Span,
+        op_span: &Span,
+    ) -> Result<(), SemanticError> {
+        match &left.kind {
+            crate::ast::ExpressionKind::Identifier(name) => {
+                self.validate_identifier_compound_target(name, left.span, expr_span)?;
+            }
+            crate::ast::ExpressionKind::FieldAccess { .. } => {
+                self.validate_field_compound_target(
+                    left, left_type, right_type, op, expr_span, op_span,
+                )?;
+            }
+            crate::ast::ExpressionKind::Unary {
+                op: crate::ast::UnaryOp::Deref,
+                ..
+            } => {}
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn validate_identifier_compound_target(
+        &self,
+        name: &str,
+        left_span: Span,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let symbol = self
+            .symbol_table
+            .lookup(name)
+            .ok_or_else(|| self.undefined_symbol_error("variable", name, left_span))?;
+
+        if symbol.kind == SymbolKind::Constant {
+            return Err(SemanticError::with_help(
+                format!("Cannot modify constant '{}'", name),
+                expr_span,
+                "Constants cannot be modified after initialization. Declare the variable with 'auto' instead of 'const' if you need to change its value.",
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn validate_field_compound_target(
+        &mut self,
+        left: &ExpressionNode,
+        left_type: &Type,
+        right_type: &Type,
+        op: &crate::ast::BinaryOp,
+        expr_span: Span,
+        op_span: &Span,
+    ) -> Result<(), SemanticError> {
+        let crate::ast::ExpressionKind::FieldAccess {
+            expr: obj_expr,
+            field,
+        } = &left.kind
+        else {
+            return Ok(());
+        };
+
+        let Some((class_name, symbol)) = self.resolve_lvalue_class_symbol(obj_expr)? else {
+            return Ok(());
+        };
+
+        if let Some((_field_type, is_const)) = symbol.fields.get(field) {
+            if *is_const {
+                return Err(SemanticError::with_help(
+                    format!("Cannot modify const field '{}'", field),
+                    expr_span,
+                    "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
+                ));
+            }
+
+            let base_op = Self::compound_base_op(op);
+            self.resolve_binary_operator(left_type, right_type, &base_op)
+                .ok_or_else(|| {
+                    SemanticError::with_help(
+                        format!(
+                            "Operator '{}' is not supported between types {} and {}",
+                            format_binary_op(&base_op),
+                            format_type(left_type),
+                            format_type(right_type)
+                        ),
+                        *op_span,
+                        format!(
+                            "The '{}' operator cannot be applied to {} and {}. Ensure both operands have compatible types.",
+                            format_binary_op(&base_op),
+                            format_type(left_type),
+                            format_type(right_type)
+                        ),
+                    )
+                })?;
+        } else {
+            return Err(self.field_not_found_error(field, &class_name, left.span));
+        }
+
+        Ok(())
+    }
+
+    fn compound_base_op(op: &crate::ast::BinaryOp) -> crate::ast::BinaryOp {
+        match op {
+            crate::ast::BinaryOp::AddAssign => crate::ast::BinaryOp::Add,
+            crate::ast::BinaryOp::SubtractAssign => crate::ast::BinaryOp::Subtract,
+            crate::ast::BinaryOp::MultiplyAssign => crate::ast::BinaryOp::Multiply,
+            crate::ast::BinaryOp::DivideAssign => crate::ast::BinaryOp::Divide,
+            crate::ast::BinaryOp::ModuloAssign => crate::ast::BinaryOp::Modulo,
+            _ => unreachable!(),
         }
     }
 
@@ -2435,106 +2669,111 @@ impl SemanticAnalyzer {
         right_type: &Type,
         op: &BinaryOp,
     ) -> Option<Type> {
-        // Handle 'in' operator separately since it doesn't require same types
-        if let BinaryOp::In = op {
-            // 'in' operator checks if left operand is contained in right operand
-            // Right operand should be a collection type (list, set, or map)
-            match right_type {
-                Type::List(_) | Type::Set(_) => {
-                    // For list and set, left operand should be compatible with element type
-                    Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
-                }
-                Type::Map(key_type, _) => {
-                    // For map, left operand should be compatible with key type
-                    if left_type == key_type.as_ref() {
-                        Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
-                    } else {
-                        None
-                    }
-                }
-                Type::Primitive(PrimitiveType::Str) => {
-                    // For string, left operand should be a character or string
-                    if matches!(
-                        left_type,
-                        Type::Primitive(PrimitiveType::Char | PrimitiveType::Str)
-                    ) {
-                        Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        } else {
-            // No implicit type promotion: operands must have the same type (or be supported by
-            // explicit interfaces/overloads elsewhere in the type system).
-            if left_type != right_type {
-                return None;
-            }
+        if matches!(op, BinaryOp::In) {
+            return self.resolve_in_binary_operator(left_type, right_type);
+        }
 
-            match op {
-                BinaryOp::Add => {
-                    // built-in support for primitives and collections
-                    if matches!(
-                        left_type,
-                        Type::Primitive(
-                            PrimitiveType::Str | PrimitiveType::Int | PrimitiveType::Float
-                        ) | Type::List(_)
-                            | Type::Map(_, _)
-                            | Type::Set(_)
-                    ) {
-                        Some(left_type.clone())
-                    } else {
-                        None
-                    }
-                }
-                BinaryOp::Subtract
-                | BinaryOp::Multiply
-                | BinaryOp::Divide
-                | BinaryOp::Modulo
-                | BinaryOp::Exponent => {
-                    // built-in support for numeric primitives
-                    if matches!(
-                        left_type,
-                        Type::Primitive(PrimitiveType::Int | PrimitiveType::Float)
-                    ) {
-                        Some(left_type.clone())
-                    } else {
-                        None
-                    }
-                }
-                BinaryOp::Equal | BinaryOp::NotEqual => {
-                    // equality is supported for all types
+        if left_type != right_type {
+            return None;
+        }
+
+        self.resolve_equal_type_binary_operator(left_type, right_type, op)
+    }
+
+    fn resolve_in_binary_operator(&self, left_type: &Type, right_type: &Type) -> Option<Type> {
+        match right_type {
+            Type::List(_) | Type::Set(_) => Some(Type::Primitive(crate::ast::PrimitiveType::Bool)),
+            Type::Map(key_type, _) => {
+                if left_type == key_type.as_ref() {
                     Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+                } else {
+                    None
                 }
-                BinaryOp::Less
-                | BinaryOp::LessEqual
-                | BinaryOp::Greater
-                | BinaryOp::GreaterEqual => {
-                    // comparison operators for ordered types
-                    if matches!(
-                        left_type,
-                        Type::Primitive(
-                            PrimitiveType::Int | PrimitiveType::Float | PrimitiveType::Str
-                        )
-                    ) || self.type_implements_interface(left_type, "Comparable")
-                    {
-                        Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
-                    } else {
-                        None
-                    }
-                }
-                BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
-                    if matches!(left_type, Type::Primitive(PrimitiveType::Bool))
-                        && matches!(right_type, Type::Primitive(PrimitiveType::Bool))
-                    {
-                        Some(Type::Primitive(PrimitiveType::Bool))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
             }
+            Type::Primitive(PrimitiveType::Str) => {
+                if matches!(
+                    left_type,
+                    Type::Primitive(PrimitiveType::Char | PrimitiveType::Str)
+                ) {
+                    Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn resolve_equal_type_binary_operator(
+        &self,
+        left_type: &Type,
+        right_type: &Type,
+        op: &BinaryOp,
+    ) -> Option<Type> {
+        match op {
+            BinaryOp::Add => self.resolve_add_binary_operator(left_type),
+            BinaryOp::Subtract
+            | BinaryOp::Multiply
+            | BinaryOp::Divide
+            | BinaryOp::Modulo
+            | BinaryOp::Exponent => self.resolve_numeric_binary_operator(left_type),
+            BinaryOp::Equal | BinaryOp::NotEqual => {
+                Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+            }
+            BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
+                self.resolve_comparison_binary_operator(left_type)
+            }
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
+                self.resolve_logical_binary_operator(left_type, right_type)
+            }
+            _ => None,
+        }
+    }
+
+    fn resolve_add_binary_operator(&self, left_type: &Type) -> Option<Type> {
+        if matches!(
+            left_type,
+            Type::Primitive(PrimitiveType::Str | PrimitiveType::Int | PrimitiveType::Float)
+                | Type::List(_)
+                | Type::Map(_, _)
+                | Type::Set(_)
+        ) {
+            Some(left_type.clone())
+        } else {
+            None
+        }
+    }
+
+    fn resolve_numeric_binary_operator(&self, left_type: &Type) -> Option<Type> {
+        if matches!(
+            left_type,
+            Type::Primitive(PrimitiveType::Int | PrimitiveType::Float)
+        ) {
+            Some(left_type.clone())
+        } else {
+            None
+        }
+    }
+
+    fn resolve_comparison_binary_operator(&self, left_type: &Type) -> Option<Type> {
+        if matches!(
+            left_type,
+            Type::Primitive(PrimitiveType::Int | PrimitiveType::Float | PrimitiveType::Str)
+        ) || self.type_implements_interface(left_type, "Comparable")
+        {
+            Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+        } else {
+            None
+        }
+    }
+
+    fn resolve_logical_binary_operator(&self, left_type: &Type, right_type: &Type) -> Option<Type> {
+        if matches!(left_type, Type::Primitive(PrimitiveType::Bool))
+            && matches!(right_type, Type::Primitive(PrimitiveType::Bool))
+        {
+            Some(Type::Primitive(crate::ast::PrimitiveType::Bool))
+        } else {
+            None
         }
     }
 
@@ -2543,50 +2782,7 @@ impl SemanticAnalyzer {
         for node in ast {
             match node {
                 AstNode::Function(func) => {
-                    if func.is_common {
-                        return Err(SemanticError::with_help(
-                            "Common methods are only allowed in classes",
-                            func.span,
-                            "The 'common' modifier creates a static method. Move this function inside a class definition, or remove the 'common' keyword.",
-                        ));
-                    }
-                    // resolve function type
-                    let param_types = func
-                        .params
-                        .iter()
-                        .map(|p| self.resolve_type(&p.type_))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let return_type = self.resolve_type(&func.return_type)?;
-                    let mut func_type = Type::Function {
-                        params: param_types,
-                        returns: Box::new(return_type),
-                        default_count: 0,
-                    };
-
-                    // substitute type params with variables
-                    for (type_param_name, _) in &func.type_params {
-                        let var = Type::Variable(type_param_name.clone());
-                        func_type = self.substitute_type_param(&func_type, type_param_name, &var);
-                    }
-
-                    // Count parameters with default values
-                    let default_count = func
-                        .params
-                        .iter()
-                        .filter(|p| p.default_value.is_some())
-                        .count();
-
-                    if let Err(e) = self.symbol_table.add_symbol(
-                        &func.name,
-                        self.make_function_symbol(
-                            func.span,
-                            func_type,
-                            &func.type_params,
-                            default_count,
-                        ),
-                    ) {
-                        self.errors.push(e);
-                    }
+                    self.collect_function_symbol(func)?;
                 }
                 AstNode::Class {
                     name,
@@ -2596,272 +2792,17 @@ impl SemanticAnalyzer {
                     type_params,
                     ..
                 } => {
-                    let mut implemented_interfaces = std::collections::HashMap::new();
-                    for trait_ref in traits {
-                        // lookup the interface and get its methods
-                        if let Some(interface_symbol) = self.symbol_table.lookup(&trait_ref.name)
-                            && let Some((_, interface_methods)) =
-                                interface_symbol.interfaces.get(&trait_ref.name)
-                        {
-                            // Substitute type_args into interface methods
-                            let resolved_args = trait_ref
-                                .type_args
-                                .iter()
-                                .map(|arg| self.resolve_type(arg))
-                                .collect::<Result<Vec<_>, _>>()?;
-                            let interface_type_params = &interface_symbol.type_params;
-                            let mut substituted_methods = std::collections::HashMap::new();
-                            for (method_name, method_sig) in interface_methods {
-                                let sub_params = method_sig
-                                    .params
-                                    .iter()
-                                    .map(|p| {
-                                        self.substitute_type_params(
-                                            p,
-                                            interface_type_params,
-                                            &resolved_args,
-                                        )
-                                    })
-                                    .collect();
-                                let sub_return = self.substitute_type_params(
-                                    &method_sig.return_type,
-                                    interface_type_params,
-                                    &resolved_args,
-                                );
-                                substituted_methods.insert(
-                                    method_name.clone(),
-                                    MethodSig {
-                                        params: sub_params,
-                                        return_type: sub_return,
-                                        is_static: method_sig.is_static,
-                                    },
-                                );
-                            }
-                            implemented_interfaces.insert(
-                                trait_ref.name.clone(),
-                                (resolved_args, substituted_methods),
-                            );
-                        }
-                    }
-                    let type_param_bounds: Vec<(String, Vec<String>)> = type_params
-                        .iter()
-                        .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
-                        .collect();
-
-                    // Add class type parameters to symbol table so they can be resolved in field types
-                    for (param_name, _) in type_params {
-                        let _ = self.symbol_table.add_symbol(
-                            param_name,
-                            Self::make_symbol(
-                                SymbolKind::Type,
-                                *node.span(),
-                                Some(Type::Generic(param_name.clone())),
-                            ),
-                        );
-                    }
-
-                    // collect field types for constructor and fields map
-                    let mut field_types = Vec::new();
-                    let mut fields_map = std::collections::HashMap::new();
-                    for field in fields {
-                        // Check for duplicate field
-                        if fields_map.contains_key(&field.name) {
-                            return Err(SemanticError::with_help(
-                                format!("Duplicate field '{}' in class '{}'", field.name, name),
-                                field.type_.span,
-                                "Each field name must be unique within a class. Rename or remove the duplicate field.",
-                            ));
-                        }
-                        match self.resolve_type(&field.type_) {
-                            Ok(t) => {
-                                field_types.push(t.clone());
-                                fields_map.insert(field.name.clone(), (t, field.is_const));
-                            }
-                            Err(e) => self.errors.push(e),
-                        }
-                    }
-                    if field_types.is_empty() {
-                        None
-                    } else {
-                        Some(Type::Function {
-                            params: field_types.clone(),
-                            returns: Box::new(Type::Named(name.clone(), vec![])),
-                            default_count: 0,
-                        })
-                    };
-
-                    // collect methods
-                    let mut methods_map = std::collections::HashMap::new();
-                    for method in methods {
-                        let mut param_types = Vec::new();
-                        for p in &method.params {
-                            match self.resolve_type(&p.type_) {
-                                Ok(t) => param_types.push(t),
-                                Err(e) => self.errors.push(e),
-                            }
-                        }
-                        let ret = match self.resolve_type(&method.return_type) {
-                            Ok(t) => t,
-                            Err(e) => {
-                                self.errors.push(e);
-                                continue;
-                            }
-                        };
-                        let method_sig = MethodSig {
-                            params: param_types,
-                            return_type: ret,
-                            is_static: method.is_common,
-                        };
-                        methods_map.insert(method.name.clone(), method_sig);
-                    }
-                    // add "new" as static method for constructor
-                    let new_sig = MethodSig {
-                        params: vec![], // Default constructor takes no args
-                        return_type: Type::Named(
-                            name.clone(),
-                            type_param_bounds
-                                .iter()
-                                .map(|(p, _)| Type::Variable(p.clone()))
-                                .collect::<Vec<_>>(),
-                        ),
-                        is_static: true,
-                    };
-                    methods_map.insert("new".to_string(), new_sig);
-
-                    // Validate interface implementations
-                    for (interface_name, (_, interface_methods)) in &implemented_interfaces {
-                        for (method_name, interface_sig) in interface_methods {
-                            if let Some(class_sig) = methods_map.get(method_name) {
-                                if let Err(e) = self.check_method_compatibility(
-                                    interface_sig,
-                                    class_sig,
-                                    *node.span(),
-                                ) {
-                                    self.errors.push(e);
-                                }
-                            } else {
-                                self.errors.push(SemanticError::with_help(
-                                    format!(
-                                        "Class '{}' does not implement method '{}' required by interface '{}'",
-                                        name, method_name, interface_name
-                                    ),
-                                    *node.span(),
-                                    format!("Add a method '{}' to class '{}' with the signature required by interface '{}'", method_name, name, interface_name),
-                                ));
-                            }
-                        }
-
-                        // Validate interface field requirements
-                        if let Some(interface_symbol) = self.symbol_table.lookup(interface_name) {
-                            for (field_name, (interface_field_type, interface_is_const)) in
-                                &interface_symbol.fields
-                            {
-                                if let Some((class_field_type, class_is_const)) =
-                                    fields_map.get(field_name)
-                                {
-                                    // Check type compatibility
-                                    if !self
-                                        .types_compatible(class_field_type, interface_field_type)
-                                    {
-                                        self.errors.push(SemanticError::with_help(
-                                            format!(
-                                                "Field '{}' type mismatch in class '{}': class has {}, interface '{}' requires {}",
-                                                field_name,
-                                                name,
-                                                format_type(class_field_type),
-                                                interface_name,
-                                                format_type(interface_field_type)
-                                            ),
-                                            *node.span(),
-                                            format!("Change the type of field '{}' to {} to match interface '{}'", field_name, format_type(interface_field_type), interface_name),
-                                        ));
-                                    }
-
-                                    // Check const compatibility
-                                    if *interface_is_const && !*class_is_const {
-                                        self.errors.push(SemanticError::with_help(
-                                            format!(
-                                                "Field '{}' must be const in class '{}' to implement interface '{}'",
-                                                field_name, name, interface_name
-                                            ),
-                                            *node.span(),
-                                            format!("Add the 'const' modifier to field '{}' in class '{}'", field_name, name),
-                                        ));
-                                    }
-                                } else {
-                                    // Field missing in class
-                                    self.errors.push(SemanticError::with_help(
-                                        format!(
-                                            "Class '{}' is missing required field '{}' from interface '{}'",
-                                            name, field_name, interface_name
-                                        ),
-                                        *node.span(),
-                                        format!("Add field '{}: {}' to class '{}'", field_name, format_type(interface_field_type), name),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-
-                    if let Err(e) = self.symbol_table.add_symbol(
+                    self.collect_class_symbol(
                         name,
-                        Symbol {
-                            kind: SymbolKind::Class,
-                            span: *node.span(),
-                            type_: Some(Type::Named(name.clone(), vec![])),
-                            interfaces: implemented_interfaces,
-                            methods: methods_map,
-                            fields: fields_map,
-                            type_params: type_param_bounds,
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    ) {
-                        self.errors.push(e);
-                    }
+                        traits,
+                        fields,
+                        methods,
+                        type_params,
+                        node.span(),
+                    )?;
                 }
                 AstNode::Enum { name, variants, .. } => {
-                    let mut methods = std::collections::HashMap::new();
-                    let mut variant_names = Vec::new();
-                    for variant in variants {
-                        variant_names.push(variant.name.clone());
-                        let params = variant
-                            .data
-                            .clone()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|t| self.resolve_type(&t).unwrap_or(Type::Void))
-                            .collect();
-                        let return_type = Type::Named(name.clone(), vec![]);
-                        methods.insert(
-                            variant.name.clone(),
-                            MethodSig {
-                                params,
-                                return_type,
-                                is_static: true,
-                            },
-                        );
-                    }
-                    if let Err(e) = self.symbol_table.add_symbol(
-                        name,
-                        Symbol {
-                            kind: SymbolKind::Enum,
-                            span: *node.span(),
-                            type_: Some(Type::Named(name.clone(), vec![])),
-                            interfaces: std::collections::HashMap::new(),
-                            methods,
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: Some(variant_names),
-                        },
-                    ) {
-                        self.errors.push(e);
-                    }
+                    self.collect_enum_symbol(name, variants, node.span());
                 }
                 AstNode::Interface {
                     name,
@@ -2870,77 +2811,488 @@ impl SemanticAnalyzer {
                     methods,
                     ..
                 } => {
-                    let mut interface_methods = std::collections::HashMap::new();
-                    for method in methods {
-                        let param_types = method
-                            .params
-                            .iter()
-                            .map(|p| self.resolve_type(&p.type_))
-                            .collect::<Result<Vec<_>, _>>()?;
-                        let return_type = self.resolve_type(&method.return_type)?;
-                        let method_sig = MethodSig {
-                            params: param_types,
-                            return_type,
-                            is_static: false,
-                        };
-                        interface_methods.insert(method.name.clone(), method_sig);
-                    }
-
-                    // Process interface fields
-                    let mut interface_fields = std::collections::HashMap::new();
-                    for field in fields {
-                        let field_type = self.resolve_type(&field.type_)?;
-
-                        // Validate default value type if present
-                        if let Some(default_expr) = &field.default_value {
-                            let default_type = self.infer_literal_type(default_expr)?;
-                            if !self.types_compatible(&default_type, &field_type) {
-                                self.errors.push(SemanticError::with_help(
-                                    format!(
-                                        "Default value type mismatch for field '{}': expected {}, got {}",
-                                        field.name,
-                                        format_type(&field_type),
-                                        format_type(&default_type)
-                                    ),
-                                    default_expr.span,
-                                    format!("The default value must match the field's declared type of {}", format_type(&field_type)),
-                                ));
-                            }
-                        }
-
-                        interface_fields.insert(field.name.clone(), (field_type, field.is_const));
-                    }
-
-                    let mut interfaces_map = std::collections::HashMap::new();
-                    interfaces_map.insert(name.clone(), (vec![], interface_methods));
-                    if let Err(e) = self.symbol_table.add_symbol(
-                        name,
-                        Symbol {
-                            kind: SymbolKind::Interface,
-                            span: *node.span(),
-                            type_: None,
-                            interfaces: interfaces_map,
-                            methods: std::collections::HashMap::new(),
-                            fields: interface_fields,
-                            type_params: type_params
-                                .iter()
-                                .map(|(p, b)| {
-                                    (p.clone(), b.iter().map(|tb| tb.name.clone()).collect())
-                                })
-                                .collect::<Vec<(String, Vec<String>)>>(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    ) {
-                        self.errors.push(e);
-                    }
+                    self.collect_interface_symbol(name, type_params, fields, methods, node.span());
                 }
                 _ => {}
             }
         }
         Ok(())
+    }
+
+    fn collect_function_symbol(&mut self, func: &FunctionNode) -> Result<(), SemanticError> {
+        if func.is_common {
+            return Err(SemanticError::with_help(
+                "Common methods are only allowed in classes",
+                func.span,
+                "The 'common' modifier creates a static method. Move this function inside a class definition, or remove the 'common' keyword.",
+            ));
+        }
+        let param_types = func
+            .params
+            .iter()
+            .map(|p| self.resolve_type(&p.type_))
+            .collect::<Result<Vec<_>, _>>()?;
+        let return_type = self.resolve_type(&func.return_type)?;
+        let mut func_type = Type::Function {
+            params: param_types,
+            returns: Box::new(return_type),
+            default_count: 0,
+        };
+
+        for (type_param_name, _) in &func.type_params {
+            let var = Type::Variable(type_param_name.clone());
+            func_type = self.substitute_type_param(&func_type, type_param_name, &var);
+        }
+
+        let default_count = func
+            .params
+            .iter()
+            .filter(|p| p.default_value.is_some())
+            .count();
+
+        if let Err(e) = self.symbol_table.add_symbol(
+            &func.name,
+            self.make_function_symbol(func.span, func_type, &func.type_params, default_count),
+        ) {
+            self.errors.push(e);
+        }
+        Ok(())
+    }
+
+    fn collect_class_symbol(
+        &mut self,
+        name: &str,
+        traits: &[TraitRef],
+        fields: &[Field],
+        methods: &[FunctionNode],
+        type_params: &[(String, Vec<TraitBound>)],
+        span: &Span,
+    ) -> Result<(), SemanticError> {
+        let implemented_interfaces = self.resolve_implemented_interfaces(traits, span)?;
+        let type_param_bounds: Vec<(String, Vec<String>)> = type_params
+            .iter()
+            .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
+            .collect();
+
+        for (param_name, _) in type_params {
+            let _ = self.symbol_table.add_symbol(
+                param_name,
+                Self::make_symbol(
+                    SymbolKind::Type,
+                    *span,
+                    Some(Type::Generic(param_name.clone())),
+                ),
+            );
+        }
+
+        let (fields_map, _) = self.collect_class_fields(name, fields, span)?;
+        let methods_map = self.collect_class_methods(methods, name, type_params)?;
+
+        self.validate_interface_implementations(
+            name,
+            &implemented_interfaces,
+            &fields_map,
+            &methods_map,
+            span,
+        );
+
+        if let Err(e) = self.symbol_table.add_symbol(
+            name,
+            Symbol {
+                kind: SymbolKind::Class,
+                span: *span,
+                type_: Some(Type::Named(name.to_string(), vec![])),
+                interfaces: implemented_interfaces,
+                methods: methods_map,
+                fields: fields_map,
+                type_params: type_param_bounds,
+                original_name: None,
+                llvm_name: None,
+                default_param_count: 0,
+                variants: None,
+            },
+        ) {
+            self.errors.push(e);
+        }
+        Ok(())
+    }
+
+    fn resolve_implemented_interfaces(
+        &self,
+        traits: &[TraitRef],
+        _span: &Span,
+    ) -> Result<HashMap<String, ResolvedInterface>, SemanticError> {
+        let mut implemented_interfaces = std::collections::HashMap::new();
+        for trait_ref in traits {
+            if let Some(interface_symbol) = self.symbol_table.lookup(&trait_ref.name)
+                && let Some((_, interface_methods)) =
+                    interface_symbol.interfaces.get(&trait_ref.name)
+            {
+                let resolved_args = trait_ref
+                    .type_args
+                    .iter()
+                    .map(|arg| self.resolve_type(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let interface_type_params = &interface_symbol.type_params;
+                let mut substituted_methods = std::collections::HashMap::new();
+                for (method_name, method_sig) in interface_methods {
+                    let sub_params = method_sig
+                        .params
+                        .iter()
+                        .map(|p| {
+                            self.substitute_type_params(p, interface_type_params, &resolved_args)
+                        })
+                        .collect();
+                    let sub_return = self.substitute_type_params(
+                        &method_sig.return_type,
+                        interface_type_params,
+                        &resolved_args,
+                    );
+                    substituted_methods.insert(
+                        method_name.clone(),
+                        MethodSig {
+                            params: sub_params,
+                            return_type: sub_return,
+                            is_static: method_sig.is_static,
+                        },
+                    );
+                }
+                implemented_interfaces
+                    .insert(trait_ref.name.clone(), (resolved_args, substituted_methods));
+            }
+        }
+        Ok(implemented_interfaces)
+    }
+
+    fn collect_class_fields(
+        &mut self,
+        name: &str,
+        fields: &[Field],
+        _span: &Span,
+    ) -> Result<(HashMap<String, ClassFieldInfo>, Vec<Type>), SemanticError> {
+        let mut field_types = Vec::new();
+        let mut fields_map = std::collections::HashMap::new();
+        for field in fields {
+            if fields_map.contains_key(&field.name) {
+                return Err(SemanticError::with_help(
+                    format!("Duplicate field '{}' in class '{}'", field.name, name),
+                    field.type_.span,
+                    "Each field name must be unique within a class. Rename or remove the duplicate field.",
+                ));
+            }
+            match self.resolve_type(&field.type_) {
+                Ok(t) => {
+                    field_types.push(t.clone());
+                    fields_map.insert(field.name.clone(), (t, field.is_const));
+                }
+                Err(e) => self.errors.push(e),
+            }
+        }
+        Ok((fields_map, field_types))
+    }
+
+    fn collect_class_methods(
+        &mut self,
+        methods: &[FunctionNode],
+        class_name: &str,
+        type_params: &[(String, Vec<TraitBound>)],
+    ) -> Result<HashMap<String, MethodSig>, SemanticError> {
+        let mut methods_map = HashMap::new();
+        for method in methods {
+            let mut param_types = Vec::new();
+            for p in &method.params {
+                match self.resolve_type(&p.type_) {
+                    Ok(t) => param_types.push(t),
+                    Err(e) => self.errors.push(e),
+                }
+            }
+            let ret = match self.resolve_type(&method.return_type) {
+                Ok(t) => t,
+                Err(e) => {
+                    self.errors.push(e);
+                    continue;
+                }
+            };
+            let method_sig = MethodSig {
+                params: param_types,
+                return_type: ret,
+                is_static: method.is_common,
+            };
+            methods_map.insert(method.name.clone(), method_sig);
+        }
+
+        let type_args: Vec<Type> = type_params
+            .iter()
+            .map(|(p, _)| Type::Variable(p.clone()))
+            .collect();
+        let new_sig = MethodSig {
+            params: vec![],
+            return_type: Type::Named(class_name.to_string(), type_args),
+            is_static: true,
+        };
+        methods_map.insert("new".to_string(), new_sig);
+        Ok(methods_map)
+    }
+
+    fn validate_interface_implementations(
+        &mut self,
+        class_name: &str,
+        implemented_interfaces: &HashMap<String, ResolvedInterface>,
+        fields_map: &HashMap<String, ClassFieldInfo>,
+        methods_map: &HashMap<String, MethodSig>,
+        span: &Span,
+    ) {
+        for (interface_name, (_, interface_methods)) in implemented_interfaces {
+            self.validate_interface_methods(
+                class_name,
+                interface_name,
+                interface_methods,
+                methods_map,
+                *span,
+            );
+            self.validate_interface_fields(class_name, interface_name, fields_map, *span);
+        }
+    }
+
+    fn validate_interface_methods(
+        &mut self,
+        class_name: &str,
+        interface_name: &str,
+        interface_methods: &HashMap<String, MethodSig>,
+        methods_map: &HashMap<String, MethodSig>,
+        span: Span,
+    ) {
+        for (method_name, interface_sig) in interface_methods {
+            if let Some(class_sig) = methods_map.get(method_name) {
+                if let Err(e) = self.check_method_compatibility(interface_sig, class_sig, span) {
+                    self.errors.push(e);
+                }
+            } else {
+                self.errors.push(SemanticError::with_help(
+                    format!(
+                        "Class '{}' does not implement method '{}' required by interface '{}'",
+                        class_name, method_name, interface_name
+                    ),
+                    span,
+                    format!("Add a method '{}' to class '{}' with the signature required by interface '{}'", method_name, class_name, interface_name),
+                ));
+            }
+        }
+    }
+
+    fn validate_interface_fields(
+        &mut self,
+        class_name: &str,
+        interface_name: &str,
+        fields_map: &HashMap<String, ClassFieldInfo>,
+        span: Span,
+    ) {
+        if let Some(interface_symbol) = self.symbol_table.lookup(interface_name) {
+            for (field_name, (interface_field_type, interface_is_const)) in &interface_symbol.fields
+            {
+                if let Some((class_field_type, class_is_const)) = fields_map.get(field_name) {
+                    self.validate_field_type(
+                        class_name,
+                        interface_name,
+                        field_name,
+                        interface_field_type,
+                        class_field_type,
+                        span,
+                    );
+                    self.validate_field_const(
+                        class_name,
+                        interface_name,
+                        field_name,
+                        *interface_is_const,
+                        *class_is_const,
+                        span,
+                    );
+                } else {
+                    self.errors.push(SemanticError::with_help(
+                        format!(
+                            "Class '{}' is missing required field '{}' from interface '{}'",
+                            class_name, field_name, interface_name
+                        ),
+                        span,
+                        format!(
+                            "Add field '{}: {}' to class '{}'",
+                            field_name,
+                            format_type(interface_field_type),
+                            class_name
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    fn validate_field_type(
+        &mut self,
+        class_name: &str,
+        interface_name: &str,
+        field_name: &str,
+        interface_field_type: &Type,
+        class_field_type: &Type,
+        span: Span,
+    ) {
+        if !self.types_compatible(class_field_type, interface_field_type) {
+            self.errors.push(SemanticError::with_help(
+                format!(
+                    "Field '{}' type mismatch in class '{}': class has {}, interface '{}' requires {}",
+                    field_name,
+                    class_name,
+                    format_type(class_field_type),
+                    interface_name,
+                    format_type(interface_field_type)
+                ),
+                span,
+                format!("Change the type of field '{}' to {} to match interface '{}'", field_name, format_type(interface_field_type), interface_name),
+            ));
+        }
+    }
+
+    fn validate_field_const(
+        &mut self,
+        class_name: &str,
+        interface_name: &str,
+        field_name: &str,
+        interface_is_const: bool,
+        class_is_const: bool,
+        span: Span,
+    ) {
+        if interface_is_const && !class_is_const {
+            self.errors.push(SemanticError::with_help(
+                format!(
+                    "Field '{}' must be const in class '{}' to implement interface '{}'",
+                    field_name, class_name, interface_name
+                ),
+                span,
+                format!(
+                    "Add the 'const' modifier to field '{}' in class '{}'",
+                    field_name, class_name
+                ),
+            ));
+        }
+    }
+
+    fn collect_enum_symbol(&mut self, name: &str, variants: &[EnumVariant], span: &Span) {
+        let mut methods = std::collections::HashMap::new();
+        let mut variant_names = Vec::new();
+        for variant in variants {
+            variant_names.push(variant.name.clone());
+            let params = variant
+                .data
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|t| self.resolve_type(&t).unwrap_or(Type::Void))
+                .collect();
+            let return_type = Type::Named(name.to_string(), vec![]);
+            methods.insert(
+                variant.name.clone(),
+                MethodSig {
+                    params,
+                    return_type,
+                    is_static: true,
+                },
+            );
+        }
+        if let Err(e) = self.symbol_table.add_symbol(
+            name,
+            Symbol {
+                kind: SymbolKind::Enum,
+                span: *span,
+                type_: Some(Type::Named(name.to_string(), vec![])),
+                interfaces: std::collections::HashMap::new(),
+                methods,
+                fields: std::collections::HashMap::new(),
+                type_params: Vec::new(),
+                original_name: None,
+                llvm_name: None,
+                default_param_count: 0,
+                variants: Some(variant_names),
+            },
+        ) {
+            self.errors.push(e);
+        }
+    }
+
+    fn collect_interface_symbol(
+        &mut self,
+        name: &str,
+        type_params: &[(String, Vec<TraitBound>)],
+        fields: &[Field],
+        methods: &[FunctionNode],
+        span: &Span,
+    ) {
+        let mut interface_methods = std::collections::HashMap::new();
+        for method in methods {
+            let param_types = method
+                .params
+                .iter()
+                .map(|p| self.resolve_type(&p.type_))
+                .collect::<Result<Vec<_>, _>>();
+            if let Ok(param_types) = param_types {
+                let return_type = self.resolve_type(&method.return_type);
+                if let Ok(return_type) = return_type {
+                    let method_sig = MethodSig {
+                        params: param_types,
+                        return_type,
+                        is_static: false,
+                    };
+                    interface_methods.insert(method.name.clone(), method_sig);
+                }
+            }
+        }
+
+        let mut interface_fields = std::collections::HashMap::new();
+        for field in fields {
+            if let Ok(field_type) = self.resolve_type(&field.type_) {
+                if let Some(default_expr) = &field.default_value
+                    && let Ok(default_type) = self.infer_literal_type(default_expr)
+                    && !self.types_compatible(&default_type, &field_type)
+                {
+                    self.errors.push(SemanticError::with_help(
+                        format!(
+                            "Default value type mismatch for field '{}': expected {}, got {}",
+                            field.name,
+                            format_type(&field_type),
+                            format_type(&default_type)
+                        ),
+                        default_expr.span,
+                        format!(
+                            "The default value must match the field's declared type of {}",
+                            format_type(&field_type)
+                        ),
+                    ));
+                }
+                interface_fields.insert(field.name.clone(), (field_type, field.is_const));
+            }
+        }
+
+        let mut interfaces_map = std::collections::HashMap::new();
+        interfaces_map.insert(name.to_string(), (vec![], interface_methods));
+        if let Err(e) = self.symbol_table.add_symbol(
+            name,
+            Symbol {
+                kind: SymbolKind::Interface,
+                span: *span,
+                type_: None,
+                interfaces: interfaces_map,
+                methods: std::collections::HashMap::new(),
+                fields: interface_fields,
+                type_params: type_params
+                    .iter()
+                    .map(|(p, b)| (p.clone(), b.iter().map(|tb| tb.name.clone()).collect()))
+                    .collect::<Vec<(String, Vec<String>)>>(),
+                original_name: None,
+                llvm_name: None,
+                default_param_count: 0,
+                variants: None,
+            },
+        ) {
+            self.errors.push(e);
+        }
     }
 
     // second pass, analyze all nodes with full symbol information.
@@ -3232,6 +3584,402 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    fn analyze_auto_decl_statement(
+        &mut self,
+        name: &str,
+        expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(expr)?;
+        let expr_type = self.get_expression_type(expr)?;
+        if matches!(expr_type, Type::EmptyList | Type::EmptyMap | Type::EmptySet) {
+            let collection_type = match expr_type {
+                Type::EmptyList => "list",
+                Type::EmptyMap => "map",
+                Type::EmptySet => "set",
+                _ => unreachable!(),
+            };
+            return Err(SemanticError::with_help(
+                format!("Cannot infer type for empty {} literal", collection_type),
+                expr.span,
+                format!(
+                    "Use an explicit type annotation, e.g. {}<int> myVar = {{}}",
+                    collection_type
+                ),
+            ));
+        }
+        self.symbol_table.add_symbol(
+            name,
+            Self::make_symbol(SymbolKind::Variable, span, Some(expr_type)),
+        )?;
+        Ok(())
+    }
+
+    fn analyze_typed_decl_statement(
+        &mut self,
+        name: &str,
+        type_node: &TypeNode,
+        expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let declared_type = self.resolve_type(type_node)?;
+        self.analyze_expression(expr)?;
+        let expr_type = self.get_expression_type(expr)?;
+        self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
+        self.symbol_table.add_symbol(
+            name,
+            Self::make_symbol(SymbolKind::Variable, span, Some(declared_type)),
+        )?;
+        Ok(())
+    }
+
+    fn analyze_const_decl_statement(
+        &mut self,
+        name: &str,
+        type_node: &TypeNode,
+        expr: &ExpressionNode,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let declared_type = self.resolve_type(type_node)?;
+        self.analyze_expression(expr)?;
+        let expr_type = self.get_expression_type(expr)?;
+        self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
+        self.symbol_table.add_symbol(
+            name,
+            Self::make_symbol(SymbolKind::Constant, span, Some(declared_type)),
+        )?;
+        Ok(())
+    }
+
+    fn analyze_if_statement(
+        &mut self,
+        cond: &ExpressionNode,
+        then_block: &[StatementNode],
+        else_block: &Option<Vec<StatementNode>>,
+        mut files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(cond)?;
+
+        self.symbol_table.push_scope()?;
+        self.analyze_block(then_block, files.as_deref_mut())?;
+        self.symbol_table.pop_scope()?;
+
+        if let Some(else_block) = else_block {
+            self.symbol_table.push_scope()?;
+            self.analyze_block(else_block, files)?;
+            self.symbol_table.pop_scope()?;
+        }
+
+        Ok(())
+    }
+
+    fn analyze_for_statement(
+        &mut self,
+        var: &str,
+        iter: &ExpressionNode,
+        body: &[StatementNode],
+        span: Span,
+        files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        self.symbol_table.push_scope()?;
+        self.analyze_expression(iter)?;
+        let iter_type = self.get_expression_type(iter)?;
+        let var_type = match iter_type {
+            Type::List(elem_type) => *elem_type,
+            _ => {
+                return Err(SemanticError::with_help(
+                    format!("Cannot iterate over type {}", format_type(&iter_type)),
+                    iter.span,
+                    "The 'for' loop can only iterate over list types. Use .to_list() for sets/maps, or range(start, end) for numeric ranges.",
+                ));
+            }
+        };
+        self.symbol_table.add_symbol(
+            var,
+            Self::make_symbol(SymbolKind::Variable, span, Some(var_type)),
+        )?;
+        self.analyze_block(body, files)?;
+        self.symbol_table.pop_scope()?;
+        Ok(())
+    }
+
+    fn analyze_while_statement(
+        &mut self,
+        cond: &ExpressionNode,
+        body: &[StatementNode],
+        files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(cond)?;
+        self.symbol_table.push_scope()?;
+        self.analyze_block(body, files)?;
+        self.symbol_table.pop_scope()?;
+        Ok(())
+    }
+
+    fn collect_match_arm_returns(
+        &mut self,
+        arm: &crate::ast::MatchArm,
+        expr_span: Span,
+        expecting_return: bool,
+        arm_return_types: &mut Vec<(Type, Span)>,
+    ) -> Result<(), SemanticError> {
+        if !expecting_return {
+            return Ok(());
+        }
+
+        let mut has_return = false;
+        for stmt in &arm.body {
+            if let StatementKind::Return(Some(ret_expr)) = &stmt.kind {
+                let ret_type = self.get_expression_type(ret_expr)?;
+                arm_return_types.push((ret_type, stmt.span));
+                has_return = true;
+                break;
+            }
+            if let StatementKind::Return(None) = &stmt.kind {
+                has_return = true;
+            }
+        }
+
+        if has_return {
+            return Ok(());
+        }
+
+        Err(SemanticError::with_help(
+            "Match arm must return a value in a function with non-void return type",
+            arm.body.first().map(|s| s.span).unwrap_or(expr_span),
+            "Add a return statement to this match arm",
+        ))
+    }
+
+    fn validate_match_arm_return_types(
+        &self,
+        arm_return_types: &[(Type, Span)],
+    ) -> Result<(), SemanticError> {
+        if arm_return_types.is_empty() {
+            return Ok(());
+        }
+
+        let (first_type, _) = &arm_return_types[0];
+        for (i, (arm_type, arm_span)) in arm_return_types.iter().enumerate().skip(1) {
+            if self
+                .check_type_compatibility(first_type, arm_type, *arm_span)
+                .is_err()
+            {
+                return Err(SemanticError::with_help(
+                    format!(
+                        "Match arms have incompatible return types: first arm returns '{}', but arm {} returns '{}'",
+                        format_type(first_type),
+                        i + 1,
+                        format_type(arm_type)
+                    ),
+                    *arm_span,
+                    "All match arms must return the same type when used as an expression or in a returning context",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn analyze_match_statement(
+        &mut self,
+        expr: &ExpressionNode,
+        arms: &[crate::ast::MatchArm],
+        mut files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(expr)?;
+        let expr_type = self.get_expression_type(expr)?;
+
+        let expecting_return = self.current_return_type.is_some()
+            && !matches!(self.current_return_type, Some(Type::Void));
+        let mut arm_return_types = Vec::new();
+
+        for arm in arms {
+            self.symbol_table.push_scope()?;
+            self.set_pattern_types(&arm.pattern, &expr_type, expr.span)?;
+            self.analyze_pattern(&arm.pattern)?;
+            if let Some(guard) = &arm.guard {
+                self.analyze_expression(guard)?;
+            }
+            self.analyze_block(&arm.body, files.as_deref_mut())?;
+            self.collect_match_arm_returns(
+                arm,
+                expr.span,
+                expecting_return,
+                &mut arm_return_types,
+            )?;
+            self.symbol_table.pop_scope()?;
+        }
+
+        self.validate_match_arm_return_types(&arm_return_types)?;
+        self.check_match_exhaustiveness(&expr_type, arms, expr.span)
+    }
+
+    fn analyze_return_with_value(&mut self, expr: &ExpressionNode) -> Result<(), SemanticError> {
+        if self.current_return_type.is_none() {
+            return Err(SemanticError::with_help(
+                "Cannot use 'return' outside of a function",
+                expr.span,
+                "'return' can only be used inside a function body",
+            ));
+        }
+
+        self.analyze_expression(expr)?;
+
+        if matches!(self.current_return_type, Some(Type::Void)) {
+            return Err(SemanticError::with_help(
+                "Cannot return a value from a void function",
+                expr.span,
+                "This function is declared as 'returns void'. Either remove the return value or change the function's return type.",
+            ));
+        }
+
+        if let Some(expected_type) = self.current_return_type.clone() {
+            let actual_type = self.get_expression_type(expr)?;
+            self.check_type_compatibility(&expected_type, &actual_type, expr.span)?;
+        }
+        Ok(())
+    }
+
+    fn analyze_return_without_value(&mut self, span: Span) -> Result<(), SemanticError> {
+        if self.current_return_type.is_none() {
+            return Err(SemanticError::with_help(
+                "Cannot use 'return' outside of a function",
+                span,
+                "'return' can only be used inside a function body",
+            ));
+        }
+
+        if !matches!(self.current_return_type, Some(Type::Void))
+            && let Some(expected_type) = &self.current_return_type
+        {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Missing return value; function expects '{}', but return has no value",
+                    format_type(expected_type)
+                ),
+                span,
+                format!(
+                    "Add a value after 'return' that matches the function's return type '{}'. Example: return some_value",
+                    format_type(expected_type)
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn analyze_import_statement(
+        &mut self,
+        module_path: &str,
+        spec: &ImportSpec,
+        span: Span,
+        files: Option<&mut Files>,
+    ) -> Result<(), SemanticError> {
+        if module_path == "std" || module_path.starts_with("std.") {
+            self.handle_std_import(module_path, spec, span, files)?;
+            return Ok(());
+        }
+
+        let resolver = self
+            .module_resolver
+            .clone()
+            .ok_or_else(|| SemanticError::new("Module resolver not available", span))?;
+
+        let (has_file, has_directory) = resolver.borrow().check_module_path(module_path);
+
+        if has_file && has_directory {
+            return Err(SemanticError::with_help(
+                format!("Ambiguous import: '{}'", module_path),
+                span,
+                format!(
+                    "Both {}.mux and {}/ directory exist. Please remove one.",
+                    module_path.replace('.', "/"),
+                    module_path.replace('.', "/")
+                ),
+            ));
+        }
+
+        let files = files.expect("Files registry must be available for import processing");
+
+        if has_directory {
+            self.handle_directory_import(module_path, spec, span, resolver, files)?;
+            return Ok(());
+        }
+
+        let module_nodes = resolver
+            .borrow_mut()
+            .resolve_import_path(module_path, self.current_file.as_deref(), files)
+            .map_err(|e| {
+                SemanticError::with_help(
+                    format!("Failed to import module '{}'", module_path),
+                    span,
+                    e.to_string(),
+                )
+            })?;
+
+        let mut module_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
+        module_analyzer.set_current_file(std::path::PathBuf::from(
+            module_path.replace('.', "/") + ".mux",
+        ));
+        let errors = module_analyzer.analyze(&module_nodes, Some(files));
+        if !errors.is_empty() {
+            let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+            return Err(SemanticError::with_help(
+                format!("Errors in imported module '{}'", module_path),
+                span,
+                format!(
+                    "Fix the following errors in '{}':\n  {}",
+                    module_path,
+                    error_messages.join("\n  ")
+                ),
+            ));
+        }
+
+        let module_symbols =
+            self.filter_module_export_symbols(&module_analyzer.symbol_table.all_symbols);
+
+        match spec {
+            ImportSpec::Module { alias } => {
+                if let Some(namespace) = alias {
+                    self.add_module_namespace(namespace, module_symbols, module_path, span)?;
+                }
+            }
+            ImportSpec::Item { item, alias } => {
+                let symbol_name = alias.as_ref().unwrap_or(item);
+                self.import_single_symbol(&module_symbols, item, symbol_name, module_path, span)?;
+            }
+            ImportSpec::Items { items } => {
+                for (item, alias) in items {
+                    let symbol_name = alias.as_ref().unwrap_or(item);
+                    self.import_single_symbol(
+                        &module_symbols,
+                        item,
+                        symbol_name,
+                        module_path,
+                        span,
+                    )?;
+                }
+            }
+            ImportSpec::Wildcard => {
+                self.import_all_symbols(&module_symbols, module_path, span)?;
+            }
+        }
+
+        resolver
+            .borrow_mut()
+            .cache_module(module_path, module_nodes.clone());
+        resolver.borrow_mut().finish_import(module_path);
+
+        self.all_module_asts
+            .insert(module_path.to_string(), module_nodes);
+
+        if !self.module_dependencies.contains(&module_path.to_string()) {
+            self.module_dependencies.push(module_path.to_string());
+        }
+
+        Ok(())
+    }
+
     fn analyze_statement(
         &mut self,
         stmt: &StatementNode,
@@ -3239,38 +3987,10 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         match &stmt.kind {
             StatementKind::AutoDecl(name, _, expr) => {
-                self.analyze_expression(expr)?;
-                let expr_type = self.get_expression_type(expr)?;
-                if matches!(expr_type, Type::EmptyList | Type::EmptyMap | Type::EmptySet) {
-                    let collection_type = match expr_type {
-                        Type::EmptyList => "list",
-                        Type::EmptyMap => "map",
-                        Type::EmptySet => "set",
-                        _ => unreachable!(),
-                    };
-                    return Err(SemanticError::with_help(
-                        format!("Cannot infer type for empty {} literal", collection_type),
-                        expr.span,
-                        format!(
-                            "Use an explicit type annotation, e.g. {}<int> myVar = {{}}",
-                            collection_type
-                        ),
-                    ));
-                }
-                self.symbol_table.add_symbol(
-                    name,
-                    Self::make_symbol(SymbolKind::Variable, stmt.span, Some(expr_type)),
-                )?;
+                self.analyze_auto_decl_statement(name, expr, stmt.span)?;
             }
             StatementKind::TypedDecl(name, type_node, expr) => {
-                let declared_type = self.resolve_type(type_node)?;
-                self.analyze_expression(expr)?;
-                let expr_type = self.get_expression_type(expr)?;
-                self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
-                self.symbol_table.add_symbol(
-                    name,
-                    Self::make_symbol(SymbolKind::Variable, stmt.span, Some(declared_type)),
-                )?;
+                self.analyze_typed_decl_statement(name, type_node, expr, stmt.span)?;
             }
             StatementKind::Expression(expr) => {
                 self.analyze_expression(expr)?;
@@ -3281,328 +4001,39 @@ impl SemanticAnalyzer {
                 self.symbol_table.pop_scope()?;
             }
             StatementKind::ConstDecl(name, type_node, expr) => {
-                let declared_type = self.resolve_type(type_node)?;
-                self.analyze_expression(expr)?;
-                let expr_type = self.get_expression_type(expr)?;
-                self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
-                self.symbol_table.add_symbol(
-                    name,
-                    Self::make_symbol(SymbolKind::Constant, stmt.span, Some(declared_type)),
-                )?;
+                self.analyze_const_decl_statement(name, type_node, expr, stmt.span)?;
             }
             StatementKind::If {
                 cond,
                 then_block,
                 else_block,
             } => {
-                self.analyze_expression(cond)?;
-
-                self.symbol_table.push_scope()?;
-                self.analyze_block(then_block, files.as_deref_mut())?;
-                self.symbol_table.pop_scope()?;
-
-                if let Some(else_block) = else_block {
-                    self.symbol_table.push_scope()?;
-                    self.analyze_block(else_block, files.as_deref_mut())?;
-                    self.symbol_table.pop_scope()?;
-                }
+                self.analyze_if_statement(cond, then_block, else_block, files.as_deref_mut())?;
             }
             StatementKind::For {
                 var, iter, body, ..
             } => {
-                self.symbol_table.push_scope()?;
-                self.analyze_expression(iter)?;
-                let iter_type = self.get_expression_type(iter)?;
-                // for now, assume iterator yields the element type directly
-                // Note: Iteration handled via to_list() for sets/maps; no Iterator interface needed.
-                let var_type = match iter_type {
-                    Type::List(elem_type) => *elem_type,
-                    _ => {
-                        return Err(SemanticError::with_help(
-                            format!("Cannot iterate over type {}", format_type(&iter_type)),
-                            iter.span,
-                            "The 'for' loop can only iterate over list types. Use .to_list() for sets/maps, or range(start, end) for numeric ranges.",
-                        ));
-                    }
-                };
-                self.symbol_table.add_symbol(
-                    var,
-                    Self::make_symbol(SymbolKind::Variable, stmt.span, Some(var_type)),
-                )?;
-                self.analyze_block(body, files.as_deref_mut())?;
-                self.symbol_table.pop_scope()?;
+                self.analyze_for_statement(var, iter, body, stmt.span, files.as_deref_mut())?;
             }
             StatementKind::While { cond, body } => {
-                self.analyze_expression(cond)?;
-
-                self.symbol_table.push_scope()?;
-                self.analyze_block(body, files.as_deref_mut())?;
-                self.symbol_table.pop_scope()?;
+                self.analyze_while_statement(cond, body, files.as_deref_mut())?;
             }
             StatementKind::Match { expr, arms } => {
-                self.analyze_expression(expr)?;
-                let expr_type = self.get_expression_type(expr)?;
-
-                // Track return types from each arm if we're in a non-void function context
-                let expecting_return = self.current_return_type.is_some()
-                    && !matches!(self.current_return_type, Some(Type::Void));
-                let mut arm_return_types = Vec::new();
-
-                for arm in arms {
-                    self.symbol_table.push_scope()?;
-                    // set types for pattern variables based on expr_type
-                    self.set_pattern_types(&arm.pattern, &expr_type, expr.span)?;
-                    self.analyze_pattern(&arm.pattern)?;
-                    if let Some(guard) = &arm.guard {
-                        self.analyze_expression(guard)?;
-                    }
-                    self.analyze_block(&arm.body, files.as_deref_mut())?;
-
-                    // Check for return in this arm
-                    if expecting_return {
-                        let mut has_return = false;
-                        for stmt in &arm.body {
-                            if let StatementKind::Return(Some(ret_expr)) = &stmt.kind {
-                                let ret_type = self.get_expression_type(ret_expr)?;
-                                arm_return_types.push((ret_type, stmt.span));
-                                has_return = true;
-                                break;
-                            } else if let StatementKind::Return(None) = &stmt.kind {
-                                has_return = true;
-                                // Void return in non-void context - will be caught by Return validation
-                            }
-                        }
-                        if !has_return {
-                            return Err(SemanticError::with_help(
-                                "Match arm must return a value in a function with non-void return type",
-                                arm.body.first().map(|s| s.span).unwrap_or(expr.span),
-                                "Add a return statement to this match arm",
-                            ));
-                        }
-                    }
-
-                    self.symbol_table.pop_scope()?;
-                }
-
-                // Validate all arms return compatible types
-                if !arm_return_types.is_empty() {
-                    let (first_type, _first_span) = &arm_return_types[0];
-                    for (i, (arm_type, arm_span)) in arm_return_types.iter().enumerate().skip(1) {
-                        if self
-                            .check_type_compatibility(first_type, arm_type, *arm_span)
-                            .is_err()
-                        {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Match arms have incompatible return types: first arm returns '{}', but arm {} returns '{}'",
-                                    format_type(first_type),
-                                    i + 1,
-                                    format_type(arm_type)
-                                ),
-                                *arm_span,
-                                "All match arms must return the same type when used as an expression or in a returning context",
-                            ));
-                        }
-                    }
-                }
-
-                // Check exhaustiveness
-                self.check_match_exhaustiveness(&expr_type, arms, expr.span)?;
-
-                return Ok(());
+                self.analyze_match_statement(expr, arms, files.as_deref_mut())?;
             }
             StatementKind::Return(Some(expr)) => {
-                // Check if we're in a function at all
-                if self.current_return_type.is_none() {
-                    return Err(SemanticError::with_help(
-                        "Cannot use 'return' outside of a function",
-                        expr.span,
-                        "'return' can only be used inside a function body",
-                    ));
-                }
-
-                self.analyze_expression(expr)?;
-
-                // Check if we're in a void function
-                if matches!(self.current_return_type, Some(Type::Void)) {
-                    return Err(SemanticError::with_help(
-                        "Cannot return a value from a void function",
-                        expr.span,
-                        "This function is declared as 'returns void'. Either remove the return value or change the function's return type.",
-                    ));
-                }
-
-                // Validate return type matches function return type
-                if let Some(expected_type) = self.current_return_type.clone() {
-                    let actual_type = self.get_expression_type(expr)?;
-                    self.check_type_compatibility(&expected_type, &actual_type, expr.span)?;
-                }
-                return Ok(());
+                self.analyze_return_with_value(expr)?;
             }
             StatementKind::Return(None) => {
-                // Check if we're in a function at all
-                if self.current_return_type.is_none() {
-                    return Err(SemanticError::with_help(
-                        "Cannot use 'return' outside of a function",
-                        stmt.span,
-                        "'return' can only be used inside a function body",
-                    ));
-                }
-
-                // Check if we're NOT in a void function (missing return value)
-                if !matches!(self.current_return_type, Some(Type::Void))
-                    && let Some(expected_type) = &self.current_return_type
-                {
-                    return Err(SemanticError::with_help(
-                        format!(
-                            "Missing return value; function expects '{}', but return has no value",
-                            format_type(expected_type)
-                        ),
-                        stmt.span,
-                        format!(
-                            "Add a value after 'return' that matches the function's return type '{}'. Example: return some_value",
-                            format_type(expected_type)
-                        ),
-                    ));
-                }
-                return Ok(());
+                self.analyze_return_without_value(stmt.span)?;
             }
             StatementKind::Import { module_path, spec } => {
-                // Handle std library specially
-                if module_path == "std" || module_path.starts_with("std.") {
-                    self.handle_std_import(module_path, spec, stmt.span, files)?;
-                    return Ok(());
-                }
-
-                // Clone the resolver early to avoid borrow issues
-                let resolver = self.module_resolver.clone().ok_or_else(|| {
-                    SemanticError::new("Module resolver not available", stmt.span)
-                })?;
-
-                // Check if module is a file, directory, or both
-                let (has_file, has_directory) = resolver.borrow().check_module_path(module_path);
-
-                if has_file && has_directory {
-                    return Err(SemanticError::with_help(
-                        format!("Ambiguous import: '{}'", module_path),
-                        stmt.span,
-                        format!(
-                            "Both {}.mux and {}/ directory exist. Please remove one.",
-                            module_path.replace('.', "/"),
-                            module_path.replace('.', "/")
-                        ),
-                    ));
-                }
-
-                // Files must be available for import processing
-                let files = files.expect("Files registry must be available for import processing");
-
-                if has_directory {
-                    // Directory-based import - handle submodules
-                    self.handle_directory_import(module_path, spec, stmt.span, resolver, files)?;
-                    return Ok(());
-                }
-
-                let module_nodes = resolver
-                    .borrow_mut()
-                    .resolve_import_path(module_path, self.current_file.as_deref(), files)
-                    .map_err(|e| {
-                        SemanticError::with_help(
-                            format!("Failed to import module '{}'", module_path),
-                            stmt.span,
-                            e.to_string(),
-                        )
-                    })?;
-
-                // Analyze the imported module
-                let mut module_analyzer = SemanticAnalyzer::new_for_module(resolver.clone());
-                module_analyzer.set_current_file(std::path::PathBuf::from(
-                    module_path.replace('.', "/") + ".mux",
-                ));
-                let errors = module_analyzer.analyze(&module_nodes, Some(files));
-                if !errors.is_empty() {
-                    let error_messages: Vec<String> =
-                        errors.iter().map(|e| e.message.clone()).collect();
-                    return Err(SemanticError::with_help(
-                        format!("Errors in imported module '{}'", module_path),
-                        stmt.span,
-                        format!(
-                            "Fix the following errors in '{}':\n  {}",
-                            module_path,
-                            error_messages.join("\n  ")
-                        ),
-                    ));
-                }
-
-                // Get exportable symbols from the imported module
-                let module_symbols =
-                    self.filter_module_export_symbols(&module_analyzer.symbol_table.all_symbols);
-
-                // Process import specification
-                match spec {
-                    ImportSpec::Module { alias } => {
-                        if let Some(namespace) = alias {
-                            // import logger (as ns) - add as namespaced module
-                            self.add_module_namespace(
-                                namespace,
-                                module_symbols,
-                                module_path,
-                                stmt.span,
-                            )?;
-                        }
-                        // if alias is None, it's a side-effect import (as _) - don't add symbols
-                    }
-
-                    ImportSpec::Item { item, alias } => {
-                        // import logger.log (as lg)
-                        let symbol_name = alias.as_ref().unwrap_or(item);
-                        self.import_single_symbol(
-                            &module_symbols,
-                            item,
-                            symbol_name,
-                            module_path,
-                            stmt.span,
-                        )?;
-                    }
-
-                    ImportSpec::Items { items } => {
-                        // import logger.(log, error as err)
-                        for (item, alias) in items {
-                            let symbol_name = alias.as_ref().unwrap_or(item);
-                            self.import_single_symbol(
-                                &module_symbols,
-                                item,
-                                symbol_name,
-                                module_path,
-                                stmt.span,
-                            )?;
-                        }
-                    }
-
-                    ImportSpec::Wildcard => {
-                        // import logger.* - import all symbols without namespace
-                        self.import_all_symbols(&module_symbols, module_path, stmt.span)?;
-                    }
-                }
-
-                // Cache module and track dependencies
-                resolver
-                    .borrow_mut()
-                    .cache_module(module_path, module_nodes.clone());
-                resolver.borrow_mut().finish_import(module_path);
-
-                self.all_module_asts
-                    .insert(module_path.to_string(), module_nodes);
-
-                if !self.module_dependencies.contains(&module_path.to_string()) {
-                    self.module_dependencies.push(module_path.to_string());
-                }
+                self.analyze_import_statement(module_path, spec, stmt.span, files)?;
             }
             StatementKind::Function(func) => {
-                // Nested function - analyze its body
                 self.analyze_function(func, None)?;
             }
-            _ => {} // handle other statement types
+            _ => {}
         }
         Ok(())
     }
@@ -3615,150 +4046,179 @@ impl SemanticAnalyzer {
         expr_span: Span,
     ) -> Result<(), SemanticError> {
         match expr_type {
-            Type::Result(_, _) => {
-                let has_ok = arms.iter().any(|arm| {
-                    arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "ok")
-                });
-                let has_err = arms.iter().any(|arm| {
-                    arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "err")
-                });
-                let has_wildcard = arms
-                    .iter()
-                    .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
-                if has_wildcard || (has_ok && has_err) {
-                    Ok(())
-                } else {
-                    let mut missing = Vec::new();
-                    if !has_ok {
-                        missing.push("ok");
-                    }
-                    if !has_err {
-                        missing.push("err");
-                    }
-                    Err(SemanticError::with_help(
-                        format!(
-                            "Non-exhaustive match: missing pattern{} for Result: {}",
-                            if missing.len() > 1 { "s" } else { "" },
-                            missing.join(", ")
-                        ),
-                        expr_span,
-                        format!(
-                            "Add match arm{} for: {}, or add a wildcard '_' pattern to cover all remaining cases",
-                            if missing.len() > 1 { "s" } else { "" },
-                            missing.join(", ")
-                        ),
-                    ))
-                }
-            }
+            Type::Result(_, _) => self.check_result_exhaustiveness(arms, expr_span),
             Type::Named(type_name, _) => {
-                // Check if this is an enum type
-                if let Some(symbol) = self.symbol_table.lookup(type_name)
-                    && let Some(variant_names) = &symbol.variants
-                {
-                    // Enum exhaustiveness: check all variants covered
-                    let mut covered: std::collections::HashSet<String> =
-                        std::collections::HashSet::new();
-                    let mut has_wildcard = false;
-
-                    for arm in arms {
-                        match &arm.pattern {
-                            PatternNode::Wildcard => {
-                                has_wildcard = true;
-                                break;
-                            }
-                            PatternNode::EnumVariant { name, .. } => {
-                                // Only count variant as covered if NO guard
-                                if arm.guard.is_none() {
-                                    covered.insert(name.clone());
-                                }
-                            }
-                            PatternNode::Identifier(name) => {
-                                // Only count variant as covered if NO guard
-                                if arm.guard.is_none() && variant_names.contains(name) {
-                                    covered.insert(name.clone());
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    if has_wildcard {
-                        return Ok(());
-                    }
-
-                    let uncovered: Vec<&String> = variant_names
-                        .iter()
-                        .filter(|v| !covered.contains(*v))
-                        .collect();
-
-                    if !uncovered.is_empty() {
-                        let uncovered_list = uncovered
-                            .iter()
-                            .map(|s| s.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Non-exhaustive match: missing variant{} of '{}': {}",
-                                if uncovered.len() > 1 { "s" } else { "" },
-                                type_name,
-                                uncovered_list
-                            ),
-                            expr_span,
-                            format!(
-                                "Add match arm{} for: {}, or add a wildcard '_' pattern",
-                                if uncovered.len() > 1 { "s" } else { "" },
-                                uncovered_list
-                            ),
-                        ));
-                    }
-                    return Ok(());
-                }
-                // Named type but not an enum and not Result: require wildcard
-                self.require_wildcard_pattern(arms, expr_type, expr_span)
+                self.check_named_enum_exhaustiveness(type_name, arms, expr_type, expr_span)
             }
-            Type::Optional(_) => {
-                let has_some = arms.iter().any(|arm| {
-                    arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "some")
-                });
-                let has_none = arms.iter().any(|arm| {
-                    arm.guard.is_none()
-                        && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "none")
-                });
-                let has_wildcard = arms
-                    .iter()
-                    .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
-                if has_wildcard || (has_some && has_none) {
-                    Ok(())
-                } else {
-                    let mut missing = Vec::new();
-                    if !has_some {
-                        missing.push("some");
-                    }
-                    if !has_none {
-                        missing.push("none");
-                    }
-                    Err(SemanticError::with_help(
-                        format!(
-                            "Non-exhaustive match: missing pattern{} for Optional: {}",
-                            if missing.len() > 1 { "s" } else { "" },
-                            missing.join(", ")
-                        ),
-                        expr_span,
-                        format!(
-                            "Add match arm{} for: {}, or add a wildcard '_' pattern",
-                            if missing.len() > 1 { "s" } else { "" },
-                            missing.join(", ")
-                        ),
-                    ))
-                }
-            }
-            // Non-enum types: require wildcard pattern for exhaustiveness
+            Type::Optional(_) => self.check_optional_exhaustiveness(arms, expr_span),
             _ => self.require_wildcard_pattern(arms, expr_type, expr_span),
         }
+    }
+
+    fn check_result_exhaustiveness(
+        &self,
+        arms: &[crate::ast::MatchArm],
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let has_ok = arms.iter().any(|arm| {
+            arm.guard.is_none()
+                && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "ok")
+        });
+        let has_err = arms.iter().any(|arm| {
+            arm.guard.is_none()
+                && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "err")
+        });
+        let has_wildcard = arms
+            .iter()
+            .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
+
+        if has_wildcard || (has_ok && has_err) {
+            return Ok(());
+        }
+
+        let mut missing = Vec::new();
+        if !has_ok {
+            missing.push("ok");
+        }
+        if !has_err {
+            missing.push("err");
+        }
+        Err(SemanticError::with_help(
+            format!(
+                "Non-exhaustive match: missing pattern{} for Result: {}",
+                if missing.len() > 1 { "s" } else { "" },
+                missing.join(", ")
+            ),
+            expr_span,
+            format!(
+                "Add match arm{} for: {}, or add a wildcard '_' pattern to cover all remaining cases",
+                if missing.len() > 1 { "s" } else { "" },
+                missing.join(", ")
+            ),
+        ))
+    }
+
+    fn check_optional_exhaustiveness(
+        &self,
+        arms: &[crate::ast::MatchArm],
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let has_some = arms.iter().any(|arm| {
+            arm.guard.is_none()
+                && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "some")
+        });
+        let has_none = arms.iter().any(|arm| {
+            arm.guard.is_none()
+                && matches!(&arm.pattern, PatternNode::EnumVariant { name, .. } if name == "none")
+        });
+        let has_wildcard = arms
+            .iter()
+            .any(|arm| matches!(&arm.pattern, PatternNode::Wildcard));
+
+        if has_wildcard || (has_some && has_none) {
+            return Ok(());
+        }
+
+        let mut missing = Vec::new();
+        if !has_some {
+            missing.push("some");
+        }
+        if !has_none {
+            missing.push("none");
+        }
+        Err(SemanticError::with_help(
+            format!(
+                "Non-exhaustive match: missing pattern{} for Optional: {}",
+                if missing.len() > 1 { "s" } else { "" },
+                missing.join(", ")
+            ),
+            expr_span,
+            format!(
+                "Add match arm{} for: {}, or add a wildcard '_' pattern",
+                if missing.len() > 1 { "s" } else { "" },
+                missing.join(", ")
+            ),
+        ))
+    }
+
+    fn check_named_enum_exhaustiveness(
+        &self,
+        type_name: &str,
+        arms: &[crate::ast::MatchArm],
+        expr_type: &Type,
+        expr_span: Span,
+    ) -> Result<(), SemanticError> {
+        let Some(symbol) = self.symbol_table.lookup(type_name) else {
+            return self.require_wildcard_pattern(arms, expr_type, expr_span);
+        };
+        let Some(variant_names) = &symbol.variants else {
+            return self.require_wildcard_pattern(arms, expr_type, expr_span);
+        };
+
+        let (covered, has_wildcard) = self.collect_enum_covered_variants(arms, variant_names);
+
+        if has_wildcard {
+            return Ok(());
+        }
+
+        let uncovered: Vec<&String> = variant_names
+            .iter()
+            .filter(|v| !covered.contains(*v))
+            .collect();
+
+        if !uncovered.is_empty() {
+            let uncovered_list = uncovered
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(SemanticError::with_help(
+                format!(
+                    "Non-exhaustive match: missing variant{} of '{}': {}",
+                    if uncovered.len() > 1 { "s" } else { "" },
+                    type_name,
+                    uncovered_list
+                ),
+                expr_span,
+                format!(
+                    "Add match arm{} for: {}, or add a wildcard '_' pattern",
+                    if uncovered.len() > 1 { "s" } else { "" },
+                    uncovered_list
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn collect_enum_covered_variants(
+        &self,
+        arms: &[crate::ast::MatchArm],
+        variant_names: &[String],
+    ) -> (std::collections::HashSet<String>, bool) {
+        let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut has_wildcard = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                PatternNode::Wildcard => {
+                    has_wildcard = true;
+                    break;
+                }
+                PatternNode::EnumVariant { name, .. } => {
+                    if arm.guard.is_none() {
+                        covered.insert(name.clone());
+                    }
+                }
+                PatternNode::Identifier(name) => {
+                    if arm.guard.is_none() && variant_names.contains(name) {
+                        covered.insert(name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        (covered, has_wildcard)
     }
 
     fn require_wildcard_pattern(
@@ -3790,139 +4250,192 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         match pattern {
             PatternNode::Identifier(name) => {
-                // Check if this identifier is a constant (used as a value pattern)
-                let is_constant = self
-                    .symbol_table
-                    .lookup(name)
-                    .map(|s| s.kind == SymbolKind::Constant)
-                    .unwrap_or(false);
-
-                if is_constant {
-                    // Constant pattern: validate type compatibility, no variable binding
-                    let const_type = self
-                        .symbol_table
-                        .lookup(name)
-                        .and_then(|s| s.type_.clone())
-                        .ok_or_else(|| {
-                            SemanticError::new(
-                                format!("Constant '{}' has no type information", name),
-                                span,
-                            )
-                        })?;
-                    self.check_type_compatibility(&const_type, expected_type, span)?;
-                } else {
-                    // Variable binding pattern
-                    self.symbol_table.add_symbol(
-                        name,
-                        Symbol {
-                            kind: SymbolKind::Variable,
-                            span,
-                            type_: Some(expected_type.clone()),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    )?;
-                }
+                self.handle_identifier_pattern(name, expected_type, span)?;
             }
             PatternNode::EnumVariant { name, args } => {
-                match expected_type {
-                    Type::Optional(inner) => {
-                        if name == "some" && args.len() == 1 {
-                            self.set_pattern_types(&args[0], inner, span)?;
-                        } else if name == "none" && args.is_empty() {
-                            // no vars
-                        } else {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Pattern '{}' does not match type {}",
-                                    name,
-                                    format_type(expected_type)
-                                ),
-                                span,
-                                "Optional values can only be matched with Some(value) or None",
-                            ));
-                        }
-                    }
-                    Type::Result(ok_type, err_type) => {
-                        if name == "ok" && args.len() == 1 {
-                            self.set_pattern_types(&args[0], ok_type, span)?;
-                        } else if name == "err" && args.len() == 1 {
-                            self.set_pattern_types(&args[0], err_type, span)?;
-                        } else {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Pattern '{}' does not match type {}",
-                                    name,
-                                    format_type(expected_type)
-                                ),
-                                span,
-                                "Result values can only be matched with Ok(value) or Err(value)",
-                            ));
-                        }
-                    }
-                    Type::Named(enum_name, _) => {
-                        let symbol = self
-                            .symbol_table
-                            .lookup(enum_name)
-                            .ok_or_else(|| self.undefined_symbol_error("type", enum_name, span))?;
-                        self.match_enum_variant(name, args, enum_name, &symbol, span)?;
-                    }
-                    _ => {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Enum variant patterns are not supported for type {}",
-                                format_type(expected_type)
-                            ),
-                            span,
-                            "Variant patterns can only be used with enum, Optional, or Result types",
-                        ));
-                    }
-                }
+                self.handle_enum_variant_pattern(name, args, expected_type, span)?;
             }
             PatternNode::Literal(lit) => {
-                // Validate type compatibility between literal and match expression
-                let literal_type = match lit {
-                    crate::ast::LiteralNode::Integer(_) => Type::Primitive(PrimitiveType::Int),
-                    crate::ast::LiteralNode::Float(_) => Type::Primitive(PrimitiveType::Float),
-                    crate::ast::LiteralNode::String(_) => Type::Primitive(PrimitiveType::Str),
-                    crate::ast::LiteralNode::Boolean(_) => Type::Primitive(PrimitiveType::Bool),
-                    crate::ast::LiteralNode::Char(_) => Type::Primitive(PrimitiveType::Char),
-                };
-                self.check_type_compatibility(&literal_type, expected_type, span)?;
+                self.handle_literal_pattern(lit, expected_type, span)?;
             }
             PatternNode::List { elements, rest } => {
-                // Validate that expected type is a list type
-                let inner_type = match expected_type {
-                    Type::List(inner) => (**inner).clone(),
-                    Type::EmptyList => Type::Void,
-                    _ => {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "List pattern cannot match type {}",
-                                format_type(expected_type)
-                            ),
-                            span,
-                            "List patterns (e.g. [head, ...rest]) can only match list types",
-                        ));
-                    }
-                };
-                // Set types for each element pattern
-                for elem in elements {
-                    self.set_pattern_types(elem, &inner_type, span)?;
-                }
-                // Handle rest pattern (..rest binds to a list of the same inner type)
-                if let Some(rest_pat) = rest {
-                    let rest_type = Type::List(Box::new(inner_type));
-                    self.set_pattern_types(rest_pat, &rest_type, span)?;
-                }
+                self.handle_list_pattern(elements, rest, expected_type, span)?;
             }
             PatternNode::Wildcard => {} // no binding
+        }
+        Ok(())
+    }
+
+    fn handle_identifier_pattern(
+        &mut self,
+        name: &str,
+        expected_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let is_constant = self
+            .symbol_table
+            .lookup(name)
+            .map(|s| s.kind == SymbolKind::Constant)
+            .unwrap_or(false);
+
+        if is_constant {
+            let const_type = self
+                .symbol_table
+                .lookup(name)
+                .and_then(|s| s.type_.clone())
+                .ok_or_else(|| {
+                    SemanticError::new(format!("Constant '{}' has no type information", name), span)
+                })?;
+            self.check_type_compatibility(&const_type, expected_type, span)?;
+        } else {
+            self.symbol_table.add_symbol(
+                name,
+                Symbol {
+                    kind: SymbolKind::Variable,
+                    span,
+                    type_: Some(expected_type.clone()),
+                    interfaces: std::collections::HashMap::new(),
+                    methods: std::collections::HashMap::new(),
+                    fields: std::collections::HashMap::new(),
+                    type_params: Vec::new(),
+                    original_name: None,
+                    llvm_name: None,
+                    default_param_count: 0,
+                    variants: None,
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    fn handle_enum_variant_pattern(
+        &mut self,
+        name: &str,
+        args: &[PatternNode],
+        expected_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        match expected_type {
+            Type::Optional(inner) => self.match_optional_variant(name, args, inner, span),
+            Type::Result(ok_type, err_type) => {
+                self.match_result_variant(name, args, ok_type, err_type, span)
+            }
+            Type::Named(enum_name, _) => {
+                let symbol = self
+                    .symbol_table
+                    .lookup(enum_name)
+                    .ok_or_else(|| self.undefined_symbol_error("type", enum_name, span))?;
+                self.match_enum_variant(name, args, enum_name, &symbol, span)
+            }
+            _ => Err(SemanticError::with_help(
+                format!(
+                    "Enum variant patterns are not supported for type {}",
+                    format_type(expected_type)
+                ),
+                span,
+                "Variant patterns can only be used with enum, Optional, or Result types",
+            )),
+        }
+    }
+
+    fn match_optional_variant(
+        &mut self,
+        name: &str,
+        args: &[PatternNode],
+        inner: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        if name == "some" && args.len() == 1 {
+            self.set_pattern_types(&args[0], inner, span)?;
+            Ok(())
+        } else if name == "none" && args.is_empty() {
+            Ok(())
+        } else {
+            Err(SemanticError::with_help(
+                format!(
+                    "Pattern '{}' does not match type {}",
+                    name,
+                    format_type(&Type::Optional(Box::new(inner.clone())))
+                ),
+                span,
+                "Optional values can only be matched with Some(value) or None",
+            ))
+        }
+    }
+
+    fn match_result_variant(
+        &mut self,
+        name: &str,
+        args: &[PatternNode],
+        ok_type: &Type,
+        err_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        if name == "ok" && args.len() == 1 {
+            self.set_pattern_types(&args[0], ok_type, span)?;
+            Ok(())
+        } else if name == "err" && args.len() == 1 {
+            self.set_pattern_types(&args[0], err_type, span)?;
+            Ok(())
+        } else {
+            Err(SemanticError::with_help(
+                format!(
+                    "Pattern '{}' does not match type {}",
+                    name,
+                    format_type(&Type::Result(
+                        Box::new(ok_type.clone()),
+                        Box::new(err_type.clone())
+                    ))
+                ),
+                span,
+                "Result values can only be matched with Ok(value) or Err(value)",
+            ))
+        }
+    }
+
+    fn handle_literal_pattern(
+        &mut self,
+        lit: &crate::ast::LiteralNode,
+        expected_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let literal_type = match lit {
+            crate::ast::LiteralNode::Integer(_) => Type::Primitive(PrimitiveType::Int),
+            crate::ast::LiteralNode::Float(_) => Type::Primitive(PrimitiveType::Float),
+            crate::ast::LiteralNode::String(_) => Type::Primitive(PrimitiveType::Str),
+            crate::ast::LiteralNode::Boolean(_) => Type::Primitive(PrimitiveType::Bool),
+            crate::ast::LiteralNode::Char(_) => Type::Primitive(PrimitiveType::Char),
+        };
+        self.check_type_compatibility(&literal_type, expected_type, span)
+    }
+
+    fn handle_list_pattern(
+        &mut self,
+        elements: &[PatternNode],
+        rest: &Option<Box<PatternNode>>,
+        expected_type: &Type,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let inner_type = match expected_type {
+            Type::List(inner) => (**inner).clone(),
+            Type::EmptyList => Type::Void,
+            _ => {
+                return Err(SemanticError::with_help(
+                    format!(
+                        "List pattern cannot match type {}",
+                        format_type(expected_type)
+                    ),
+                    span,
+                    "List patterns (e.g. [head, ...rest]) can only match list types",
+                ));
+            }
+        };
+        for elem in elements {
+            self.set_pattern_types(elem, &inner_type, span)?;
+        }
+        if let Some(rest_pat) = rest {
+            let rest_type = Type::List(Box::new(inner_type));
+            self.set_pattern_types(rest_pat, &rest_type, span)?;
         }
         Ok(())
     }
@@ -4007,57 +4520,12 @@ impl SemanticAnalyzer {
     // analyze an expression.
     fn analyze_expression(&mut self, expr: &ExpressionNode) -> Result<(), SemanticError> {
         match &expr.kind {
-            ExpressionKind::Identifier(name) => {
-                if name == "self" {
-                    if self.is_in_static_method {
-                        return Err(SemanticError::with_help(
-                            "Cannot use 'self' in a common method",
-                            expr.span,
-                            "Common (static) methods do not have access to 'self'. Remove the 'common' modifier or access the class through a parameter instead.",
-                        ));
-                    }
-                    // For 'self', check if we have a current self type
-                    if self.current_self_type.is_none() {
-                        return Err(SemanticError::with_help(
-                            "Cannot use 'self' outside of a method",
-                            expr.span,
-                            "'self' is only available inside instance methods of a class",
-                        ));
-                    }
-                    return Ok(());
-                }
-                // Consider imported stdlib class names as existing for identifier checks
-                let mut exists_like =
-                    self.symbol_table.exists(name) || self.get_builtin_sig(name).is_some();
-                if !exists_like {
-                    let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
-                        .iter()
-                        .map(|(_, n)| n.to_string())
-                        .collect();
-                    for (ns, module_symbols) in &self.imported_symbols {
-                        if !stdlib_names.contains(ns) {
-                            continue;
-                        }
-                        if let Some(sym) = module_symbols.get(name)
-                            && matches!(sym.kind, SymbolKind::Class)
-                        {
-                            exists_like = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !exists_like {
-                    return Err(self.undefined_symbol_error("variable", name, expr.span));
-                }
-                Ok(())
-            }
-            ExpressionKind::Literal(_) => Ok(()), // literals are fine
-            ExpressionKind::None => Ok(()),       // None is fine
+            ExpressionKind::Identifier(name) => self.analyze_identifier_expr(name, expr),
+            ExpressionKind::Literal(_) => Ok(()),
+            ExpressionKind::None => Ok(()),
             ExpressionKind::Binary { left, right, .. } => {
                 self.analyze_expression(left)?;
                 self.analyze_expression(right)?;
-                // Trigger comprehensive type checking (const, binary operators, etc.)
                 let _ = self.get_expression_type(expr)?;
                 Ok(())
             }
@@ -4066,455 +4534,617 @@ impl SemanticAnalyzer {
                 op,
                 op_span,
                 postfix: _,
-            } => {
-                self.analyze_expression(expr)?;
-                let operand_type = self.get_expression_type(expr)?;
-                match op {
-                    UnaryOp::Not => {
-                        if !matches!(
-                            operand_type,
-                            Type::Primitive(crate::ast::PrimitiveType::Bool)
-                        ) {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Logical 'not' operator requires a boolean operand, found {}",
-                                    format_type(&operand_type)
-                                ),
-                                *op_span,
-                                "The '!' operator can only be applied to bool values",
-                            ));
-                        }
-                    }
-                    UnaryOp::Neg => {
-                        if !matches!(
-                            operand_type,
-                            Type::Primitive(crate::ast::PrimitiveType::Int)
-                                | Type::Primitive(crate::ast::PrimitiveType::Float)
-                        ) {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Negation operator '-' requires a numeric operand, found {}",
-                                    format_type(&operand_type)
-                                ),
-                                *op_span,
-                                "The unary '-' operator can only be applied to int or float values",
-                            ));
-                        }
-                    }
-                    UnaryOp::Ref => {
-                        // reference operator, operand can be any type
-                    }
-                    UnaryOp::Incr | UnaryOp::Decr => {
-                        if !matches!(
-                            operand_type,
-                            Type::Primitive(crate::ast::PrimitiveType::Int)
-                        ) {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Increment/decrement operators require an int operand, found {}",
-                                    format_type(&operand_type)
-                                ),
-                                *op_span,
-                                "The '++' and '--' operators can only be applied to int variables",
-                            ));
-                        }
-
-                        // Check if trying to modify a constant
-                        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind
-                            && let Some(symbol) = self.symbol_table.lookup(name)
-                            && symbol.kind == SymbolKind::Constant
-                        {
-                            return Err(SemanticError::with_help(
-                                format!("Cannot modify constant '{}'", name),
-                                *op_span,
-                                "Constants cannot be modified after initialization",
-                            ));
-                        }
-
-                        if let crate::ast::ExpressionKind::FieldAccess {
-                            expr: obj_expr,
-                            field,
-                        } = &expr.kind
-                        {
-                            // Check if field is const
-                            let obj_type = self.get_expression_type(obj_expr)?;
-                            if let Type::Named(class_name, _) = &obj_type
-                                && let Some(symbol) = self.symbol_table.lookup(class_name)
-                                && let Some((_field_type, is_const)) = symbol.fields.get(field)
-                                && *is_const
-                            {
-                                return Err(SemanticError::with_help(
-                                    format!("Cannot modify const field '{}'", field),
-                                    *op_span,
-                                    "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
-                                ));
-                            }
-                        }
-
-                        // Dereference increment/decrement is allowed (no const check needed)
-                    }
-                    _ => {} // other unary ops not fully implemented yet
-                }
-                Ok(())
-            }
-            ExpressionKind::Call { func, args } => {
-                // Check for undefined function before analyzing
-                if let ExpressionKind::Identifier(name) = &func.kind
-                    && !self.symbol_table.exists(name)
-                    && self.get_builtin_sig(name).is_none()
-                {
-                    return Err(self.undefined_symbol_error("function", name, func.span));
-                }
-
-                self.analyze_expression(func)?;
-                for arg in args {
-                    self.analyze_expression(arg)?;
-                }
-                // Special check for Some
-                if let ExpressionKind::Identifier(name) = &func.kind
-                    && name == "some"
-                {
-                    if args.len() != 1 {
-                        return Err(SemanticError::with_help(
-                            format!("Some() takes exactly 1 argument, got {}", args.len()),
-                            expr.span,
-                            "Wrap a single value in Some(), e.g. Some(42)",
-                        ));
-                    }
-                    let arg_type = self.get_expression_type(&args[0])?;
-                    if let Type::Optional(_) = arg_type {
-                        return Err(SemanticError::with_help(
-                            "Some() cannot wrap an Optional value",
-                            expr.span,
-                            "The argument to Some() must not be Optional. Remove the nested Some() or unwrap the inner value first.",
-                        ));
-                    }
-                }
-                // Trigger comprehensive type checking (callable, method existence, args)
-                let _ = self.get_expression_type(expr)?;
-                Ok(())
-            }
+            } => self.analyze_unary_expr(expr, op, *op_span),
+            ExpressionKind::Call { func, args } => self.analyze_call_expr(expr, func, args),
             ExpressionKind::FieldAccess { expr, .. } => {
                 self.analyze_expression(expr)?;
-                // Trigger comprehensive type checking (field/method existence)
                 let _ = self.get_expression_type(expr)?;
                 Ok(())
             }
             ExpressionKind::ListAccess { expr, index } => {
-                self.analyze_expression(expr)?;
-                self.analyze_expression(index)?;
-                // type check list/map access
-                let target_type = self.get_expression_type(expr)?;
-                let index_type = self.get_expression_type(index)?;
-                match &target_type {
-                    Type::List(_) => {
-                        // List requires integer index
-                        if !matches!(index_type, Type::Primitive(crate::ast::PrimitiveType::Int)) {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "List index must be an integer, found {}",
-                                    format_type(&index_type)
-                                ),
-                                index.span,
-                                "Lists can only be indexed with integer values, e.g. myList[0]",
-                            ));
-                        }
-                    }
-                    Type::Map(expected_key_type, _) => {
-                        // Map requires matching key type
-                        if index_type != **expected_key_type {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Map key type mismatch: expected {}, found {}",
-                                    format_type(expected_key_type),
-                                    format_type(&index_type)
-                                ),
-                                index.span,
-                                format!(
-                                    "This map has keys of type {}",
-                                    format_type(expected_key_type)
-                                ),
-                            ));
-                        }
-                    }
-                    Type::EmptyMap => {
-                        return Err(SemanticError::with_help(
-                            "Cannot index empty map",
-                            expr.span,
-                            "The map type is unknown. Provide type annotations or add entries to the map literal.",
-                        ));
-                    }
-                    _ => {
-                        return Err(SemanticError::with_help(
-                            "Cannot index non-list type",
-                            expr.span,
-                            "Only lists and maps can be indexed with '[]'. Examples: my_list[0], my_map['key']",
-                        ));
-                    }
-                }
-                Ok(())
+                self.analyze_list_access_expr(expr, index)
             }
-            ExpressionKind::ListLiteral(elements) => {
-                for elem in elements {
-                    self.analyze_expression(elem)?;
-                }
-                // type check list literal, ensure all elements have the same type
-                if !elements.is_empty() {
-                    let first_type = self.get_expression_type(&elements[0])?;
-                    for elem in &elements[1..] {
-                        let elem_type = self.get_expression_type(elem)?;
-                        if elem_type != first_type {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "List element type mismatch: expected {}, found {}",
-                                    format_type(&first_type),
-                                    format_type(&elem_type)
-                                ),
-                                elem.span,
-                                "All elements in a list literal must have the same type",
-                            ));
-                        }
-                    }
-                }
-                Ok(())
-            }
+            ExpressionKind::ListLiteral(elements) => self.analyze_list_literal_expr(elements),
             ExpressionKind::MapLiteral { entries, .. } => {
-                for (key, value) in entries {
-                    self.analyze_expression(key)?;
-                    self.analyze_expression(value)?;
-                }
-                // type check map literal, ensure all keys and values have consistent types
-                // also validate that keys are hashable (primitive types only for now)
-                if !entries.is_empty() {
-                    let (first_key, first_value) = &entries[0];
-                    let key_type = self.get_expression_type(first_key)?;
-
-                    // Check if key type is hashable (primitives only for now)
-                    let is_hashable = matches!(key_type, Type::Primitive(_));
-                    if !is_hashable {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Map keys must be a hashable type, found '{}'",
-                                format_type(&key_type)
-                            ),
-                            first_key.span,
-                            "Only primitive types (int, float, string, bool, char) can be used as map keys",
-                        ));
-                    }
-
-                    let value_type = self.get_expression_type(first_value)?;
-                    for (key, value) in &entries[1..] {
-                        let k_type = self.get_expression_type(key)?;
-
-                        // Check key type is hashable
-                        let is_hashable = matches!(k_type, Type::Primitive(_));
-                        if !is_hashable {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Map keys must be a hashable type, found '{}'",
-                                    format_type(&k_type)
-                                ),
-                                key.span,
-                                "Only primitive types (int, float, string, bool, char) can be used as map keys",
-                            ));
-                        }
-
-                        let v_type = self.get_expression_type(value)?;
-                        if k_type != key_type {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Map key type mismatch: expected {}, found {}",
-                                    format_type(&key_type),
-                                    format_type(&k_type)
-                                ),
-                                key.span,
-                                "All keys in a map literal must have the same type",
-                            ));
-                        }
-                        if v_type != value_type {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Map value type mismatch: expected {}, found {}",
-                                    format_type(&value_type),
-                                    format_type(&v_type)
-                                ),
-                                value.span,
-                                "All values in a map literal must have the same type",
-                            ));
-                        }
-                    }
-                }
-                Ok(())
+                self.analyze_map_literal_expr(expr, entries)
             }
-            ExpressionKind::SetLiteral(elements) => {
-                for elem in elements {
-                    self.analyze_expression(elem)?;
-                }
-                // type check set literal, ensure all elements have the same type
-                if !elements.is_empty() {
-                    let first_type = self.get_expression_type(&elements[0])?;
-                    for elem in &elements[1..] {
-                        let elem_type = self.get_expression_type(elem)?;
-                        if elem_type != first_type {
-                            return Err(SemanticError::with_help(
-                                format!(
-                                    "Set element type mismatch: expected {}, found {}",
-                                    format_type(&first_type),
-                                    format_type(&elem_type)
-                                ),
-                                elem.span,
-                                "All elements in a set literal must have the same type",
-                            ));
-                        }
-                    }
-                }
-                Ok(())
-            }
+            ExpressionKind::SetLiteral(elements) => self.analyze_set_literal_expr(elements),
             ExpressionKind::TupleLiteral(elements) => {
-                if elements.len() != 2 {
-                    return Err(SemanticError::with_help(
-                        format!(
-                            "Tuple must have exactly 2 elements, found {}",
-                            elements.len()
-                        ),
-                        expr.span,
-                        "Tuples in Mux are pairs with exactly two elements, e.g. (1, 2)",
-                    ));
-                }
-                for elem in elements {
-                    self.analyze_expression(elem)?;
-                }
-                Ok(())
+                self.analyze_tuple_literal_expr(expr, elements)
             }
             ExpressionKind::If {
                 cond,
                 then_expr,
                 else_expr,
-            } => {
-                self.analyze_expression(cond)?;
-                self.analyze_expression(then_expr)?;
-                self.analyze_expression(else_expr)?;
-                // type check if expression
-                let cond_type = self.get_expression_type(cond)?;
-                if !matches!(cond_type, Type::Primitive(crate::ast::PrimitiveType::Bool)) {
-                    return Err(SemanticError::with_help(
-                        format!(
-                            "If condition must be boolean, found {}",
-                            format_type(&cond_type)
-                        ),
-                        cond.span,
-                        "The condition in an if expression must evaluate to a bool value",
-                    ));
-                }
-                Ok(())
-            }
+            } => self.analyze_if_expr(cond, then_expr, else_expr),
             ExpressionKind::Lambda {
                 params,
                 return_type,
                 body,
-            } => {
-                // Collect parameter names to identify what's local vs captured
-                let mut local_vars = std::collections::HashSet::new();
-                for param in params {
-                    local_vars.insert(param.name.clone());
-                }
-
-                self.symbol_table.push_scope()?;
-
-                // Set up return type context for lambda
-                let lambda_return_type = self.resolve_type(return_type)?;
-                let prev_return_type = self.current_return_type.clone();
-
-                self.current_return_type = Some(lambda_return_type.clone());
-
-                for param in params {
-                    let param_type = self.resolve_type(&param.type_)?;
-                    self.symbol_table.add_symbol(
-                        &param.name,
-                        Symbol {
-                            kind: SymbolKind::Variable,
-                            span: param.type_.span,
-                            type_: Some(param_type),
-                            interfaces: std::collections::HashMap::new(),
-                            methods: std::collections::HashMap::new(),
-                            fields: std::collections::HashMap::new(),
-                            type_params: Vec::new(),
-                            original_name: None,
-                            llvm_name: None,
-                            default_param_count: 0,
-                            variants: None,
-                        },
-                    )?;
-                }
-
-                self.analyze_block(body, None)?;
-
-                if !matches!(self.current_return_type, Some(Type::Void)) {
-                    if body.is_empty() || !self.all_paths_return(body) {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Lambda must return a value of type '{}' on all code paths",
-                                format_type(&lambda_return_type)
-                            ),
-                            expr.span,
-                            "Add a return statement at the end of every branch in the lambda body",
-                        ));
-                    }
-                    if let Some(last_stmt) = body.last()
-                        && let StatementKind::Return(Some(ret_expr)) = &last_stmt.kind
-                    {
-                        let actual_type = self.get_expression_type(ret_expr)?;
-                        self.check_type_compatibility(
-                            &lambda_return_type,
-                            &actual_type,
-                            ret_expr.span,
-                        )?;
-                    }
-                }
-
-                // Restore previous return type context
-                self.current_return_type = prev_return_type;
-
-                // Detect free variables (captured variables)
-                let captures = self.find_free_variables_in_block(body, &local_vars)?;
-                // Store captures for this lambda using its span as key
-                self.lambda_captures.insert(expr.span, captures);
-
-                self.symbol_table.pop_scope()?;
-                Ok(())
-            }
-            // Instantiate generic types (e.g., Stack<int>)
+            } => self.analyze_lambda_expr(expr, params, return_type, body),
             ExpressionKind::GenericType(name, type_args) => {
-                if name == "tuple" {
-                    if type_args.len() != 2 {
-                        return Err(SemanticError::with_help(
-                            format!(
-                                "Tuple type requires exactly 2 type arguments, got {}",
-                                type_args.len()
-                            ),
-                            expr.span,
-                            "Tuples in Mux are pairs, e.g. tuple<int, string>",
-                        ));
-                    }
-                    for arg in type_args {
-                        self.resolve_type(arg)?;
-                    }
-                    return Ok(());
-                }
-                if let Some((module_name, type_name)) = name.split_once('.') {
-                    let module_symbols =
-                        self.imported_symbols.get(module_name).ok_or_else(|| {
-                            self.undefined_symbol_error("module", module_name, expr.span)
-                        })?;
-                    let _ = module_symbols
-                        .get(type_name)
-                        .ok_or_else(|| self.undefined_symbol_error("type", type_name, expr.span))?;
-                } else if !self.symbol_table.exists(name) {
-                    return Err(self.undefined_symbol_error("type", name, expr.span));
-                }
-                Ok(())
+                self.analyze_generic_type_expr(expr, name, type_args)
             }
         }
+    }
+
+    fn analyze_identifier_expr(
+        &mut self,
+        name: &str,
+        expr: &ExpressionNode,
+    ) -> Result<(), SemanticError> {
+        if name == "self" {
+            return self.analyze_self_identifier(expr);
+        }
+        let mut exists_like =
+            self.symbol_table.exists(name) || self.get_builtin_sig(name).is_some();
+        if !exists_like {
+            exists_like = self.check_stdlib_imports_for_class(name);
+        }
+        if !exists_like {
+            return Err(self.undefined_symbol_error("variable", name, expr.span));
+        }
+        Ok(())
+    }
+
+    fn analyze_self_identifier(&self, expr: &ExpressionNode) -> Result<(), SemanticError> {
+        if self.is_in_static_method {
+            return Err(SemanticError::with_help(
+                "Cannot use 'self' in a common method",
+                expr.span,
+                "Common (static) methods do not have access to 'self'. Remove the 'common' modifier or access the class through a parameter instead.",
+            ));
+        }
+        if self.current_self_type.is_none() {
+            return Err(SemanticError::with_help(
+                "Cannot use 'self' outside of a method",
+                expr.span,
+                "'self' is only available inside instance methods of a class",
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_stdlib_imports_for_class(&self, name: &str) -> bool {
+        let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
+            .iter()
+            .map(|(_, n)| n.to_string())
+            .collect();
+        for (ns, module_symbols) in &self.imported_symbols {
+            if !stdlib_names.contains(ns) {
+                continue;
+            }
+            if let Some(sym) = module_symbols.get(name)
+                && matches!(sym.kind, SymbolKind::Class)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn analyze_unary_expr(
+        &mut self,
+        expr: &ExpressionNode,
+        op: &UnaryOp,
+        op_span: Span,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(expr)?;
+        let operand_type = self.get_expression_type(expr)?;
+        match op {
+            UnaryOp::Not => self.check_not_operator_type(&operand_type, op_span),
+            UnaryOp::Neg => self.check_neg_operator_type(&operand_type, op_span),
+            UnaryOp::Ref => Ok(()),
+            UnaryOp::Incr | UnaryOp::Decr => {
+                self.check_incr_decr_operator_type(&operand_type, op_span)?;
+                self.check_incr_decr_const_modification(expr, op_span)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn check_not_operator_type(
+        &self,
+        operand_type: &Type,
+        op_span: Span,
+    ) -> Result<(), SemanticError> {
+        if !matches!(
+            operand_type,
+            Type::Primitive(crate::ast::PrimitiveType::Bool)
+        ) {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Logical 'not' operator requires a boolean operand, found {}",
+                    format_type(operand_type)
+                ),
+                op_span,
+                "The '!' operator can only be applied to bool values",
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_neg_operator_type(
+        &self,
+        operand_type: &Type,
+        op_span: Span,
+    ) -> Result<(), SemanticError> {
+        if !matches!(
+            operand_type,
+            Type::Primitive(crate::ast::PrimitiveType::Int)
+                | Type::Primitive(crate::ast::PrimitiveType::Float)
+        ) {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Negation operator '-' requires a numeric operand, found {}",
+                    format_type(operand_type)
+                ),
+                op_span,
+                "The unary '-' operator can only be applied to int or float values",
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_incr_decr_operator_type(
+        &self,
+        operand_type: &Type,
+        op_span: Span,
+    ) -> Result<(), SemanticError> {
+        if !matches!(
+            operand_type,
+            Type::Primitive(crate::ast::PrimitiveType::Int)
+        ) {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Increment/decrement operators require an int operand, found {}",
+                    format_type(operand_type)
+                ),
+                op_span,
+                "The '++' and '--' operators can only be applied to int variables",
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_incr_decr_const_modification(
+        &mut self,
+        expr: &ExpressionNode,
+        op_span: Span,
+    ) -> Result<(), SemanticError> {
+        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind
+            && let Some(symbol) = self.symbol_table.lookup(name)
+            && symbol.kind == SymbolKind::Constant
+        {
+            return Err(SemanticError::with_help(
+                format!("Cannot modify constant '{}'", name),
+                op_span,
+                "Constants cannot be modified after initialization",
+            ));
+        }
+
+        if let crate::ast::ExpressionKind::FieldAccess {
+            expr: obj_expr,
+            field,
+        } = &expr.kind
+        {
+            let obj_type = self.get_expression_type(obj_expr)?;
+            if let Type::Named(class_name, _) = &obj_type
+                && let Some(symbol) = self.symbol_table.lookup(class_name)
+                && let Some((_field_type, is_const)) = symbol.fields.get(field)
+                && *is_const
+            {
+                return Err(SemanticError::with_help(
+                    format!("Cannot modify const field '{}'", field),
+                    op_span,
+                    "Const fields cannot be modified after initialization. Remove the 'const' modifier from the field declaration if mutation is needed.",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn analyze_call_expr(
+        &mut self,
+        expr: &ExpressionNode,
+        func: &ExpressionNode,
+        args: &[ExpressionNode],
+    ) -> Result<(), SemanticError> {
+        if let ExpressionKind::Identifier(name) = &func.kind
+            && !self.symbol_table.exists(name)
+            && self.get_builtin_sig(name).is_none()
+        {
+            return Err(self.undefined_symbol_error("function", name, func.span));
+        }
+
+        self.analyze_expression(func)?;
+        for arg in args {
+            self.analyze_expression(arg)?;
+        }
+
+        if let ExpressionKind::Identifier(name) = &func.kind
+            && name == "some"
+        {
+            self.check_some_call_args(expr, args)?;
+        }
+
+        let _ = self.get_expression_type(expr)?;
+        Ok(())
+    }
+
+    fn check_some_call_args(
+        &mut self,
+        expr: &ExpressionNode,
+        args: &[ExpressionNode],
+    ) -> Result<(), SemanticError> {
+        if args.len() != 1 {
+            return Err(SemanticError::with_help(
+                format!("Some() takes exactly 1 argument, got {}", args.len()),
+                expr.span,
+                "Wrap a single value in Some(), e.g. Some(42)",
+            ));
+        }
+        let arg_type = self.get_expression_type(&args[0])?;
+        if let Type::Optional(_) = arg_type {
+            return Err(SemanticError::with_help(
+                "Some() cannot wrap an Optional value",
+                expr.span,
+                "The argument to Some() must not be Optional. Remove the nested Some() or unwrap the inner value first.",
+            ));
+        }
+        Ok(())
+    }
+
+    fn analyze_list_access_expr(
+        &mut self,
+        expr: &ExpressionNode,
+        index: &ExpressionNode,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(expr)?;
+        self.analyze_expression(index)?;
+        let target_type = self.get_expression_type(expr)?;
+        let index_type = self.get_expression_type(index)?;
+        match &target_type {
+            Type::List(_) => {
+                if !matches!(index_type, Type::Primitive(crate::ast::PrimitiveType::Int)) {
+                    return Err(SemanticError::with_help(
+                        format!(
+                            "List index must be an integer, found {}",
+                            format_type(&index_type)
+                        ),
+                        index.span,
+                        "Lists can only be indexed with integer values, e.g. myList[0]",
+                    ));
+                }
+            }
+            Type::Map(expected_key_type, _) => {
+                if index_type != **expected_key_type {
+                    return Err(SemanticError::with_help(
+                        format!(
+                            "Map key type mismatch: expected {}, found {}",
+                            format_type(expected_key_type),
+                            format_type(&index_type)
+                        ),
+                        index.span,
+                        format!(
+                            "This map has keys of type {}",
+                            format_type(expected_key_type)
+                        ),
+                    ));
+                }
+            }
+            Type::EmptyMap => {
+                return Err(SemanticError::with_help(
+                    "Cannot index empty map",
+                    expr.span,
+                    "The map type is unknown. Provide type annotations or add entries to the map literal.",
+                ));
+            }
+            _ => {
+                return Err(SemanticError::with_help(
+                    "Cannot index non-list type",
+                    expr.span,
+                    "Only lists and maps can be indexed with '[]'. Examples: my_list[0], my_map['key']",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn analyze_list_literal_expr(
+        &mut self,
+        elements: &[ExpressionNode],
+    ) -> Result<(), SemanticError> {
+        for elem in elements {
+            self.analyze_expression(elem)?;
+        }
+        if !elements.is_empty() {
+            let first_type = self.get_expression_type(&elements[0])?;
+            for elem in &elements[1..] {
+                let elem_type = self.get_expression_type(elem)?;
+                if elem_type != first_type {
+                    return Err(SemanticError::with_help(
+                        format!(
+                            "List element type mismatch: expected {}, found {}",
+                            format_type(&first_type),
+                            format_type(&elem_type)
+                        ),
+                        elem.span,
+                        "All elements in a list literal must have the same type",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn analyze_map_literal_expr(
+        &mut self,
+        _expr: &ExpressionNode,
+        entries: &[(ExpressionNode, ExpressionNode)],
+    ) -> Result<(), SemanticError> {
+        for (key, value) in entries {
+            self.analyze_expression(key)?;
+            self.analyze_expression(value)?;
+        }
+        if !entries.is_empty() {
+            let (first_key, first_value) = &entries[0];
+            let key_type = self.get_expression_type(first_key)?;
+            self.check_map_key_hashable(first_key, &key_type)?;
+
+            let value_type = self.get_expression_type(first_value)?;
+            for (key, value) in &entries[1..] {
+                self.check_map_entry_type_consistency(key, value, &key_type, &value_type)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn check_map_key_hashable(
+        &self,
+        key_expr: &ExpressionNode,
+        key_type: &Type,
+    ) -> Result<(), SemanticError> {
+        let is_hashable = matches!(key_type, Type::Primitive(_));
+        if !is_hashable {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Map keys must be a hashable type, found '{}'",
+                    format_type(key_type)
+                ),
+                key_expr.span,
+                "Only primitive types (int, float, string, bool, char) can be used as map keys",
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_map_entry_type_consistency(
+        &mut self,
+        key: &ExpressionNode,
+        value: &ExpressionNode,
+        expected_key: &Type,
+        expected_value: &Type,
+    ) -> Result<(), SemanticError> {
+        let k_type = self.get_expression_type(key)?;
+        self.check_map_key_hashable(key, &k_type)?;
+
+        let v_type = self.get_expression_type(value)?;
+        if k_type != *expected_key {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Map key type mismatch: expected {}, found {}",
+                    format_type(expected_key),
+                    format_type(&k_type)
+                ),
+                key.span,
+                "All keys in a map literal must have the same type",
+            ));
+        }
+        if v_type != *expected_value {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Map value type mismatch: expected {}, found {}",
+                    format_type(expected_value),
+                    format_type(&v_type)
+                ),
+                value.span,
+                "All values in a map literal must have the same type",
+            ));
+        }
+        Ok(())
+    }
+
+    fn analyze_set_literal_expr(
+        &mut self,
+        elements: &[ExpressionNode],
+    ) -> Result<(), SemanticError> {
+        for elem in elements {
+            self.analyze_expression(elem)?;
+        }
+        if !elements.is_empty() {
+            let first_type = self.get_expression_type(&elements[0])?;
+            for elem in &elements[1..] {
+                let elem_type = self.get_expression_type(elem)?;
+                if elem_type != first_type {
+                    return Err(SemanticError::with_help(
+                        format!(
+                            "Set element type mismatch: expected {}, found {}",
+                            format_type(&first_type),
+                            format_type(&elem_type)
+                        ),
+                        elem.span,
+                        "All elements in a set literal must have the same type",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn analyze_tuple_literal_expr(
+        &mut self,
+        expr: &ExpressionNode,
+        elements: &[ExpressionNode],
+    ) -> Result<(), SemanticError> {
+        if elements.len() != 2 {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Tuple must have exactly 2 elements, found {}",
+                    elements.len()
+                ),
+                expr.span,
+                "Tuples in Mux are pairs with exactly two elements, e.g. (1, 2)",
+            ));
+        }
+        for elem in elements {
+            self.analyze_expression(elem)?;
+        }
+        Ok(())
+    }
+
+    fn analyze_if_expr(
+        &mut self,
+        cond: &ExpressionNode,
+        then_expr: &ExpressionNode,
+        else_expr: &ExpressionNode,
+    ) -> Result<(), SemanticError> {
+        self.analyze_expression(cond)?;
+        self.analyze_expression(then_expr)?;
+        self.analyze_expression(else_expr)?;
+        let cond_type = self.get_expression_type(cond)?;
+        if !matches!(cond_type, Type::Primitive(crate::ast::PrimitiveType::Bool)) {
+            return Err(SemanticError::with_help(
+                format!(
+                    "If condition must be boolean, found {}",
+                    format_type(&cond_type)
+                ),
+                cond.span,
+                "The condition in an if expression must evaluate to a bool value",
+            ));
+        }
+        Ok(())
+    }
+
+    fn analyze_lambda_expr(
+        &mut self,
+        expr: &ExpressionNode,
+        params: &[Param],
+        return_type: &TypeNode,
+        body: &[StatementNode],
+    ) -> Result<(), SemanticError> {
+        let mut local_vars = std::collections::HashSet::new();
+        for param in params {
+            local_vars.insert(param.name.clone());
+        }
+
+        self.symbol_table.push_scope()?;
+
+        let lambda_return_type = self.resolve_type(return_type)?;
+        let prev_return_type = self.current_return_type.clone();
+        self.current_return_type = Some(lambda_return_type.clone());
+
+        for param in params {
+            let param_type = self.resolve_type(&param.type_)?;
+            self.symbol_table.add_symbol(
+                &param.name,
+                Symbol {
+                    kind: SymbolKind::Variable,
+                    span: param.type_.span,
+                    type_: Some(param_type),
+                    interfaces: std::collections::HashMap::new(),
+                    methods: std::collections::HashMap::new(),
+                    fields: std::collections::HashMap::new(),
+                    type_params: Vec::new(),
+                    original_name: None,
+                    llvm_name: None,
+                    default_param_count: 0,
+                    variants: None,
+                },
+            )?;
+        }
+
+        self.analyze_block(body, None)?;
+
+        if !matches!(self.current_return_type, Some(Type::Void)) {
+            self.check_lambda_return_paths(expr, body, &lambda_return_type)?;
+        }
+
+        self.current_return_type = prev_return_type;
+        let captures = self.find_free_variables_in_block(body, &local_vars)?;
+        self.lambda_captures.insert(expr.span, captures);
+
+        self.symbol_table.pop_scope()?;
+        Ok(())
+    }
+
+    fn check_lambda_return_paths(
+        &mut self,
+        expr: &ExpressionNode,
+        body: &[StatementNode],
+        lambda_return_type: &Type,
+    ) -> Result<(), SemanticError> {
+        if body.is_empty() || !self.all_paths_return(body) {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Lambda must return a value of type '{}' on all code paths",
+                    format_type(lambda_return_type)
+                ),
+                expr.span,
+                "Add a return statement at the end of every branch in the lambda body",
+            ));
+        }
+        if let Some(last_stmt) = body.last()
+            && let StatementKind::Return(Some(ret_expr)) = &last_stmt.kind
+        {
+            let actual_type = self.get_expression_type(ret_expr)?;
+            self.check_type_compatibility(lambda_return_type, &actual_type, ret_expr.span)?;
+        }
+        Ok(())
+    }
+
+    fn analyze_generic_type_expr(
+        &mut self,
+        expr: &ExpressionNode,
+        name: &str,
+        type_args: &[TypeNode],
+    ) -> Result<(), SemanticError> {
+        if name == "tuple" {
+            return self.check_tuple_type_args(expr, type_args);
+        }
+        if let Some((module_name, type_name)) = name.split_once('.') {
+            let module_symbols = self
+                .imported_symbols
+                .get(module_name)
+                .ok_or_else(|| self.undefined_symbol_error("module", module_name, expr.span))?;
+            let _ = module_symbols
+                .get(type_name)
+                .ok_or_else(|| self.undefined_symbol_error("type", type_name, expr.span))?;
+        } else if !self.symbol_table.exists(name) {
+            return Err(self.undefined_symbol_error("type", name, expr.span));
+        }
+        Ok(())
+    }
+
+    fn check_tuple_type_args(
+        &self,
+        expr: &ExpressionNode,
+        type_args: &[TypeNode],
+    ) -> Result<(), SemanticError> {
+        if type_args.len() != 2 {
+            return Err(SemanticError::with_help(
+                format!(
+                    "Tuple type requires exactly 2 type arguments, got {}",
+                    type_args.len()
+                ),
+                expr.span,
+                "Tuples in Mux are pairs, e.g. tuple<int, string>",
+            ));
+        }
+        for arg in type_args {
+            self.resolve_type(arg)?;
+        }
+        Ok(())
     }
 
     fn infer_literal_type(&self, expr: &ExpressionNode) -> Result<Type, SemanticError> {
@@ -5685,56 +6315,110 @@ impl SemanticAnalyzer {
                 self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
             }
             StatementKind::AutoDecl(name, _, expr) => {
-                // First analyze the expression (uses happen before the decl is in scope)
-                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
-                // Then add the variable to local scope
-                local_vars.insert(name.clone());
+                self.handle_variable_declaration(name, expr, local_vars, free_vars)?;
             }
             StatementKind::TypedDecl(name, _, expr) => {
-                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
-                local_vars.insert(name.clone());
+                self.handle_variable_declaration(name, expr, local_vars, free_vars)?;
             }
             StatementKind::ConstDecl(name, _, expr) => {
-                self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
-                local_vars.insert(name.clone());
+                self.handle_variable_declaration(name, expr, local_vars, free_vars)?;
             }
             StatementKind::If {
                 cond,
                 then_block,
                 else_block,
             } => {
-                self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
-                for s in then_block {
-                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                }
-                if let Some(else_stmts) = else_block {
-                    for s in else_stmts {
-                        self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                    }
-                }
+                self.handle_if_statement(cond, then_block, else_block, local_vars, free_vars)?;
             }
             StatementKind::While { cond, body } => {
-                self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
-                for s in body {
-                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                }
+                self.handle_while_statement(cond, body, local_vars, free_vars)?;
             }
             StatementKind::For {
                 var, iter, body, ..
             } => {
-                self.find_free_variables_in_expression(iter, local_vars, free_vars)?;
-                // Iterator variable is local to the for loop
-                local_vars.insert(var.clone());
-                for s in body {
-                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                }
+                self.handle_for_statement(var, iter, body, local_vars, free_vars)?;
             }
             StatementKind::Block(stmts) => {
-                for s in stmts {
-                    self.find_free_variables_in_statement(s, local_vars, free_vars)?;
-                }
+                self.handle_block_statement(stmts, local_vars, free_vars)?;
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_variable_declaration(
+        &self,
+        name: &str,
+        expr: &ExpressionNode,
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        // First analyze the expression (uses happen before the decl is in scope)
+        self.find_free_variables_in_expression(expr, local_vars, free_vars)?;
+        // Then add the variable to local scope
+        local_vars.insert(name.to_string());
+        Ok(())
+    }
+
+    fn handle_if_statement(
+        &self,
+        cond: &ExpressionNode,
+        then_block: &[StatementNode],
+        else_block: &Option<Vec<StatementNode>>,
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
+        for s in then_block {
+            self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+        }
+        if let Some(else_stmts) = else_block {
+            for s in else_stmts {
+                self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_while_statement(
+        &self,
+        cond: &ExpressionNode,
+        body: &[StatementNode],
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
+        for s in body {
+            self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_for_statement(
+        &self,
+        var: &str,
+        iter: &ExpressionNode,
+        body: &[StatementNode],
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(iter, local_vars, free_vars)?;
+        // Iterator variable is local to the for loop
+        local_vars.insert(var.to_string());
+        for s in body {
+            self.find_free_variables_in_statement(s, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_block_statement(
+        &self,
+        stmts: &[StatementNode],
+        local_vars: &mut std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for s in stmts {
+            self.find_free_variables_in_statement(s, local_vars, free_vars)?;
         }
         Ok(())
     }
@@ -5747,81 +6431,207 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         match &expr.kind {
             ExpressionKind::Identifier(name) => {
-                // Check if it's a local variable (parameter or declared in lambda body)
-                if !local_vars.contains(name) {
-                    // Check if it exists in outer scopes
-                    if let Some(symbol) = self.symbol_table.lookup(name)
-                        && matches!(symbol.kind, SymbolKind::Variable)
-                        && let Some(var_type) = &symbol.type_
-                    {
-                        free_vars.insert(name.clone(), var_type.clone());
-                    }
-                }
+                self.handle_identifier_expression(name, local_vars, free_vars)?;
             }
             ExpressionKind::Binary { left, right, .. } => {
-                self.find_free_variables_in_expression(left, local_vars, free_vars)?;
-                self.find_free_variables_in_expression(right, local_vars, free_vars)?;
+                self.handle_binary_expression(left, right, local_vars, free_vars)?;
             }
             ExpressionKind::Unary {
                 expr: inner,
                 op_span: _,
                 ..
             } => {
-                self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+                self.handle_unary_expression(inner, local_vars, free_vars)?;
             }
             ExpressionKind::Call { func, args } => {
-                self.find_free_variables_in_expression(func, local_vars, free_vars)?;
-                for arg in args {
-                    self.find_free_variables_in_expression(arg, local_vars, free_vars)?;
-                }
+                self.handle_call_expression(func, args, local_vars, free_vars)?;
             }
             ExpressionKind::FieldAccess { expr: inner, .. } => {
-                self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+                self.handle_field_access_expression(inner, local_vars, free_vars)?;
             }
             ExpressionKind::ListAccess { expr: inner, index } => {
-                self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
-                self.find_free_variables_in_expression(index, local_vars, free_vars)?;
+                self.handle_list_access_expression(inner, index, local_vars, free_vars)?;
             }
             ExpressionKind::ListLiteral(elements) => {
-                for elem in elements {
-                    self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
-                }
+                self.handle_list_literal_expression(elements, local_vars, free_vars)?;
             }
             ExpressionKind::MapLiteral { entries, .. } => {
-                for (key, val) in entries {
-                    self.find_free_variables_in_expression(key, local_vars, free_vars)?;
-                    self.find_free_variables_in_expression(val, local_vars, free_vars)?;
-                }
+                self.handle_map_literal_expression(entries, local_vars, free_vars)?;
             }
             ExpressionKind::SetLiteral(elements) => {
-                for elem in elements {
-                    self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
-                }
+                self.handle_set_literal_expression(elements, local_vars, free_vars)?;
             }
             ExpressionKind::TupleLiteral(elements) => {
-                for elem in elements {
-                    self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
-                }
+                self.handle_tuple_literal_expression(elements, local_vars, free_vars)?;
             }
             ExpressionKind::If {
                 cond,
                 then_expr,
                 else_expr,
             } => {
-                self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
-                self.find_free_variables_in_expression(then_expr, local_vars, free_vars)?;
-                self.find_free_variables_in_expression(else_expr, local_vars, free_vars)?;
+                self.handle_if_expression(cond, then_expr, else_expr, local_vars, free_vars)?;
             }
             ExpressionKind::Lambda { params, body, .. } => {
-                let mut inner_local_vars = local_vars.clone();
-                for param in params {
-                    inner_local_vars.insert(param.name.clone());
-                }
-                for stmt in body {
-                    self.find_free_variables_in_statement(stmt, &mut inner_local_vars, free_vars)?;
-                }
+                self.handle_lambda_expression(params, body, local_vars, free_vars)?;
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_identifier_expression(
+        &self,
+        name: &str,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        // Check if it's a local variable (parameter or declared in lambda body)
+        if !local_vars.contains(name) {
+            // Check if it exists in outer scopes
+            if let Some(symbol) = self.symbol_table.lookup(name)
+                && matches!(symbol.kind, SymbolKind::Variable)
+                && let Some(var_type) = &symbol.type_
+            {
+                free_vars.insert(name.to_string(), var_type.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_binary_expression(
+        &self,
+        left: &ExpressionNode,
+        right: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(left, local_vars, free_vars)?;
+        self.find_free_variables_in_expression(right, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_unary_expression(
+        &self,
+        inner: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_call_expression(
+        &self,
+        func: &ExpressionNode,
+        args: &[ExpressionNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(func, local_vars, free_vars)?;
+        for arg in args {
+            self.find_free_variables_in_expression(arg, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_field_access_expression(
+        &self,
+        inner: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_list_access_expression(
+        &self,
+        inner: &ExpressionNode,
+        index: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(inner, local_vars, free_vars)?;
+        self.find_free_variables_in_expression(index, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_list_literal_expression(
+        &self,
+        elements: &[ExpressionNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for elem in elements {
+            self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_map_literal_expression(
+        &self,
+        entries: &[(ExpressionNode, ExpressionNode)],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for (key, val) in entries {
+            self.find_free_variables_in_expression(key, local_vars, free_vars)?;
+            self.find_free_variables_in_expression(val, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_set_literal_expression(
+        &self,
+        elements: &[ExpressionNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for elem in elements {
+            self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_tuple_literal_expression(
+        &self,
+        elements: &[ExpressionNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        for elem in elements {
+            self.find_free_variables_in_expression(elem, local_vars, free_vars)?;
+        }
+        Ok(())
+    }
+
+    fn handle_if_expression(
+        &self,
+        cond: &ExpressionNode,
+        then_expr: &ExpressionNode,
+        else_expr: &ExpressionNode,
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        self.find_free_variables_in_expression(cond, local_vars, free_vars)?;
+        self.find_free_variables_in_expression(then_expr, local_vars, free_vars)?;
+        self.find_free_variables_in_expression(else_expr, local_vars, free_vars)?;
+        Ok(())
+    }
+
+    fn handle_lambda_expression(
+        &self,
+        params: &[Param],
+        body: &[StatementNode],
+        local_vars: &std::collections::HashSet<String>,
+        free_vars: &mut std::collections::HashMap<String, Type>,
+    ) -> Result<(), SemanticError> {
+        let mut inner_local_vars = local_vars.clone();
+        for param in params {
+            inner_local_vars.insert(param.name.clone());
+        }
+        for stmt in body {
+            self.find_free_variables_in_statement(stmt, &mut inner_local_vars, free_vars)?;
         }
         Ok(())
     }

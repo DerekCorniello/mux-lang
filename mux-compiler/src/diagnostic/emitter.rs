@@ -81,7 +81,28 @@ impl StandardEmitter {
 
     /// Emit a single diagnostic with source context.
     fn emit_single(&self, diagnostic: &Diagnostic, source: &str, file_path: &str) {
-        // Print error header
+        self.emit_header(diagnostic);
+
+        if diagnostic.labels.is_empty() {
+            eprintln!();
+            return;
+        }
+
+        let lines: Vec<&str> = source.lines().collect();
+        let (min_line, max_line) = self.label_line_range(diagnostic);
+        let width = self.line_number_width(max_line);
+
+        self.emit_file_location(diagnostic, file_path, min_line, width);
+        for line_num in min_line..=max_line {
+            self.emit_source_context_line(diagnostic, &lines, line_num, width);
+        }
+
+        self.emit_help(diagnostic, width);
+
+        eprintln!();
+    }
+
+    fn emit_header(&self, diagnostic: &Diagnostic) {
         let level_str = match diagnostic.level {
             Level::Error => self.styles.error("error"),
             Level::Warning => self.styles.warning("warning"),
@@ -90,16 +111,9 @@ impl StandardEmitter {
         };
 
         eprintln!("{}: {}", level_str, self.styles.bold(&diagnostic.message));
+    }
 
-        // If no labels, just show the message
-        if diagnostic.labels.is_empty() {
-            eprintln!();
-            return;
-        }
-
-        let lines: Vec<&str> = source.lines().collect();
-
-        // Find the range of lines we need to display
+    fn label_line_range(&self, diagnostic: &Diagnostic) -> (usize, usize) {
         let mut min_line = usize::MAX;
         let mut max_line = 0;
 
@@ -108,9 +122,16 @@ impl StandardEmitter {
             max_line = max(max_line, label.span.row_end.unwrap_or(label.span.row_start));
         }
 
-        let width = self.line_number_width(max_line);
+        (min_line, max_line)
+    }
 
-        // Print file location
+    fn emit_file_location(
+        &self,
+        diagnostic: &Diagnostic,
+        file_path: &str,
+        min_line: usize,
+        width: usize,
+    ) {
         eprintln!(
             "{} {}:{}:{}",
             self.styles.dim("-->"),
@@ -122,55 +143,61 @@ impl StandardEmitter {
                 .map(|l| l.span.col_start)
                 .unwrap_or(1)
         );
-
-        // Print gutter separator
         eprintln!("{}", self.render_gutter(width));
+    }
 
-        // Print each relevant line with labels
-        for line_num in min_line..=max_line {
-            let line_idx = line_num.saturating_sub(1);
+    fn label_covers_line(&self, line_num: usize, span: &Span) -> bool {
+        span.row_start == line_num
+            || span
+                .row_end
+                .is_some_and(|end| end >= line_num && span.row_start <= line_num)
+    }
 
-            if line_idx >= lines.len() {
-                break;
-            }
+    fn emit_label_message(&self, label: &super::Label, width: usize) {
+        if let Some(ref msg) = label.message {
+            let colored_msg = match label.style {
+                LabelStyle::Primary => self.styles.primary_label(msg),
+                LabelStyle::Secondary => self.styles.secondary_label(msg),
+            };
+            eprintln!("{} {}", self.render_gutter(width), colored_msg);
+        }
+    }
 
-            let line_content = lines[line_idx];
-
-            // Print the source line
-            eprintln!("{}", self.render_source_line(line_num, line_content, width));
-
-            // Print underlines for labels on this line
-            for label in &diagnostic.labels {
-                let label_covers_line = label.span.row_start == line_num
-                    || label
-                        .span
-                        .row_end
-                        .is_some_and(|end| end >= line_num && label.span.row_start <= line_num);
-                if label_covers_line {
-                    eprintln!(
-                        "{}",
-                        self.render_label_underline(
-                            &label.span,
-                            line_num,
-                            line_content,
-                            label.style,
-                            width
-                        )
-                    );
-
-                    // Print label message if present
-                    if let Some(ref msg) = label.message {
-                        let colored_msg = match label.style {
-                            LabelStyle::Primary => self.styles.primary_label(msg),
-                            LabelStyle::Secondary => self.styles.secondary_label(msg),
-                        };
-                        eprintln!("{} {}", self.render_gutter(width), colored_msg);
-                    }
-                }
-            }
+    fn emit_source_context_line(
+        &self,
+        diagnostic: &Diagnostic,
+        lines: &[&str],
+        line_num: usize,
+        width: usize,
+    ) {
+        let line_idx = line_num.saturating_sub(1);
+        if line_idx >= lines.len() {
+            return;
         }
 
-        // Print help text if present
+        let line_content = lines[line_idx];
+        eprintln!("{}", self.render_source_line(line_num, line_content, width));
+
+        for label in &diagnostic.labels {
+            if !self.label_covers_line(line_num, &label.span) {
+                continue;
+            }
+
+            eprintln!(
+                "{}",
+                self.render_label_underline(
+                    &label.span,
+                    line_num,
+                    line_content,
+                    label.style,
+                    width
+                )
+            );
+            self.emit_label_message(label, width);
+        }
+    }
+
+    fn emit_help(&self, diagnostic: &Diagnostic, width: usize) {
         if let Some(ref help) = diagnostic.help {
             eprintln!("{}", self.render_gutter(width));
             eprintln!(
@@ -180,8 +207,6 @@ impl StandardEmitter {
                 help
             );
         }
-
-        eprintln!();
     }
 }
 

@@ -11,6 +11,29 @@ use inkwell::values::{BasicValueEnum, IntValue};
 use std::collections::HashMap;
 
 impl<'a> CodeGenerator<'a> {
+    fn class_field_llvm_type(
+        &self,
+        class_type_param_names: &std::collections::HashSet<String>,
+        field: &Field,
+    ) -> Result<BasicTypeEnum<'a>, String> {
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+        if matches!(field.type_.kind, TypeKind::Primitive(_)) {
+            return Ok(ptr_type.into());
+        }
+
+        if let TypeNode {
+            kind: TypeKind::Named(type_name, _),
+            ..
+        } = &field.type_
+            && class_type_param_names.contains(type_name)
+        {
+            return Ok(ptr_type.into());
+        }
+
+        self.llvm_type_from_mux_type(&field.type_)
+    }
+
     pub(super) fn generate_user_defined_types(&mut self, nodes: &[AstNode]) -> Result<(), String> {
         // generate LLVM types for classes, interfaces, enums
         for node in nodes {
@@ -65,31 +88,7 @@ impl<'a> CodeGenerator<'a> {
         }
 
         for field in fields {
-            let field_type = if let TypeNode {
-                kind: TypeKind::Named(field_type_name, _),
-                ..
-            } = &field.type_
-            {
-                // Check if this field type is a type parameter of the class
-                if type_param_names.contains(field_type_name) {
-                    // generic fields should be pointers (boxed values)
-                    self.context.ptr_type(AddressSpace::default()).into()
-                } else {
-                    // for primitive fields, use pointer type to be consistent with boxing
-                    if matches!(field.type_.kind, TypeKind::Primitive(_)) {
-                        self.context.ptr_type(AddressSpace::default()).into()
-                    } else {
-                        self.llvm_type_from_mux_type(&field.type_)?
-                    }
-                }
-            } else {
-                // for primitive fields, use pointer type to be consistent with boxing
-                if matches!(field.type_.kind, TypeKind::Primitive(_)) {
-                    self.context.ptr_type(AddressSpace::default()).into()
-                } else {
-                    self.llvm_type_from_mux_type(&field.type_)?
-                }
-            };
+            let field_type = self.class_field_llvm_type(&type_param_names, field)?;
             field_types.push(field_type);
             field_indices.insert(field.name.clone(), field_types.len() - 1);
         }

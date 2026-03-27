@@ -9,13 +9,206 @@
 use inkwell::AddressSpace;
 use inkwell::types::BasicMetadataTypeEnum;
 use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::values::FunctionValue;
 
 use crate::ast::{AstNode, FunctionNode, PrimitiveType, StatementNode, TypeKind};
 use crate::semantics::Type;
 
 use super::CodeGenerator;
 
-impl CodeGenerator<'_> {
+impl<'a> CodeGenerator<'a> {
+    fn resolve_base_class_name_for_method(method_name: &str) -> &str {
+        let class_name = method_name
+            .split('.')
+            .next()
+            .or_else(|| method_name.split('$').next())
+            .expect("class method name should contain '.' or '$'");
+        class_name.split('$').next().unwrap_or(class_name)
+    }
+
+    fn resolve_self_type_for_method(&self, base_class_name: &str) -> Type {
+        if let Some(ref context) = self.generic_context
+            && let Some(class_symbol) = self.analyzer.symbol_table().lookup(base_class_name)
+        {
+            let type_args: Vec<Type> = class_symbol
+                .type_params
+                .iter()
+                .filter_map(|(param_name, _bounds)| context.type_params.get(param_name).cloned())
+                .collect();
+            return Type::Named(base_class_name.to_string(), type_args);
+        }
+
+        Type::Named(base_class_name.to_string(), vec![])
+    }
+
+    fn setup_method_self_parameter(
+        &mut self,
+        func: &FunctionNode,
+        function: FunctionValue<'a>,
+        param_index: &mut u32,
+    ) -> Result<(), String> {
+        let base_class_name = Self::resolve_base_class_name_for_method(&func.name);
+        let class_type = self
+            .type_map
+            .get(base_class_name)
+            .expect("class type should be in type_map after type generation");
+        let arg = function
+            .get_nth_param(*param_index)
+            .expect("self parameter should exist for class methods");
+        *param_index += 1;
+
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let alloca = self
+            .builder
+            .build_alloca(ptr_type, "self")
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(alloca, arg)
+            .map_err(|e| e.to_string())?;
+
+        let self_type = self.resolve_self_type_for_method(base_class_name);
+        self.variables
+            .insert("self".to_string(), (alloca, *class_type, self_type.clone()));
+        self.analyzer.current_self_type = Some(self_type);
+        Ok(())
+    }
+
+    fn is_enum_type(&self, resolved_type: &Type) -> bool {
+        matches!(resolved_type, Type::Named(type_name, _) if self
+            .analyzer
+            .symbol_table()
+            .lookup(type_name)
+            .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
+            .unwrap_or(false))
+    }
+
+    fn store_enum_parameter(
+        &mut self,
+        param_name: &str,
+        arg: inkwell::values::BasicValueEnum<'a>,
+        resolved_type: Type,
+    ) -> Result<(), String> {
+        let struct_type = arg.get_type();
+        let alloca = self
+            .builder
+            .build_alloca(struct_type, param_name)
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(alloca, arg)
+            .map_err(|e| e.to_string())?;
+        self.variables
+            .insert(param_name.to_string(), (alloca, struct_type, resolved_type));
+        Ok(())
+    }
+
+    fn store_function_parameter(
+        &mut self,
+        param_name: &str,
+        arg: inkwell::values::BasicValueEnum<'a>,
+        resolved_type: Type,
+    ) -> Result<(), String> {
+        let func_ptr_type = self.context.ptr_type(AddressSpace::default());
+        let alloca = self
+            .builder
+            .build_alloca(func_ptr_type, param_name)
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(alloca, arg)
+            .map_err(|e| e.to_string())?;
+
+        self.variables.insert(
+            param_name.to_string(),
+            (alloca, func_ptr_type.into(), resolved_type),
+        );
+        Ok(())
+    }
+
+    fn store_boxed_parameter(
+        &mut self,
+        param_name: &str,
+        value_to_store: inkwell::values::PointerValue<'a>,
+        resolved_type: Type,
+    ) -> Result<(), String> {
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let alloca = self
+            .builder
+            .build_alloca(ptr_type, param_name)
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_store(alloca, value_to_store)
+            .map_err(|e| e.to_string())?;
+
+        self.variables.insert(
+            param_name.to_string(),
+            (alloca, BasicTypeEnum::PointerType(ptr_type), resolved_type),
+        );
+        Ok(())
+    }
+
+    fn store_function_parameter_value(
+        &mut self,
+        param_name: &str,
+        arg: inkwell::values::BasicValueEnum<'a>,
+        resolved_type: Type,
+    ) -> Result<(), String> {
+        if matches!(resolved_type, Type::Reference(_)) {
+            return self.store_boxed_parameter(param_name, arg.into_pointer_value(), resolved_type);
+        }
+
+        if self.is_enum_type(&resolved_type) {
+            return self.store_enum_parameter(param_name, arg, resolved_type);
+        }
+
+        if matches!(resolved_type, Type::Function { .. }) {
+            return self.store_function_parameter(param_name, arg, resolved_type);
+        }
+
+        let boxed_value = self.box_value(arg);
+        self.store_boxed_parameter(param_name, boxed_value, resolved_type)
+    }
+
+    fn setup_function_parameters(
+        &mut self,
+        func: &FunctionNode,
+        function: FunctionValue<'a>,
+        start_param_index: u32,
+    ) -> Result<(), String> {
+        for (i, param) in func.params.iter().enumerate() {
+            let arg = function
+                .get_nth_param((i as u32) + start_param_index)
+                .expect("function parameter should exist at expected index");
+            let resolved_type = self
+                .analyzer
+                .resolve_type(&param.type_)
+                .map_err(|e| e.to_string())?;
+            self.store_function_parameter_value(&param.name, arg, resolved_type)?;
+        }
+
+        Ok(())
+    }
+
+    fn resolve_decl_llvm_name(&self, func: &FunctionNode) -> String {
+        if func.name.contains('$') {
+            return func.name.clone();
+        }
+
+        if let Some(symbol) = self.analyzer.symbol_table().lookup(&func.name)
+            && let Some(mangled_name) = &symbol.llvm_name
+        {
+            return mangled_name.clone();
+        }
+
+        for module_syms in self.analyzer.imported_symbols().values() {
+            if let Some(func_symbol) = module_syms.get(&func.name)
+                && let Some(mangled) = &func_symbol.llvm_name
+            {
+                return mangled.clone();
+            }
+        }
+
+        func.name.clone()
+    }
+
     pub(super) fn declare_function(&mut self, func: &FunctionNode) -> Result<(), String> {
         let mut param_types: Vec<BasicMetadataTypeEnum> = func
             .params
@@ -54,27 +247,7 @@ impl CodeGenerator<'_> {
             let return_type = self.llvm_type_from_mux_type(&func.return_type)?;
             return_type.fn_type(&param_types, false)
         };
-
-        let llvm_name = if func.name.contains('$') {
-            func.name.clone()
-        } else if let Some(symbol) = self.analyzer.symbol_table().lookup(&func.name) {
-            if let Some(mangled_name) = &symbol.llvm_name {
-                mangled_name.clone()
-            } else {
-                func.name.clone()
-            }
-        } else {
-            let mut found_name = None;
-            for module_syms in self.analyzer.imported_symbols().values() {
-                if let Some(func_symbol) = module_syms.get(&func.name)
-                    && let Some(mangled) = &func_symbol.llvm_name
-                {
-                    found_name = Some(mangled.clone());
-                    break;
-                }
-            }
-            found_name.unwrap_or_else(|| func.name.clone())
-        };
+        let llvm_name = self.resolve_decl_llvm_name(func);
 
         let function = self.module.add_function(&llvm_name, fn_type, None);
         self.functions.insert(func.name.clone(), function);
@@ -253,145 +426,11 @@ impl CodeGenerator<'_> {
 
         // set up parameter variables
         let is_class_method = func.name.contains('.');
-        let mut param_index = 0;
+        let mut param_index = 0u32;
         if is_class_method && !func.is_common {
-            let class_name = func
-                .name
-                .split('.')
-                .next()
-                .or_else(|| {
-                    // handle specialized method names like Box$int.to_string
-                    func.name.split('$').next()
-                })
-                .expect("class method name should contain '.' or '$'");
-            // for specialized methods like Box$int.to_string, we need just "Box"
-            let base_class_name = class_name.split('$').next().unwrap_or(class_name);
-            let class_type = self
-                .type_map
-                .get(base_class_name)
-                .expect("class type should be in type_map after type generation");
-            let arg = function
-                .get_nth_param(param_index)
-                .expect("self parameter should exist for class methods");
-            param_index += 1;
-            // set self as variable
-            let ptr_type = self.context.ptr_type(AddressSpace::default());
-            let alloca = self
-                .builder
-                .build_alloca(ptr_type, "self")
-                .map_err(|e| e.to_string())?;
-            self.builder
-                .build_store(alloca, arg)
-                .map_err(|e| e.to_string())?;
-
-            // For specialized methods, reconstruct the full type including type arguments
-            // from the generic context. For example, in Wrapper$string.set, self should be
-            // Type::Named("Wrapper", [Type::Primitive(Str)]) not Type::Named("Wrapper", [])
-            let self_type = if let Some(ref context) = self.generic_context {
-                // For specialized methods, reconstruct type args from generic context
-                if let Some(class_symbol) = self.analyzer.symbol_table().lookup(base_class_name) {
-                    // Build type args by looking up each class type parameter in the context
-                    let type_args: Vec<Type> = class_symbol
-                        .type_params
-                        .iter()
-                        .filter_map(|(param_name, _bounds)| {
-                            context.type_params.get(param_name).cloned()
-                        })
-                        .collect();
-                    Type::Named(base_class_name.to_string(), type_args)
-                } else {
-                    // Fallback if class not found
-                    Type::Named(base_class_name.to_string(), vec![])
-                }
-            } else {
-                // Non-specialized methods have no type args
-                Type::Named(base_class_name.to_string(), vec![])
-            };
-
-            self.variables
-                .insert("self".to_string(), (alloca, *class_type, self_type.clone()));
-            // also set current_self_type in the analyzer for type checking
-            self.analyzer.current_self_type = Some(self_type.clone());
+            self.setup_method_self_parameter(func, function, &mut param_index)?;
         }
-
-        for (i, param) in func.params.iter().enumerate() {
-            let arg = function
-                .get_nth_param((i as u32) + param_index)
-                .expect("function parameter should exist at expected index");
-
-            // resolve parameter type first
-            let resolved_type = self
-                .analyzer
-                .resolve_type(&param.type_)
-                .map_err(|e| e.to_string())?;
-
-            // handle different parameter types appropriately
-            let value_to_store = if matches!(resolved_type, Type::Reference(_)) {
-                // for reference parameters, store pointer directly
-                arg.into_pointer_value()
-            } else {
-                // check if this is an enum type
-                let is_enum = matches!(&resolved_type, Type::Named(type_name, _) if self
-                    .analyzer
-                    .symbol_table()
-                    .lookup(type_name)
-                    .map(|s| s.kind == crate::semantics::SymbolKind::Enum)
-                    .unwrap_or(false));
-
-                if is_enum {
-                    // for enum types, store struct value directly
-                    let struct_type = arg.get_type();
-                    let alloca = self
-                        .builder
-                        .build_alloca(struct_type, &param.name)
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_store(alloca, arg)
-                        .map_err(|e| e.to_string())?;
-                    // for enums, store the struct type directly
-                    self.variables
-                        .insert(param.name.clone(), (alloca, struct_type, resolved_type));
-                    continue; // skip the normal pointer wrapping
-                } else if matches!(resolved_type, Type::Function { .. }) {
-                    // for function type parameters, store raw function pointer directly
-                    let func_ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let alloca = self
-                        .builder
-                        .build_alloca(func_ptr_type, &param.name)
-                        .map_err(|e| e.to_string())?;
-                    self.builder
-                        .build_store(alloca, arg)
-                        .map_err(|e| e.to_string())?;
-
-                    self.variables.insert(
-                        param.name.clone(),
-                        (alloca, func_ptr_type.into(), resolved_type),
-                    );
-                    continue; // skip the normal pointer wrapping
-                } else {
-                    // for class and primitive types, box the value
-                    self.box_value(arg)
-                }
-            };
-
-            let ptr_type = self.context.ptr_type(AddressSpace::default());
-            let alloca = self
-                .builder
-                .build_alloca(ptr_type, &param.name)
-                .map_err(|e| e.to_string())?;
-            self.builder
-                .build_store(alloca, value_to_store)
-                .map_err(|e| e.to_string())?;
-
-            self.variables.insert(
-                param.name.clone(),
-                (
-                    alloca,
-                    BasicTypeEnum::PointerType(ptr_type),
-                    resolved_type.clone(),
-                ),
-            );
-        }
+        self.setup_function_parameters(func, function, param_index)?;
 
         // generate function body
         for stmt in &func.body {

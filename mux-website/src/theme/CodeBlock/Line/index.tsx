@@ -7,11 +7,15 @@ import styles from './styles.module.css';
 
 type Token = Props['line'][number];
 
+function getTokenKey(token: Token, index: number): string {
+  return `${index}-${token.content}`;
+}
+
 // Replaces '\n' by ''
 // Historical code, not sure why we even need this :/
 function fixLineBreak(line: Token[]) {
   const singleLineBreakToken =
-    line.length === 1 && line[0]!.content === '\n' ? line[0] : undefined;
+    line.length === 1 && line[0].content === '\n' ? line[0] : undefined;
 
   if (singleLineBreakToken) {
     return [{...singleLineBreakToken, content: ''}];
@@ -34,10 +38,10 @@ export default function CodeBlockLine({
     className: clsx(classNames, showLineNumbers && styles.codeLine),
   });
 
-  const lineTokens = line.map((token, key) => {
+  const lineTokens = line.map((token, index) => {
     const tokenProps = getTokenProps({token});
     return (
-      <LineToken key={key} {...tokenProps} line={line} token={token}>
+      <LineToken key={getTokenKey(token, index)} {...tokenProps} line={line} token={token}>
         {tokenProps.children}
       </LineToken>
     );

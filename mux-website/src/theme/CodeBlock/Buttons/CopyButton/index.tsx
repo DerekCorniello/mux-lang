@@ -23,18 +23,20 @@ function title() {
   });
 }
 
-function ariaLabel(isCopied: boolean) {
-  return isCopied
-    ? translate({
-        id: 'theme.CodeBlock.copied',
-        message: 'Copied',
-        description: 'The copied button label on code blocks',
-      })
-    : translate({
-        id: 'theme.CodeBlock.copyButtonAriaLabel',
-        message: 'Copy code to clipboard',
-        description: 'The ARIA label for copy code blocks button',
-      });
+function getCopiedLabel() {
+  return translate({
+    id: 'theme.CodeBlock.copied',
+    message: 'Copied',
+    description: 'The copied button label on code blocks',
+  });
+}
+
+function getCopyLabel() {
+  return translate({
+    id: 'theme.CodeBlock.copyButtonAriaLabel',
+    message: 'Copy code to clipboard',
+    description: 'The ARIA label for copy code blocks button',
+  });
 }
 
 function useCopyButton() {
@@ -42,20 +44,32 @@ function useCopyButton() {
     metadata: {code},
   } = useCodeBlockContext();
   const [isCopied, setIsCopied] = useState(false);
-  const copyTimeout = useRef<number | undefined>(undefined);
+  const copyTimeout = useRef<ReturnType<typeof globalThis.setTimeout> | undefined>(undefined);
 
   const copyCode = useCallback(() => {
     navigator.clipboard.writeText(code).then(() => {
       setIsCopied(true);
-      copyTimeout.current = window.setTimeout(() => {
+      copyTimeout.current = globalThis.setTimeout(() => {
         setIsCopied(false);
       }, 1000);
     });
   }, [code]);
 
-  useEffect(() => () => window.clearTimeout(copyTimeout.current), []);
+  useEffect(() => () => globalThis.clearTimeout(copyTimeout.current), []);
 
   return {copyCode, isCopied};
+}
+
+function CopyButtonContent({isCopied}: Readonly<{isCopied: boolean}>): ReactNode {
+  return (
+    <span className={styles.copyButtonIcons} aria-hidden="true">
+      {isCopied ? (
+        <IconSuccess className={styles.copyButtonSuccessIcon} />
+      ) : (
+        <IconCopy className={styles.copyButtonIcon} />
+      )}
+    </span>
+  );
 }
 
 export default function CopyButton({className}: Props): ReactNode {
@@ -63,7 +77,7 @@ export default function CopyButton({className}: Props): ReactNode {
 
   return (
     <Button
-      aria-label={ariaLabel(isCopied)}
+      aria-label={isCopied ? getCopiedLabel() : getCopyLabel()}
       title={title()}
       className={clsx(
         className,
@@ -71,10 +85,7 @@ export default function CopyButton({className}: Props): ReactNode {
         isCopied && styles.copyButtonCopied,
       )}
       onClick={copyCode}>
-      <span className={styles.copyButtonIcons} aria-hidden="true">
-        <IconCopy className={styles.copyButtonIcon} />
-        <IconSuccess className={styles.copyButtonSuccessIcon} />
-      </span>
+      <CopyButtonContent isCopied={isCopied} />
     </Button>
   );
 }

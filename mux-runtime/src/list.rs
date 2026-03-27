@@ -208,47 +208,50 @@ pub extern "C" fn mux_list_set_value(list_val: *mut Value, index: i64, val: *mut
     if list_val.is_null() || val.is_null() {
         return;
     }
+
     unsafe {
-        if let Value::List(list_data) = &*list_val {
-            let mut new_list = list_data.clone();
-            let len = new_list.len() as i64;
+        let Value::List(list_data) = &*list_val else {
+            return;
+        };
 
-            // Handle negative indices (wraparound)
-            let actual_index = if index < 0 { len + index } else { index };
+        let mut new_list = list_data.clone();
+        let Some(actual_index) = normalized_index(index, new_list.len()) else {
+            return;
+        };
 
-            // Check if index is still negative after wraparound
-            if actual_index < 0 {
-                return; // Invalid index
-            }
-
-            // Extend list if necessary with type-appropriate defaults
-            if actual_index >= len {
-                // Get default value based on first element's type, or Int(0) if empty
-                let default_value = if new_list.is_empty() {
-                    Value::Int(0)
-                } else {
-                    match &new_list[0] {
-                        Value::Int(_) => Value::Int(0),
-                        Value::Float(_) => Value::Float(0.0.into()),
-                        Value::String(_) => Value::String(String::new()),
-                        Value::Bool(_) => Value::Bool(false),
-                        _ => Value::Int(0), // Fallback for complex types
-                    }
-                };
-
-                // Extend to actual_index + 1
-                while new_list.len() <= actual_index as usize {
-                    new_list.push(default_value.clone());
-                }
-            }
-
-            // Set the value
-            let value = (*val).clone();
-            new_list[actual_index as usize] = value;
-
-            // Write back to the original Value
-            *list_val = Value::List(new_list);
+        if actual_index >= new_list.len() {
+            extend_to_index(&mut new_list, actual_index);
         }
+
+        new_list[actual_index] = (*val).clone();
+        *list_val = Value::List(new_list);
+    }
+}
+
+fn normalized_index(index: i64, len: usize) -> Option<usize> {
+    let len_i64 = len as i64;
+    let wrapped = if index < 0 { len_i64 + index } else { index };
+    (wrapped >= 0).then_some(wrapped as usize)
+}
+
+fn extend_to_index(list: &mut Vec<Value>, target_index: usize) {
+    let default_value = default_fill_value(list);
+    while list.len() <= target_index {
+        list.push(default_value.clone());
+    }
+}
+
+fn default_fill_value(list: &[Value]) -> Value {
+    if list.is_empty() {
+        return Value::Int(0);
+    }
+
+    match &list[0] {
+        Value::Int(_) => Value::Int(0),
+        Value::Float(_) => Value::Float(0.0.into()),
+        Value::String(_) => Value::String(String::new()),
+        Value::Bool(_) => Value::Bool(false),
+        _ => Value::Int(0),
     }
 }
 

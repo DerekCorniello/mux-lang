@@ -4,10 +4,9 @@ import ElementContent from '@theme/CodeBlock/Content/Element';
 import StringContent from '@theme/CodeBlock/Content/String';
 import type {Props} from '@theme/CodeBlock';
 import {CopyIcon, CheckIcon} from '@site/src/components/CodeIcons';
-import {usePrismTheme} from '@docusaurus/theme-common';
+import {usePrismTheme, useThemeConfig} from '@docusaurus/theme-common';
 import {Highlight} from 'prism-react-renderer';
 import Line from '@theme/CodeBlock/Line';
-import {useThemeConfig} from '@docusaurus/theme-common';
 
 /**
  * Best attempt to make the children a plain string so it is copyable. If there
@@ -24,17 +23,19 @@ function maybeStringifyChildren(children: ReactNode): ReactNode {
 }
 
 // Terminal-styled code content without Docusaurus Layout/Buttons
+interface TerminalCodeContentProps {
+  readonly code: string;
+  readonly language: string;
+  readonly className?: string;
+  readonly lineNumbersStart?: number;
+}
+
 function TerminalCodeContent({
   code,
   language,
   className,
   lineNumbersStart,
-}: {
-  code: string;
-  language: string;
-  className?: string;
-  lineNumbersStart?: number;
-}): ReactNode {
+}: Readonly<TerminalCodeContentProps>): ReactNode {
   const prismTheme = usePrismTheme();
   
   return (
@@ -43,7 +44,6 @@ function TerminalCodeContent({
         <pre
           className={className}
           style={style}
-          tabIndex={0}
         >
           <code
             style={{
@@ -55,7 +55,7 @@ function TerminalCodeContent({
           >
             {tokens.map((line, i) => (
               <Line
-                key={i}
+                key={`${i}-${line.map(t => t.content).join('')}`}
                 line={line}
                 getLineProps={getLineProps}
                 getTokenProps={getTokenProps}
@@ -71,13 +71,24 @@ function TerminalCodeContent({
 }
 
 // Extract title from metastring (e.g., 'title="filename.mux"' or 'showLineNumbers')
+function getLineNumbersStart(showLineNumbers: boolean | number | undefined): number | undefined {
+  if (showLineNumbers === true) {
+    return 1;
+  }
+  if (typeof showLineNumbers === 'number') {
+    return showLineNumbers;
+  }
+  return undefined;
+}
+
 function parseMetastring(metastring: string | undefined): { title?: string; showLineNumbers?: boolean | number } {
   if (!metastring) return {};
   
   const result: { title?: string; showLineNumbers?: boolean | number } = {};
   
   // Extract title="..." or title='...'
-  const titleMatch = metastring.match(/title=["']([^"']+)["']/);
+  const titleRegex = /title=["']([^"']+)["']/;
+  const titleMatch = titleRegex.exec(metastring);
   if (titleMatch) {
     result.title = titleMatch[1];
   }
@@ -85,9 +96,10 @@ function parseMetastring(metastring: string | undefined): { title?: string; show
   // Check for showLineNumbers
   if (metastring.includes('showLineNumbers')) {
     // Check if it has a specific number: showLineNumbers=5
-    const lineNumMatch = metastring.match(/showLineNumbers=(\d+)/);
+    const lineNumRegex = /showLineNumbers=(\d+)/;
+    const lineNumMatch = lineNumRegex.exec(metastring);
     if (lineNumMatch) {
-      result.showLineNumbers = parseInt(lineNumMatch[1], 10);
+      result.showLineNumbers = Number.parseInt(lineNumMatch[1], 10);
     } else {
       result.showLineNumbers = true;
     }
@@ -114,8 +126,14 @@ export default function CodeBlock({
   const showLineNumbers = showLineNumbersProp ?? parsedMeta.showLineNumbers;
   
   const handleCopy = () => {
-    const textToCopy = typeof rawChildren === 'string' ? rawChildren : 
-                      Array.isArray(rawChildren) ? rawChildren.join('') : String(rawChildren);
+    let textToCopy = '';
+    if (typeof rawChildren === 'string') {
+      textToCopy = rawChildren;
+    } else if (Array.isArray(rawChildren)) {
+      textToCopy = rawChildren
+        .filter((child): child is string => typeof child === 'string')
+        .join('');
+    }
     navigator.clipboard.writeText(textToCopy.trimEnd());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -133,9 +151,7 @@ export default function CodeBlock({
   // Only apply terminal styling to multi-line code blocks (not inline code)
   if (typeof children === 'string' && children.includes('\n')) {
     // Calculate line numbers start
-    const lineNumbersStart = showLineNumbers === true ? 1 : 
-                             typeof showLineNumbers === 'number' ? showLineNumbers : 
-                             undefined;
+    const lineNumbersStart = getLineNumbersStart(showLineNumbers);
     
     // Trim trailing newlines to prevent extra space at bottom
     const trimmedCode = children.trimEnd();
