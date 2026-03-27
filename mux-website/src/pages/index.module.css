@@ -5,20 +5,24 @@
 
 /* Homepage Styles */
 
+/* Hero Section */
 .heroBanner {
-  padding: 6rem 0 4rem;
+  padding: 5rem 0 4rem;
   text-align: center;
   position: relative;
   overflow: hidden;
+  background: linear-gradient(180deg, var(--ifm-background-surface-color) 0%, var(--ifm-background-color) 100%);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
 }
 
 .heroContent {
-  max-width: 960px;
+  max-width: 900px;
   margin: 0 auto;
+  padding: 0 1rem;
 }
 
 .logoContainer {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   display: flex;
   justify-content: center;
   position: relative;
@@ -27,30 +31,37 @@
 .logoContainer::before {
   content: '';
   position: absolute;
-  width: 160px;
-  height: 160px;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(44, 117, 184, 0.12) 0%, transparent 70%);
-  filter: blur(20px);
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.15) 0%, transparent 70%);
+  filter: blur(25px);
   z-index: 0;
 }
 
 .heroLogo {
-  width: 120px;
-  height: 120px;
+  width: 100px;
+  height: 100px;
   object-fit: contain;
   position: relative;
   z-index: 1;
-  filter: drop-shadow(0 4px 12px rgba(44, 117, 184, 0.2));
+  filter: drop-shadow(0 4px 12px rgba(37, 99, 235, 0.25));
 }
 
 .heroTitle {
-  font-size: 3.5rem;
+  font-size: 3rem;
   font-weight: 700;
-  line-height: 1.2;
-  margin-bottom: 1.5rem;
+  line-height: 1.15;
+  margin-bottom: 1.25rem;
   letter-spacing: -0.03em;
   color: var(--ifm-font-color-base);
+}
+
+.heroTitleHighlight {
+  background: linear-gradient(135deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-dark) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .heroSubtitle {
@@ -58,11 +69,12 @@
   line-height: 1.6;
   color: var(--ifm-color-emphasis-700);
   margin-bottom: 2rem;
-  max-width: 800px;
+  max-width: 700px;
   margin-left: auto;
   margin-right: auto;
 }
 
+/* Install Bar */
 .installBar {
   display: inline-flex;
   align-items: center;
@@ -70,10 +82,11 @@
   background: var(--ifm-background-surface-color);
   border: 1px solid var(--ifm-color-emphasis-200);
   border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  margin: 2rem 0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  vertical-align: middle;
+  padding: 0.75rem 1rem;
+  margin: 1.5rem 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .installCommand {
@@ -84,6 +97,7 @@
   border: none;
   padding: 0;
   margin: 0;
+  white-space: nowrap;
 }
 
 .copyButton {
@@ -95,16 +109,17 @@
   border: none;
   border-radius: 4px;
   padding: 0;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   cursor: pointer;
   opacity: 0.9;
   flex-shrink: 0;
+  transition: all 0.2s ease;
 }
 
 .copyButton svg {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 
 .copyButton:hover {
@@ -116,117 +131,406 @@
   transform: scale(0.95);
 }
 
-.buttons {
+.installNote {
+  font-size: 0.875rem;
+  color: var(--ifm-color-emphasis-600);
+  margin-top: -0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.installLink {
+  color: var(--ifm-color-primary);
+  margin-left: 0.25rem;
+}
+
+.installLink:hover {
+  text-decoration: underline;
+}
+
+/* Hero Buttons */
+.heroButtons {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 1rem;
+  margin-bottom: 1.5rem;
   flex-wrap: wrap;
 }
 
-.buttons :global(.button) {
-  font-weight: 600;
-  border-radius: 6px;
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  transition: all 0.2s ease;
-  cursor: pointer;
-  text-decoration: none;
-  display: inline-block;
+.ctaButton {
+  background: linear-gradient(135deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-dark) 100%);
+  border: none;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
 }
 
-.buttons :global(.button--primary) {
-  background-color: var(--ifm-color-primary);
-  border: 2px solid var(--ifm-color-primary);
+.ctaButton:hover {
+  background: linear-gradient(135deg, var(--ifm-color-primary-dark) 0%, var(--ifm-color-primary-darker) 100%);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
   color: white;
 }
 
-.buttons :global(.button--primary):hover {
-  background-color: var(--ifm-color-primary-dark);
-  border-color: var(--ifm-color-primary-dark);
-  text-decoration: none;
-  color: white;
+.secondaryButton {
+  border: 2px solid var(--ifm-color-emphasis-300);
+  color: var(--ifm-color-emphasis-700);
 }
 
-.buttons :global(.button--secondary) {
-  background-color: transparent;
-  border: 2px solid var(--ifm-color-primary);
+.secondaryButton:hover {
+  border-color: var(--ifm-color-primary);
   color: var(--ifm-color-primary);
 }
 
-.buttons :global(.button--secondary):hover {
-  background-color: var(--ifm-color-primary);
-  color: white;
-  text-decoration: none;
+/* Badges */
+.badges {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
-.buttons :global(.button--lg) {
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  background: var(--ifm-color-emphasis-100);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--ifm-color-emphasis-700);
+}
+
+/* Section Styles */
+.sectionTitle {
+  text-align: center;
+  font-size: 2.25rem;
+  margin-bottom: 0.75rem;
+  font-weight: 700;
+}
+
+.sectionSubtitle {
+  text-align: center;
   font-size: 1.125rem;
-  padding: 1rem 2rem;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 2.5rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Installation Section */
+.installation {
+  padding: 5rem 0;
+  background: var(--ifm-background-surface-color);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.installGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+@media (max-width: 996px) {
+  .installGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.installCard {
+  background: var(--ifm-background-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.installCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--ifm-color-emphasis-300);
+}
+
+.installHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.installIcon {
+  font-size: 1.5rem;
+}
+
+.installHeader h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  flex: 1;
+}
+
+.recommendedBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  background: var(--ifm-color-primary);
+  color: white;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.installCard > p {
+  font-size: 0.9rem;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 1rem;
+  margin-top: 0;
+}
+
+.installCode {
+  composes: terminal-code from global;
+  margin: 0;
+}
+
+.installCode pre {
+  margin: 0 !important;
 }
 
 /* Quick Start Section */
 .quickStart {
   padding: 5rem 0;
-  background: var(--ifm-background-surface-color);
-  border-top: 1px solid var(--ifm-color-emphasis-200);
+  background: var(--ifm-background-color);
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
 }
 
-.quickStart h2 {
-  margin-bottom: 1.5rem;
+.quickStartGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  align-items: start;
+}
+
+@media (max-width: 996px) {
+  .quickStartGrid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+.quickStartContent h2 {
+  margin-bottom: 1rem;
   font-size: 2rem;
 }
 
-/* Terminal code blocks - use global .terminal-code class */
-.installCode,
-.codeExample,
-.showcaseCode {
+.quickStartDescription {
+  font-size: 1.1rem;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+.quickStartSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1rem;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.stepNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--ifm-color-primary);
+  color: white;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.codeBlockWrapper {
+  position: relative;
+}
+
+.featuredCode {
   composes: terminal-code from global;
+  margin: 0;
+}
+
+.featuredCode pre {
+  margin: 0 !important;
 }
 
 /* Features Section */
 .features {
-  padding: 5rem 0 6rem;
+  padding: 5rem 0;
+  background: var(--ifm-background-surface-color);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.featuresGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+@media (max-width: 996px) {
+  .featuresGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .featuresGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.featureCard {
   background: var(--ifm-background-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+
+.featureCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--ifm-color-emphasis-300);
+  transform: translateY(-2px);
+}
+
+.featureIcon {
+  width: 40px;
+  height: 40px;
+  color: var(--ifm-color-primary);
   margin-bottom: 1rem;
 }
 
-.features h2 {
-  text-align: center;
-  margin-bottom: 3rem;
-  font-size: 2.5rem;
+.featureIcon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.featureCard h3 {
+  font-size: 1.125rem;
+  margin-bottom: 0.5rem;
+  color: var(--ifm-color-primary-dark);
+}
+
+.featureCard p {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ifm-color-emphasis-600);
+  margin: 0;
 }
 
 /* Code Showcase Section */
 .codeShowcase {
-  padding: 5rem 0 6rem;
-  background: var(--ifm-background-surface-color);
-  border-top: 1px solid var(--ifm-color-emphasis-200);
+  padding: 5rem 0;
+  background: var(--ifm-background-color);
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
-  margin-bottom: 1rem;
 }
 
-.codeShowcase h2 {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
+.examplesGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2rem;
 }
 
-.codeShowcase h3 {
-  font-size: 1.5rem;
+@media (max-width: 996px) {
+  .examplesGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.exampleCard {
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.exampleCard h3 {
+  font-size: 1.25rem;
   margin-bottom: 1rem;
-  color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary-dark);
+}
+
+.exampleCode {
+  composes: terminal-code from global;
+  margin: 0;
+}
+
+.exampleCode pre {
+  margin: 0 !important;
 }
 
 /* CTA Section */
 .cta {
   padding: 5rem 0;
-  background: var(--ifm-background-color);
+  background: linear-gradient(180deg, var(--ifm-background-surface-color) 0%, var(--ifm-background-color) 100%);
 }
 
-.cta h2 {
-  font-size: 2.5rem;
+.ctaContent {
+  text-align: center;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.ctaContent h2 {
+  font-size: 2.25rem;
   margin-bottom: 1rem;
+}
+
+.ctaDescription {
+  font-size: 1.125rem;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 2rem;
+}
+
+.ctaButtons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.ctaLinks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+
+.ctaLinks a {
+  color: var(--ifm-color-emphasis-600);
+  transition: color 0.2s ease;
+}
+
+.ctaLinks a:hover {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+}
+
+.linkSeparator {
+  color: var(--ifm-color-emphasis-300);
 }
 
 /* Responsive Design */
@@ -236,7 +540,7 @@
   }
 
   .heroTitle {
-    font-size: 2.5rem;
+    font-size: 2.25rem;
   }
 
   .heroSubtitle {
@@ -244,31 +548,27 @@
   }
 
   .heroLogo {
-    width: 100px;
-    height: 100px;
+    width: 80px;
+    height: 80px;
   }
 
-  .quickStart .row {
-    flex-direction: column;
+  .sectionTitle {
+    font-size: 1.875rem;
   }
 
-  .features .row {
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
-  .codeShowcase .row {
-    flex-direction: column;
+  .installGrid,
+  .featuresGrid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 768px) {
   .heroBanner {
-    padding: 3rem 0 2rem;
+    padding: 3rem 0 2.5rem;
   }
 
   .heroTitle {
-    font-size: 2rem;
+    font-size: 1.875rem;
   }
 
   .heroSubtitle {
@@ -276,27 +576,75 @@
   }
 
   .heroLogo {
-    width: 80px;
-    height: 80px;
+    width: 70px;
+    height: 70px;
   }
 
-  .buttons {
+  .heroButtons,
+  .ctaButtons {
     flex-direction: column;
     width: 100%;
   }
 
-  .buttons .button {
+  .heroButtons :global(.button),
+  .ctaButtons :global(.button) {
     width: 100%;
-    max-width: 300px;
+    max-width: 280px;
   }
 
-  .codeShowcase h2,
-  .features h2,
-  .cta h2 {
-    font-size: 2rem;
+  .installBar {
+    padding: 0.5rem 0.75rem;
   }
 
-  .codeShowcase h3 {
-    font-size: 1.25rem;
+  .installCommand {
+    font-size: 0.75rem;
+  }
+
+  .sectionTitle {
+    font-size: 1.625rem;
+  }
+
+  .sectionSubtitle {
+    font-size: 1rem;
+  }
+
+  .installation,
+  .quickStart,
+  .features,
+  .codeShowcase,
+  .cta {
+    padding: 3rem 0;
+  }
+
+  .quickStartContent h2 {
+    font-size: 1.625rem;
+  }
+
+  .ctaContent h2 {
+    font-size: 1.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .heroTitle {
+    font-size: 1.75rem;
+  }
+
+  .badges {
+    gap: 0.5rem;
+  }
+
+  .badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+  }
+
+  .ctaLinks {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .linkSeparator {
+    display: none;
   }
 }
