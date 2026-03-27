@@ -243,7 +243,7 @@ function QuickStartSection() {
           </div>
           
           <div className={styles.codeBlockWrapper}>
-            <CodeBlock title="hello.mux" className={styles.featuredCode}>
+            <CodeBlock title="error-handling.mux" className={styles.featuredCode}>
 {`func divide(int a, int b) returns result<int, string> {
     if b == 0 {
         return err("division by zero")
@@ -333,8 +333,8 @@ function CodeExamplesSection() {
 auto stack = Stack<int>.new()
 stack.push(42)
 match stack.pop() {
-    ok(value) { print(value.to_string()) }
-    err(_) { print("Stack is empty") }
+    some(value) { print(value.to_string()) }
+    none { print("Stack is empty") }
 }`}
             </CodeBlock>
           </div>

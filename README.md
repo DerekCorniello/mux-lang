@@ -11,7 +11,7 @@
 [![crates.io](https://img.shields.io/crates/v/mux-lang.svg?style=flat-square)](https://crates.io/crates/mux-lang)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg?style=flat-square)](https://mux-lang.dev)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg?style=flat-square)]()
-[![Sonar Quality Gate](https://img.shields.io/badge/quality-passing-brightgreen.svg?style=flat-square)](https://sonarcloud.io/summary/new_code?id=DerekCorniello_mux-lang)
+[![Sonar Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=DerekCorniello_mux-lang&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=DerekCorniello_mux-lang)
 
 </div>
 
@@ -177,7 +177,7 @@ Mux is an open-source project and welcomes contributions! Whether you're adding 
 
 ## Runtime ABI Note
 
-Recent changes: The runtime now uses a unified representation for `optional<T>` and `result<T, E]` at the FFI level (boxed `Value` pointers). Compiler-generated code and FFI should treat optionals/results as `*mut Value` and use the runtime discriminant helpers when inspecting variants.
+Recent changes: The runtime now uses a unified representation for `optional<T>` and `result<T, E>` at the FFI level (boxed `Value` pointers). Compiler-generated code and FFI should treat optionals/results as `*mut Value` and use the runtime discriminant helpers when inspecting variants.
 
 # Mux Language Specification
 
