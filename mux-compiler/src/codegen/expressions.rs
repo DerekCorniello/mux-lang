@@ -963,7 +963,7 @@ impl<'a> CodeGenerator<'a> {
             UnaryOp::Ref => self.generate_ref_unary_expression(expr),
             UnaryOp::Deref => self.generate_deref_unary_expression(expr),
             UnaryOp::Incr => self.generate_update_unary_expression(expr, true, true),
-            UnaryOp::Decr => self.generate_update_unary_expression(expr, false, false),
+            UnaryOp::Decr => self.generate_update_unary_expression(expr, false, true),
             UnaryOp::Not => self.generate_not_unary_expression(expr),
             UnaryOp::Neg => self.generate_neg_unary_expression(expr),
         }
@@ -1045,9 +1045,10 @@ impl<'a> CodeGenerator<'a> {
         allow_global: bool,
     ) -> Result<BasicValueEnum<'a>, String> {
         let ExpressionKind::Identifier(name) = &expr.kind else {
-            return Err(if increment {
-            UnaryOp::Incr => self.generate_update_unary_expression(expr, true, true),
-            UnaryOp::Decr => self.generate_update_unary_expression(expr, false, true),
+            return Err(format!(
+                "Cannot {} on non-identifier",
+                if increment { "increment" } else { "decrement" }
+            ));
         };
 
         let ptr = if allow_global {

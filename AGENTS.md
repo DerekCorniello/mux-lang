@@ -12,6 +12,7 @@
 - **No clippy warnings** - code must pass `cargo clippy --all-targets --all-features -- -D warnings` (run this exact command for strict linting).
 - **Remove outdated comments** - ensure comments reflect current code.
 - **NEVER READ THE `.env` FILE** - do not read or parse the `.env` file. If environment variables are needed, ask the user to provide them explicitly.
+- When running commands that require environment variables, execute `source .env` in the shell to load them. This keeps secrets in process memory without exposing file contents to the AI context.
 
 ## Critical Understanding
 Mux is a statically‑typed, reference‑counted language that aims for clean, zero‑cost abstractions. The compiler generates LLVM IR and links with a C/Rust runtime. The goal is a modern, easy‑to‑learn language with strong static typing.
@@ -46,7 +47,10 @@ When testing a feature:
 4. Run `cargo clippy` to ensure no warnings/errors.
 5. Run SonarQube analysis locally to check code quality:
    ```bash
-   source .env && npx --yes sonar-scanner -Dsonar.token="$SONARQUBE_TOKEN" -Dsonar.host.url="$SONARQUBE_URL"
+   source .env && cargo build && sonar-scanner \
+     -Dsonar.projectKey=mux-lang \
+     -Dsonar.sources=. \
+     -Dsonar.host.url=http://localhost:9000
    ```
    Results appear at https://sonarcloud.io/dashboard?id=DerekCorniello_mux-lang
    - To view the reports in the cloud, use the MCP server.
