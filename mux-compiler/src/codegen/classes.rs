@@ -252,8 +252,7 @@ impl<'a> CodeGenerator<'a> {
                     "mux_value_result_discriminant"
                 };
                 let func = self
-                    .module
-                    .get_function(discriminant_func)
+                    .runtime_function(discriminant_func)
                     .ok_or(format!("{} not found", discriminant_func))?;
 
                 let discriminant_call = self

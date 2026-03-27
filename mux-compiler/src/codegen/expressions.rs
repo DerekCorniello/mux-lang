@@ -175,8 +175,7 @@ impl<'a> CodeGenerator<'a> {
             .generate_runtime_call("mux_optional_get_value", &[map_get.into()])
             .ok_or_else(|| "mux_optional_get_value should return a value".to_string())?;
         let free_opt = self
-            .module
-            .get_function("mux_free_optional")
+            .runtime_function("mux_free_optional")
             .ok_or("mux_free_optional not found")?;
         let _ = self
             .builder
@@ -205,8 +204,7 @@ impl<'a> CodeGenerator<'a> {
         }
         let arg_val = self.generate_expression(&args[0])?;
         let func_print = self
-            .module
-            .get_function("mux_print")
+            .runtime_function("mux_print")
             .ok_or("mux_print not found")?;
         self.builder
             .build_call(func_print, &[arg_val.into()], "print_call")
@@ -225,8 +223,7 @@ impl<'a> CodeGenerator<'a> {
             return Err("read_line takes 0 arguments".to_string());
         }
         let func_read_line = self
-            .module
-            .get_function("mux_read_line")
+            .runtime_function("mux_read_line")
             .ok_or("mux_read_line not found")?;
         let call = self
             .builder
@@ -318,7 +315,7 @@ impl<'a> CodeGenerator<'a> {
             _ => {}
         }
 
-        let Some(func) = self.module.get_function(llvm_function_name) else {
+        let Some(func) = self.runtime_function(llvm_function_name) else {
             return Ok(None);
         };
 
@@ -657,10 +654,7 @@ impl<'a> CodeGenerator<'a> {
         let struct_size = capture_struct_type
             .size_of()
             .ok_or("Failed to get capture struct size")?;
-        let malloc_fn = self
-            .module
-            .get_function("malloc")
-            .ok_or("malloc not found")?;
+        let malloc_fn = self.runtime_function("malloc").ok_or("malloc not found")?;
         let capture_mem = self
             .builder
             .build_call(malloc_fn, &[struct_size.into()], "capture_alloc")
@@ -762,10 +756,7 @@ impl<'a> CodeGenerator<'a> {
             .context
             .struct_type(&[ptr_type.into(), ptr_type.into()], false);
 
-        let malloc_fn = self
-            .module
-            .get_function("malloc")
-            .ok_or("malloc not found")?;
+        let malloc_fn = self.runtime_function("malloc").ok_or("malloc not found")?;
         let closure_size = closure_struct_type
             .size_of()
             .ok_or("Failed to get closure struct size")?;
@@ -841,8 +832,7 @@ impl<'a> CodeGenerator<'a> {
         let none_call = self
             .builder
             .build_call(
-                self.module
-                    .get_function("mux_optional_none")
+                self.runtime_function("mux_optional_none")
                     .expect("mux_optional_none must be declared in runtime"),
                 &[],
                 "none_literal",
@@ -1071,8 +1061,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?
             .into_pointer_value();
         let get_int_func = self
-            .module
-            .get_function("mux_value_get_int")
+            .runtime_function("mux_value_get_int")
             .ok_or("mux_value_get_int not found")?;
         let current_val = self
             .builder
@@ -1196,8 +1185,7 @@ impl<'a> CodeGenerator<'a> {
         call_name: &str,
     ) -> Result<BasicValueEnum<'a>, String> {
         let func = self
-            .module
-            .get_function(func_name)
+            .runtime_function(func_name)
             .ok_or(format!("{} not found", func_name))?;
         let call = self
             .builder
@@ -1267,8 +1255,7 @@ impl<'a> CodeGenerator<'a> {
             return Err("None takes 0 arguments".to_string());
         }
         let func = self
-            .module
-            .get_function("mux_optional_none")
+            .runtime_function("mux_optional_none")
             .ok_or("mux_optional_none not found")?;
         let call = self
             .builder
@@ -1326,8 +1313,7 @@ impl<'a> CodeGenerator<'a> {
                 let arg_value = self.generate_expression(arg)?;
                 let ptr = arg_value.into_pointer_value();
                 let copy_func = self
-                    .module
-                    .get_function("mux_copy_object")
+                    .runtime_function("mux_copy_object")
                     .ok_or("mux_copy_object not found")?;
                 let copied_ptr = self
                     .builder
@@ -1691,8 +1677,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?
             .into_pointer_value();
         let get_ptr_func = self
-            .module
-            .get_function("mux_get_object_ptr")
+            .runtime_function("mux_get_object_ptr")
             .ok_or("mux_get_object_ptr not found")?;
         let object_data_ptr = self
             .builder
@@ -1792,8 +1777,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?
             .into_pointer_value();
         let get_ptr_func = self
-            .module
-            .get_function("mux_get_object_ptr")
+            .runtime_function("mux_get_object_ptr")
             .ok_or("mux_get_object_ptr not found")?;
         let data_ptr = self
             .builder
@@ -2040,8 +2024,7 @@ impl<'a> CodeGenerator<'a> {
         }
 
         let get_ptr_func = self
-            .module
-            .get_function("mux_get_object_ptr")
+            .runtime_function("mux_get_object_ptr")
             .ok_or("mux_get_object_ptr not found")?;
         let is_ref = self.is_reference_expression(expr);
         let ptr_to_use = if is_ref {
@@ -2097,8 +2080,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?
             .into_pointer_value();
         let get_ptr_func = self
-            .module
-            .get_function("mux_get_object_ptr")
+            .runtime_function("mux_get_object_ptr")
             .ok_or("mux_get_object_ptr not found")?;
         self.builder
             .build_call(get_ptr_func, &[self_value_ptr.into()], call_name)
@@ -2231,8 +2213,7 @@ impl<'a> CodeGenerator<'a> {
                 let boxed_value = self.box_value(right_val);
                 self.builder
                     .build_call(
-                        self.module
-                            .get_function("mux_list_set_value")
+                        self.runtime_function("mux_list_set_value")
                             .expect("mux_list_set_value must be declared in runtime"),
                         &[target_val.into(), index_val.into(), boxed_value.into()],
                         "list_set_value",
@@ -2248,8 +2229,7 @@ impl<'a> CodeGenerator<'a> {
                 let boxed_value = self.box_value(right_val);
                 self.builder
                     .build_call(
-                        self.module
-                            .get_function("mux_map_put_value")
+                        self.runtime_function("mux_map_put_value")
                             .expect("mux_map_put_value must be declared in runtime"),
                         &[target_val.into(), boxed_key.into(), boxed_value.into()],
                         "map_put_value",
@@ -2633,8 +2613,7 @@ impl<'a> CodeGenerator<'a> {
         let created = self
             .builder
             .build_call(
-                self.module
-                    .get_function(runtime_fn)
+                self.runtime_function(runtime_fn)
                     .ok_or(format!("{} not found", runtime_fn))?,
                 &[],
                 &format!("{}_new_call", class_name),
@@ -2945,7 +2924,7 @@ impl<'a> CodeGenerator<'a> {
         lookup_name: &str,
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
-        let Some(func) = self.module.get_function(lookup_name) else {
+        let Some(func) = self.runtime_function(lookup_name) else {
             return Err(format!(
                 "Undefined function: {} (looked for LLVM name: {})",
                 display_name, lookup_name
@@ -2997,8 +2976,7 @@ impl<'a> CodeGenerator<'a> {
                 let raw_list = self
                     .builder
                     .build_call(
-                        self.module
-                            .get_function("mux_value_get_list")
+                        self.runtime_function("mux_value_get_list")
                             .expect("mux_value_get_list must be declared in runtime"),
                         &[target_val.into()],
                         "extract_list",
@@ -3018,8 +2996,7 @@ impl<'a> CodeGenerator<'a> {
                 let raw_result = self
                     .builder
                     .build_call(
-                        self.module
-                            .get_function("mux_list_get_value")
+                        self.runtime_function("mux_list_get_value")
                             .expect("mux_list_get_value must be declared in runtime"),
                         &[raw_list_ptr.into(), normalized_index.into()],
                         "list_raw",
@@ -3093,8 +3070,7 @@ impl<'a> CodeGenerator<'a> {
                 let raw_map = self
                     .builder
                     .build_call(
-                        self.module
-                            .get_function("mux_value_get_map")
+                        self.runtime_function("mux_value_get_map")
                             .expect("mux_value_get_map must be declared in runtime"),
                         &[target_val.into()],
                         "extract_map",
@@ -3108,8 +3084,7 @@ impl<'a> CodeGenerator<'a> {
                 let raw_result = self
                     .builder
                     .build_call(
-                        self.module
-                            .get_function("mux_map_get")
+                        self.runtime_function("mux_map_get")
                             .expect("mux_map_get must be declared in runtime"),
                         &[
                             raw_map
@@ -3133,8 +3108,7 @@ impl<'a> CodeGenerator<'a> {
                 let is_some = self
                     .builder
                     .build_call(
-                        self.module
-                            .get_function("mux_optional_is_some")
+                        self.runtime_function("mux_optional_is_some")
                             .expect("mux_optional_is_some must be declared in runtime"),
                         &[optional_ptr.into()],
                         "map_has_key",
@@ -3195,8 +3169,7 @@ impl<'a> CodeGenerator<'a> {
                 let value_result = self
                     .builder
                     .build_call(
-                        self.module
-                            .get_function("mux_optional_get_value")
+                        self.runtime_function("mux_optional_get_value")
                             .expect("mux_optional_get_value must be declared in runtime"),
                         &[optional_ptr.into()],
                         "map_value",
@@ -3301,8 +3274,7 @@ impl<'a> CodeGenerator<'a> {
 
         let tuple_value_ptr = self.generate_expression(expr)?.into_pointer_value();
         let get_tuple_fn = self
-            .module
-            .get_function("mux_value_get_tuple")
+            .runtime_function("mux_value_get_tuple")
             .ok_or("mux_value_get_tuple not found")?;
         let tuple_ptr = self
             .builder
@@ -3318,8 +3290,7 @@ impl<'a> CodeGenerator<'a> {
             _ => return Err(format!("Unknown field '{}' for tuple type", field)),
         };
         let get_field_func = self
-            .module
-            .get_function(if field_index == 0 {
+            .runtime_function(if field_index == 0 {
                 "mux_tuple_left"
             } else {
                 "mux_tuple_right"
@@ -3602,8 +3573,7 @@ impl<'a> CodeGenerator<'a> {
             "to_string" => {
                 let float_val = self.generate_expression(expr)?;
                 let func = self
-                    .module
-                    .get_function("mux_float_to_string")
+                    .runtime_function("mux_float_to_string")
                     .ok_or("mux_float_to_string not found")?;
                 let cstr = self
                     .builder
@@ -3674,8 +3644,7 @@ impl<'a> CodeGenerator<'a> {
                 let value = self.generate_expression(expr)?;
                 let cstr = self.value_to_cstr(value)?;
                 let func = self
-                    .module
-                    .get_function("mux_string_to_int")
+                    .runtime_function("mux_string_to_int")
                     .ok_or("mux_string_to_int not found")?;
                 let result_ptr = self
                     .builder
@@ -3690,8 +3659,7 @@ impl<'a> CodeGenerator<'a> {
                 let value = self.generate_expression(expr)?;
                 let cstr = self.value_to_cstr(value)?;
                 let func = self
-                    .module
-                    .get_function("mux_string_to_float")
+                    .runtime_function("mux_string_to_float")
                     .ok_or("mux_string_to_float not found")?;
                 let result_ptr = self
                     .builder
@@ -3715,8 +3683,7 @@ impl<'a> CodeGenerator<'a> {
             "to_int" => {
                 let char_val = self.generate_expression(expr)?;
                 let func = self
-                    .module
-                    .get_function("mux_char_to_int")
+                    .runtime_function("mux_char_to_int")
                     .ok_or("mux_char_to_int not found")?;
                 let result_ptr = self
                     .builder
@@ -3730,8 +3697,7 @@ impl<'a> CodeGenerator<'a> {
             "to_string" => {
                 let char_val = self.generate_expression(expr)?;
                 let func = self
-                    .module
-                    .get_function("mux_char_to_string")
+                    .runtime_function("mux_char_to_string")
                     .ok_or("mux_char_to_string not found")?;
                 let cstr = self
                     .builder
@@ -3748,8 +3714,7 @@ impl<'a> CodeGenerator<'a> {
 
     fn value_to_cstr(&mut self, value: BasicValueEnum<'a>) -> Result<BasicValueEnum<'a>, String> {
         let func = self
-            .module
-            .get_function("mux_value_to_string")
+            .runtime_function("mux_value_to_string")
             .ok_or("mux_value_to_string not found")?;
         self.builder
             .build_call(func, &[value.into()], "val_to_cstr")
@@ -3764,8 +3729,7 @@ impl<'a> CodeGenerator<'a> {
         cstr: BasicValueEnum<'a>,
     ) -> Result<BasicValueEnum<'a>, String> {
         let func_new = self
-            .module
-            .get_function("mux_new_string_from_cstr")
+            .runtime_function("mux_new_string_from_cstr")
             .ok_or("mux_new_string_from_cstr not found")?;
         self.builder
             .build_call(func_new, &[cstr.into()], "new_str")
@@ -3906,8 +3870,7 @@ impl<'a> CodeGenerator<'a> {
         let list_length = self
             .builder
             .build_call(
-                self.module
-                    .get_function("mux_list_length")
+                self.runtime_function("mux_list_length")
                     .expect("mux_list_length must be declared in runtime"),
                 &[list_ptr.into()],
                 "list_len",
@@ -4005,8 +3968,7 @@ impl<'a> CodeGenerator<'a> {
                 crate::semantics::Type::List(_) => {
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_list_set_value")
+                            self.runtime_function("mux_list_set_value")
                                 .expect("mux_list_set_value must be declared in runtime"),
                             &[base_val.into(), index_val.into(), value.into()],
                             "nested_list_set_direct",
@@ -4017,8 +3979,7 @@ impl<'a> CodeGenerator<'a> {
                     let boxed_key = self.box_value(index_val);
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_map_put_value")
+                            self.runtime_function("mux_map_put_value")
                                 .expect("mux_map_put_value must be declared in runtime"),
                             &[base_val.into(), boxed_key.into(), value.into()],
                             "nested_map_set_direct",
@@ -4057,8 +4018,7 @@ impl<'a> CodeGenerator<'a> {
                     let raw_base_list = self
                         .builder
                         .build_call(
-                            self.module
-                                .get_function("mux_value_get_list")
+                            self.runtime_function("mux_value_get_list")
                                 .expect("mux_value_get_list must be declared in runtime"),
                             &[base_val.into()],
                             "extract_list",
@@ -4076,8 +4036,7 @@ impl<'a> CodeGenerator<'a> {
                     // Get base[i1] (this is a copy)
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_list_get_value")
+                            self.runtime_function("mux_list_get_value")
                                 .expect("mux_list_get_value must be declared in runtime"),
                             &[raw_base_list.into(), normalized_index.into()],
                             "get_intermediate",
@@ -4092,8 +4051,7 @@ impl<'a> CodeGenerator<'a> {
                     let raw_base_map = self
                         .builder
                         .build_call(
-                            self.module
-                                .get_function("mux_value_get_map")
+                            self.runtime_function("mux_value_get_map")
                                 .expect("mux_value_get_map must be declared in runtime"),
                             &[base_val.into()],
                             "extract_map",
@@ -4110,8 +4068,7 @@ impl<'a> CodeGenerator<'a> {
                     let optional_ptr = self
                         .builder
                         .build_call(
-                            self.module
-                                .get_function("mux_map_get")
+                            self.runtime_function("mux_map_get")
                                 .expect("mux_map_get must be declared in runtime"),
                             &[raw_base_map.into(), boxed_key.into()],
                             "map_get_intermediate",
@@ -4126,8 +4083,7 @@ impl<'a> CodeGenerator<'a> {
                     let is_some = self
                         .builder
                         .build_call(
-                            self.module
-                                .get_function("mux_optional_is_some")
+                            self.runtime_function("mux_optional_is_some")
                                 .expect("mux_optional_is_some must be declared in runtime"),
                             &[optional_ptr.into()],
                             "map_has_key",
@@ -4185,8 +4141,7 @@ impl<'a> CodeGenerator<'a> {
                     self.builder.position_at_end(continue_bb);
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_optional_get_value")
+                            self.runtime_function("mux_optional_get_value")
                                 .expect("mux_optional_get_value must be declared in runtime"),
                             &[optional_ptr.into()],
                             "map_get_value",
@@ -4284,8 +4239,7 @@ impl<'a> CodeGenerator<'a> {
                 crate::semantics::Type::List(_) => {
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_list_set_value")
+                            self.runtime_function("mux_list_set_value")
                                 .expect("mux_list_set_value must be declared in runtime"),
                             &[
                                 base_val.into(),
@@ -4300,8 +4254,7 @@ impl<'a> CodeGenerator<'a> {
                     let boxed_key = self.box_value(first_index_val);
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_map_put_value")
+                            self.runtime_function("mux_map_put_value")
                                 .expect("mux_map_put_value must be declared in runtime"),
                             &[base_val.into(), boxed_key.into(), intermediate_val.into()],
                             "map_writeback",
@@ -4339,8 +4292,7 @@ impl<'a> CodeGenerator<'a> {
                 crate::semantics::Type::List(_) => {
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_list_set_value")
+                            self.runtime_function("mux_list_set_value")
                                 .expect("mux_list_set_value must be declared in runtime"),
                             &[current_val.into(), index_val.into(), final_value.into()],
                             "apply_list_set",
@@ -4351,8 +4303,7 @@ impl<'a> CodeGenerator<'a> {
                     let boxed_key = self.box_value(index_val);
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_map_put_value")
+                            self.runtime_function("mux_map_put_value")
                                 .expect("mux_map_put_value must be declared in runtime"),
                             &[current_val.into(), boxed_key.into(), final_value.into()],
                             "apply_map_set",
@@ -4378,8 +4329,7 @@ impl<'a> CodeGenerator<'a> {
                     let raw_list = self
                         .builder
                         .build_call(
-                            self.module
-                                .get_function("mux_value_get_list")
+                            self.runtime_function("mux_value_get_list")
                                 .expect("mux_value_get_list must be declared in runtime"),
                             &[current_val.into()],
                             "extract_for_apply",
@@ -4397,8 +4347,7 @@ impl<'a> CodeGenerator<'a> {
                     let next = self
                         .builder
                         .build_call(
-                            self.module
-                                .get_function("mux_list_get_value")
+                            self.runtime_function("mux_list_get_value")
                                 .expect("mux_list_get_value must be declared in runtime"),
                             &[raw_list.into(), normalized_index.into()],
                             "get_next_for_apply",
@@ -4467,8 +4416,7 @@ impl<'a> CodeGenerator<'a> {
                     let raw_map = self
                         .builder
                         .build_call(
-                            self.module
-                                .get_function("mux_value_get_map")
+                            self.runtime_function("mux_value_get_map")
                                 .expect("mux_value_get_map must be declared in runtime"),
                             &[current_val.into()],
                             "extract_map_for_apply",
@@ -4485,8 +4433,7 @@ impl<'a> CodeGenerator<'a> {
                     let optional_ptr = self
                         .builder
                         .build_call(
-                            self.module
-                                .get_function("mux_map_get")
+                            self.runtime_function("mux_map_get")
                                 .expect("mux_map_get must be declared in runtime"),
                             &[raw_map.into(), boxed_key.into()],
                             "apply_map_get",
@@ -4501,8 +4448,7 @@ impl<'a> CodeGenerator<'a> {
                     let is_some = self
                         .builder
                         .build_call(
-                            self.module
-                                .get_function("mux_optional_is_some")
+                            self.runtime_function("mux_optional_is_some")
                                 .expect("mux_optional_is_some must be declared in runtime"),
                             &[optional_ptr.into()],
                             "apply_map_has_key",
@@ -4559,8 +4505,7 @@ impl<'a> CodeGenerator<'a> {
                     self.builder.position_at_end(continue_bb);
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_optional_get_value")
+                            self.runtime_function("mux_optional_get_value")
                                 .expect("mux_optional_get_value must be declared in runtime"),
                             &[optional_ptr.into()],
                             "apply_map_get_value",
@@ -4593,8 +4538,7 @@ impl<'a> CodeGenerator<'a> {
                 crate::semantics::Type::List(_) => {
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_list_set_value")
+                            self.runtime_function("mux_list_set_value")
                                 .expect("mux_list_set_value must be declared in runtime"),
                             &[current_val.into(), first_index_val.into(), next_val.into()],
                             "apply_list_writeback",
@@ -4605,8 +4549,7 @@ impl<'a> CodeGenerator<'a> {
                     let boxed_key = self.box_value(first_index_val);
                     self.builder
                         .build_call(
-                            self.module
-                                .get_function("mux_map_put_value")
+                            self.runtime_function("mux_map_put_value")
                                 .expect("mux_map_put_value must be declared in runtime"),
                             &[current_val.into(), boxed_key.into(), next_val.into()],
                             "apply_map_writeback",
