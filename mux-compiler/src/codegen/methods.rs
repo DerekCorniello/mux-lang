@@ -19,8 +19,7 @@ impl<'a> CodeGenerator<'a> {
         cstr_ptr: BasicValueEnum<'a>,
     ) -> Result<BasicValueEnum<'a>, String> {
         let new_string = self
-            .module
-            .get_function("mux_new_string_from_cstr")
+            .runtime_function("mux_new_string_from_cstr")
             .ok_or("mux_new_string_from_cstr not found")?;
         let call = self
             .builder
@@ -38,8 +37,7 @@ impl<'a> CodeGenerator<'a> {
         args: &[BasicValueEnum<'a>],
     ) -> Result<BasicValueEnum<'a>, String> {
         let func = self
-            .module
-            .get_function(func_name)
+            .runtime_function(func_name)
             .ok_or(format!("Function '{}' not found", func_name))?;
         let call = self
             .builder
@@ -60,8 +58,7 @@ impl<'a> CodeGenerator<'a> {
         func_name: &str,
     ) -> Result<BasicValueEnum<'a>, String> {
         let to_cstr = self
-            .module
-            .get_function(func_name)
+            .runtime_function(func_name)
             .ok_or(format!("{} not found", func_name))?;
         let call = self
             .builder
@@ -90,8 +87,7 @@ impl<'a> CodeGenerator<'a> {
         obj_value: BasicValueEnum<'a>,
     ) -> Result<BasicValueEnum<'a>, String> {
         let func = self
-            .module
-            .get_function("mux_value_to_string")
+            .runtime_function("mux_value_to_string")
             .ok_or("mux_value_to_string not found")?;
         let call = self
             .builder
@@ -110,15 +106,12 @@ impl<'a> CodeGenerator<'a> {
         getter_func: &str,
         extract_name: &str,
     ) -> Result<BasicValueEnum<'a>, String> {
+        let getter = self
+            .runtime_function(getter_func)
+            .ok_or(format!("{} not found", getter_func))?;
         let raw = self
             .builder
-            .build_call(
-                self.module
-                    .get_function(getter_func)
-                    .ok_or(format!("{} not found", getter_func))?,
-                &[obj_value.into()],
-                extract_name,
-            )
+            .build_call(getter, &[obj_value.into()], extract_name)
             .map_err(|e| e.to_string())?;
         raw.try_as_basic_value()
             .left()
@@ -131,8 +124,7 @@ impl<'a> CodeGenerator<'a> {
         conversion_func: &str,
     ) -> Result<BasicValueEnum<'a>, String> {
         let func_to_cstr = self
-            .module
-            .get_function("mux_value_to_string")
+            .runtime_function("mux_value_to_string")
             .ok_or("mux_value_to_string not found")?;
         let cstr = self
             .builder
@@ -142,8 +134,7 @@ impl<'a> CodeGenerator<'a> {
             .left()
             .expect("mux_value_to_string should return a basic value");
         let func = self
-            .module
-            .get_function(conversion_func)
+            .runtime_function(conversion_func)
             .ok_or(format!("{} not found", conversion_func))?;
         let call = self
             .builder
@@ -161,8 +152,7 @@ impl<'a> CodeGenerator<'a> {
         func_name: &str,
     ) -> Result<BasicValueEnum<'a>, String> {
         let func = self
-            .module
-            .get_function(func_name)
+            .runtime_function(func_name)
             .ok_or(format!("{} not found", func_name))?;
         let call = self
             .builder
@@ -317,8 +307,7 @@ impl<'a> CodeGenerator<'a> {
         args: &[BasicValueEnum<'a>],
     ) -> Result<BasicValueEnum<'a>, String> {
         let func = self
-            .module
-            .get_function(func_name)
+            .runtime_function(func_name)
             .ok_or(format!("{} not found", func_name))?;
         let metadata_args = args.iter().map(|v| (*v).into()).collect::<Vec<_>>();
         let call = self
@@ -870,8 +859,7 @@ impl<'a> CodeGenerator<'a> {
                 "to_string" => {
                     let bool_i32 = self.bool_to_i32(obj_value)?;
                     let bool_func = self
-                        .module
-                        .get_function("mux_bool_to_string")
+                        .runtime_function("mux_bool_to_string")
                         .ok_or("mux_bool_to_string not found".to_string())?;
                     let call = self
                         .builder
@@ -928,8 +916,7 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module
-                            .get_function("mux_list_get")
+                        self.runtime_function("mux_list_get")
                             .expect("mux_list_get must be declared in runtime"),
                         &[raw_list.into(), index_val.into()],
                         "list_get",
@@ -1094,8 +1081,7 @@ impl<'a> CodeGenerator<'a> {
                 let boxed_value = self.box_value(value_val);
                 self.builder
                     .build_call(
-                        self.module
-                            .get_function("mux_map_put_value")
+                        self.runtime_function("mux_map_put_value")
                             .expect("mux_map_put_value must be declared in runtime"),
                         &[obj_value.into(), boxed_key.into(), boxed_value.into()],
                         "map_put_value",
@@ -1114,8 +1100,7 @@ impl<'a> CodeGenerator<'a> {
                 let map_get_result = self
                     .builder
                     .build_call(
-                        self.module
-                            .get_function("mux_map_get")
+                        self.runtime_function("mux_map_get")
                             .expect("mux_map_get must be declared in runtime"),
                         &[extract_map.into(), key_val.into()],
                         "map_get",
@@ -1154,8 +1139,7 @@ impl<'a> CodeGenerator<'a> {
                 let call = self
                     .builder
                     .build_call(
-                        self.module
-                            .get_function("mux_map_contains")
+                        self.runtime_function("mux_map_contains")
                             .expect("mux_map_contains must be declared in runtime"),
                         &[extract_map.into(), key_val.into()],
                         "map_contains",

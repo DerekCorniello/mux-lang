@@ -23,7 +23,7 @@ use crate::ast::{
 use crate::diagnostic::Files;
 use crate::lexer::Span;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 type GenericBound = (String, Vec<Type>);
@@ -42,6 +42,7 @@ pub struct SemanticAnalyzer {
         std::collections::HashMap<String, std::collections::HashMap<String, Symbol>>,
     pub all_module_asts: std::collections::HashMap<String, Vec<AstNode>>,
     pub module_dependencies: Vec<String>,
+    required_runtime_features: HashSet<String>,
     current_file: Option<std::path::PathBuf>, // Track current file for relative imports
     pub lambda_captures: std::collections::HashMap<Span, Vec<(String, Type)>>, // Track captured variables for each lambda
     pub current_return_type: Option<Type>, // Track current function/lambda return type
@@ -72,6 +73,7 @@ impl SemanticAnalyzer {
             imported_symbols: std::collections::HashMap::new(),
             all_module_asts: std::collections::HashMap::new(),
             module_dependencies: Vec::new(),
+            required_runtime_features: HashSet::new(),
             current_file: None,
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
@@ -230,6 +232,7 @@ impl SemanticAnalyzer {
             imported_symbols: std::collections::HashMap::new(),
             all_module_asts: std::collections::HashMap::new(),
             module_dependencies: Vec::new(),
+            required_runtime_features: HashSet::new(),
             current_file: None,
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
@@ -253,6 +256,37 @@ impl SemanticAnalyzer {
 
     pub fn all_module_asts(&self) -> &std::collections::HashMap<String, Vec<AstNode>> {
         &self.all_module_asts
+    }
+
+    pub fn required_runtime_features(&self) -> Vec<String> {
+        let mut features: Vec<String> = self.required_runtime_features.iter().cloned().collect();
+        features.sort();
+        features
+    }
+
+    fn runtime_features_for_std_module(module_name: &str) -> &'static [&'static str] {
+        if module_name.starts_with("net") {
+            &["net"]
+        } else if module_name.starts_with("sql") {
+            &["sql"]
+        } else if module_name == "sync" {
+            &["sync"]
+        } else if module_name.ends_with(".json") {
+            &["json"]
+        } else if module_name.ends_with(".csv") {
+            &["csv"]
+        } else if module_name == "data" {
+            &["json", "csv"]
+        } else {
+            &[]
+        }
+    }
+
+    fn track_stdlib_runtime_features(&mut self, module_name: &str) {
+        for feature in Self::runtime_features_for_std_module(module_name) {
+            self.required_runtime_features
+                .insert((*feature).to_string());
+        }
     }
 
     /// Generate helpful context for binary operator type mismatches.
@@ -3937,6 +3971,8 @@ impl SemanticAnalyzer {
 
         let module_symbols =
             self.filter_module_export_symbols(&module_analyzer.symbol_table.all_symbols);
+        self.required_runtime_features
+            .extend(module_analyzer.required_runtime_features.iter().cloned());
 
         match spec {
             ImportSpec::Module { alias } => {
@@ -5489,6 +5525,8 @@ impl SemanticAnalyzer {
 
         let submodule_symbols =
             self.collect_declared_module_symbols(&submodule_nodes, &submodule_analyzer);
+        self.required_runtime_features
+            .extend(submodule_analyzer.required_runtime_features.iter().cloned());
 
         self.mangle_and_import_module_symbols(&submodule_symbols, submodule_path)?;
 
@@ -5963,6 +6001,7 @@ impl SemanticAnalyzer {
                     .collect();
 
                 for module in STDLIB_MODULES {
+                    self.track_stdlib_runtime_features(module);
                     let module_symbols = self.collect_stdlib_module_symbols(module, span);
                     self.imported_symbols
                         .insert(module.to_string(), module_symbols);
@@ -5976,6 +6015,9 @@ impl SemanticAnalyzer {
                     .add_symbol(namespace, self.make_module_symbol(namespace, span))?;
             }
             ImportSpec::Wildcard => {
+                for module in STDLIB_MODULES {
+                    self.track_stdlib_runtime_features(module);
+                }
                 for (key, item) in all_stdlib_items() {
                     if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
                         crate::semantics::stdlib::register_stdlib_item_into(
@@ -6071,6 +6113,7 @@ impl SemanticAnalyzer {
         spec: &crate::ast::ImportSpec,
         span: Span,
     ) -> Result<(), SemanticError> {
+        self.track_stdlib_runtime_features(module_name);
         let module_symbols = self.collect_stdlib_module_symbols(module_name, span);
         // Inject any nested stdlib children declared for this parent
         self.inject_nested_stdlib_children(module_name, span);

@@ -15,12 +15,21 @@ use inkwell::values::{
 };
 
 impl<'a> CodeGenerator<'a> {
+    pub(super) fn runtime_function(&self, name: &str) -> Option<FunctionValue<'a>> {
+        if let Some(func) = self.module.get_function(name) {
+            return Some(func);
+        }
+
+        let signature = self.runtime_signatures.get_function(name)?;
+        Some(self.module.add_function(name, signature.get_type(), None))
+    }
+
     pub(super) fn generate_runtime_call(
         &mut self,
         name: &str,
         args: &[BasicMetadataValueEnum<'a>],
     ) -> Option<BasicValueEnum<'a>> {
-        let func = match self.module.get_function(name) {
+        let func = match self.runtime_function(name) {
             Some(f) => f,
             None => {
                 panic!("Function '{}' not found in module", name);
@@ -1225,8 +1234,7 @@ impl<'a> CodeGenerator<'a> {
         <T as TryFrom<BasicValueEnum<'a>>>::Error: std::fmt::Debug,
     {
         let func = self
-            .module
-            .get_function(getter_func_name)
+            .runtime_function(getter_func_name)
             .ok_or(format!("{} not found", getter_func_name))?;
         let result = self
             .builder
@@ -1289,8 +1297,7 @@ impl<'a> CodeGenerator<'a> {
             // use safe runtime function to extract bool
             let ptr = val.into_pointer_value();
             let get_bool_fn = self
-                .module
-                .get_function("mux_value_get_bool")
+                .runtime_function("mux_value_get_bool")
                 .ok_or("mux_value_get_bool not found")?;
             let i32_result = self
                 .builder
@@ -1330,13 +1337,10 @@ impl<'a> CodeGenerator<'a> {
         match wrapped_type {
             // Primitive types need to be extracted from *mut Value
             Type::Primitive(PrimitiveType::Int) => {
-                let get_int_func = self
-                    .module
-                    .get_function("mux_value_get_int")
-                    .ok_or(format!(
-                        "Failed to extract int from {}: mux_value_get_int not found",
-                        variant_name
-                    ))?;
+                let get_int_func = self.runtime_function("mux_value_get_int").ok_or(format!(
+                    "Failed to extract int from {}: mux_value_get_int not found",
+                    variant_name
+                ))?;
                 let val = self
                     .builder
                     .build_call(get_int_func, &[data_ptr.into()], "get_int")
@@ -1348,12 +1352,10 @@ impl<'a> CodeGenerator<'a> {
             }
             Type::Primitive(PrimitiveType::Float) => {
                 let get_float_func =
-                    self.module
-                        .get_function("mux_value_get_float")
-                        .ok_or(format!(
-                            "Failed to extract float from {}: mux_value_get_float not found",
-                            variant_name
-                        ))?;
+                    self.runtime_function("mux_value_get_float").ok_or(format!(
+                        "Failed to extract float from {}: mux_value_get_float not found",
+                        variant_name
+                    ))?;
                 let val = self
                     .builder
                     .build_call(get_float_func, &[data_ptr.into()], "get_float")
@@ -1364,13 +1366,10 @@ impl<'a> CodeGenerator<'a> {
                 Ok((val, Type::Primitive(PrimitiveType::Float)))
             }
             Type::Primitive(PrimitiveType::Bool) => {
-                let get_bool_func =
-                    self.module
-                        .get_function("mux_value_get_bool")
-                        .ok_or(format!(
-                            "Failed to extract bool from {}: mux_value_get_bool not found",
-                            variant_name
-                        ))?;
+                let get_bool_func = self.runtime_function("mux_value_get_bool").ok_or(format!(
+                    "Failed to extract bool from {}: mux_value_get_bool not found",
+                    variant_name
+                ))?;
                 let val = self
                     .builder
                     .build_call(get_bool_func, &[data_ptr.into()], "get_bool")
@@ -1387,13 +1386,10 @@ impl<'a> CodeGenerator<'a> {
             }
             Type::Primitive(PrimitiveType::Char) => {
                 // Char is stored as int
-                let get_int_func = self
-                    .module
-                    .get_function("mux_value_get_int")
-                    .ok_or(format!(
-                        "Failed to extract char from {}: mux_value_get_int not found",
-                        variant_name
-                    ))?;
+                let get_int_func = self.runtime_function("mux_value_get_int").ok_or(format!(
+                    "Failed to extract char from {}: mux_value_get_int not found",
+                    variant_name
+                ))?;
                 let val = self
                     .builder
                     .build_call(get_int_func, &[data_ptr.into()], "get_int")
@@ -1406,8 +1402,7 @@ impl<'a> CodeGenerator<'a> {
             Type::Primitive(PrimitiveType::Str) => {
                 // String needs special handling: get C string then wrap in Mux string
                 let get_string_func =
-                    self.module
-                        .get_function("mux_value_get_string")
+                    self.runtime_function("mux_value_get_string")
                         .ok_or(format!(
                             "Failed to extract string from {}: mux_value_get_string not found",
                             variant_name
@@ -1423,8 +1418,7 @@ impl<'a> CodeGenerator<'a> {
 
                 // Wrap C string back into Mux string (*mut Value)
                 let new_string_func = self
-                    .module
-                    .get_function("mux_new_string_from_cstr")
+                    .runtime_function("mux_new_string_from_cstr")
                     .ok_or("mux_new_string_from_cstr not found")?;
                 let mux_string = self
                     .builder
@@ -1487,8 +1481,7 @@ impl<'a> CodeGenerator<'a> {
         result_name: &str,
     ) -> Result<PointerValue<'a>, String> {
         let func = self
-            .module
-            .get_function(func_name)
+            .runtime_function(func_name)
             .ok_or_else(|| format!("{} not found", func_name))?;
         self.builder
             .build_call(func, &[value_ptr.into()], result_name)
@@ -1511,8 +1504,7 @@ impl<'a> CodeGenerator<'a> {
         cstr_ptr: PointerValue<'a>,
     ) -> Result<BasicValueEnum<'a>, String> {
         let func = self
-            .module
-            .get_function("mux_value_from_string")
+            .runtime_function("mux_value_from_string")
             .ok_or("mux_value_from_string not found")?;
         self.builder
             .build_call(func, &[cstr_ptr.into()], "from_string")
