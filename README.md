@@ -1,74 +1,100 @@
+<div align="center">
 
-  ![MuxLang Version](https://img.shields.io/badge/MuxLang-0.2.0-4c1?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang/releases)&nbsp;
-  ![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white&link=https://www.rust-lang.org/)&nbsp;
-  ![LLVM](https://img.shields.io/badge/LLVM-262D3A?style=for-the-badge&logo=llvm&logoColor=white&link=https://llvm.org/)&nbsp;
-  ![crates.io](https://img.shields.io/badge/crates.io-MuxLang-orange?style=for-the-badge&logo=rust&link=https://crates.io/crates/mux-lang)&nbsp;
-  ![Docs](https://img.shields.io/badge/docs-online-blue?style=for-the-badge&logo=readthedocs&logoColor=white&link=https://mux-lang.dev)&nbsp;
-  ![Status](https://img.shields.io/badge/status-alpha-lightgrey?style=for-the-badge&link=https://github.com/DerekCorniello/mux-lang)&nbsp;
-  [![Sonar Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=DerekCorniello_mux-lang&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=DerekCorniello_mux-lang)
+<img src="./mux-website/static/img/mux-logo.png" alt="Mux Logo" width="120">
 
-<p align="center">
-  <img src="./mux-website/static/img/mux-logo.png" alt="Mux Logo" style="width: 10%; height: auto;">
-</p>
+# Mux
 
-# Mux - A Programming Language For The People
+**The Programming Language For Everyone**
 
-By Derek Corniello
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg?style=flat-square)](https://github.com/DerekCorniello/mux-lang/releases)
+[![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
+[![crates.io](https://img.shields.io/crates/v/mux-lang.svg?style=flat-square)](https://crates.io/crates/mux-lang)
+[![Documentation](https://img.shields.io/badge/docs-online-blue.svg?style=flat-square)](https://mux-lang.dev)
+[![Status](https://img.shields.io/badge/status-alpha-orange.svg?style=flat-square)]()
+[![Sonar Quality Gate](https://img.shields.io/badge/quality-passing-brightgreen.svg?style=flat-square)](https://sonarcloud.io/summary/new_code?id=DerekCorniello_mux-lang)
+
+</div>
+
+**Mux** is a statically-typed, reference-counted programming language that combines Python's readability, Go's simplicity, and Rust's type safety into one cohesive package. Write fast, safe, and maintainable code without the complexity.
+
+---
 
 ## Why Mux?
 
-- **Simple yet powerful:** Combines Go-like minimalism with Rust-inspired safety.
-- **Strong static typing:** Helps catch errors early and ensures safer code.
-- **LLVM-powered:** Fast compilation and native performance.
-- **Flexible memory management:** Ease of use through reference counting.
-- **Extensible:** Designed to evolve with features like traits, concurrency, and a standard library.
+- **Simple & Readable:** Clean syntax without semicolons, Python-like readability with Go-inspired minimalism
+- **Type Safe:** Strong static typing with no implicit conversions. Catch errors at compile time
+- **Fast & Native:** LLVM-powered compilation delivers native performance
+- **Memory Safe:** Reference-counted memory management provides safety without GC pauses or complex ownership
+- **Modern Features:** Full-featured with generics, interfaces, tagged unions, and pattern matching
+- **Developer Friendly:** Helpful error messages, built-in tooling, and comprehensive documentation
 
-## Quick Start Guide
+---
 
-Check out the [docs](https://mux-lang.dev)!
+## Quick Start
 
-## Installation
-
-Mux provides multiple installation methods to suit different needs.
-
-### Option 1: Prebuilt Binaries (Recommended)
-
-Use the official installer script:
+### Installation (One-Line)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh
 ```
 
-Windows PowerShell:
+[Full installation guide](https://mux-lang.dev/docs/getting-started/quick-start) | [Other options](#installation)
 
+### Your First Program
+
+Create `hello.mux`:
+
+```mux
+func main() returns void {
+    print("Hello, Mux!")
+}
+```
+
+Run it:
+
+```bash
+mux run hello.mux
+```
+
+---
+
+## Documentation
+
+- **[Getting Started](https://mux-lang.dev/docs/getting-started/quick-start)** - Installation and first steps
+- **[Language Guide](https://mux-lang.dev/docs/language-guide/overview)** - Complete language overview
+- **[API Reference](https://mux-lang.dev/docs/reference/overview)** - Language reference
+- **[Standard Library](https://mux-lang.dev/docs/stdlib/)** - Built-in modules and functions
+
+**Full documentation:** https://mux-lang.dev
+
+---
+
+## Installation
+
+Choose the method that works best for you:
+
+### Option 1: Prebuilt Binaries (Recommended)
+
+The fastest way to get started. No Rust or LLVM required.
+
+**Linux & macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh
+```
+
+**Windows (PowerShell):**
 ```powershell
 iwr -useb https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.ps1 | iex
 ```
 
-#### Installation Directory (Optional)
-
-By default, the installer places the binary in `~/.local/bin` and libraries in `~/.local/lib`. You can customize this with environment variables if needed:
-
+**Custom installation directory:**
 ```bash
-# Custom installation directory
 MUX_INSTALL_DIR=/usr/local/bin MUX_LIB_DIR=/usr/local/lib sh install.sh
-
-# Or on Windows (PowerShell)
-$env:MUX_INSTALL_DIR = "C:\Program Files\mux"
-$env:MUX_LIB_DIR = "C:\Program Files\mux\lib"
 ```
 
-After installation, verify your setup:
+### Option 2: From crates.io
 
-```bash
-mux --version
-mux doctor       # Validate runtime dependencies
-mux doctor --dev  # Validate LLVM 17 and clang for development
-```
-
-### Option 2: Install from crates.io
-
-If you prefer installing via cargo:
+For Rust developers who already have cargo installed:
 
 ```bash
 cargo install mux-lang
@@ -76,59 +102,82 @@ cargo install mux-lang
 
 Note: LLVM 17 and clang must be installed first for source builds.
 
-### Option 3: Build from Source (Contributors)
+### Option 3: Build from Source
 
-For contributing to Mux, use the bootstrap scripts which automatically set up LLVM 17:
-
-Arch Linux:
+For contributors and those who want the latest features:
 
 ```bash
-./scripts/bootstrap-dev.sh
+git clone https://github.com/DerekCorniello/mux-lang
+cd mux-lang
+./scripts/bootstrap-dev.sh   # Installs LLVM 17 automatically
 ./scripts/dev-cargo.sh build
 ```
 
-Debian and Ubuntu:
+### Verify Installation
 
 ```bash
-./scripts/bootstrap-dev.sh
-./scripts/dev-cargo.sh build
+mux --version          # Check version
+mux doctor             # Validate runtime dependencies
+mux doctor --dev       # Validate LLVM 17 and clang for development
 ```
 
-macOS:
+---
 
-```bash
-./scripts/bootstrap-dev.sh
-./scripts/dev-cargo.sh build
+## Quick Example
+
+Mux combines familiar syntax with powerful features:
+
+```mux
+// Error handling with Result types
+func divide(int a, int b) returns result<int, string> {
+    if b == 0 {
+        return err("division by zero")
+    }
+    return ok(a / b)
+}
+
+// Pattern matching with exhaustive checking
+func main() returns void {
+    auto result = divide(10, 2)
+    
+    match result {
+        ok(value) {
+            print("Result: " + value.to_string())
+        }
+        err(error) {
+            print("Error: " + error)
+        }
+    }
+}
 ```
 
-The bootstrap scripts detect your OS and install LLVM 17 automatically. The `dev-cargo.sh` script wraps cargo calls with the correct LLVM environment variables set.
+**More examples:** See the [examples directory](./examples/) or [Language Guide](https://mux-lang.dev/docs/language-guide/overview)
 
-### Runtime Setup
+---
 
-Mux builds a small runtime library the first time you compile or run a program. If you want to do this up front, run:
+## Contributing
 
-```bash
-mux doctor
-```
+Mux is an open-source project and welcomes contributions! Whether you're adding features, fixing bugs, improving documentation, or testing, your help is valuable.
 
-This verifies dependencies and builds the runtime if it is missing.
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+- Check [GitHub Issues](https://github.com/DerekCorniello/mux-lang/issues) for tasks
+- Join [GitHub Discussions](https://github.com/DerekCorniello/mux-lang/discussions) for questions and ideas
 
-## Wanna Contribute?
+---
 
-Mux is an open-source project, and I welcome contributions from the community! Whether you're interested in adding new features, fixing bugs, improving documentation, or helping with testing, your contributions are valuable. Please check out the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to get started.
+## Project Status
 
-## Important Notes!
+⚠️ **Alpha Stage**: Mux is actively being developed. Expect breaking changes and incomplete features as we work toward a stable release.
 
-While I take pride in this project, please be aware that Mux is still in its early stages of development. The language specification, compiler, and tooling are actively evolving. Expect breaking changes and incomplete features as I work towards a stable release.
+- **Current Version:** 0.2.0
+- **License:** MIT
+- **Maintainer:** [Derek Corniello](https://github.com/DerekCorniello)
 
-I also want to acknowlege that I am aware that there are likely far better ways to do some of the things I have done here. This is a personal project and learning experience for me, and I appreciate your understanding as I continue to improve Mux. 
+---
 
-Finally, I want to acknowledge that I have also been using this project as a way to experiment with AI tools to help me write, review, test and document code. While I have made every effort to ensure the accuracy and quality of the content, there may be occasional "bad code", errors, or inconsistencies. I appreciate your understanding as I continue to refine both the language and my use of these tools.
+## Runtime ABI Note
 
-## Recent Runtime ABI note
-
-• The runtime now uses a unified representation for `optional<T>` and `result<T, E]` at the FFI level: both are boxed `Value` pointers (`*mut Value`).
-• Compiler-generated code and FFI should treat optionals/results as `*mut Value` and use the runtime discriminant helpers when inspecting variants. This avoids mismatched representations and related crashes.
+Recent changes: The runtime now uses a unified representation for `optional<T>` and `result<T, E]` at the FFI level (boxed `Value` pointers). Compiler-generated code and FFI should treat optionals/results as `*mut Value` and use the runtime discriminant helpers when inspecting variants.
 
 # Mux Language Specification
 
