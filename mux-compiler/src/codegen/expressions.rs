@@ -935,7 +935,12 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         elements: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
-        assert_eq!(elements.len(), 2, "Tuple must have exactly 2 elements");
+        if elements.len() != 2 {
+            return Err(format!(
+                "Tuple must have exactly 2 elements, got {}",
+                elements.len()
+            ));
+        }
         let left_val = self.generate_expression(&elements[0])?;
         let right_val = self.generate_expression(&elements[1])?;
         let left_ptr = self.box_value(left_val);
@@ -1041,10 +1046,8 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         let ExpressionKind::Identifier(name) = &expr.kind else {
             return Err(if increment {
-                "Increment operator only supports simple variables for now".to_string()
-            } else {
-                "Decrement operator only supports simple variables for now".to_string()
-            });
+            UnaryOp::Incr => self.generate_update_unary_expression(expr, true, true),
+            UnaryOp::Decr => self.generate_update_unary_expression(expr, false, true),
         };
 
         let ptr = if allow_global {
