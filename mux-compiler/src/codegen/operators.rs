@@ -69,8 +69,7 @@ impl<'a> CodeGenerator<'a> {
         label: &str,
     ) -> Result<BasicValueEnum<'a>, String> {
         let func = self
-            .module
-            .get_function(func_name)
+            .runtime_function(func_name)
             .ok_or_else(|| format!("{} not found", func_name))?;
         let result = self
             .builder
@@ -385,8 +384,7 @@ impl<'a> CodeGenerator<'a> {
                 let right_cstr = self.extract_c_string_from_value(right_ptr)?;
 
                 let concat_fn = self
-                    .module
-                    .get_function("mux_string_concat")
+                    .runtime_function("mux_string_concat")
                     .ok_or("mux_string_concat not found")?;
                 let result = self
                     .builder
@@ -408,8 +406,7 @@ impl<'a> CodeGenerator<'a> {
                 let right_list = self.extract_list_from_value(right.into_pointer_value())?;
 
                 let concat_fn = self
-                    .module
-                    .get_function("mux_list_concat")
+                    .runtime_function("mux_list_concat")
                     .ok_or("mux_list_concat not found")?;
                 let result_list = self
                     .builder
@@ -425,8 +422,7 @@ impl<'a> CodeGenerator<'a> {
                     .into_pointer_value();
 
                 let list_value_fn = self
-                    .module
-                    .get_function("mux_list_value")
+                    .runtime_function("mux_list_value")
                     .ok_or("mux_list_value not found")?;
                 let result = self
                     .builder
@@ -443,8 +439,7 @@ impl<'a> CodeGenerator<'a> {
                 let right_map = self.extract_map_from_value(right.into_pointer_value())?;
 
                 let merge_fn = self
-                    .module
-                    .get_function("mux_map_merge")
+                    .runtime_function("mux_map_merge")
                     .ok_or("mux_map_merge not found")?;
                 let result_map = self
                     .builder
@@ -456,8 +451,7 @@ impl<'a> CodeGenerator<'a> {
                     .into_pointer_value();
 
                 let map_value_fn = self
-                    .module
-                    .get_function("mux_map_value")
+                    .runtime_function("mux_map_value")
                     .ok_or("mux_map_value not found")?;
                 let result = self
                     .builder
@@ -474,8 +468,7 @@ impl<'a> CodeGenerator<'a> {
                 let right_set = self.extract_set_from_value(right.into_pointer_value())?;
 
                 let union_fn = self
-                    .module
-                    .get_function("mux_set_union")
+                    .runtime_function("mux_set_union")
                     .ok_or("mux_set_union not found")?;
                 let result_set = self
                     .builder
@@ -487,8 +480,7 @@ impl<'a> CodeGenerator<'a> {
                     .into_pointer_value();
 
                 let set_value_fn = self
-                    .module
-                    .get_function("mux_set_value")
+                    .runtime_function("mux_set_value")
                     .ok_or("mux_set_value not found")?;
                 let result = self
                     .builder
@@ -607,8 +599,7 @@ impl<'a> CodeGenerator<'a> {
             (self.get_raw_int_value(left), self.get_raw_int_value(right))
         {
             let pow_fn = self
-                .module
-                .get_function("mux_int_pow")
+                .runtime_function("mux_int_pow")
                 .ok_or("mux_int_pow not found")?;
             let result = self
                 .builder
@@ -623,8 +614,7 @@ impl<'a> CodeGenerator<'a> {
             self.get_raw_float_value(right),
         ) {
             let pow_fn = self
-                .module
-                .get_function("mux_math_pow")
+                .runtime_function("mux_math_pow")
                 .ok_or("mux_math_pow not found")?;
             let result = self
                 .builder
@@ -838,8 +828,7 @@ impl<'a> CodeGenerator<'a> {
                     Type::Primitive(PrimitiveType::Char) => {
                         let char_i64 = left.into_int_value();
                         let contains_fn = self
-                            .module
-                            .get_function("mux_string_contains_char")
+                            .runtime_function("mux_string_contains_char")
                             .ok_or("mux_string_contains_char not found")?;
                         let result = self
                             .builder
@@ -857,8 +846,7 @@ impl<'a> CodeGenerator<'a> {
                     Type::Primitive(PrimitiveType::Str) => {
                         let substring_ptr = left.into_pointer_value();
                         let contains_fn = self
-                            .module
-                            .get_function("mux_string_contains")
+                            .runtime_function("mux_string_contains")
                             .ok_or("mux_string_contains not found")?;
                         let result = self
                             .builder

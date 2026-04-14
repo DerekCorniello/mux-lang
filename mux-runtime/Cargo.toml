@@ -21,6 +21,16 @@ exclude = [
 name = "mux_runtime"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["full"]
+core = []
+json = ["dep:serde_json"]
+csv = ["dep:csv"]
+net = ["json", "dep:ureq", "dep:httparse"]
+sql = ["dep:rusqlite", "dep:postgres", "dep:mysql"]
+sync = []
+full = ["core", "json", "csv", "net", "sql", "sync"]
+
 [dependencies]
 gc = "0.4"
 ordered-float = "4.0"
@@ -28,13 +38,13 @@ lazy_static = "1.4"
 libc = "0.2"
 paste = "1.0"
 chrono = "0.4"
-serde_json = "1.0"
-csv = "1"
-ureq = "2.10"
-httparse = "1.10"
-rusqlite = { version = "0.31", features = ["bundled"] }
-postgres = "0.19"
-mysql = "28"
+serde_json = { version = "1.0", optional = true }
+csv = { version = "1", optional = true }
+ureq = { version = "2.10", optional = true }
+httparse = { version = "1.10", optional = true }
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+postgres = { version = "0.19", optional = true }
+mysql = { version = "28", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Kernel", "Win32_System_Threading"] }

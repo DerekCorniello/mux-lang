@@ -171,8 +171,7 @@ impl<'a> CodeGenerator<'a> {
             .size_of()
             .ok_or("Cannot get type size")?;
         let register_func = self
-            .module
-            .get_function("mux_register_object_type")
+            .runtime_function("mux_register_object_type")
             .ok_or("mux_register_object_type not found")?;
         let type_id = self
             .builder
@@ -190,8 +189,7 @@ impl<'a> CodeGenerator<'a> {
 
         // allocate the object
         let alloc_func = self
-            .module
-            .get_function("mux_alloc_object")
+            .runtime_function("mux_alloc_object")
             .ok_or("mux_alloc_object not found")?;
         let obj_ptr = self
             .builder
@@ -205,8 +203,7 @@ impl<'a> CodeGenerator<'a> {
 
         // get the object data pointer
         let get_ptr_func = self
-            .module
-            .get_function("mux_get_object_ptr")
+            .runtime_function("mux_get_object_ptr")
             .ok_or("mux_get_object_ptr not found")?;
         let data_ptr = self
             .builder
@@ -647,8 +644,7 @@ impl<'a> CodeGenerator<'a> {
         }
         let type_size = class_type.size_of().ok_or("Cannot get type size")?;
         let register_func = self
-            .module
-            .get_function("mux_register_object_type")
+            .runtime_function("mux_register_object_type")
             .ok_or("mux_register_object_type not found")?;
         let type_id = self
             .builder
@@ -666,8 +662,7 @@ impl<'a> CodeGenerator<'a> {
 
         // allocate the object using runtime
         let alloc_func = self
-            .module
-            .get_function("mux_alloc_object")
+            .runtime_function("mux_alloc_object")
             .ok_or("mux_alloc_object not found")?;
         let obj_ptr = self
             .builder
@@ -681,8 +676,7 @@ impl<'a> CodeGenerator<'a> {
 
         // get the object data pointer for field initialization
         let get_ptr_func = self
-            .module
-            .get_function("mux_get_object_ptr")
+            .runtime_function("mux_get_object_ptr")
             .ok_or("mux_get_object_ptr not found")?;
         let data_ptr = self
             .builder

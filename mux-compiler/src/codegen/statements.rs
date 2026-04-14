@@ -188,8 +188,7 @@ impl<'a> CodeGenerator<'a> {
             let len_call = self
                 .builder
                 .build_call(
-                    self.module
-                        .get_function("mux_value_list_length")
+                    self.runtime_function("mux_value_list_length")
                         .expect("mux_value_list_length must be declared in runtime"),
                     &[list_val.into()],
                     "list_len",
@@ -261,8 +260,7 @@ impl<'a> CodeGenerator<'a> {
             let get_call = self
                 .builder
                 .build_call(
-                    self.module
-                        .get_function("mux_value_list_get_value")
+                    self.runtime_function("mux_value_list_get_value")
                         .expect("mux_value_list_get_value must be declared in runtime"),
                     &[list_val.into(), index_load2.into()],
                     "list_get_value",
@@ -603,8 +601,7 @@ impl<'a> CodeGenerator<'a> {
         ptr: inkwell::values::PointerValue<'a>,
     ) -> Result<(), String> {
         let get_bool_fn = self
-            .module
-            .get_function("mux_value_get_bool")
+            .runtime_function("mux_value_get_bool")
             .ok_or("mux_value_get_bool not found")?;
         let result = self
             .builder
@@ -1285,8 +1282,7 @@ impl<'a> CodeGenerator<'a> {
         let data_func = self.enum_data_function_name(enum_name)?;
 
         let func = self
-            .module
-            .get_function(data_func)
+            .runtime_function(data_func)
             .ok_or(format!("{} not found", data_func))?;
         let data_call = self
             .builder
@@ -1712,8 +1708,7 @@ impl<'a> CodeGenerator<'a> {
                 let right_cstr = self.extract_c_string_from_value(right_ptr)?;
 
                 let equal_fn = self
-                    .module
-                    .get_function("mux_string_equal")
+                    .runtime_function("mux_string_equal")
                     .ok_or("mux_string_equal not found")?;
                 let result = self
                     .builder
@@ -1752,8 +1747,7 @@ impl<'a> CodeGenerator<'a> {
                 };
 
                 let equal_fn = self
-                    .module
-                    .get_function("mux_value_equal")
+                    .runtime_function("mux_value_equal")
                     .ok_or("mux_value_equal not found")?;
                 let result = self
                     .builder
@@ -1796,8 +1790,7 @@ impl<'a> CodeGenerator<'a> {
         };
 
         let len_fn = self
-            .module
-            .get_function("mux_value_list_length")
+            .runtime_function("mux_value_list_length")
             .ok_or("mux_value_list_length not found")?;
         let len_result = self
             .builder
@@ -1832,8 +1825,7 @@ impl<'a> CodeGenerator<'a> {
         };
 
         let get_fn = self
-            .module
-            .get_function("mux_value_list_get_value")
+            .runtime_function("mux_value_list_get_value")
             .ok_or("mux_value_list_get_value not found")?;
 
         let mut combined = len_check;
@@ -1882,8 +1874,7 @@ impl<'a> CodeGenerator<'a> {
         };
 
         let get_fn = self
-            .module
-            .get_function("mux_value_list_get_value")
+            .runtime_function("mux_value_list_get_value")
             .ok_or("mux_value_list_get_value not found")?;
 
         let ptr_type = self.context.ptr_type(AddressSpace::default());
@@ -1919,8 +1910,7 @@ impl<'a> CodeGenerator<'a> {
                 .const_int(elements.len() as u64, false);
 
             let len_fn = self
-                .module
-                .get_function("mux_value_list_length")
+                .runtime_function("mux_value_list_length")
                 .ok_or("mux_value_list_length not found")?;
             let len_result = self
                 .builder
@@ -1932,8 +1922,7 @@ impl<'a> CodeGenerator<'a> {
             let end_idx = len_result.into_int_value();
 
             let slice_fn = self
-                .module
-                .get_function("mux_value_list_slice")
+                .runtime_function("mux_value_list_slice")
                 .ok_or("mux_value_list_slice not found")?;
             let rest_result = self
                 .builder

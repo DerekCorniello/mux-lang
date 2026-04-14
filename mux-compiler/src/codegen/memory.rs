@@ -33,8 +33,7 @@ impl<'a> CodeGenerator<'a> {
         vars: &[(String, PointerValue<'a>)],
     ) -> Result<(), String> {
         let rc_dec = self
-            .module
-            .get_function("mux_rc_dec")
+            .runtime_function("mux_rc_dec")
             .ok_or("mux_rc_dec not found")?;
         let ptr_type = self.context.ptr_type(AddressSpace::default());
 
@@ -107,8 +106,7 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<BasicValueEnum<'a>, String> {
         if value.is_pointer_value() {
             let rc_inc = self
-                .module
-                .get_function("mux_rc_inc")
+                .runtime_function("mux_rc_inc")
                 .ok_or("mux_rc_inc not found")?;
             self.builder
                 .build_call(rc_inc, &[value.into()], "rc_inc_return")

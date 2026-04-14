@@ -47,10 +47,7 @@ When testing a feature:
 4. Run `cargo clippy` to ensure no warnings/errors.
 5. Run SonarQube analysis locally to check code quality:
    ```bash
-   source .env && cargo build && sonar-scanner \
-     -Dsonar.projectKey=mux-lang \
-     -Dsonar.sources=. \
-     -Dsonar.host.url=http://localhost:9000
+   source .env && npx --yes sonar-scanner -Dsonar.token="$SONARQUBE_TOKEN" -Dsonar.host.url="$SONARQUBE_URL"
    ```
    Results appear at https://sonarcloud.io/dashboard?id=DerekCorniello_mux-lang
    - To view the reports in the cloud, use the MCP server.

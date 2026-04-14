@@ -16,7 +16,7 @@ use diagnostic::{ColorConfig, DiagnosticEmitter, FileId, Files, StandardEmitter,
 use module_resolver::ModuleResolver;
 use source::Source;
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -200,6 +200,67 @@ fn runtime_profile() -> &'static str {
     }
 }
 
+fn normalize_runtime_features(features: &[String]) -> Vec<String> {
+    let mut normalized: BTreeSet<String> = BTreeSet::new();
+    for feature in features {
+        if !feature.is_empty() {
+            normalized.insert(feature.clone());
+        }
+    }
+    normalized.into_iter().collect()
+}
+
+fn runtime_feature_key(features: &[String]) -> String {
+    if features.is_empty() {
+        return "core".to_string();
+    }
+    features.join("+")
+}
+
+fn parse_runtime_feature_override() -> Option<Vec<String>> {
+    let raw = env::var("MUX_RUNTIME_FEATURES").ok()?;
+    let parsed: Vec<String> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .collect();
+    Some(normalize_runtime_features(&parsed))
+}
+
+fn resolve_runtime_features(required: &[String]) -> Vec<String> {
+    let required = normalize_runtime_features(required);
+    if let Some(override_features) = parse_runtime_feature_override() {
+        let missing: Vec<String> = required
+            .iter()
+            .filter(|feature| !override_features.contains(*feature))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            eprintln!(
+                "MUX_RUNTIME_FEATURES is missing required feature(s): {}",
+                missing.join(", ")
+            );
+            eprintln!(
+                "Required by imports in this program: {}",
+                required.join(", ")
+            );
+            process::exit(1);
+        }
+        return override_features;
+    }
+    required
+}
+
+/// Returns the full set of runtime features that indicate a pre-built library can be used.
+/// This list is derived from the std_registry and must match the `full` feature in mux-runtime/Cargo.toml.
+fn full_runtime_features() -> Vec<String> {
+    semantics::std_registry::all_runtime_features()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
 fn find_runtime_lib_in_dir(dir: &Path) -> Option<PathBuf> {
     let static_lib = if cfg!(target_family = "windows") {
         dir.join("mux_runtime.lib")
@@ -327,6 +388,13 @@ fn default_cache_root() -> PathBuf {
 }
 
 fn find_runtime_source_dir() -> Option<PathBuf> {
+    let local_runtime = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("mux-runtime");
+    if local_runtime.join("Cargo.toml").exists() {
+        return Some(local_runtime);
+    }
+
     if let Ok(src) = env::var("MUX_RUNTIME_SRC") {
         let path = PathBuf::from(src);
         if path.join("Cargo.toml").exists() {
@@ -354,11 +422,12 @@ fn find_runtime_source_dir() -> Option<PathBuf> {
     None
 }
 
-fn build_runtime_in_cache(profile: &str) -> Option<PathBuf> {
-    let cache_root = default_cache_root()
+fn build_runtime_in_cache(profile: &str, features: &[String]) -> Option<PathBuf> {
+    let target_root = default_cache_root()
         .join("runtime")
-        .join(env!("CARGO_PKG_VERSION"));
-    let profile_dir = cache_root.join(profile);
+        .join(env!("CARGO_PKG_VERSION"))
+        .join(runtime_feature_key(features));
+    let profile_dir = target_root.join(profile);
 
     if let Some(lib) = find_runtime_lib_in_dir(&profile_dir) {
         return lib.parent().map(|p| p.to_path_buf());
@@ -372,10 +441,10 @@ fn build_runtime_in_cache(profile: &str) -> Option<PathBuf> {
         }
     };
 
-    if fs::create_dir_all(&cache_root).is_err() {
+    if fs::create_dir_all(&target_root).is_err() {
         eprintln!(
             "Failed to create runtime cache directory: {}",
-            cache_root.display()
+            target_root.display()
         );
         return None;
     }
@@ -385,7 +454,10 @@ fn build_runtime_in_cache(profile: &str) -> Option<PathBuf> {
     cmd.arg("build")
         .arg("--manifest-path")
         .arg(runtime_src.join("Cargo.toml"))
-        .env("CARGO_TARGET_DIR", &cache_root);
+        .arg("--no-default-features")
+        .arg("--features")
+        .arg(features.join(","))
+        .env("CARGO_TARGET_DIR", &target_root);
 
     if profile == "release" {
         cmd.arg("--release");
@@ -413,11 +485,18 @@ fn build_runtime_in_cache(profile: &str) -> Option<PathBuf> {
     None
 }
 
-fn resolve_runtime_lib_dir(profile: &str) -> Option<PathBuf> {
-    runtime_lib_from_env()
-        .or_else(runtime_lib_near_executable)
-        .or_else(runtime_lib_from_build_config)
-        .or_else(|| build_runtime_in_cache(profile))
+fn resolve_runtime_lib_dir(profile: &str, features: &[String]) -> Option<PathBuf> {
+    if let Some(dir) = runtime_lib_from_env() {
+        return Some(dir);
+    }
+
+    if features == full_runtime_features() {
+        return runtime_lib_near_executable()
+            .or_else(runtime_lib_from_build_config)
+            .or_else(|| build_runtime_in_cache(profile, features));
+    }
+
+    build_runtime_in_cache(profile, features)
 }
 
 fn print_detected_llvm_versions(llvm_versions: &[(String, String, u32)]) {
@@ -481,11 +560,12 @@ fn report_clang_for_doctor(clang: Option<&str>) -> bool {
 
 fn ensure_runtime_for_doctor() -> bool {
     let profile = runtime_profile();
-    let runtime_ok = if resolve_runtime_lib_dir(profile).is_some() {
+    let features = full_runtime_features();
+    let runtime_ok = if resolve_runtime_lib_dir(profile, &features).is_some() {
         true
     } else {
         println!("Mux runtime not found. Building it now...");
-        build_runtime_in_cache(profile).is_some()
+        build_runtime_in_cache(profile, &features).is_some()
     };
 
     if runtime_ok {
@@ -615,14 +695,15 @@ fn generate_ir_or_exit(
     }
 }
 
-fn resolve_runtime_lib_dir_or_exit(profile: &str) -> PathBuf {
-    match resolve_runtime_lib_dir(profile) {
+fn resolve_runtime_lib_dir_or_exit(profile: &str, features: &[String]) -> PathBuf {
+    match resolve_runtime_lib_dir(profile, features) {
         Some(dir) => dir,
         None => {
             eprintln!();
             eprintln!("Could not locate mux-runtime.");
             eprintln!("You can set MUX_RUNTIME_LIB to a built library path.");
             eprintln!("You can set MUX_RUNTIME_SRC to a local mux-runtime source.");
+            eprintln!("Requested runtime features: {}", features.join(","));
             eprintln!("Example:");
             eprintln!("  MUX_RUNTIME_LIB=/path/to/libmux_runtime.a mux run file.mux");
             process::exit(1);
@@ -729,6 +810,7 @@ fn main() {
 
     let mut analyzer = semantics::SemanticAnalyzer::new_with_resolver(resolver);
     analyze_semantics_or_exit(&mut analyzer, &nodes, file_id, &mut files);
+    let runtime_features = resolve_runtime_features(&analyzer.required_runtime_features());
 
     let context = inkwell::context::Context::create();
     let mut codegen = codegen::CodeGenerator::new(&context, &mut analyzer);
@@ -759,7 +841,7 @@ fn main() {
     };
 
     let profile = runtime_profile();
-    let lib_dir = resolve_runtime_lib_dir_or_exit(profile);
+    let lib_dir = resolve_runtime_lib_dir_or_exit(profile, &runtime_features);
 
     let lib_path_str = lib_dir
         .to_str()
@@ -787,5 +869,87 @@ fn main() {
 
     if do_run {
         run_executable_or_exit(&exe_file);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::full_runtime_features;
+
+    #[test]
+    fn full_runtime_features_matches_cargo_toml() {
+        // Get the workspace root (parent of mux-compiler)
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let workspace_root = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("mux-compiler should have a parent directory");
+
+        let cargo_toml_path = workspace_root.join("mux-runtime").join("Cargo.toml");
+        let cargo_toml_content = std::fs::read_to_string(&cargo_toml_path)
+            .expect("Failed to read mux-runtime/Cargo.toml");
+
+        // Parse the [features] section to find the `full` feature
+        let mut in_features_section = false;
+        let mut full_feature_line = String::new();
+
+        for line in cargo_toml_content.lines() {
+            let trimmed = line.trim();
+            if trimmed == "[features]" {
+                in_features_section = true;
+                continue;
+            }
+
+            if in_features_section {
+                // Stop at next section
+                if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                    break;
+                }
+
+                // Look for the full feature line
+                if trimmed.starts_with("full =") {
+                    full_feature_line = trimmed.to_string();
+                    break;
+                }
+            }
+        }
+
+        assert!(
+            !full_feature_line.is_empty(),
+            "Could not find 'full = [...]' in mux-runtime/Cargo.toml"
+        );
+
+        // Extract the array content: full = ["core", "json", "csv", "net", "sql", "sync"]
+        let start = full_feature_line
+            .find('[')
+            .expect("Could not find '[' in full feature line")
+            + 1;
+        let end = full_feature_line
+            .rfind(']')
+            .expect("Could not find ']' in full feature line");
+        let array_content = &full_feature_line[start..end];
+
+        // Parse the array elements
+        let mut toml_features: Vec<String> = array_content
+            .split(',')
+            .map(|s| s.trim())
+            .map(|s| s.trim_matches('"').to_string())
+            .collect();
+
+        // Remove "core" as it's a meta-feature (not a stdlib module that needs feature checking)
+        toml_features.retain(|f| f != "core");
+        toml_features.sort();
+
+        // Get the runtime features from our function
+        let mut runtime_features = full_runtime_features();
+        runtime_features.sort();
+
+        assert_eq!(
+            toml_features, runtime_features,
+            "full_runtime_features() does not match mux-runtime/Cargo.toml full feature list.\n\
+             Expected (from Cargo.toml): {:?}\n\
+             Actual (from function):   {:?}\n\
+             Hint: Update the hardcoded list in full_runtime_features() to match the full feature in Cargo.toml",
+            toml_features, runtime_features
+        );
     }
 }

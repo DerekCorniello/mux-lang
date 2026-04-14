@@ -32,6 +32,7 @@ type ClassTypeParamBounds = Vec<(String, Vec<(String, Vec<Type>)>)>;
 pub struct CodeGenerator<'a> {
     context: &'a Context,
     module: Module<'a>,
+    runtime_signatures: Module<'a>,
     builder: Builder<'a>,
     analyzer: &'a mut SemanticAnalyzer,
     type_map: HashMap<String, BasicTypeEnum<'a>>,
@@ -391,9 +392,10 @@ impl<'a> CodeGenerator<'a> {
 
     pub fn new(context: &'a Context, analyzer: &'a mut SemanticAnalyzer) -> Self {
         let module = context.create_module("mux_module");
+        let runtime_signatures = context.create_module("mux_runtime_signatures");
         let builder = context.create_builder();
 
-        Self::declare_runtime_functions(&module, context);
+        Self::declare_runtime_functions(&runtime_signatures, context);
 
         let mut type_map = HashMap::new();
         let mut enum_variants = HashMap::new();
@@ -432,6 +434,7 @@ impl<'a> CodeGenerator<'a> {
         Self {
             context,
             module,
+            runtime_signatures,
             builder,
             analyzer,
             type_map,

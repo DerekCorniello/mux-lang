@@ -269,15 +269,18 @@ impl From<String> for Value {
 pub mod assert;
 pub mod bool;
 pub mod boxing;
+#[cfg(feature = "csv")]
 pub mod data;
 pub mod datetime;
 pub mod float;
 pub mod int;
 pub mod io;
+#[cfg(feature = "json")]
 pub mod json;
 pub mod list;
 pub mod map;
 pub mod math;
+#[cfg(feature = "net")]
 pub mod net;
 pub mod object;
 pub mod optional;
@@ -285,9 +288,11 @@ pub mod random;
 pub mod refcount;
 pub mod result;
 pub mod set;
+#[cfg(feature = "sql")]
 pub mod sql;
 pub mod std;
 pub mod string;
+#[cfg(feature = "sync")]
 pub mod sync;
 pub mod tuple;
 
