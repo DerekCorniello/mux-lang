@@ -326,7 +326,7 @@ function CodeExamplesSection() {
     }
     
     func peek() returns optional<T> {
-        return self.items.get(0)
+        return self.items.get(self.items.size() - 1)
     }
 }
 
