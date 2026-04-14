@@ -283,8 +283,8 @@ function FeaturesSection() {
         </p>
         
         <div className={styles.featuresGrid}>
-          {features.map((feature, idx) => (
-            <div key={idx} className={styles.featureCard}>
+          {features.map((feature) => (
+            <div key={feature.title} className={styles.featureCard}>
               <div className={styles.featureIcon}>{feature.icon}</div>
               <Heading as="h3">{feature.title}</Heading>
               <p>{feature.description}</p>
