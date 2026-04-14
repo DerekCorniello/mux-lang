@@ -202,7 +202,6 @@ fn runtime_profile() -> &'static str {
 
 fn normalize_runtime_features(features: &[String]) -> Vec<String> {
     let mut normalized: BTreeSet<String> = BTreeSet::new();
-    normalized.insert("core".to_string());
     for feature in features {
         if !feature.is_empty() {
             normalized.insert(feature.clone());
@@ -253,14 +252,13 @@ fn resolve_runtime_features(required: &[String]) -> Vec<String> {
     required
 }
 
+/// Returns the full set of runtime features that indicate a pre-built library can be used.
+/// This list is derived from the std_registry and must match the `full` feature in mux-runtime/Cargo.toml.
 fn full_runtime_features() -> Vec<String> {
-    normalize_runtime_features(&[
-        "json".to_string(),
-        "csv".to_string(),
-        "net".to_string(),
-        "sql".to_string(),
-        "sync".to_string(),
-    ])
+    semantics::std_registry::all_runtime_features()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn find_runtime_lib_in_dir(dir: &Path) -> Option<PathBuf> {
@@ -871,5 +869,87 @@ fn main() {
 
     if do_run {
         run_executable_or_exit(&exe_file);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::full_runtime_features;
+
+    #[test]
+    fn full_runtime_features_matches_cargo_toml() {
+        // Get the workspace root (parent of mux-compiler)
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let workspace_root = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("mux-compiler should have a parent directory");
+
+        let cargo_toml_path = workspace_root.join("mux-runtime").join("Cargo.toml");
+        let cargo_toml_content = std::fs::read_to_string(&cargo_toml_path)
+            .expect("Failed to read mux-runtime/Cargo.toml");
+
+        // Parse the [features] section to find the `full` feature
+        let mut in_features_section = false;
+        let mut full_feature_line = String::new();
+
+        for line in cargo_toml_content.lines() {
+            let trimmed = line.trim();
+            if trimmed == "[features]" {
+                in_features_section = true;
+                continue;
+            }
+
+            if in_features_section {
+                // Stop at next section
+                if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                    break;
+                }
+
+                // Look for the full feature line
+                if trimmed.starts_with("full =") {
+                    full_feature_line = trimmed.to_string();
+                    break;
+                }
+            }
+        }
+
+        assert!(
+            !full_feature_line.is_empty(),
+            "Could not find 'full = [...]' in mux-runtime/Cargo.toml"
+        );
+
+        // Extract the array content: full = ["core", "json", "csv", "net", "sql", "sync"]
+        let start = full_feature_line
+            .find('[')
+            .expect("Could not find '[' in full feature line")
+            + 1;
+        let end = full_feature_line
+            .rfind(']')
+            .expect("Could not find ']' in full feature line");
+        let array_content = &full_feature_line[start..end];
+
+        // Parse the array elements
+        let mut toml_features: Vec<String> = array_content
+            .split(',')
+            .map(|s| s.trim())
+            .map(|s| s.trim_matches('"').to_string())
+            .collect();
+
+        // Remove "core" as it's a meta-feature (not a stdlib module that needs feature checking)
+        toml_features.retain(|f| f != "core");
+        toml_features.sort();
+
+        // Get the runtime features from our function
+        let mut runtime_features = full_runtime_features();
+        runtime_features.sort();
+
+        assert_eq!(
+            toml_features, runtime_features,
+            "full_runtime_features() does not match mux-runtime/Cargo.toml full feature list.\n\
+             Expected (from Cargo.toml): {:?}\n\
+             Actual (from function):   {:?}\n\
+             Hint: Update the hardcoded list in full_runtime_features() to match the full feature in Cargo.toml",
+            toml_features, runtime_features
+        );
     }
 }

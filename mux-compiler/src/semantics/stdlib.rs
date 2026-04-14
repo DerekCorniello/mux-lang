@@ -686,19 +686,14 @@ fn datetime_fn(name: &'static str, params: &'static [Type], ret: Type) -> Stdlib
 }
 
 static STDLIB_ITEMS: phf::Map<&'static str, StdlibItemDesc> = phf_map! {
-    "math.pi" => StdlibItemDesc::Constant { ty: TypeDesc::Float, value: ConstDesc::Pi },
-    "math.e" => StdlibItemDesc::Constant { ty: TypeDesc::Float, value: ConstDesc::E },
-    "random.seed" => StdlibItemDesc::Function { params: INT_PARAM_DESC, ret: TypeDesc::Void, llvm_name: "mux_rand_init" },
-    "random.next_int" => StdlibItemDesc::Function { params: EMPTY_PARAM_DESC, ret: TypeDesc::Int, llvm_name: "mux_rand_int" },
-    "random.next_range" => StdlibItemDesc::Function { params: INT_INT_PARAM_DESC, ret: TypeDesc::Int, llvm_name: "mux_rand_range" },
-    "random.next_float" => StdlibItemDesc::Function { params: EMPTY_PARAM_DESC, ret: TypeDesc::Float, llvm_name: "mux_rand_float" },
+   "math.pi" => StdlibItemDesc::Constant { ty: TypeDesc::Float, value: ConstDesc::Pi },
+   "math.e" => StdlibItemDesc::Constant { ty: TypeDesc::Float, value: ConstDesc::E },
+   "random.seed" => StdlibItemDesc::Function { params: INT_PARAM_DESC, ret: TypeDesc::Void, llvm_name: "mux_rand_init" },
+   "random.next_int" => StdlibItemDesc::Function { params: EMPTY_PARAM_DESC, ret: TypeDesc::Int, llvm_name: "mux_rand_int" },
+   "random.next_range" => StdlibItemDesc::Function { params: INT_INT_PARAM_DESC, ret: TypeDesc::Int, llvm_name: "mux_rand_range" },
+   "random.next_float" => StdlibItemDesc::Function { params: EMPTY_PARAM_DESC, ret: TypeDesc::Float, llvm_name: "mux_rand_float" },
     "random.next_bool" => StdlibItemDesc::Function { params: EMPTY_PARAM_DESC, ret: TypeDesc::Bool, llvm_name: "mux_rand_bool" },
 };
-
-/// List of all available stdlib modules for wildcard imports
-pub const STDLIB_MODULES: &[&str] = &[
-    "assert", "datetime", "io", "math", "random", "sync", "net", "env", "data", "dsa", "sql",
-];
 
 lazy_static! {
     pub static ref IO_STDLIB_ITEMS: HashMap<&'static str, StdlibItem> = {

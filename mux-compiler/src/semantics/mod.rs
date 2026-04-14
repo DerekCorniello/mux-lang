@@ -2,6 +2,7 @@
 
 pub mod error;
 pub mod format;
+pub mod std_registry;
 pub mod stdlib;
 pub mod symbol_table;
 pub mod types;
@@ -22,6 +23,7 @@ use crate::ast::{
 };
 use crate::diagnostic::Files;
 use crate::lexer::Span;
+use crate::semantics::std_registry::{StdModuleKind, std_module_registry};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -144,43 +146,25 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn stdlib_modules() -> Vec<(&'static str, &'static str)> {
-        vec![
-            ("std.assert", "assert"),
-            ("std.datetime", "datetime"),
-            ("std.io", "io"),
-            ("std.math", "math"),
-            ("std.data", "data"),
-            ("std.dsa", "dsa"),
-            ("std.random", "random"),
-            ("std.net", "net"),
-            ("std.sync", "sync"),
-            ("std.env", "env"),
-            ("std.sql", "sql"),
-        ]
-    }
-
     /// Map of stdlib parent module -> declared nested child modules.
     /// Keys are the short parent name (e.g. "net", "data"). Values are full
     /// child module paths (e.g. "net.http", "data.json"). This is used to
     /// eagerly inject nested stdlib modules when a parent stdlib module is
     /// imported (for example importing `std.net` also makes `net.http` usable).
-    fn stdlib_nested_modules_map() -> std::collections::HashMap<&'static str, Vec<&'static str>> {
+    fn stdlib_nested_modules_map() -> std::collections::HashMap<String, Vec<String>> {
         let mut m = std::collections::HashMap::new();
-        m.insert("net", vec!["net.http"]);
-        m.insert("data", vec!["data.json", "data.csv"]);
-        m.insert(
-            "dsa",
-            vec![
-                "dsa.collection",
-                "dsa.stack",
-                "dsa.queue",
-                "dsa.heap",
-                "dsa.bintree",
-                "dsa.graph",
-                "dsa.algorithm",
-            ],
-        );
+        let registry = std_module_registry();
+        for full_name in registry.keys() {
+            if let Some(rest) = full_name.strip_prefix("std.")
+                && let Some(pos) = rest.find('.')
+            {
+                let parent = &rest[..pos];
+                let child = rest; // full child path like "data.json"
+                m.entry(parent.to_string())
+                    .or_insert_with(Vec::new)
+                    .push(child.to_string());
+            }
+        }
         m
     }
 
@@ -264,28 +248,19 @@ impl SemanticAnalyzer {
         features
     }
 
-    fn runtime_features_for_std_module(module_name: &str) -> &'static [&'static str] {
-        if module_name.starts_with("net") {
-            &["net"]
-        } else if module_name.starts_with("sql") {
-            &["sql"]
-        } else if module_name == "sync" {
-            &["sync"]
-        } else if module_name.ends_with(".json") {
-            &["json"]
-        } else if module_name.ends_with(".csv") {
-            &["csv"]
-        } else if module_name == "data" {
-            &["json", "csv"]
+    fn track_runtime_features_for_std_module_name(&mut self, module_name: &str) {
+        let registry = std_module_registry();
+        let full_name = if module_name.starts_with("std.") {
+            module_name.to_string()
         } else {
-            &[]
-        }
-    }
+            format!("std.{}", module_name)
+        };
 
-    fn track_stdlib_runtime_features(&mut self, module_name: &str) {
-        for feature in Self::runtime_features_for_std_module(module_name) {
-            self.required_runtime_features
-                .insert((*feature).to_string());
+        if let Some(def) = registry.get(full_name.as_str()) {
+            for feature in def.runtime_features {
+                self.required_runtime_features
+                    .insert((*feature).to_string());
+            }
         }
     }
 
@@ -767,9 +742,9 @@ impl SemanticAnalyzer {
     }
 
     fn try_stdlib_method_lookup(&self, name: &str, field: &str) -> Option<Type> {
-        let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
-            .iter()
-            .map(|(_, n)| n.to_string())
+        let stdlib_names: std::collections::HashSet<String> = std_module_registry()
+            .keys()
+            .filter_map(|s| s.strip_prefix("std.").map(|name| name.to_string()))
             .collect();
         for (ns, module_symbols) in &self.imported_symbols {
             if !stdlib_names.contains(ns) {
@@ -1361,9 +1336,9 @@ impl SemanticAnalyzer {
             });
         }
 
-        let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
-            .iter()
-            .map(|(_, short_name)| short_name.to_string())
+        let stdlib_names: std::collections::HashSet<String> = std_module_registry()
+            .keys()
+            .filter_map(|s| s.strip_prefix("std.").map(|name| name.to_string()))
             .collect();
 
         for (module_ns, module_symbols) in &self.imported_symbols {
@@ -3933,7 +3908,12 @@ impl SemanticAnalyzer {
             ));
         }
 
-        let files = files.expect("Files registry must be available for import processing");
+        let files = files.ok_or_else(|| {
+            SemanticError::new(
+                "Files registry must be available for import processing",
+                span,
+            )
+        })?;
 
         if has_directory {
             self.handle_directory_import(module_path, spec, span, resolver, files)?;
@@ -4642,9 +4622,9 @@ impl SemanticAnalyzer {
     }
 
     fn check_stdlib_imports_for_class(&self, name: &str) -> bool {
-        let stdlib_names: std::collections::HashSet<String> = Self::stdlib_modules()
-            .iter()
-            .map(|(_, n)| n.to_string())
+        let stdlib_names: std::collections::HashSet<String> = std_module_registry()
+            .keys()
+            .filter_map(|s| s.strip_prefix("std.").map(|name| name.to_string()))
             .collect();
         for (ns, module_symbols) in &self.imported_symbols {
             if !stdlib_names.contains(ns) {
@@ -5931,6 +5911,77 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn files_for_std_import(
+        files: Option<&mut Files>,
+        span: Span,
+    ) -> Result<&mut Files, SemanticError> {
+        files.ok_or_else(|| SemanticError::new("Files registry must be available", span))
+    }
+
+    fn import_registry_std_module(
+        &mut self,
+        module_path: &str,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+        files: Option<&mut Files>,
+        def: &crate::semantics::std_registry::StdModuleDef,
+    ) -> Result<(), SemanticError> {
+        match def.kind {
+            StdModuleKind::RuntimeBacked => {
+                let module_name = module_path.strip_prefix("std.").unwrap_or(module_path);
+                self.import_stdlib_module(module_name, spec, span)
+            }
+            StdModuleKind::Embedded => {
+                let files = Self::files_for_std_import(files, span)?;
+                self.import_module_from_resolver(module_path, spec, span, files)
+            }
+        }
+    }
+
+    fn import_nested_std_module_if_present(
+        &mut self,
+        module_path: &str,
+        spec: &crate::ast::ImportSpec,
+        span: Span,
+        files: Option<&mut Files>,
+        registry: &std::collections::HashMap<
+            &'static str,
+            crate::semantics::std_registry::StdModuleDef,
+        >,
+    ) -> Result<Option<()>, SemanticError> {
+        let tail = match module_path.strip_prefix("std.") {
+            Some(tail) => tail,
+            None => return Ok(None),
+        };
+
+        let parent = match tail.split('.').next() {
+            Some(parent) => parent,
+            None => return Ok(None),
+        };
+
+        let parent_path = format!("std.{}", parent);
+        if !registry.contains_key(parent_path.as_str()) {
+            return Ok(None);
+        }
+
+        let def = match registry.get(module_path) {
+            Some(def) => def,
+            None => return Ok(None),
+        };
+
+        match def.kind {
+            StdModuleKind::RuntimeBacked => {
+                self.import_stdlib_module(tail, spec, span)?;
+            }
+            StdModuleKind::Embedded => {
+                let files = Self::files_for_std_import(files, span)?;
+                self.import_module_from_resolver(tail, spec, span, files)?;
+            }
+        }
+
+        Ok(Some(()))
+    }
+
     fn handle_std_import(
         &mut self,
         module_path: &str,
@@ -5945,37 +5996,21 @@ impl SemanticAnalyzer {
         if let Some(resolver) = &self.module_resolver {
             let (has_file, has_directory) = resolver.borrow().check_module_path(module_path);
             if has_file || has_directory {
-                let files = files.expect("Files registry must be available for std imports");
+                let files = Self::files_for_std_import(files, span)?;
                 return self.import_module_from_resolver(module_path, spec, span, files);
             }
         }
 
-        // First, try exact matches like "std.data" -> module_name "data"
-        if let Some(module_name) = Self::stdlib_modules()
-            .iter()
-            .find(|(path, _)| *path == module_path)
-            .map(|(_, name)| name)
-        {
-            return self.import_stdlib_module(module_name, spec, span);
+        let registry = std_module_registry();
+        if let Some(def) = registry.get(module_path) {
+            return self.import_registry_std_module(module_path, spec, span, files, def);
         }
 
-        // Support nested stdlib import paths like "std.data.json" by mapping
-        // them to their parent stdlib entry (e.g. "std.data") and passing the
-        // tail ("data.json") to import_stdlib_module which understands
-        // nested child names.
-        if let Some(tail) = module_path.strip_prefix("std.") {
-            // tail is like "data.json" or "net.http" or just "data"
-            if let Some(parent) = tail.split('.').next() {
-                let parent_path = format!("std.{}", parent);
-                if Self::stdlib_modules()
-                    .iter()
-                    .any(|(path, _)| *path == parent_path)
-                {
-                    // Pass the full tail (e.g. "data.json") as the module_name so
-                    // collect_stdlib_module_symbols can lookup the child symbols.
-                    return self.import_stdlib_module(tail, spec, span);
-                }
-            }
+        if self
+            .import_nested_std_module_if_present(module_path, spec, span, files, &registry)?
+            .is_some()
+        {
+            return Ok(());
         }
 
         match module_path {
@@ -5990,45 +6025,13 @@ impl SemanticAnalyzer {
         span: Span,
     ) -> Result<(), SemanticError> {
         use crate::ast::ImportSpec;
-        use crate::semantics::stdlib::{STDLIB_MODULES, all_stdlib_items};
+        let registry = std_module_registry();
 
         match spec {
             ImportSpec::Module { alias } => {
-                let namespace = alias.as_deref().unwrap_or("std");
-                let namespace_symbols: std::collections::HashMap<String, Symbol> = STDLIB_MODULES
-                    .iter()
-                    .map(|m| (m.to_string(), self.make_module_symbol(m, span)))
-                    .collect();
-
-                for module in STDLIB_MODULES {
-                    self.track_stdlib_runtime_features(module);
-                    let module_symbols = self.collect_stdlib_module_symbols(module, span);
-                    self.imported_symbols
-                        .insert(module.to_string(), module_symbols);
-                    // Inject any nested stdlib children declared for this parent module
-                    self.inject_nested_stdlib_children(module, span);
-                }
-
-                self.imported_symbols
-                    .insert(namespace.to_string(), namespace_symbols);
-                self.symbol_table
-                    .add_symbol(namespace, self.make_module_symbol(namespace, span))?;
+                self.import_all_std_as_namespace(alias.as_deref(), span, &registry)?
             }
-            ImportSpec::Wildcard => {
-                for module in STDLIB_MODULES {
-                    self.track_stdlib_runtime_features(module);
-                }
-                for (key, item) in all_stdlib_items() {
-                    if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
-                        crate::semantics::stdlib::register_stdlib_item_into(
-                            &mut self.symbol_table,
-                            item_name,
-                            &item,
-                            span,
-                        )?;
-                    }
-                }
-            }
+            ImportSpec::Wildcard => self.import_all_std_wildcard(span, &registry)?,
             ImportSpec::Items { items } => {
                 for (item, alias) in items {
                     self.import_stdlib_module(
@@ -6050,6 +6053,75 @@ impl SemanticAnalyzer {
                 )?;
             }
         }
+        Ok(())
+    }
+
+    fn import_all_std_as_namespace(
+        &mut self,
+        alias: Option<&str>,
+        span: Span,
+        registry: &std::collections::HashMap<
+            &'static str,
+            crate::semantics::std_registry::StdModuleDef,
+        >,
+    ) -> Result<(), SemanticError> {
+        let namespace = alias.unwrap_or("std");
+        let namespace_symbols: std::collections::HashMap<String, Symbol> = registry
+            .keys()
+            .filter_map(|m| {
+                let rest = m.strip_prefix("std.")?;
+                if rest.contains('.') {
+                    None
+                } else {
+                    Some((rest.to_string(), self.make_module_symbol(m, span)))
+                }
+            })
+            .collect();
+
+        for (module_path, def) in registry {
+            for feature in def.runtime_features {
+                self.required_runtime_features
+                    .insert((*feature).to_string());
+            }
+            let module_symbols = self.collect_stdlib_module_symbols(module_path, span);
+            self.imported_symbols
+                .insert(module_path.to_string(), module_symbols);
+            self.inject_nested_stdlib_children(module_path, span);
+        }
+
+        self.imported_symbols
+            .insert(namespace.to_string(), namespace_symbols);
+        self.symbol_table
+            .add_symbol(namespace, self.make_module_symbol(namespace, span))?;
+        Ok(())
+    }
+
+    fn import_all_std_wildcard(
+        &mut self,
+        span: Span,
+        registry: &std::collections::HashMap<
+            &'static str,
+            crate::semantics::std_registry::StdModuleDef,
+        >,
+    ) -> Result<(), SemanticError> {
+        for def in registry.values() {
+            for feature in def.runtime_features {
+                self.required_runtime_features
+                    .insert((*feature).to_string());
+            }
+        }
+
+        for (key, item) in crate::semantics::stdlib::all_stdlib_items() {
+            if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
+                crate::semantics::stdlib::register_stdlib_item_into(
+                    &mut self.symbol_table,
+                    item_name,
+                    &item,
+                    span,
+                )?;
+            }
+        }
+
         Ok(())
     }
 
@@ -6113,7 +6185,7 @@ impl SemanticAnalyzer {
         spec: &crate::ast::ImportSpec,
         span: Span,
     ) -> Result<(), SemanticError> {
-        self.track_stdlib_runtime_features(module_name);
+        self.track_runtime_features_for_std_module_name(module_name);
         let module_symbols = self.collect_stdlib_module_symbols(module_name, span);
         // Inject any nested stdlib children declared for this parent
         self.inject_nested_stdlib_children(module_name, span);
