@@ -6007,7 +6007,7 @@ impl SemanticAnalyzer {
         }
 
         if self
-            .import_nested_std_module_if_present(module_path, spec, span, files, &registry)?
+            .import_nested_std_module_if_present(module_path, spec, span, files, registry)?
             .is_some()
         {
             return Ok(());
@@ -6029,9 +6029,9 @@ impl SemanticAnalyzer {
 
         match spec {
             ImportSpec::Module { alias } => {
-                self.import_all_std_as_namespace(alias.as_deref(), span, &registry)?
+                self.import_all_std_as_namespace(alias.as_deref(), span, registry)?
             }
-            ImportSpec::Wildcard => self.import_all_std_wildcard(span, &registry)?,
+            ImportSpec::Wildcard => self.import_all_std_wildcard(span, registry)?,
             ImportSpec::Items { items } => {
                 for (item, alias) in items {
                     self.import_stdlib_module(
@@ -6083,10 +6083,18 @@ impl SemanticAnalyzer {
                 self.required_runtime_features
                     .insert((*feature).to_string());
             }
-            let module_symbols = self.collect_stdlib_module_symbols(module_path, span);
+
+            let short_name = module_path.strip_prefix("std.").unwrap_or(module_path);
+            if short_name.contains('.') {
+                continue;
+            }
+
+            let module_symbols = self.collect_stdlib_module_symbols(short_name, span);
+            self.imported_symbols
+                .insert(short_name.to_string(), module_symbols.clone());
             self.imported_symbols
                 .insert(module_path.to_string(), module_symbols);
-            self.inject_nested_stdlib_children(module_path, span);
+            self.inject_nested_stdlib_children(short_name, span);
         }
 
         self.imported_symbols

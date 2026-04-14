@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// Kind of standard library module implementation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +66,7 @@ fn insert_std_module(
 
 /// Registry of all standard library modules.
 /// This is the single source of truth for what std modules exist and their properties.
-pub fn std_module_registry() -> HashMap<&'static str, StdModuleDef> {
+fn build_std_module_registry() -> HashMap<&'static str, StdModuleDef> {
     let mut registry = HashMap::new();
 
     for (name, runtime_features) in RUNTIME_STD_MODULES {
@@ -82,6 +83,11 @@ pub fn std_module_registry() -> HashMap<&'static str, StdModuleDef> {
     }
 
     registry
+}
+
+pub fn std_module_registry() -> &'static HashMap<&'static str, StdModuleDef> {
+    static REGISTRY: OnceLock<HashMap<&'static str, StdModuleDef>> = OnceLock::new();
+    REGISTRY.get_or_init(build_std_module_registry)
 }
 
 /// Extract all unique runtime features required across all stdlib modules.
