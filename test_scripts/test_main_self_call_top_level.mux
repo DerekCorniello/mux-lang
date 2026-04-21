@@ -1,0 +1,8 @@
+auto main_calls = 0
+
+func main() returns void {
+    main_calls = main_calls + 1
+    print("main call #" + main_calls.to_string())
+}
+
+main()

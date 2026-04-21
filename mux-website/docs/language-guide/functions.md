@@ -222,6 +222,21 @@ auto result = myString.to_int().to_string()
 auto doubled = square(add(2, 3))
 ```
 
+### Calling `main()` Explicitly
+
+Mux allows explicit calls to `main()` from user code.
+
+```mux title="main_call.mux"
+func main() returns void {
+    print("main body")
+}
+
+main()
+```
+
+The startup entrypoint still calls `main()` once automatically. If user code also
+calls `main()`, it will execute multiple times.
+
 ## Best Practices
 
 1. **Explicit types for parameters and return values** - Makes function signatures clear

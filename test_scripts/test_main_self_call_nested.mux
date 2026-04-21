@@ -1,0 +1,11 @@
+func helper() returns void {
+    print("helper before main")
+    main()
+    print("helper after main")
+}
+
+func main() returns void {
+    print("main body")
+}
+
+helper()

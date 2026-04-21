@@ -2859,10 +2859,13 @@ impl SemanticAnalyzer {
             .filter(|p| p.default_value.is_some())
             .count();
 
-        if let Err(e) = self.symbol_table.add_symbol(
-            &func.name,
-            self.make_function_symbol(func.span, func_type, &func.type_params, default_count),
-        ) {
+        let mut symbol =
+            self.make_function_symbol(func.span, func_type, &func.type_params, default_count);
+        if func.name == "main" {
+            symbol.llvm_name = Some("!user!main".to_string());
+        }
+
+        if let Err(e) = self.symbol_table.add_symbol(&func.name, symbol) {
             self.errors.push(e);
         }
         Ok(())
@@ -5789,9 +5792,19 @@ impl SemanticAnalyzer {
             imported_symbol.llvm_name = Some(format!("{}!{}", module_name_for_mangling, item_name));
         }
 
-        self.symbol_table
-            .add_imported_symbol(local_name, imported_symbol)?;
+        self.add_import_symbol_if_absent(local_name, imported_symbol)?;
         Ok(())
+    }
+
+    fn add_import_symbol_if_absent(
+        &mut self,
+        name: &str,
+        symbol: Symbol,
+    ) -> Result<(), SemanticError> {
+        if self.symbol_table.get_cloned(name).is_some() {
+            return Ok(());
+        }
+        self.symbol_table.add_imported_symbol(name, symbol)
     }
 
     // Import all symbols (import logger.*)
@@ -6098,9 +6111,9 @@ impl SemanticAnalyzer {
         }
 
         self.imported_symbols
-            .insert(namespace.to_string(), namespace_symbols);
-        self.symbol_table
-            .add_symbol(namespace, self.make_module_symbol(namespace, span))?;
+            .entry(namespace.to_string())
+            .or_insert(namespace_symbols);
+        self.add_import_symbol_if_absent(namespace, self.make_module_symbol(namespace, span))?;
         Ok(())
     }
 
@@ -6121,12 +6134,8 @@ impl SemanticAnalyzer {
 
         for (key, item) in crate::semantics::stdlib::all_stdlib_items() {
             if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
-                crate::semantics::stdlib::register_stdlib_item_into(
-                    &mut self.symbol_table,
-                    item_name,
-                    &item,
-                    span,
-                )?;
+                let symbol = crate::semantics::stdlib::stdlib_item_to_symbol(&item, span);
+                self.add_import_symbol_if_absent(item_name, symbol)?;
             }
         }
 
@@ -6367,8 +6376,9 @@ impl SemanticAnalyzer {
                 });
 
                 self.imported_symbols
-                    .insert(namespace.to_string(), module_symbols.clone());
-                self.symbol_table.add_symbol(
+                    .entry(namespace.to_string())
+                    .or_insert(module_symbols.clone());
+                self.add_import_symbol_if_absent(
                     &namespace,
                     Symbol {
                         kind: SymbolKind::Import,
@@ -6388,19 +6398,19 @@ impl SemanticAnalyzer {
             ImportSpec::Item { item, alias } => {
                 let symbol_name = alias.as_ref().unwrap_or(item);
                 if let Some(symbol) = module_symbols.get(item) {
-                    self.symbol_table.add_symbol(symbol_name, symbol.clone())?;
+                    self.add_import_symbol_if_absent(symbol_name, symbol.clone())?;
                 }
             }
             ImportSpec::Wildcard => {
                 for (name, symbol) in module_symbols {
-                    self.symbol_table.add_symbol(&name, symbol)?;
+                    self.add_import_symbol_if_absent(&name, symbol)?;
                 }
             }
             ImportSpec::Items { items } => {
                 for (item, alias) in items {
                     let symbol_name = alias.as_ref().unwrap_or(item);
                     if let Some(symbol) = module_symbols.get(item) {
-                        self.symbol_table.add_symbol(symbol_name, symbol.clone())?;
+                        self.add_import_symbol_if_absent(symbol_name, symbol.clone())?;
                     }
                 }
             }

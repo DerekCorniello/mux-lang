@@ -1886,6 +1886,24 @@ define void @config.init() { ... }
 
 And calls it before `main()` executes.
 
+#### Entry Function Calls
+
+The user-defined entry function is `func main() returns void`.
+
+Mux allows explicit calls to `main()` from user code (for example in helper functions
+or top-level statements). These calls target the user entry function body.
+
+```mux
+func main() returns void {
+    print("main body")
+}
+
+main()
+```
+
+If you also call `main()` manually, remember that the program entrypoint will still
+invoke `main()` once during normal startup, so `main` may run multiple times.
+
 #### Module Dependencies
 
 The compiler:
