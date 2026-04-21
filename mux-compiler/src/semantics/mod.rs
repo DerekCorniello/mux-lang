@@ -2859,13 +2859,10 @@ impl SemanticAnalyzer {
             .filter(|p| p.default_value.is_some())
             .count();
 
-        let mut symbol =
-            self.make_function_symbol(func.span, func_type, &func.type_params, default_count);
-        if func.name == "main" {
-            symbol.llvm_name = Some("!user!main".to_string());
-        }
-
-        if let Err(e) = self.symbol_table.add_symbol(&func.name, symbol) {
+        if let Err(e) = self.symbol_table.add_symbol(
+            &func.name,
+            self.make_function_symbol(func.span, func_type, &func.type_params, default_count),
+        ) {
             self.errors.push(e);
         }
         Ok(())
@@ -5817,20 +5814,13 @@ impl SemanticAnalyzer {
         let module_name_for_mangling = module_path.replace(['.', '/'], "_");
 
         for (name, symbol) in module_symbols {
-            // Import all symbols directly into current namespace
-            // Skip if already exists in current scope to avoid conflicts
-            if self.symbol_table.get_cloned(name).is_none() {
-                let mut imported_symbol = symbol.clone();
+            let mut imported_symbol = symbol.clone();
 
-                // Set llvm_name for functions (mangled with module path)
-                if matches!(symbol.kind, SymbolKind::Function) {
-                    imported_symbol.llvm_name =
-                        Some(format!("{}!{}", module_name_for_mangling, name));
-                }
-
-                // Try to add, but ignore duplicate errors since we already checked
-                let _ = self.symbol_table.add_imported_symbol(name, imported_symbol);
+            if matches!(symbol.kind, SymbolKind::Function) {
+                imported_symbol.llvm_name = Some(format!("{}!{}", module_name_for_mangling, name));
             }
+
+            self.add_import_symbol_if_absent(name, imported_symbol)?;
         }
         Ok(())
     }

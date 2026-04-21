@@ -2883,6 +2883,8 @@ impl<'a> CodeGenerator<'a> {
         let mut lookup_name = name.to_string();
         if let Some(nested_name) = self.find_nested_mangled_function_name(name) {
             lookup_name = nested_name;
+        } else if name == "main" && self.module.get_function("!user!main").is_some() {
+            lookup_name = "!user!main".to_string();
         } else if let Some(import_llvm_name) = self.resolve_imported_llvm_name(name) {
             lookup_name = import_llvm_name;
         }

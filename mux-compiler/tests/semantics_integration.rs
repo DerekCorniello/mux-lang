@@ -74,6 +74,15 @@ fn analyze_mux_source(source_text: &str) -> Vec<mux_lang::semantics::SemanticErr
     analyzer.analyze(&ast, None)
 }
 
+fn assert_source_has_no_semantic_errors(source_text: &str) {
+    let errors = analyze_mux_source(source_text);
+    assert!(
+        errors.is_empty(),
+        "Expected no semantic errors, got: {:#?}",
+        errors
+    );
+}
+
 #[test]
 fn test_semantic_analysis() {
     let test_dir = Path::new("../test_scripts");
@@ -102,7 +111,7 @@ fn test_semantic_analysis() {
 
 #[test]
 fn allows_std_root_and_assert_wildcard_together() {
-    let errors = analyze_mux_source(
+    assert_source_has_no_semantic_errors(
         r#"
 import std
 import std.assert.*
@@ -111,17 +120,11 @@ assert_true(true)
 std.assert.assert_true(true)
 "#,
     );
-
-    assert!(
-        errors.is_empty(),
-        "Expected no semantic errors, got: {:#?}",
-        errors
-    );
 }
 
 #[test]
 fn allows_repeated_std_module_wildcard_import() {
-    let errors = analyze_mux_source(
+    assert_source_has_no_semantic_errors(
         r#"
 import std.assert.*
 import std.assert.*
@@ -129,28 +132,16 @@ import std.assert.*
 assert_true(true)
 "#,
     );
-
-    assert!(
-        errors.is_empty(),
-        "Expected no semantic errors, got: {:#?}",
-        errors
-    );
 }
 
 #[test]
 fn allows_std_flat_then_specific_module_wildcard_import() {
-    let errors = analyze_mux_source(
+    assert_source_has_no_semantic_errors(
         r#"
 import std.*
 import std.assert.*
 
 assert_true(true)
 "#,
-    );
-
-    assert!(
-        errors.is_empty(),
-        "Expected no semantic errors, got: {:#?}",
-        errors
     );
 }
