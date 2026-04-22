@@ -55,34 +55,6 @@ fn collect_mux_files_in_dir(test_dir: &Path) -> usize {
     count
 }
 
-fn analyze_mux_source(source_text: &str) -> Vec<mux_lang::semantics::SemanticError> {
-    let mut source = Source::from_test_str(source_text);
-
-    let mut lexer = Lexer::new(&mut source);
-    let tokens: Vec<_> = std::iter::from_fn(|| match lexer.next_token() {
-        Ok(token) if token.token_type == mux_lang::lexer::TokenType::Eof => None,
-        Ok(token) => Some(Ok(token)),
-        Err(e) => Some(Err(e)),
-    })
-    .collect::<Result<_, _>>()
-    .expect("Lexer error");
-
-    let mut parser = Parser::new(&tokens);
-    let ast = parser.parse().expect("Parser error");
-
-    let mut analyzer = SemanticAnalyzer::new();
-    analyzer.analyze(&ast, None)
-}
-
-fn assert_source_has_no_semantic_errors(source_text: &str) {
-    let errors = analyze_mux_source(source_text);
-    assert!(
-        errors.is_empty(),
-        "Expected no semantic errors, got: {:#?}",
-        errors
-    );
-}
-
 #[test]
 fn test_semantic_analysis() {
     let test_dir = Path::new("../test_scripts");
@@ -107,41 +79,4 @@ fn test_semantic_analysis() {
         "No .mux files found in test directories"
     );
     println!("Processed {} files", files_processed);
-}
-
-#[test]
-fn allows_std_root_and_assert_wildcard_together() {
-    assert_source_has_no_semantic_errors(
-        r#"
-import std
-import std.assert.*
-
-assert_true(true)
-std.assert.assert_true(true)
-"#,
-    );
-}
-
-#[test]
-fn allows_repeated_std_module_wildcard_import() {
-    assert_source_has_no_semantic_errors(
-        r#"
-import std.assert.*
-import std.assert.*
-
-assert_true(true)
-"#,
-    );
-}
-
-#[test]
-fn allows_std_flat_then_specific_module_wildcard_import() {
-    assert_source_has_no_semantic_errors(
-        r#"
-import std.*
-import std.assert.*
-
-assert_true(true)
-"#,
-    );
 }

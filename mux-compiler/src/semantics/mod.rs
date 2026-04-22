@@ -738,10 +738,32 @@ impl SemanticAnalyzer {
             }
         };
 
+        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind
+            && matches!(expr_type, Type::Function { .. })
+            && let Some(func_type) = self.try_stdlib_method_lookup(name, field)
+        {
+            return Ok(func_type);
+        }
+
         self.resolve_field_access_by_type(&expr_type, field, span)
     }
 
     fn try_stdlib_method_lookup(&self, name: &str, field: &str) -> Option<Type> {
+        if let Some(symbol) = self.symbol_table.lookup(name)
+            && matches!(symbol.kind, SymbolKind::Function)
+        {
+            use crate::semantics::stdlib::{StdlibItem, lookup_stdlib_item};
+
+            let full_name = format!("{}.{}", name, field);
+            if let Some(StdlibItem::Function { params, ret, .. }) = lookup_stdlib_item(&full_name) {
+                return Some(Type::Function {
+                    params: params.clone(),
+                    returns: Box::new(ret.clone()),
+                    default_count: 0,
+                });
+            }
+        }
+
         let stdlib_names: std::collections::HashSet<String> = std_module_registry()
             .keys()
             .filter_map(|s| s.strip_prefix("std.").map(|name| name.to_string()))

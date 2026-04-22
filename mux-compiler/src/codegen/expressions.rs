@@ -2504,6 +2504,18 @@ impl<'a> CodeGenerator<'a> {
         let Some(symbol) = self.analyzer.symbol_table().lookup(name) else {
             return Ok(None);
         };
+
+        if symbol.kind == crate::semantics::SymbolKind::Function {
+            let full_name = format!("{}.{}", name, field);
+            if let Some(crate::semantics::stdlib::StdlibItem::Function { llvm_name, .. }) =
+                crate::semantics::stdlib::lookup_stdlib_item(&full_name)
+            {
+                return self
+                    .generate_named_function_call(field, &llvm_name, args)
+                    .map(Some);
+            }
+        }
+
         match symbol.kind {
             crate::semantics::SymbolKind::Import => {
                 self.generate_import_symbol_method_call(name, field, args)
@@ -2932,7 +2944,47 @@ impl<'a> CodeGenerator<'a> {
                 display_name, lookup_name
             ));
         };
-        let mut call_args = self.build_args_with_class_copy(args)?;
+        let llvm_param_types = func.get_type().get_param_types();
+        let mut call_args = Vec::with_capacity(args.len());
+        for (idx, arg) in args.iter().enumerate() {
+            let arg_type = self
+                .analyzer
+                .get_expression_type(arg)
+                .map_err(|e| e.message)?;
+
+            let needs_copy = if let Type::Named(class_name, _) = &arg_type {
+                if let Some(symbol) = self.analyzer.symbol_table().lookup(class_name) {
+                    symbol.kind == crate::semantics::SymbolKind::Class
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            let arg_val = if needs_copy {
+                let original_val = self.generate_expression(arg)?;
+                let ptr = original_val.into_pointer_value();
+                let copy_func = self
+                    .runtime_function("mux_copy_object")
+                    .ok_or("mux_copy_object not found")?;
+                self.builder
+                    .build_call(copy_func, &[ptr.into()], "copy_arg")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_copy_object should return a value")
+            } else {
+                self.generate_expression(arg)?
+            };
+
+            let coerced = if let Some(expected) = llvm_param_types.get(idx) {
+                self.coerce_to_llvm_param_type(arg_val, *expected)?
+            } else {
+                arg_val
+            };
+            call_args.push(coerced.into());
+        }
         self.append_default_call_args(display_name, args.len(), &mut call_args)?;
         let call = self
             .builder
