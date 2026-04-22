@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
 
       - name: Version consistency check
-        run: ./scripts/sync-version.sh
+        run: ./scripts/sync-version.sh && git diff --exit-code
 
       - name: Check whether tag commit is on main
         id: branch_policy
@@ -105,7 +105,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Version consistency check
-        run: ./scripts/sync-version.sh
+        run: ./scripts/sync-version.sh && git diff --exit-code
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9

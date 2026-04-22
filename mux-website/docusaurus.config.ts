@@ -6,7 +6,16 @@ import path from 'node:path';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 const versionFilePath = path.resolve(__dirname, '..', 'VERSION');
-const siteVersion = fs.readFileSync(versionFilePath, 'utf8').trim();
+let siteVersion = 'unknown';
+
+try {
+  siteVersion = fs.readFileSync(versionFilePath, 'utf8').trim();
+} catch (error) {
+  throw new Error(
+    `Failed to read VERSION file at ${versionFilePath}. Ensure the root VERSION file exists before building the website.`,
+    {cause: error},
+  );
+}
 
 const config: Config = {
   title: 'Mux',

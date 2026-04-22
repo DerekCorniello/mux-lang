@@ -177,6 +177,7 @@ Mux uses the root `VERSION` file as the single source of truth.
 
 - Update `VERSION` to the next release version.
 - Run `./scripts/sync-version.sh` to synchronize all Mux-owned hardcoded version fields.
+- If website lockfile metadata needs refresh, run `npm install` in `mux-website/`.
 - `./scripts/sync-version.sh` fails immediately if `CHANGELOG.md` is not up to date with `VERSION`.
 - **License:** MIT
 - **Maintainer:** [Derek Corniello](https://github.com/DerekCorniello)

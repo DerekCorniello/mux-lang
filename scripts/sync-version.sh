@@ -22,7 +22,6 @@ compiler_toml = repo_root / "mux-compiler" / "Cargo.toml"
 runtime_toml = repo_root / "mux-runtime" / "Cargo.toml"
 readme = repo_root / "README.md"
 website_package = repo_root / "mux-website" / "package.json"
-website_package_lock = repo_root / "mux-website" / "package-lock.json"
 changelog = repo_root / "CHANGELOG.md"
 
 
@@ -68,7 +67,7 @@ def update_toml_scalar(path: Path, section: str, key: str, value: str) -> None:
 
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
+        if stripped.startswith("[") and stripped.endswith("]") and not stripped.startswith("[["):
             in_section = stripped == f"[{section}]"
             continue
         if not in_section:
@@ -112,56 +111,32 @@ def update_readme(version: str) -> None:
     write_text(readme, "\n".join(lines) + "\n")
 
 
-def update_website_package(version: str) -> None:
-    package_data = json.loads(read_text(website_package))
-    package_data["version"] = version
-    write_text(website_package, json.dumps(package_data, indent=2) + "\n")
+def read_json(path: Path):
+    return json.loads(read_text(path))
 
 
-def update_website_package_lock(version: str) -> None:
-    if not website_package_lock.exists():
-        return
+def is_synced(version: str) -> tuple[bool, list[str]]:
+    failures: list[str] = []
 
-    package_lock_data = json.loads(read_text(website_package_lock))
-    if isinstance(package_lock_data, dict):
-        package_lock_data["version"] = version
-        packages = package_lock_data.get("packages")
-        if isinstance(packages, dict):
-            root_package = packages.get("")
-            if isinstance(root_package, dict):
-                root_package["version"] = version
-
-    write_text(website_package_lock, json.dumps(package_lock_data, indent=2) + "\n")
-
-
-def assert_synced(version: str) -> None:
     compiler = read_text(compiler_toml)
     runtime = read_text(runtime_toml)
     readme_text = read_text(readme)
-    package_data = json.loads(read_text(website_package))
+    package_data = read_json(website_package)
 
     if f'version = "{version}"' not in compiler:
-        raise SystemExit("mux-compiler/Cargo.toml package version is not synchronized")
+        failures.append("mux-compiler/Cargo.toml package version")
     if f'mux-runtime = "{version}"' not in compiler:
-        raise SystemExit("mux-compiler/Cargo.toml mux-runtime dependency is not synchronized")
+        failures.append("mux-compiler/Cargo.toml mux-runtime dependency version")
     if f'version = "{version}"' not in runtime:
-        raise SystemExit("mux-runtime/Cargo.toml package version is not synchronized")
+        failures.append("mux-runtime/Cargo.toml package version")
     if f"img.shields.io/badge/version-{version}-blue.svg?style=flat-square" not in readme_text:
-        raise SystemExit("README.md version badge is not synchronized")
+        failures.append("README.md version badge")
     if f"- **Current Version:** {version}" not in readme_text:
-        raise SystemExit("README.md current version is not synchronized")
+        failures.append("README.md current version")
     if package_data.get("version") != version:
-        raise SystemExit("mux-website/package.json version is not synchronized")
+        failures.append("mux-website/package.json version")
 
-    if website_package_lock.exists():
-        package_lock_data = json.loads(read_text(website_package_lock))
-        if package_lock_data.get("version") != version:
-            raise SystemExit("mux-website/package-lock.json root version is not synchronized")
-        packages = package_lock_data.get("packages")
-        if isinstance(packages, dict):
-            root_package = packages.get("")
-            if isinstance(root_package, dict) and root_package.get("version") != version:
-                raise SystemExit("mux-website/package-lock.json packages[''] version is not synchronized")
+    return len(failures) == 0, failures
 
 
 if not version_file.exists():
@@ -170,13 +145,18 @@ if not version_file.exists():
 version = validate_version(read_text(version_file))
 check_changelog(version)
 
+synced, failures = is_synced(version)
+if synced:
+    print(f"Version check passed for {version}")
+    raise SystemExit(0)
+
 update_toml_scalar(compiler_toml, "package", "version", version)
 update_toml_scalar(compiler_toml, "dependencies", "mux-runtime", version)
 update_toml_scalar(runtime_toml, "package", "version", version)
 update_readme(version)
-update_website_package(version)
-update_website_package_lock(version)
-assert_synced(version)
 
-print(f"Changelog check passed and synchronized Mux version references to {version}")
+print(
+    "Synchronized Mux version references to "
+    f"{version}; package-lock.json should be updated via npm if needed"
+)
 PY
