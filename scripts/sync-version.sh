@@ -115,6 +115,12 @@ def read_json(path: Path):
     return json.loads(read_text(path))
 
 
+def update_website_package(version: str) -> None:
+    package_data = read_json(website_package)
+    package_data["version"] = version
+    write_text(website_package, json.dumps(package_data, indent=2) + "\n")
+
+
 def is_synced(version: str) -> tuple[bool, list[str]]:
     failures: list[str] = []
 
@@ -154,6 +160,7 @@ update_toml_scalar(compiler_toml, "package", "version", version)
 update_toml_scalar(compiler_toml, "dependencies", "mux-runtime", version)
 update_toml_scalar(runtime_toml, "package", "version", version)
 update_readme(version)
+update_website_package(version)
 
 print(
     "Synchronized Mux version references to "
