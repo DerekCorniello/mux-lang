@@ -41,7 +41,7 @@ Thanks for your interest! This guide explains how to contribute to Mux.
    ```
 
 8. Always run `cargo fmt` and `cargo clippy` before committing changes.
-9. Configure git hooks: `git config core.hooksPath .github/hooks`.
+9. For releases, update `VERSION` first, then update the matching section in `CHANGELOG.md`, then run `./scripts/sync-version.sh`.
 10. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
 11. Make your changes.
 12. Run tests again to ensure nothing is broken.
@@ -80,7 +80,7 @@ We generally don't accept contributions that:
 
 ## Tooling
 
-- Configure git hooks once per clone: `git config core.hooksPath .github/hooks`.
+- Standard Rust tooling: `cargo fmt`, `cargo clippy`, and `cargo test`.
 
 ---
 
