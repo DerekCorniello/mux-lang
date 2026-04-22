@@ -1,9 +1,12 @@
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
-const siteVersion = process.env.npm_package_version ?? '0.2.0';
+const versionFilePath = path.resolve(__dirname, '..', 'VERSION');
+const siteVersion = fs.readFileSync(versionFilePath, 'utf8').trim();
 
 const config: Config = {
   title: 'Mux',
@@ -116,6 +119,9 @@ const config: Config = {
       darkTheme: prismThemes.dracula,
     },
   } satisfies Preset.ThemeConfig,
+  customFields: {
+    version: siteVersion,
+  },
 };
 
 export default config;

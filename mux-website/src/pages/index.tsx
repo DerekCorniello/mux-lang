@@ -2,6 +2,7 @@ import type {ReactNode} from 'react';
 import {useState} from 'react';
 import clsx from 'clsx';
 import Link from '@docusaurus/Link';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import CodeBlock from '@theme/CodeBlock';
@@ -79,6 +80,9 @@ const features = [
 
 function HomepageHeader() {
   const [copied, setCopied] = useState(false);
+  const {siteConfig} = useDocusaurusContext();
+  const customFields = siteConfig.customFields as {version?: string};
+  const version = customFields.version ?? '0.0.0';
 
   const handleCopy = () => {
     navigator.clipboard.writeText('curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh');
@@ -139,7 +143,7 @@ function HomepageHeader() {
           </div>
           
           <div className={styles.badges}>
-            <span className={styles.badge}>v0.2.0</span>
+            <span className={styles.badge}>{`v${version}`}</span>
             <span className={styles.badge}>MIT Licensed</span>
             <span className={styles.badge}>Open Source</span>
           </div>

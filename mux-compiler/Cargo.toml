@@ -9,6 +9,7 @@ license = "MIT"
 keywords = ["mux", "compiler", "language"]
 categories = ["development-tools", "compilers"]
 exclude = [
+    "../VERSION",
     "../test_scripts/",
     "tests/",
     "../run_all_test_scripts.sh",
