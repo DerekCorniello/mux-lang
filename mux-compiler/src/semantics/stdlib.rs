@@ -1143,15 +1143,3 @@ pub fn stdlib_item_to_symbol(item: &StdlibItem, span: Span) -> Symbol {
         },
     }
 }
-
-/// Register a single stdlib item into the provided symbol table (used for flat imports).
-pub fn register_stdlib_item_into(
-    table: &mut crate::semantics::symbol_table::SymbolTable,
-    name: &str,
-    item: &StdlibItem,
-    span: Span,
-) -> Result<(), crate::semantics::error::SemanticError> {
-    let symbol = stdlib_item_to_symbol(item, span);
-    table.add_symbol(name, symbol)?;
-    Ok(())
-}

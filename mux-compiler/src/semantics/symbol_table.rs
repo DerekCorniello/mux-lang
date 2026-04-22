@@ -61,7 +61,11 @@ impl SymbolTable {
         self.get_cloned(name).is_some()
     }
 
-    pub fn add_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {
+    fn add_symbol_to_current_scope(
+        &mut self,
+        name: &str,
+        symbol: Symbol,
+    ) -> Result<(), SemanticError> {
         if self.scopes.is_empty() {
             return Err(SemanticError {
                 message: "No active scope".into(),
@@ -91,40 +95,17 @@ impl SymbolTable {
         Ok(())
     }
 
+    pub fn add_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {
+        self.add_symbol_to_current_scope(name, symbol)
+    }
+
     fn should_track_global_symbol(&self, name: &str, symbol: &Symbol) -> bool {
         let _ = symbol;
         name != "self"
     }
 
     pub fn add_imported_symbol(&mut self, name: &str, symbol: Symbol) -> Result<(), SemanticError> {
-        if self.scopes.is_empty() {
-            return Err(SemanticError {
-                message: "No active scope".into(),
-                span: Span::new(0, 0),
-            });
-        }
-
-        let current = self
-            .scopes
-            .last()
-            .expect("at least global scope should exist");
-        let mut current_borrow = current.borrow_mut();
-
-        if current_borrow.symbols.contains_key(name) {
-            return Err(SemanticError {
-                message: format!("Duplicate declaration of '{}'", name),
-                span: symbol.span,
-            });
-        }
-
-        current_borrow
-            .symbols
-            .insert(name.to_string(), symbol.clone());
-
-        if self.should_track_global_symbol(name, &symbol) {
-            self.all_symbols.insert(name.to_string(), symbol);
-        }
-        Ok(())
+        self.add_symbol_to_current_scope(name, symbol)
     }
 
     pub fn global_scope_symbols(&self) -> HashMap<String, Symbol> {

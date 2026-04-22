@@ -738,10 +738,32 @@ impl SemanticAnalyzer {
             }
         };
 
+        if let crate::ast::ExpressionKind::Identifier(name) = &expr.kind
+            && matches!(expr_type, Type::Function { .. })
+            && let Some(func_type) = self.try_stdlib_method_lookup(name, field)
+        {
+            return Ok(func_type);
+        }
+
         self.resolve_field_access_by_type(&expr_type, field, span)
     }
 
     fn try_stdlib_method_lookup(&self, name: &str, field: &str) -> Option<Type> {
+        if let Some(symbol) = self.symbol_table.lookup(name)
+            && matches!(symbol.kind, SymbolKind::Function)
+        {
+            use crate::semantics::stdlib::{StdlibItem, lookup_stdlib_item};
+
+            let full_name = format!("{}.{}", name, field);
+            if let Some(StdlibItem::Function { params, ret, .. }) = lookup_stdlib_item(&full_name) {
+                return Some(Type::Function {
+                    params: params.clone(),
+                    returns: Box::new(ret.clone()),
+                    default_count: 0,
+                });
+            }
+        }
+
         let stdlib_names: std::collections::HashSet<String> = std_module_registry()
             .keys()
             .filter_map(|s| s.strip_prefix("std.").map(|name| name.to_string()))
@@ -5789,9 +5811,19 @@ impl SemanticAnalyzer {
             imported_symbol.llvm_name = Some(format!("{}!{}", module_name_for_mangling, item_name));
         }
 
-        self.symbol_table
-            .add_imported_symbol(local_name, imported_symbol)?;
+        self.add_import_symbol_if_absent(local_name, imported_symbol)?;
         Ok(())
+    }
+
+    fn add_import_symbol_if_absent(
+        &mut self,
+        name: &str,
+        symbol: Symbol,
+    ) -> Result<(), SemanticError> {
+        if self.symbol_table.get_cloned(name).is_some() {
+            return Ok(());
+        }
+        self.symbol_table.add_imported_symbol(name, symbol)
     }
 
     // Import all symbols (import logger.*)
@@ -5804,20 +5836,13 @@ impl SemanticAnalyzer {
         let module_name_for_mangling = module_path.replace(['.', '/'], "_");
 
         for (name, symbol) in module_symbols {
-            // Import all symbols directly into current namespace
-            // Skip if already exists in current scope to avoid conflicts
-            if self.symbol_table.get_cloned(name).is_none() {
-                let mut imported_symbol = symbol.clone();
+            let mut imported_symbol = symbol.clone();
 
-                // Set llvm_name for functions (mangled with module path)
-                if matches!(symbol.kind, SymbolKind::Function) {
-                    imported_symbol.llvm_name =
-                        Some(format!("{}!{}", module_name_for_mangling, name));
-                }
-
-                // Try to add, but ignore duplicate errors since we already checked
-                let _ = self.symbol_table.add_imported_symbol(name, imported_symbol);
+            if matches!(symbol.kind, SymbolKind::Function) {
+                imported_symbol.llvm_name = Some(format!("{}!{}", module_name_for_mangling, name));
             }
+
+            self.add_import_symbol_if_absent(name, imported_symbol)?;
         }
         Ok(())
     }
@@ -6098,9 +6123,9 @@ impl SemanticAnalyzer {
         }
 
         self.imported_symbols
-            .insert(namespace.to_string(), namespace_symbols);
-        self.symbol_table
-            .add_symbol(namespace, self.make_module_symbol(namespace, span))?;
+            .entry(namespace.to_string())
+            .or_insert(namespace_symbols);
+        self.add_import_symbol_if_absent(namespace, self.make_module_symbol(namespace, span))?;
         Ok(())
     }
 
@@ -6121,12 +6146,8 @@ impl SemanticAnalyzer {
 
         for (key, item) in crate::semantics::stdlib::all_stdlib_items() {
             if let Some(item_name) = key.find('.').map(|i| &key[i + 1..]) {
-                crate::semantics::stdlib::register_stdlib_item_into(
-                    &mut self.symbol_table,
-                    item_name,
-                    &item,
-                    span,
-                )?;
+                let symbol = crate::semantics::stdlib::stdlib_item_to_symbol(&item, span);
+                self.add_import_symbol_if_absent(item_name, symbol)?;
             }
         }
 
@@ -6367,8 +6388,9 @@ impl SemanticAnalyzer {
                 });
 
                 self.imported_symbols
-                    .insert(namespace.to_string(), module_symbols.clone());
-                self.symbol_table.add_symbol(
+                    .entry(namespace.to_string())
+                    .or_insert(module_symbols.clone());
+                self.add_import_symbol_if_absent(
                     &namespace,
                     Symbol {
                         kind: SymbolKind::Import,
@@ -6388,19 +6410,19 @@ impl SemanticAnalyzer {
             ImportSpec::Item { item, alias } => {
                 let symbol_name = alias.as_ref().unwrap_or(item);
                 if let Some(symbol) = module_symbols.get(item) {
-                    self.symbol_table.add_symbol(symbol_name, symbol.clone())?;
+                    self.add_import_symbol_if_absent(symbol_name, symbol.clone())?;
                 }
             }
             ImportSpec::Wildcard => {
                 for (name, symbol) in module_symbols {
-                    self.symbol_table.add_symbol(&name, symbol)?;
+                    self.add_import_symbol_if_absent(&name, symbol)?;
                 }
             }
             ImportSpec::Items { items } => {
                 for (item, alias) in items {
                     let symbol_name = alias.as_ref().unwrap_or(item);
                     if let Some(symbol) = module_symbols.get(item) {
-                        self.symbol_table.add_symbol(symbol_name, symbol.clone())?;
+                        self.add_import_symbol_if_absent(symbol_name, symbol.clone())?;
                     }
                 }
             }

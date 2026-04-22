@@ -1,0 +1,6 @@
+import std
+import std.assert.*
+
+assert_true(true)
+std.assert.assert_true(true)
+print("PASS: std root + assert wildcard")
