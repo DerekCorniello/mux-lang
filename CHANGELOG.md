@@ -5,7 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.1] - 2026-04-22
+
+### Changed
+- **Compiler maintainability work**: Reduced complexity across compiler modules with a broad cleanup and refactor pass.
+- **Standard library internals**: Refactored and optimized stdlib implementations for better consistency and maintainability.
+- **Developer workflow and project metadata**: Updated AI agent guidance, OpenCode configuration, and supporting repository automation files.
+- **Documentation and website updates**: Improved README content and landing page structure, examples, and installation guidance.
+
+### Fixed
+- **Codegen regressions**: Fixed recent LLVM IR generation regressions and related import handling issues.
+- **Website behavior**: Corrected landing page rendering details, including list key usage and stack example behavior.
+- **Build and CI support scripts**: Fixed tooling and script issues affecting local and CI workflows.
+- **Versioning release prep**: Synced release metadata and version-related files for `0.2.1`.
+
+### Security
+- **Dependency and vulnerability updates**: Applied dependency maintenance and vulnerability fixes, including Dependabot-driven updates.
+- **Static analysis cleanup**: Addressed SonarCloud findings and code quality issues across the codebase.
 
 ## [0.2.0] - 2026-03-24
 

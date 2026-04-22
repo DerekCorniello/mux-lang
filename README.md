@@ -6,7 +6,7 @@
 
 **The Programming Language For Everyone**
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg?style=flat-square)](https://github.com/DerekCorniello/mux-lang/releases)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg?style=flat-square)](https://github.com/DerekCorniello/mux-lang/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/mux-lang.svg?style=flat-square)](https://crates.io/crates/mux-lang)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg?style=flat-square)](https://mux-lang.dev)
@@ -169,7 +169,7 @@ Mux is an open-source project and welcomes contributions! Whether you're adding 
 
 ⚠️ **Alpha Stage**: Mux is actively being developed. Expect breaking changes and incomplete features as we work toward a stable release.
 
-- **Current Version:** 0.2.0
+- **Current Version:** 0.2.1
 
 ## Versioning
 
