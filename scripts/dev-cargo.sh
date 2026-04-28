@@ -19,6 +19,7 @@ llvm_prefix="$($llvm_config --prefix)"
 
 export LLVM_CONFIG_PATH="$llvm_config"
 export LLVM_SYS_170_PREFIX="$llvm_prefix"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/dev-cargo}"
 
 if command -v clang-17 >/dev/null 2>&1; then
   export CC="clang-17"

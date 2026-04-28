@@ -31,3 +31,9 @@ test_scripts/error_cases/*.mux
 test_scripts/error_cases/*
 
 .scannerwork/*
+ci-artifacts/
+.docker-cache/
+.docker-home/
+**/__pycache__/*
+**/__pycache__/
+**/*.pyc

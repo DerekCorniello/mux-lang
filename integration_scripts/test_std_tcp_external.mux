@@ -1,0 +1,47 @@
+import std.assert
+import std.env
+import std.net
+
+func require_env(string key) returns string {
+    match env.get(key) {
+        some(value) { return value }
+        none {
+            assert.assert(false, "missing environment variable: " + key)
+            return ""
+        }
+    }
+}
+
+func main() returns void {
+    auto addr = require_env("MUX_TEST_TCP_ADDR")
+    const list<int> payload = [109, 117, 120]
+    const list<int> expected = [65, 67, 75, 58, 109, 117, 120]
+    print("Starting external tcp integration test")
+
+    match net.TcpStream.connect(addr) {
+        ok(stream) {
+            match stream.write(payload) {
+                ok(count) { assert.assert(count == 3, "expected to write 3 bytes") }
+                err(e) { assert.assert(false, "tcp write failed: " + e) }
+            }
+
+            match stream.read(16) {
+                ok(bytes) {
+                    assert.assert(bytes.size() == expected.size(), "unexpected tcp response length")
+                    auto idx = 0
+                    while idx < expected.size() {
+                        assert.assert(bytes[idx] == expected[idx], "unexpected tcp byte at index " + idx.to_string())
+                        idx = idx + 1
+                    }
+                    print("tcp ack received")
+                }
+                err(e) { assert.assert(false, "tcp read failed: " + e) }
+            }
+
+            stream.close()
+        }
+        err(e) { assert.assert(false, "tcp connect failed: " + e) }
+    }
+
+    print("external tcp integration test passed")
+}

@@ -31,7 +31,7 @@ Thanks for your interest! This guide explains how to contribute to Mux.
 6. Run tests to make sure everything is working:
 
    ```bash
-   ./scripts/dev-cargo.sh test
+   ./scripts/run-checks.sh
    ```
 
 7. Running Mux programs during development:
@@ -40,15 +40,39 @@ Thanks for your interest! This guide explains how to contribute to Mux.
    ./scripts/dev-cargo.sh run test_scripts/your_file.mux
    ```
 
-8. Always run `cargo fmt` and `cargo clippy` before committing changes.
-9. For releases, update `VERSION` first, then update the matching section in `CHANGELOG.md`, then run `./scripts/sync-version.sh`.
-10. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
-11. Make your changes.
-12. Run tests again to ensure nothing is broken.
-13. Commit your changes with clear messages.
-14. Push your branch to your fork.
-15. Open a Pull Request against the `main` branch of the original repository.
-16. AI agents should follow the guidelines in [AGENTS.md](AGENTS.md).
+8. Run the Docker-backed integration suite when touching networking or external SQL providers:
+
+   ```bash
+   ./scripts/integration-checks.sh
+   ```
+
+9. Capture a profiling baseline when investigating slow checks or compile/runtime regressions:
+
+   ```bash
+   ./scripts/measure-baseline.sh
+   ```
+
+10. Profile the compiler when you want to investigate slow parsing, generics, semantics, or codegen:
+
+   ```bash
+   ./scripts/profile-compiler.sh test_scripts/nested_generics.mux
+   ```
+
+11. Profile runtime behavior when you want to investigate hot string, JSON, network, or SQL paths:
+
+   ```bash
+   ./scripts/profile-runtime.sh test_scripts/test_std_http_server.mux
+   ```
+
+12. Always run `cargo fmt` and `cargo clippy` before committing changes.
+13. For releases, update `VERSION` first, then update the matching section in `CHANGELOG.md`, then run `./scripts/sync-version.sh`.
+14. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
+15. Make your changes.
+16. Run tests again to ensure nothing is broken.
+17. Commit your changes with clear messages.
+18. Push your branch to your fork.
+19. Open a Pull Request against the `main` branch of the original repository.
+20. AI agents should follow the guidelines in [AGENTS.md](AGENTS.md).
 
 ---
 
@@ -81,6 +105,12 @@ We generally don't accept contributions that:
 ## Tooling
 
 - Standard Rust tooling: `cargo fmt`, `cargo clippy`, and `cargo test`.
+- Canonical local verification: `./scripts/run-checks.sh`
+- Docker-backed integration verification: `./scripts/integration-checks.sh`
+- Profiling baseline capture: `./scripts/measure-baseline.sh`
+- Compiler profiling: `./scripts/profile-compiler.sh`
+- Runtime profiling: `./scripts/profile-runtime.sh`
+- Fuzzing targets live under `mux-compiler/fuzz/` and are intended for local `cargo fuzz` runs.
 
 ---
 

@@ -921,12 +921,22 @@ dependencies = [
  "inkwell",
  "insta",
  "lazy_static",
+ "mux-profiling",
  "mux-runtime",
  "ordered-float",
  "phf 0.11.3",
  "regex",
  "set-git-hooks-dir",
  "unicode-width",
+]
+
+[[package]]
+name = "mux-profiling"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -939,6 +949,7 @@ dependencies = [
  "httparse",
  "lazy_static",
  "libc",
+ "mux-profiling",
  "mysql",
  "ordered-float",
  "paste",

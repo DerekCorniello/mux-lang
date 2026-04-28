@@ -14,6 +14,7 @@ mod source;
 use clap::{Parser as ClapParser, Subcommand};
 use diagnostic::{ColorConfig, DiagnosticEmitter, FileId, Files, StandardEmitter, ToDiagnostic};
 use module_resolver::ModuleResolver;
+use mux_profiling::compiler_scope;
 use source::Source;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashSet};
@@ -792,6 +793,7 @@ fn run_executable_or_exit(exe_file: &Path) {
 }
 
 fn main() {
+    let _profile = compiler_scope("compiler: total");
     let (file_path, do_run, output, intermediate) = parse_args_or_exit();
 
     ensure_mux_extension_or_exit(&file_path);
@@ -799,8 +801,14 @@ fn main() {
     let mut files = Files::new();
     let source_str = load_source_or_exit(&file_path);
     let file_id = files.add(&file_path, source_str.clone());
-    let tokens = lex_source_or_exit(file_id, &files, source_str);
-    let nodes = parse_tokens_or_exit(file_id, &files, &tokens);
+    let tokens = {
+        let _profile = compiler_scope("compiler: lexing");
+        lex_source_or_exit(file_id, &files, source_str)
+    };
+    let nodes = {
+        let _profile = compiler_scope("compiler: parsing");
+        parse_tokens_or_exit(file_id, &files, &tokens)
+    };
 
     let base_path = file_path
         .parent()
@@ -809,8 +817,14 @@ fn main() {
     let resolver = Rc::new(RefCell::new(ModuleResolver::new(base_path)));
 
     let mut analyzer = semantics::SemanticAnalyzer::new_with_resolver(resolver);
-    analyze_semantics_or_exit(&mut analyzer, &nodes, file_id, &mut files);
-    let runtime_features = resolve_runtime_features(&analyzer.required_runtime_features());
+    {
+        let _profile = compiler_scope("compiler: semantics");
+        analyze_semantics_or_exit(&mut analyzer, &nodes, file_id, &mut files);
+    }
+    let runtime_features = {
+        let _profile = compiler_scope("compiler: runtime feature resolution");
+        resolve_runtime_features(&analyzer.required_runtime_features())
+    };
 
     let context = inkwell::context::Context::create();
     let mut codegen = codegen::CodeGenerator::new(&context, &mut analyzer);
@@ -819,7 +833,10 @@ fn main() {
         "{}.ll",
         file_path.to_string_lossy().trim_end_matches(".mux")
     );
-    generate_ir_or_exit(&mut codegen, &nodes, &ir_file);
+    {
+        let _profile = compiler_scope("compiler: codegen");
+        generate_ir_or_exit(&mut codegen, &nodes, &ir_file);
+    }
 
     // build executable
     // Use ./ prefix to ensure we run the local executable, not a system command
@@ -841,33 +858,40 @@ fn main() {
     };
 
     let profile = runtime_profile();
-    let lib_dir = resolve_runtime_lib_dir_or_exit(profile, &runtime_features);
+    let lib_dir = {
+        let _profile = compiler_scope("compiler: runtime library resolution");
+        resolve_runtime_lib_dir_or_exit(profile, &runtime_features)
+    };
 
     let lib_path_str = lib_dir
         .to_str()
         .expect("library path should be valid Unicode");
 
     let clang_cmd = find_clang_or_exit();
-    let clang_output = Command::new(&clang_cmd)
-        .args([
-            &ir_file,
-            "-L",
-            lib_path_str,
-            "-Wl,-rpath,",
-            lib_path_str,
-            "-lmux_runtime",
-            "-o",
-            exe_file
-                .to_str()
-                .expect("executable path should be valid Unicode"),
-        ])
-        .output();
+    let clang_output = {
+        let _profile = compiler_scope("compiler: link");
+        Command::new(&clang_cmd)
+            .args([
+                &ir_file,
+                "-L",
+                lib_path_str,
+                "-Wl,-rpath,",
+                lib_path_str,
+                "-lmux_runtime",
+                "-o",
+                exe_file
+                    .to_str()
+                    .expect("executable path should be valid Unicode"),
+            ])
+            .output()
+    };
 
     report_clang_output_or_exit(clang_output, do_run, &file_path, &ir_file);
 
     remove_ir_if_requested(intermediate, &ir_file);
 
     if do_run {
+        let _profile = compiler_scope("compiler: run");
         run_executable_or_exit(&exe_file);
     }
 }

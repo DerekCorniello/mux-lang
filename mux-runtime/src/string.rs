@@ -6,6 +6,7 @@ use ordered_float;
 
 use crate::refcount::mux_rc_alloc;
 use crate::Value;
+use mux_profiling::runtime_scope;
 
 #[derive(Clone, Debug)]
 pub struct MuxString(pub String);
@@ -47,6 +48,7 @@ impl fmt::Display for MuxString {
 /// Returns a new C string that caller must free with `mux_free_string`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
+    let _profile = runtime_scope("runtime: string from value");
     if let Value::String(s) = unsafe { &*v } {
         // Safe: s is a valid UTF-8 String from the Mux runtime
         CString::new(s.clone())
@@ -66,12 +68,14 @@ pub unsafe extern "C" fn mux_string_from_value(v: *mut Value) -> *mut c_char {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_value_get_string(v: *mut Value) -> *mut c_char {
+    let _profile = runtime_scope("runtime: string get value");
     unsafe { mux_string_from_value(v) }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_to_int(s: *const c_char) -> *mut Value {
+    let _profile = runtime_scope("runtime: string to int");
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     match MuxString(rust_str.to_string()).to_int() {
@@ -83,6 +87,7 @@ pub extern "C" fn mux_string_to_int(s: *const c_char) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_to_float(s: *const c_char) -> *mut Value {
+    let _profile = runtime_scope("runtime: string to float");
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     match MuxString(rust_str.to_string()).to_float() {
@@ -96,6 +101,7 @@ pub extern "C" fn mux_string_to_float(s: *const c_char) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_concat(a: *const c_char, b: *const c_char) -> *mut c_char {
+    let _profile = runtime_scope("runtime: string concat ffi");
     let a_str = unsafe { CStr::from_ptr(a).to_string_lossy() };
     let b_str = unsafe { CStr::from_ptr(b).to_string_lossy() };
     let result = MuxString(a_str.to_string()).concat(&MuxString(b_str.to_string()));
@@ -108,6 +114,7 @@ pub extern "C" fn mux_string_concat(a: *const c_char, b: *const c_char) -> *mut 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_length(s: *const c_char) -> i64 {
+    let _profile = runtime_scope("runtime: string length ffi");
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     MuxString(rust_str.to_string()).length()
@@ -116,6 +123,7 @@ pub extern "C" fn mux_string_length(s: *const c_char) -> i64 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_hash(s: *const c_char) -> i64 {
+    let _profile = runtime_scope("runtime: string hash ffi");
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     MuxString(rust_str.to_string()).hash()
@@ -124,6 +132,7 @@ pub extern "C" fn mux_string_hash(s: *const c_char) -> i64 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_contains(haystack: *const Value, needle: *const Value) -> bool {
+    let _profile = runtime_scope("runtime: string contains");
     unsafe {
         if let (Value::String(haystack_str), Value::String(needle_str)) = (&*haystack, &*needle) {
             haystack_str.contains(needle_str)
@@ -136,6 +145,7 @@ pub extern "C" fn mux_string_contains(haystack: *const Value, needle: *const Val
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_contains_char(haystack: *const Value, needle: i64) -> bool {
+    let _profile = runtime_scope("runtime: string contains char");
     let haystack_str = unsafe {
         match &*haystack {
             Value::String(s) => s,
@@ -151,6 +161,7 @@ pub extern "C" fn mux_string_contains_char(haystack: *const Value, needle: i64) 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_to_string(s: *const c_char) -> *mut c_char {
+    let _profile = runtime_scope("runtime: string to string ffi");
     let c_str = unsafe { CStr::from_ptr(s) };
     let rust_str = c_str.to_string_lossy();
     // Safe: rust_str is lossily converted but valid UTF-8
@@ -162,6 +173,7 @@ pub extern "C" fn mux_string_to_string(s: *const c_char) -> *mut c_char {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_new_string_from_cstr(s: *const c_char) -> *mut Value {
+    let _profile = runtime_scope("runtime: string new from cstr");
     if s.is_null() {
         return std::ptr::null_mut();
     }
@@ -176,6 +188,7 @@ pub extern "C" fn mux_new_string_from_cstr(s: *const c_char) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_equal(a: *const c_char, b: *const c_char) -> i32 {
+    let _profile = runtime_scope("runtime: string equal ffi");
     if a.is_null() || b.is_null() {
         return if a == b { 1 } else { 0 };
     }
@@ -195,6 +208,7 @@ pub extern "C" fn mux_string_equal(a: *const c_char, b: *const c_char) -> i32 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_string_not_equal(a: *const c_char, b: *const c_char) -> i32 {
+    let _profile = runtime_scope("runtime: string not equal ffi");
     if mux_string_equal(a, b) == 1 {
         0
     } else {
@@ -207,6 +221,7 @@ pub extern "C" fn mux_string_not_equal(a: *const c_char, b: *const c_char) -> i3
 /// Returns Result<int, str>
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_char_to_int(c: i64) -> *mut Value {
+    let _profile = runtime_scope("runtime: char to int");
     if let Some(ch) = char::from_u32(c as u32) {
         if ch.is_ascii_digit() {
             let digit = (ch as u8 - b'0') as i64;
@@ -226,6 +241,7 @@ pub extern "C" fn mux_char_to_int(c: i64) -> *mut Value {
 /// Convert a character (i64) to a string
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_char_to_string(c: i64) -> *mut c_char {
+    let _profile = runtime_scope("runtime: char to string");
     if let Some(ch) = char::from_u32(c as u32) {
         let s = ch.to_string();
         // Safe: char::to_string() returns valid UTF-8

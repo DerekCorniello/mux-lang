@@ -2384,11 +2384,18 @@ mux-lang/
 │   │   ├── lib.rs
 │   │   └── main.rs
 │   └── tests/
+│       ├── executable_integration.rs
 │       ├── lexer_integration.rs
 │       ├── parser_integration.rs
 │       ├── semantics_integration.rs
-│       ├── executable_integration.rs
+│       ├── service_integration.rs
 │       └── snapshots/
+│
+├── docker/
+│   └── integration/
+├── docker-compose.integration.yml
+├── integration_scripts/
+│   └── *.mux
 │
 ├── mux-runtime/
 │   ├── src/
@@ -2414,6 +2421,16 @@ mux-lang/
 │   ├── error_cases/
 │   │   ├── *.mux
 │   └── *.mux
+│
+├── scripts/
+│   ├── integration-checks.sh
+│   ├── integration-down.sh
+│   ├── integration-up.sh
+│   ├── measure-baseline.sh
+│   ├── run-checks.sh
+│   └── wait-for-integration.sh
+│
+├── PLAN.md
 │
 ├── Cargo.toml
 ├── Cargo.lock

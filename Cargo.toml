@@ -1,5 +1,5 @@
 [workspace]
-members = ["mux-compiler", "mux-runtime"]
+members = ["mux-compiler", "mux-runtime", "mux-profiling"]
 resolver = "2"
 
 [patch.crates-io]

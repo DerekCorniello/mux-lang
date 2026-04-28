@@ -3,6 +3,7 @@ use crate::object::{alloc_object, get_object_ptr, register_object_type};
 use crate::refcount::{mux_rc_alloc, mux_rc_dec};
 use crate::{Tuple, TypeId, Value};
 use lazy_static::lazy_static;
+use mux_profiling::runtime_scope;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::io::{Read, Write};
@@ -565,6 +566,7 @@ fn build_http_request_json(
     headers: BTreeMap<String, String>,
     body_json: Json,
 ) -> Json {
+    let _profile = runtime_scope("runtime: net build request json");
     let (path, query) = if let Some((p, q)) = raw_target.split_once('?') {
         (p.to_string(), q.to_string())
     } else {
@@ -589,6 +591,7 @@ fn build_http_request_json(
 }
 
 fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
+    let _profile = runtime_scope("runtime: net read request");
     let (buffer, header_end) = read_http_request_headers(stream)?;
     let (method, raw_target, version, headers) = parse_http_request_headers(&buffer[..header_end])?;
     let initial_body = &buffer[header_end..];
@@ -610,6 +613,7 @@ fn read_http_request(stream: &mut StdTcpStream) -> Result<Json, String> {
 }
 
 fn write_http_response(stream: &mut StdTcpStream, response: &Json) -> Result<(), String> {
+    let _profile = runtime_scope("runtime: net write response");
     let Json::Object(response_map) = response else {
         return Err("response must be a JSON object".to_string());
     };
@@ -690,6 +694,7 @@ fn write_http_response(stream: &mut StdTcpStream, response: &Json) -> Result<(),
 }
 
 fn execute_http_request(request: *const Value) -> Result<Value, String> {
+    let _profile = runtime_scope("runtime: net http request");
     let request_map = value_to_json_map(request, "request")?;
     let method = json_get_string(&request_map, "method", true)?
         .ok_or_else(|| "missing required field 'method'".to_string())?;
@@ -735,6 +740,7 @@ fn execute_http_request(request: *const Value) -> Result<Value, String> {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_http_request(request: *const Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: net ffi http request");
     match execute_http_request(request) {
         Ok(value) => net_result_ok(value),
         Err(err) => net_result_err(err),
@@ -744,6 +750,7 @@ pub extern "C" fn mux_net_http_request(request: *const Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_listener_bind(addr: *mut Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: net tcp bind");
     match value_to_string(addr).and_then(|address| {
         StdTcpListener::bind(address).map_err(|e| format!("tcp listener bind failed: {}", e))
     }) {
@@ -758,6 +765,7 @@ pub extern "C" fn mux_net_tcp_listener_bind(addr: *mut Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_listener_accept(listener: *mut Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: net tcp accept");
     let handle = match tcp_listener_handle(listener) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -782,6 +790,7 @@ pub extern "C" fn mux_net_tcp_listener_set_nonblocking(
     listener: *mut Value,
     enabled: i32,
 ) -> *mut Value {
+    let _profile = runtime_scope("runtime: net tcp set nonblocking");
     let handle = match tcp_listener_handle(listener) {
         Ok(handle) => handle,
         Err(err) => return net_result_err(err),
@@ -796,6 +805,7 @@ pub extern "C" fn mux_net_tcp_listener_set_nonblocking(
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_listener_local_addr(listener: *mut Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: net tcp local addr");
     let result = tcp_listener_handle(listener).and_then(|handle| {
         with_tcp_listener(handle, |socket| {
             socket
@@ -810,6 +820,7 @@ pub extern "C" fn mux_net_tcp_listener_local_addr(listener: *mut Value) -> *mut 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_net_tcp_listener_close(listener: *mut Value) {
+    let _profile = runtime_scope("runtime: net tcp close");
     if let Ok(handle) = tcp_listener_handle(listener) {
         remove_tcp_listener(handle);
         write_handle(listener, 0);

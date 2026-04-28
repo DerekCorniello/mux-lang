@@ -13,6 +13,7 @@ use crate::ast::{
 };
 use crate::lexer::Span;
 use crate::semantics::{Type, infer_missing_type_params_from_bounds};
+use mux_profiling::compiler_scope;
 
 use super::ClassTypeParamBounds;
 use super::CodeGenerator;
@@ -167,6 +168,7 @@ impl<'a> CodeGenerator<'a> {
         class_name: &str,
         type_args: &[Type],
     ) -> Result<(), String> {
+        let _profile = compiler_scope("compiler: codegen specialized methods");
         // save the current builder position so we can restore it after generating specialized methods
         let saved_insert_block = self.builder.get_insert_block();
 
@@ -307,6 +309,7 @@ impl<'a> CodeGenerator<'a> {
         func_name: &str,
         args: &[ExpressionNode],
     ) -> Result<inkwell::values::BasicValueEnum<'a>, String> {
+        let _profile = compiler_scope("compiler: codegen generic function call");
         // get the generic function AST node
         let func_node = self
             .function_nodes
@@ -346,6 +349,7 @@ impl<'a> CodeGenerator<'a> {
         concrete_types: &[Type],
         instance_name: &str,
     ) -> Result<(), String> {
+        let _profile = compiler_scope("compiler: codegen instantiate generic function");
         let func_node = self
             .function_nodes
             .get(func_name)

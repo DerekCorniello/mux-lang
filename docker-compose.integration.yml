@@ -1,0 +1,121 @@
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: mux_test
+      POSTGRES_USER: mux
+      POSTGRES_PASSWORD: mux
+      PGDATA: /var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mux -d mux_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "127.0.0.1:15432:5432"
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  http-echo:
+    image: python:3.12.4-alpine
+    cap_drop: ["ALL"]
+    working_dir: /app
+    command: ["python3", "/app/docker/integration/http_echo.py"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    user: "65534:65534"
+    volumes:
+      - .:/app:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  tcp-echo:
+    image: python:3.12.4-alpine
+    cap_drop: ["ALL"]
+    working_dir: /app
+    command: ["python3", "/app/docker/integration/tcp_echo.py"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    user: "65534:65534"
+    volumes:
+      - .:/app:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1', 10000), timeout=2); s.close()\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "127.0.0.1:19000:10000"
+
+  udp-echo:
+    image: python:3.12.4-alpine
+    cap_drop: ["ALL"]
+    working_dir: /app
+    command: ["python3", "/app/docker/integration/udp_echo.py"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    user: "65534:65534"
+    volumes:
+      - .:/app:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(2); s.sendto(b'ping', ('127.0.0.1', 11000)); data, _ = s.recvfrom(32); s.close(); raise SystemExit(0 if data == b'UDP:ping' else 1)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "127.0.0.1:19100:11000/udp"
+
+  dev:
+    build:
+      context: .
+      dockerfile: docker/integration/Dockerfile
+    working_dir: /workspace
+    command: ["sleep", "infinity"]
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      http-echo:
+        condition: service_healthy
+      tcp-echo:
+        condition: service_healthy
+      udp-echo:
+        condition: service_healthy
+    environment:
+      CARGO_HOME: /cargo
+      CARGO_TARGET_DIR: /workspace/.docker-target
+      HOME: /workspace/.docker-home
+      MUX_RUNTIME_SRC: /workspace/mux-runtime
+      MUX_RUN_SERVICE_TESTS: "1"
+      MUX_TEST_HTTP_URL: http://http-echo:8080
+      MUX_TEST_POSTGRES_URL: postgres://mux:mux@postgres:5432/mux_test
+      MUX_TEST_TCP_ADDR: tcp-echo:10000
+      MUX_TEST_UDP_ADDR: udp-echo:11000
+      XDG_CACHE_HOME: /workspace/.docker-home/.cache
+    volumes:
+      - ./.docker-cache/cargo/registry:/cargo/registry
+      - ./.docker-cache/cargo/git:/cargo/git
+      - ./.docker-cache/target:/workspace/.docker-target
+      - .:/workspace
+
+volumes:
+  postgres-data:
