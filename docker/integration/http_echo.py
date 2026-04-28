@@ -41,7 +41,7 @@ class Handler(BaseHTTPRequestHandler):
                 "method": "GET",
                 "path": parsed.path,
                 "query": parsed.query,
-                "query_params": {k: v for k, v in parse_qs(parsed.query).items()},
+                "query_params": dict(parse_qs(parsed.query)),
                 "body": None,
             },
         )
@@ -54,7 +54,7 @@ class Handler(BaseHTTPRequestHandler):
                 "method": "POST",
                 "path": parsed.path,
                 "query": parsed.query,
-                "query_params": {k: v for k, v in parse_qs(parsed.query).items()},
+                "query_params": dict(parse_qs(parsed.query)),
                 "body": self._body_json(),
             },
         )

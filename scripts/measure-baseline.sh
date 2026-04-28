@@ -11,6 +11,8 @@ resolve_path() {
   else
     printf '%s/%s\n' "$repo_root" "$path"
   fi
+
+  return 0
 }
 
 report_path="$(resolve_path "${1:-target/perf-baseline.json}")"
@@ -39,6 +41,8 @@ measure() {
 
   names+=("$name")
   durations+=("$duration")
+
+  return 0
 }
 
 measure "cargo build" "${cargo_cmd[@]}" build -p mux-lang

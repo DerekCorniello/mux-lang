@@ -11,6 +11,8 @@ resolve_path() {
   else
     printf '%s/%s\n' "$repo_root" "$path"
   fi
+
+  return 0
 }
 
 with_service_tests=0
@@ -56,6 +58,8 @@ run_step() {
 
   step_names+=("$name")
   step_durations+=("$duration")
+
+  return 0
 }
 
 run_step "cargo build" "${cargo_cmd[@]}" build -p mux-lang

@@ -9,6 +9,7 @@ export LOCAL_GID="${LOCAL_GID:-$(id -g)}"
 
 cleanup() {
   "$repo_root/scripts/integration-down.sh"
+  return 0
 }
 trap cleanup EXIT
 
