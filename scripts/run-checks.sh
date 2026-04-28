@@ -58,18 +58,18 @@ run_step() {
   step_durations+=("$duration")
 }
 
-run_step "cargo build" "${cargo_cmd[@]}" --manifest-path "$repo_root/mux-compiler/Cargo.toml" build
+run_step "cargo build" "${cargo_cmd[@]}" build -p mux-lang
 run_step "cargo clippy --all-targets --all-features -- -D warnings" \
-  "${cargo_cmd[@]}" --manifest-path "$repo_root/mux-compiler/Cargo.toml" clippy --all-targets --all-features -- -D warnings
+  "${cargo_cmd[@]}" clippy -p mux-lang --all-targets --all-features -- -D warnings
 if [[ "$with_service_tests" == "1" ]]; then
-  run_step "cargo test" env MUX_RUN_SERVICE_TESTS=0 "${cargo_cmd[@]}" --manifest-path "$repo_root/mux-compiler/Cargo.toml" test
+  run_step "cargo test" env MUX_RUN_SERVICE_TESTS=0 "${cargo_cmd[@]}" test -p mux-lang
 else
-  run_step "cargo test" "${cargo_cmd[@]}" --manifest-path "$repo_root/mux-compiler/Cargo.toml" test
+  run_step "cargo test" "${cargo_cmd[@]}" test -p mux-lang
 fi
 
 if [[ "$with_service_tests" == "1" ]]; then
   run_step "cargo test --test service_integration" \
-    "${cargo_cmd[@]}" --manifest-path "$repo_root/mux-compiler/Cargo.toml" test --test service_integration -- --nocapture
+    "${cargo_cmd[@]}" test -p mux-lang --test service_integration -- --nocapture
 fi
 
 if [[ -n "$report_path" ]]; then

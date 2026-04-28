@@ -725,25 +725,12 @@ fn find_clang_or_exit() -> String {
 
 fn report_clang_output_or_exit(
     clang_output: std::io::Result<std::process::Output>,
-    do_run: bool,
-    file_path: &Path,
+    _do_run: bool,
+    _file_path: &Path,
     ir_file: &str,
 ) {
     match clang_output {
-        Ok(output) if output.status.success() => {
-            if !do_run {
-                let emitter = StandardEmitter::new(ColorConfig::Auto);
-                let file_name = file_path
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown");
-                eprintln!(
-                    "\n   {} `{}`\n",
-                    emitter.styles.success("Finished building"),
-                    file_name
-                );
-            }
-        }
+        Ok(output) if output.status.success() => {}
         Ok(output) => {
             eprintln!("clang failed: {}", String::from_utf8_lossy(&output.stderr));
         }

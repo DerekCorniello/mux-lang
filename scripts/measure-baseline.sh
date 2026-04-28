@@ -41,13 +41,13 @@ measure() {
   durations+=("$duration")
 }
 
-measure "cargo build" "${cargo_cmd[@]}" --manifest-path "$repo_root/mux-compiler/Cargo.toml" build
+measure "cargo build" "${cargo_cmd[@]}" build -p mux-lang
 measure "cargo test --test executable_integration -- --nocapture" \
-  "${cargo_cmd[@]}" --manifest-path "$repo_root/mux-compiler/Cargo.toml" test --test executable_integration -- --nocapture
+  "${cargo_cmd[@]}" test -p mux-lang --test executable_integration -- --nocapture
 measure "cargo run -- run test_scripts/test_std_http_server.mux" \
-  "${cargo_cmd[@]}" --manifest-path "$repo_root/mux-compiler/Cargo.toml" run -- run test_scripts/test_std_http_server.mux
+  "${cargo_cmd[@]}" run -p mux-lang -- run test_scripts/test_std_http_server.mux
 measure "cargo run -- run test_scripts/test_std_sql_sqlite.mux" \
-  "${cargo_cmd[@]}" --manifest-path "$repo_root/mux-compiler/Cargo.toml" run -- run test_scripts/test_std_sql_sqlite.mux
+  "${cargo_cmd[@]}" run -p mux-lang -- run test_scripts/test_std_sql_sqlite.mux
 
 {
   printf '{\n'
