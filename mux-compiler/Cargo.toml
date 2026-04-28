@@ -2,6 +2,7 @@
 name = "mux-lang"
 version = "0.2.1"
 edition = "2024"
+default-run = "mux"
 description = "The Mux Programming Language Compiler"
 authors = ["Derek Corniello"]
 repository = "https://github.com/DerekCorniello/mux-lang"

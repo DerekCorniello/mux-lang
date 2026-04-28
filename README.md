@@ -163,6 +163,17 @@ Mux is an open-source project and welcomes contributions! Whether you're adding 
 - Check [GitHub Issues](https://github.com/DerekCorniello/mux-lang/issues) for tasks
 - Join [GitHub Discussions](https://github.com/DerekCorniello/mux-lang/discussions) for questions and ideas
 
+### Profiling
+
+Use the helper scripts for the new profiling workflow:
+
+```bash
+./scripts/profile-compiler.sh test_scripts/nested_generics.mux
+./scripts/profile-runtime.sh test_scripts/test_std_http_server.mux
+```
+
+Both scripts open the profile viewer automatically and store outputs under `target/profile/` by default.
+
 ---
 
 ## Project Status

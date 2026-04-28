@@ -36,9 +36,11 @@ Thanks for your interest! This guide explains how to contribute to Mux.
 
 7. Running Mux programs during development:
 
-   ```bash
-   ./scripts/dev-cargo.sh run test_scripts/your_file.mux
-   ```
+    ```bash
+    cargo run -- run test_scripts/your_file.mux
+    ```
+
+    The workspace defaults to the compiler crate, so this also works from the repo root.
 
 8. Run the Docker-backed integration suite when touching networking or external SQL providers:
 
@@ -54,15 +56,19 @@ Thanks for your interest! This guide explains how to contribute to Mux.
 
 10. Profile the compiler when you want to investigate slow parsing, generics, semantics, or codegen:
 
-   ```bash
-   ./scripts/profile-compiler.sh test_scripts/nested_generics.mux
-   ```
+    ```bash
+    ./scripts/profile-compiler.sh test_scripts/nested_generics.mux
+    ```
+
+    This writes profiles under `target/profile/compiler/<script-name>` by default.
 
 11. Profile runtime behavior when you want to investigate hot string, JSON, network, or SQL paths:
 
-   ```bash
-   ./scripts/profile-runtime.sh test_scripts/test_std_http_server.mux
-   ```
+    ```bash
+    ./scripts/profile-runtime.sh test_scripts/test_std_http_server.mux
+    ```
+
+    This writes profiles under `target/profile/runtime/<script-name>` by default.
 
 12. Always run `cargo fmt` and `cargo clippy` before committing changes.
 13. For releases, update `VERSION` first, then update the matching section in `CHANGELOG.md`, then run `./scripts/sync-version.sh`.

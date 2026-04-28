@@ -94,17 +94,17 @@ impl Recorder {
 
         let summary = SummaryReport {
             generated_by: "mux-profiling",
-            total_duration_ms: self.start.elapsed().as_secs_f64().mul_add(1000.0, 0.0),
+            total_duration_ms: self.start.elapsed().as_secs_f64() * 1000.0,
             span_count: spans.len(),
             totals: totals_vec,
-            spans: spans.clone(),
+            spans,
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&summary) {
             let _ = fs::write(&summary_path, json);
         }
 
-        if let Ok(json) = serde_json::to_string_pretty(&build_speedscope_report(&spans)) {
+        if let Ok(json) = serde_json::to_string_pretty(&build_speedscope_report(&summary.spans)) {
             let _ = fs::write(&speedscope_path, json);
         }
     }
