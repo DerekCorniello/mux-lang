@@ -10,7 +10,8 @@ output_prefix="${2:-$repo_root/target/profile/compiler/nested_generics}"
 mkdir -p "$(dirname "$output_prefix")"
 
 MUX_COMPILER_PROFILE_OUTPUT="$output_prefix" \
-  "$repo_root/scripts/dev-cargo.sh" run -- "$input_file"
+  "$repo_root/scripts/dev-cargo.sh" run --bin mux -- run "$input_file"
 
 echo "Wrote compiler profile to ${output_prefix}.summary.json"
 echo "Wrote Speedscope trace to ${output_prefix}.speedscope.json"
+"$repo_root/scripts/open-profile-viewer.sh" "${output_prefix}.summary.json" "${output_prefix}.speedscope.json"
