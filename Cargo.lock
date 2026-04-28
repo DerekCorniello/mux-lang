@@ -2272,19 +2272,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "mux-profile-viewer"
+name = "mux-profiling"
 version = "0.1.0"
 dependencies = [
  "eframe",
  "egui",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "mux-profiling"
-version = "0.1.0"
-dependencies = [
  "libc",
  "serde",
  "serde_json",

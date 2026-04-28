@@ -25,7 +25,7 @@ services:
     image: python:3.12.4-alpine
     cap_drop: ["ALL"]
     working_dir: /app
-    command: ["python3", "/app/docker/integration/http_echo.py"]
+    command: ["python3", "/app/infra/docker/integration/http_echo.py"]
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -46,7 +46,7 @@ services:
     image: python:3.12.4-alpine
     cap_drop: ["ALL"]
     working_dir: /app
-    command: ["python3", "/app/docker/integration/tcp_echo.py"]
+    command: ["python3", "/app/infra/docker/integration/tcp_echo.py"]
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -67,7 +67,7 @@ services:
     image: python:3.12.4-alpine
     cap_drop: ["ALL"]
     working_dir: /app
-    command: ["python3", "/app/docker/integration/udp_echo.py"]
+    command: ["python3", "/app/infra/docker/integration/udp_echo.py"]
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -87,7 +87,7 @@ services:
   dev:
     build:
       context: .
-      dockerfile: docker/integration/Dockerfile
+      dockerfile: infra/docker/integration/Dockerfile
     working_dir: /workspace
     command: ["sleep", "infinity"]
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
