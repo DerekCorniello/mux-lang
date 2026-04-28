@@ -1,0 +1,34 @@
+==================
+Keyword: auto
+==================
+auto x = 42
+---
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (integer))
+
+==================
+Keyword: func
+==================
+func main() returns void {}
+---
+(source_file
+  (keyword)
+  (identifier)
+  (delimiter)
+  (delimiter)
+  (keyword)
+  (identifier)
+  (delimiter)
+  (delimiter))
+
+==================
+Boolean literals
+==================
+true false
+---
+(source_file
+  (boolean)
+  (boolean))

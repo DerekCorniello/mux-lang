@@ -1,0 +1,23 @@
+// Mux sample for Linguist highlighting
+func main() returns void {
+    auto x = 42
+    auto y = 3.14
+    auto name = "Mux"
+    auto is_active = true
+
+    if x > 40 {
+        print("Hello, " + name)
+    }
+
+    match some_value {
+        ok(val) {
+            print(val)
+        }
+        err(e) {
+            print("Error: " + e)
+        }
+        none {
+            print("No value")
+        }
+    }
+}

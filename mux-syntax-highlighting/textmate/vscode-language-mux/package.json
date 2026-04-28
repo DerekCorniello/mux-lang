@@ -1,0 +1,35 @@
+{
+  "name": "language-mux",
+  "displayName": "Mux Language Support",
+  "description": "Syntax highlighting and language support for the Mux programming language",
+  "version": "0.2.1",
+  "publisher": "mux-lang",
+  "license": "MIT",
+  "icon": "./mux-icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DerekCorniello/mux-lang.git",
+    "directory": "mux-syntax-highlighting/textmate/vscode-language-mux"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "mux",
+        "aliases": ["Mux", "mux"],
+        "extensions": [".mux"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mux",
+        "scopeName": "source.mux",
+        "path": "./source.mux.tmLanguage"
+      }
+    ]
+  }
+}
