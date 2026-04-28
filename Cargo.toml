@@ -1,5 +1,5 @@
 [workspace]
-members = ["mux-compiler", "mux-runtime", "mux-profiling", "mux-profile-viewer"]
+members = ["mux-compiler", "mux-runtime", "mux-profiling"]
 default-members = ["mux-compiler"]
 resolver = "2"
 

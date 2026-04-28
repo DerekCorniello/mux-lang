@@ -2402,11 +2402,12 @@ mux-lang/
 │       ├── service_integration.rs
 │       └── snapshots/
 │
-├── docker/
-│   └── integration/
-├── docker-compose.integration.yml
-├── integration_scripts/
-│   └── *.mux
+├── infra/
+│   ├── ci/
+│   │   └── baselines/
+│   ├── docker/
+│   │   └── integration/
+│   └── docker-compose.integration.yml
 │
 ├── mux-runtime/
 │   ├── src/
@@ -2434,6 +2435,8 @@ mux-lang/
 │   └── *.mux
 │
 ├── scripts/
+│   ├── integration_scripts/
+│   │   └── *.mux
 │   ├── integration-checks.sh
 │   ├── integration-down.sh
 │   ├── integration-up.sh

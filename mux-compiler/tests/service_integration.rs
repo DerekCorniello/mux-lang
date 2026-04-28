@@ -127,7 +127,10 @@ fn run_service_script(script_name: &str) -> (String, String) {
             crate_root.display()
         )
     });
-    let script_path = repo_root.join("integration_scripts").join(script_name);
+    let script_path = repo_root
+        .join("scripts")
+        .join("integration_scripts")
+        .join(script_name);
     let envs = BTreeMap::from([
         (
             "MUX_TEST_POSTGRES_URL",

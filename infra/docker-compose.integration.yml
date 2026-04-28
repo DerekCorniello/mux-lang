@@ -25,7 +25,7 @@ services:
     image: python:3.12.4-alpine
     cap_drop: ["ALL"]
     working_dir: /app
-    command: ["python3", "/app/docker/integration/http_echo.py"]
+    command: ["python3", "/app/infra/docker/integration/http_echo.py"]
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -33,7 +33,7 @@ services:
       - /tmp
     user: "65534:65534"
     volumes:
-      - .:/app:ro
+      - ../:/app:ro
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)\""]
       interval: 5s
@@ -46,7 +46,7 @@ services:
     image: python:3.12.4-alpine
     cap_drop: ["ALL"]
     working_dir: /app
-    command: ["python3", "/app/docker/integration/tcp_echo.py"]
+    command: ["python3", "/app/infra/docker/integration/tcp_echo.py"]
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -54,7 +54,7 @@ services:
       - /tmp
     user: "65534:65534"
     volumes:
-      - .:/app:ro
+      - ../:/app:ro
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1', 10000), timeout=2); s.close()\""]
       interval: 5s
@@ -67,7 +67,7 @@ services:
     image: python:3.12.4-alpine
     cap_drop: ["ALL"]
     working_dir: /app
-    command: ["python3", "/app/docker/integration/udp_echo.py"]
+    command: ["python3", "/app/infra/docker/integration/udp_echo.py"]
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -75,7 +75,7 @@ services:
       - /tmp
     user: "65534:65534"
     volumes:
-      - .:/app:ro
+      - ../:/app:ro
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(2); s.sendto(b'ping', ('127.0.0.1', 11000)); data, _ = s.recvfrom(32); s.close(); raise SystemExit(0 if data == b'UDP:ping' else 1)\""]
       interval: 5s
@@ -86,8 +86,8 @@ services:
 
   dev:
     build:
-      context: .
-      dockerfile: docker/integration/Dockerfile
+      context: ..
+      dockerfile: infra/docker/integration/Dockerfile
     working_dir: /workspace
     command: ["sleep", "infinity"]
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
@@ -112,10 +112,10 @@ services:
       MUX_TEST_UDP_ADDR: udp-echo:11000
       XDG_CACHE_HOME: /workspace/.docker-home/.cache
     volumes:
-      - ./.docker-cache/cargo/registry:/cargo/registry
-      - ./.docker-cache/cargo/git:/cargo/git
-      - ./.docker-cache/target:/workspace/.docker-target
-      - .:/workspace
+      - ../.docker-cache/cargo/registry:/cargo/registry
+      - ../.docker-cache/cargo/git:/cargo/git
+      - ../.docker-cache/target:/workspace/.docker-target
+      - ../:/workspace
 
 volumes:
   postgres-data:

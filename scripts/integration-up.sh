@@ -12,6 +12,6 @@ mkdir -p "$repo_root/.docker-home/.cache"
 
 "$repo_root/scripts/wait-for-integration.sh"
 
-docker compose -f "$repo_root/docker-compose.integration.yml" build dev
+docker compose -f "$repo_root/infra/docker-compose.integration.yml" build dev
 
-docker compose -f "$repo_root/docker-compose.integration.yml" up -d dev
+docker compose -f "$repo_root/infra/docker-compose.integration.yml" up -d dev

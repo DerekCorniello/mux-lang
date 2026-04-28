@@ -15,5 +15,5 @@ trap cleanup EXIT
 
 "$repo_root/scripts/integration-up.sh"
 
-docker compose -f "$repo_root/docker-compose.integration.yml" run --rm dev \
+docker compose -f "$repo_root/infra/docker-compose.integration.yml" run --rm dev \
   ./scripts/run-checks.sh --with-service-tests --timings-file ci-artifacts/integration-checks.json
