@@ -24,6 +24,7 @@ use crate::ast::{
 use crate::diagnostic::Files;
 use crate::lexer::Span;
 use crate::semantics::std_registry::{StdModuleKind, std_module_registry};
+use mux_profiling::compiler_scope;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -524,6 +525,7 @@ impl SemanticAnalyzer {
     }
 
     pub fn analyze(&mut self, ast: &[AstNode], files: Option<&mut Files>) -> Vec<SemanticError> {
+        let _profile = compiler_scope("compiler: semantics analyze");
         self.add_builtin_functions();
         if let Err(e) = self.collect_hoistable_declarations(ast) {
             self.errors.push(e);
@@ -533,6 +535,7 @@ impl SemanticAnalyzer {
     }
 
     fn add_builtin_functions(&mut self) {
+        let _profile = compiler_scope("compiler: semantics add builtins");
         // Register built-in functions from the canonical stdlib table.
         let span = Span::new(0, 0);
         for (name, sig) in crate::semantics::stdlib::BUILT_IN_FUNCTIONS.iter() {
@@ -5147,6 +5150,7 @@ impl SemanticAnalyzer {
         name: &str,
         type_args: &[TypeNode],
     ) -> Result<(), SemanticError> {
+        let _profile = compiler_scope("compiler: semantics generic type expr");
         if name == "tuple" {
             return self.check_tuple_type_args(expr, type_args);
         }

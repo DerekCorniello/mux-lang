@@ -2,6 +2,7 @@ use crate::object::{alloc_object, get_object_ptr, register_object_type};
 use crate::refcount::{mux_rc_alloc, mux_rc_dec};
 use crate::{TypeId, Value};
 use lazy_static::lazy_static;
+use mux_profiling::runtime_scope;
 use mysql::prelude::Queryable;
 use mysql::{
     Conn as MySqlConnection, Opts as MySqlOpts, Params as MySqlParams, Value as MySqlValue,
@@ -916,6 +917,7 @@ fn transaction_query_with_params(
 /// The `uri` pointer must point to a valid, null-terminated C string for the
 /// duration of this call.
 pub unsafe extern "C" fn mux_sql_connect(uri: *const c_char) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql connect");
     if uri.is_null() {
         return sql_result_err("sql uri pointer is null".to_string());
     }
@@ -933,16 +935,19 @@ pub unsafe extern "C" fn mux_sql_connect(uri: *const c_char) -> *mut Value {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_int(value: i64) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value int");
     crate::refcount::mux_rc_alloc(Value::Int(value))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_float(value: f64) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value float");
     crate::refcount::mux_rc_alloc(Value::Float(ordered_float::OrderedFloat(value)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_bool(value: bool) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value bool");
     crate::refcount::mux_rc_alloc(Value::Bool(value))
 }
 
@@ -950,6 +955,7 @@ pub extern "C" fn mux_sql_value_bool(value: bool) -> *mut Value {
 /// The `value` pointer must point to a valid, null-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_sql_value_string(value: *const c_char) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value string");
     if value.is_null() {
         return crate::refcount::mux_rc_alloc(Value::String(String::new()));
     }
@@ -962,6 +968,7 @@ pub unsafe extern "C" fn mux_sql_value_string(value: *const c_char) -> *mut Valu
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_bytes(value: *const Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value bytes");
     if value.is_null() {
         return crate::refcount::mux_rc_alloc(Value::List(Vec::new()));
     }
@@ -983,12 +990,14 @@ pub extern "C" fn mux_sql_value_bytes(value: *const Value) -> *mut Value {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_null() -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value null");
     crate::refcount::mux_rc_alloc(Value::Unit)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_is_null(value: *const Value) -> bool {
+    let _profile = runtime_scope("runtime: sql value is null");
     if value.is_null() {
         return true;
     }
@@ -998,6 +1007,7 @@ pub extern "C" fn mux_sql_value_is_null(value: *const Value) -> bool {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_as_int(value: *const Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value as int");
     if value.is_null() {
         return sql_result_err("sql value pointer is null".to_string());
     }
@@ -1010,6 +1020,7 @@ pub extern "C" fn mux_sql_value_as_int(value: *const Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_as_bool(value: *const Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value as bool");
     if value.is_null() {
         return sql_result_err("sql value pointer is null".to_string());
     }
@@ -1022,6 +1033,7 @@ pub extern "C" fn mux_sql_value_as_bool(value: *const Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_as_float(value: *const Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value as float");
     if value.is_null() {
         return sql_result_err("sql value pointer is null".to_string());
     }
@@ -1034,6 +1046,7 @@ pub extern "C" fn mux_sql_value_as_float(value: *const Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_as_string(value: *const Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value as string");
     if value.is_null() {
         return sql_result_err("sql value pointer is null".to_string());
     }
@@ -1046,6 +1059,7 @@ pub extern "C" fn mux_sql_value_as_string(value: *const Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_value_as_bytes(value: *const Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql value as bytes");
     if value.is_null() {
         return sql_result_err("sql value pointer is null".to_string());
     }
@@ -1060,6 +1074,7 @@ pub extern "C" fn mux_sql_value_as_bytes(value: *const Value) -> *mut Value {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_connection_close(connection: *mut Value) {
+    let _profile = runtime_scope("runtime: sql connection close");
     if let Ok(handle) = connection_handle(connection) {
         if connection_has_active_transaction(handle) {
             remove_transaction_for_connection(handle);
@@ -1075,6 +1090,7 @@ pub extern "C" fn mux_sql_connection_execute(
     connection: *mut Value,
     sql: *mut Value,
 ) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql connection execute");
     let result = connection_handle(connection).and_then(|handle| {
         value_to_string(sql)
             .and_then(|statement| connection_execute_with_params(handle, &statement, &[]))
@@ -1089,6 +1105,7 @@ pub extern "C" fn mux_sql_connection_execute_params(
     sql: *mut Value,
     params: *mut Value,
 ) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql connection execute params");
     let result = connection_handle(connection).and_then(|handle| {
         let statement = value_to_string(sql)?;
         let sql_params = value_list_to_sql_params(params)?;
@@ -1100,6 +1117,7 @@ pub extern "C" fn mux_sql_connection_execute_params(
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_connection_query(connection: *mut Value, sql: *mut Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql connection query");
     let result = connection_handle(connection).and_then(|handle| {
         value_to_string(sql)
             .and_then(|statement| connection_query_with_params(handle, &statement, &[]))
@@ -1117,6 +1135,7 @@ pub extern "C" fn mux_sql_connection_query_params(
     sql: *mut Value,
     params: *mut Value,
 ) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql connection query params");
     let result = connection_handle(connection).and_then(|handle| {
         let statement = value_to_string(sql)?;
         let sql_params = value_list_to_sql_params(params)?;
@@ -1131,6 +1150,7 @@ pub extern "C" fn mux_sql_connection_query_params(
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_connection_begin_transaction(connection: *mut Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql connection begin transaction");
     let handle = match connection_handle(connection) {
         Ok(h) => h,
         Err(err) => return sql_result_err(err),
@@ -1158,6 +1178,7 @@ pub extern "C" fn mux_sql_connection_begin_transaction(connection: *mut Value) -
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_transaction_commit(transaction: *mut Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql transaction commit");
     let handle = match transaction_handle(transaction) {
         Ok(h) => h,
         Err(err) => return sql_result_err(err),
@@ -1184,6 +1205,7 @@ pub extern "C" fn mux_sql_transaction_commit(transaction: *mut Value) -> *mut Va
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_sql_transaction_rollback(transaction: *mut Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: sql transaction rollback");
     let handle = match transaction_handle(transaction) {
         Ok(h) => h,
         Err(err) => return sql_result_err(err),

@@ -163,6 +163,17 @@ Mux is an open-source project and welcomes contributions! Whether you're adding 
 - Check [GitHub Issues](https://github.com/DerekCorniello/mux-lang/issues) for tasks
 - Join [GitHub Discussions](https://github.com/DerekCorniello/mux-lang/discussions) for questions and ideas
 
+### Profiling
+
+Use the helper scripts for the new profiling workflow:
+
+```bash
+./scripts/profile-compiler.sh test_scripts/nested_generics.mux
+./scripts/profile-runtime.sh test_scripts/test_std_http_server.mux
+```
+
+Both scripts open the profile viewer automatically and store outputs under `target/profile/` by default.
+
 ---
 
 ## Project Status
@@ -2384,11 +2395,18 @@ mux-lang/
 │   │   ├── lib.rs
 │   │   └── main.rs
 │   └── tests/
+│       ├── executable_integration.rs
 │       ├── lexer_integration.rs
 │       ├── parser_integration.rs
 │       ├── semantics_integration.rs
-│       ├── executable_integration.rs
+│       ├── service_integration.rs
 │       └── snapshots/
+│
+├── docker/
+│   └── integration/
+├── docker-compose.integration.yml
+├── integration_scripts/
+│   └── *.mux
 │
 ├── mux-runtime/
 │   ├── src/
@@ -2414,6 +2432,16 @@ mux-lang/
 │   ├── error_cases/
 │   │   ├── *.mux
 │   └── *.mux
+│
+├── scripts/
+│   ├── integration-checks.sh
+│   ├── integration-down.sh
+│   ├── integration-up.sh
+│   ├── measure-baseline.sh
+│   ├── run-checks.sh
+│   └── wait-for-integration.sh
+│
+├── PLAN.md
 │
 ├── Cargo.toml
 ├── Cargo.lock

@@ -46,6 +46,7 @@ httparse = { version = "1.10", optional = true }
 rusqlite = { version = "0.31", features = ["bundled"], optional = true }
 postgres = { version = "0.19", optional = true }
 mysql = { version = "28", optional = true }
+mux-profiling = { path = "../mux-profiling" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Kernel", "Win32_System_Threading"] }

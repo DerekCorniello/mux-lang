@@ -1,4 +1,5 @@
 use crate::Value;
+use mux_profiling::runtime_scope;
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -15,6 +16,7 @@ pub enum Json {
 
 impl Json {
     pub fn parse(input: &str) -> Result<Json, String> {
+        let _profile = runtime_scope("runtime: json parse");
         match serde_json::from_str::<serde_json::Value>(input) {
             Ok(v) => Ok(convert_serde_value(&v)),
             Err(e) => Err(format!("{}", e)),
@@ -22,6 +24,7 @@ impl Json {
     }
 
     pub fn stringify(&self, indent: Option<usize>) -> String {
+        let _profile = runtime_scope("runtime: json stringify");
         let v = convert_to_serde_value(self);
         if let Some(n) = indent {
             serde_json::to_string_pretty(&v)
@@ -130,6 +133,7 @@ pub fn value_to_json(v: &Value) -> Result<Json, String> {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_json_parse(input: *const c_char) -> *mut Value {
+    let _profile = runtime_scope("runtime: json ffi parse");
     if input.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe {
@@ -156,6 +160,7 @@ pub extern "C" fn mux_json_parse(input: *const c_char) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_json_stringify(val: *const Value, indent_opt: *mut Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: json ffi stringify");
     if val.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe {
@@ -194,6 +199,7 @@ pub extern "C" fn mux_json_stringify(val: *const Value, indent_opt: *mut Value) 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_json_from_map(val: *const Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: json ffi from map");
     if val.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe { return crate::result::mux_result_err_str(msg.as_ptr()) }
@@ -236,6 +242,7 @@ pub extern "C" fn mux_json_from_map(val: *const Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_json_to_map(val: *const Value) -> *mut Value {
+    let _profile = runtime_scope("runtime: json ffi to map");
     if val.is_null() {
         let msg = CString::new("null input").unwrap();
         unsafe { return crate::result::mux_result_err_str(msg.as_ptr()) }

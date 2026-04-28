@@ -1,0 +1,11 @@
+.git
+.github
+.scannerwork
+.docker-cache
+.docker-home
+ci-artifacts
+target
+mux-website/node_modules
+mux-website/build
+mux-compiler/target
+mux-runtime/target

@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
+      LLVM_CONFIG_PATH: /usr/bin/llvm-config-17
+      LLVM_SYS_170_STRICT_VERSIONING: "1"
+      CC: clang-17
+      CXX: clang++-17
       MUX_RUNTIME_SRC: ${{ github.workspace }}/mux-runtime
     steps:
       - uses: actions/checkout@v4
@@ -38,12 +42,19 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Formatting check
         run: cargo fmt -- --check
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: Tests
-        run: cargo test
-      - name: Build
-        run: cargo build
+      - name: Rust checks
+        run: ./scripts/run-checks.sh
+  integration_checks:
+    name: Integration Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version consistency check
+        run: ./scripts/sync-version.sh && git diff --exit-code
+      - name: Docker info
+        run: docker compose version
+      - name: Service-backed checks
+        run: ./scripts/integration-checks.sh
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest

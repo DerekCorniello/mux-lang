@@ -1,0 +1,47 @@
+import std.assert
+import std.env
+import std.net
+
+func require_env(string key) returns string {
+    match env.get(key) {
+        some(value) { return value }
+        none {
+            assert.assert(false, "missing environment variable: " + key)
+            return ""
+        }
+    }
+}
+
+func main() returns void {
+    auto addr = require_env("MUX_TEST_UDP_ADDR")
+    const list<int> payload = [109, 117, 120]
+    const list<int> expected = [85, 68, 80, 58, 109, 117, 120]
+    print("Starting external udp integration test")
+
+    match net.UdpSocket.bind("0.0.0.0:0") {
+        ok(sock) {
+            match sock.send_to(payload, addr) {
+                ok(count) { assert.assert(count == payload.size(), "unexpected udp write count") }
+                err(e) { assert.assert(false, "udp send failed: " + e) }
+            }
+
+            match sock.recv_from(32) {
+                ok(response) {
+                    assert.assert(response.left.size() == expected.size(), "unexpected udp response length")
+                    auto idx = 0
+                    while idx < expected.size() {
+                        assert.assert(response.left[idx] == expected[idx], "unexpected udp byte at index " + idx.to_string())
+                        idx = idx + 1
+                    }
+                    print("udp ack received from " + response.right)
+                }
+                err(e) { assert.assert(false, "udp recv failed: " + e) }
+            }
+
+            sock.close()
+        }
+        err(e) { assert.assert(false, "udp bind failed: " + e) }
+    }
+
+    print("external udp integration test passed")
+}

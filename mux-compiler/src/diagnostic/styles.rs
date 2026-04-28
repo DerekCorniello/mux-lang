@@ -44,10 +44,6 @@ impl Styles {
         self.styled("1;33", text)
     }
 
-    pub fn success(&self, text: &str) -> String {
-        self.styled("1;32", text)
-    }
-
     pub fn note(&self, text: &str) -> String {
         self.styled("1;36", text)
     }
