@@ -86,7 +86,7 @@ services:
 
   dev:
     build:
-      context: .
+      context: ..
       dockerfile: infra/docker/integration/Dockerfile
     working_dir: /workspace
     command: ["sleep", "infinity"]
