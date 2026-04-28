@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Instant;
@@ -28,7 +28,6 @@ struct Recorder {
     start: Instant,
     state: Mutex<RecorderState>,
     output_prefix: PathBuf,
-    registered_atexit: AtomicBool,
     next_id: AtomicU64,
 }
 
@@ -38,7 +37,6 @@ impl Recorder {
             start: Instant::now(),
             state: Mutex::new(RecorderState::default()),
             output_prefix,
-            registered_atexit: AtomicBool::new(false),
             next_id: AtomicU64::new(1),
         }
     }
@@ -176,7 +174,9 @@ thread_local! {
     static SPAN_STACK: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
 }
 
-static RECORDER: OnceLock<Recorder> = OnceLock::new();
+static COMPILER_RECORDER: OnceLock<Recorder> = OnceLock::new();
+static RUNTIME_RECORDER: OnceLock<Recorder> = OnceLock::new();
+static ATEXIT_REGISTERED: OnceLock<()> = OnceLock::new();
 
 fn output_prefix_from_env(kind: &str) -> Option<PathBuf> {
     let key = match kind {
@@ -188,17 +188,29 @@ fn output_prefix_from_env(kind: &str) -> Option<PathBuf> {
 }
 
 fn recorder(kind: &str) -> Option<&'static Recorder> {
-    let prefix = output_prefix_from_env(kind)?;
-    Some(RECORDER.get_or_init(|| Recorder::new(prefix)))
+    match kind {
+        "compiler" => {
+            let prefix = output_prefix_from_env(kind)?;
+            Some(COMPILER_RECORDER.get_or_init(|| Recorder::new(prefix)))
+        }
+        "runtime" => {
+            let prefix = output_prefix_from_env(kind)?;
+            Some(RUNTIME_RECORDER.get_or_init(|| Recorder::new(prefix)))
+        }
+        _ => None,
+    }
 }
 
-fn register_atexit(recorder: &'static Recorder) {
-    if recorder.registered_atexit.swap(true, Ordering::Relaxed) {
+fn register_atexit() {
+    if ATEXIT_REGISTERED.get().is_some() {
         return;
     }
 
     extern "C" fn flush() {
-        if let Some(recorder) = RECORDER.get() {
+        if let Some(recorder) = COMPILER_RECORDER.get() {
+            recorder.write_reports();
+        }
+        if let Some(recorder) = RUNTIME_RECORDER.get() {
             recorder.write_reports();
         }
     }
@@ -206,6 +218,8 @@ fn register_atexit(recorder: &'static Recorder) {
     unsafe {
         libc::atexit(flush);
     }
+
+    let _ = ATEXIT_REGISTERED.set(());
 }
 
 pub struct ProfileGuard {
@@ -258,7 +272,7 @@ fn scope_for(kind: &'static str, name: &'static str) -> ProfileGuard {
         };
     };
 
-    register_atexit(recorder);
+    register_atexit();
 
     let span_id = recorder.next_span_id();
     SPAN_STACK.with(|stack| stack.borrow_mut().push(span_id));
@@ -305,7 +319,10 @@ fn build_speedscope_report(spans: &[SpanRecord]) -> SpeedscopeFile<'_> {
             let mut min_start = f64::INFINITY;
             let mut max_end: f64 = 0.0;
             for span in thread_spans {
-                let frame = frame_map[&span.name];
+                let Some(&frame) = frame_map.get(&span.name) else {
+                    debug_assert!(false, "missing frame for span name: {}", span.name);
+                    continue;
+                };
                 events.push(SpeedscopeEvent {
                     event_type: "O",
                     at: span.start_ms,

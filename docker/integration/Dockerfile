@@ -11,6 +11,7 @@ RUN apt-get update \
         software-properties-common \
         wget \
     && wget --max-redirect=0 -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh \
+    && echo "14a4eda1349f23acf9dc0b564ed44b21bce3bd1703c78b5f7488870d7c6fe68f  /tmp/llvm.sh" | sha256sum -c - \
     && chmod +x /tmp/llvm.sh \
     && /tmp/llvm.sh 17 \
     && apt-get install -y --no-install-recommends \
