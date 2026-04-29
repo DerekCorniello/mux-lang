@@ -1,0 +1,83 @@
+==================
+Keywords
+==================
+
+auto func returns return if else for while match const class interface enum import is as in break continue none common
+
+---
+
+(source_file
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_control)
+  (keyword_control)
+  (keyword_control)
+  (keyword_control)
+  (keyword_control)
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_declaration)
+  (keyword_control)
+  (keyword_control)
+  (keyword_constant)
+  (keyword_constant))
+
+==================
+Operators
+==================
+
+= += -= *= /= %= + - * ** / % ++ -- == != < <= > >= && || ! & .. .
+
+---
+
+(source_file
+  (op_assign)
+  (op_assign)
+  (op_assign)
+  (op_assign)
+  (op_assign)
+  (op_assign)
+  (op_arithmetic)
+  (op_arithmetic)
+  (op_arithmetic)
+  (op_arithmetic)
+  (op_arithmetic)
+  (op_arithmetic)
+  (op_arithmetic)
+  (op_arithmetic)
+  (op_comparison)
+  (op_comparison)
+  (op_comparison)
+  (op_comparison)
+  (op_comparison)
+  (op_comparison)
+  (op_logical)
+  (op_logical)
+  (op_other)
+  (op_other)
+  (op_other)
+  (op_other))
+
+==================
+Literals
+==================
+
+42 3.14 true false 'a' "hello" _
+
+---
+
+(source_file
+  (int_literal)
+  (float_literal)
+  (keyword_constant)
+  (keyword_constant)
+  (char_literal)
+  (string_literal)
+  (underscore))

@@ -1,7 +1,7 @@
 # Linguist Upstream Contribution Checklist
 
 ## Prerequisites
-- [ ] TextMate grammar (`textmate/source.mux.json`) complete
+- [ ] TextMate grammar (`textmate-mux/source.mux.json`) complete
 - [ ] Sample Mux files added to `shared/linguist/samples/`
 - [ ] Language metadata defined below
 

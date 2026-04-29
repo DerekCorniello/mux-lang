@@ -3,12 +3,12 @@
 First-class syntax highlighting support for the Mux programming language across editors and tools.
 
 ## Structure
-- `textmate/` - TextMate grammar (VSCode, Sublime, JetBrains, Nova)
+- `textmate-mux/` - TextMate grammar (VSCode, Sublime, JetBrains, Nova)
   - `source.mux.json` - TextMate grammar (JSON format)
-  - `source.mux.tmLanguage` - TextMate grammar (XML/PLIST format, better VSCode compatibility)
-  - `vscode-language-mux/` - VSCode extension package
-- `treesitter/` - Tree-sitter parser (Neovim, Helix, GitHub code intelligence)
+  - `vscode-language-mux/` - VSCode extension package (contains XML grammar)
+- `tree-sitter-mux/` - Tree-sitter parser (Neovim, Helix, GitHub code intelligence)
   - `grammar.js` - Tree-sitter grammar
+  - `tree-sitter.json` - ABI 15 config
   - `queries/` - Highlight queries
   - `corpus/` - Tests
 - `shared/` - Canonical syntax data and cross-track artifacts
@@ -26,14 +26,14 @@ First-class syntax highlighting support for the Mux programming language across 
 
 ### Working with the Grammar
 The TextMate grammar is available in two formats:
-1. **JSON** (`textmate/source.mux.json`) - Easier to read/edit
-2. **XML/PLIST** (`textmate/vscode-language-mux/source.mux.tmLanguage`) - Better VSCode compatibility
+1. **JSON** (`textmate-mux/source.mux.json`) - Easier to read/edit
+2. **XML/PLIST** (`textmate-mux/vscode-language-mux/source.mux.tmLanguage`) - Better VSCode compatibility
 
 When editing, update both files to keep them in sync.
 
 ### Building and Testing (VSCode)
 ```bash
-cd mux-syntax-highlighting/textmate/vscode-language-mux
+cd mux-syntax-highlighting/textmate-mux/vscode-language-mux
 
 # Edit source.mux.tmLanguage (XML grammar)
 
@@ -60,7 +60,7 @@ The grammar uses standard TextMate scope names. Colors are determined by the act
 - `variable.other.mux` - Identifiers
 
 ### Editor Compatibility
-See `textmate/COMPATIBILITY.md` for Sublime Text, JetBrains, and Nova setup.
+See `textmate-mux/COMPATIBILITY.md` for Sublime Text, JetBrains, and Nova setup.
 
 ---
 
@@ -72,24 +72,32 @@ See `textmate/COMPATIBILITY.md` for Sublime Text, JetBrains, and Nova setup.
 
 ### Building and Testing
 ```bash
-cd mux-syntax-highlighting/treesitter
+cd mux-syntax-highlighting/tree-sitter-mux
 
-# Generate parser
+# Generate parser (ABI 15, requires tree-sitter.json)
 tree-sitter generate grammar.js
 
-# Run corpus tests
+# Run corpus tests (files in test/corpus/)
 tree-sitter test
 
-# Parse a file
-echo 'auto x = 42' | tree-sitter parse
+# Update test expectations with current parser output
+tree-sitter test --update
+
+# Parse a file and see the syntax tree (pipe input)
+echo 'func main() returns void { auto x = 42 }' | tree-sitter parse
+
+# Parse an actual file
+tree-sitter parse /home/derekcorn/code/mux-lang/mux-syntax-highlighting/shared/samples/validation.mux
 ```
+
+**Note:** The `tree-sitter highlight` command requires proper language registration in your config. For reliable highlighting, integrate with Neovim/Helix (see INTEGRATION.md).
 
 ### Highlight Queries
 - `queries/highlights.scm` - Syntax highlighting queries
 - Queries map tree-sitter nodes to TextMate-like scope names
 
 ### Editor Integration
-See `treesitter/INTEGRATION.md` for Neovim and Helix setup instructions.
+See `tree-sitter-mux/INTEGRATION.md` for Neovim and Helix setup instructions.
 
 ---
 

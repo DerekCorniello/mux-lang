@@ -1,0 +1,58 @@
+// Validation sample: keywords
+auto x = 42
+func add(int a, int b) returns int {
+    return a + b
+}
+
+// Control flow
+if x > 40 {
+    print("High")
+} else {
+    print("Low")
+}
+
+for i in 0..10 {
+    print(i)
+}
+
+while x > 0 {
+    x -= 1
+}
+
+// Match with enum variants (some/ok/err are identifiers, not keywords)
+match result {
+    ok(value) { print(value) }
+    err(msg) { print(msg) }
+    none { print("none") }
+}
+
+// Generics
+func unwrap<T>(result<T, string> res) returns T {
+    match res {
+        ok(val) { return val }
+        err(e) { panic(e) }
+    }
+}
+
+// References and operators
+auto ref &x = &y
+auto z = x ** 2 + 10 / 3
+auto is_eq = x == 10
+auto logical = true && false || !is_eq
+
+// Literals
+auto int_val = 1_000
+auto float_val = 3.14e-2
+auto char_val = 'a'
+auto str_val = "hello"
+auto multi_str = """
+multi-line
+string
+"""
+auto none_val = none
+auto bool_val = true
+
+// Comments
+/* multi-line
+comment */
+// line comment
