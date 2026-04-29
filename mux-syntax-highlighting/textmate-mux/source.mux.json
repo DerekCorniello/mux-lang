@@ -1,14 +1,28 @@
 {
   "name": "Mux",
   "scopeName": "source.mux",
-  "fileTypes": [".mux"],
+  "fileTypes": [
+    ".mux"
+  ],
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#keywords" },
-    { "include": "#operators" },
-    { "include": "#literals" },
-    { "include": "#delimiters" },
-    { "include": "#identifiers" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#literals"
+    },
+    {
+      "include": "#delimiters"
+    },
+    {
+      "include": "#identifiers"
+    }
   ],
   "repository": {
     "comments": {
@@ -49,24 +63,24 @@
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.mux",
-          "match": "\\b(as|in|is)\\b"
+          "name": "keyword.operator.arithmetic.mux",
+          "match": "(\\+\\+|--|\\*\\*|/|%|\\+|\\-|\\*)"
         },
         {
           "name": "keyword.operator.assignment.mux",
-          "match": "(=|\\+=|-=|\\*=|/=|%=)"
-        },
-        {
-          "name": "keyword.operator.arithmetic.mux",
-          "match": "(\\+|\\-|\\*|\\*\\*|/|%|\\+\\+|--)"
+          "match": "(\\+=|-=|\\*=|/=|%=|=)"
         },
         {
           "name": "keyword.operator.comparison.mux",
-          "match": "(==|!=|<|<=|>|>=)"
+          "match": "(==|!=|<=|>=|<|>)"
         },
         {
           "name": "keyword.operator.logical.mux",
           "match": "(&&|\\|\\|)"
+        },
+        {
+          "name": "keyword.operator.mux",
+          "match": "\\b(as|in|is)\\b"
         },
         {
           "name": "keyword.operator.mux",
