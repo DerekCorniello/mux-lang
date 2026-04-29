@@ -15,7 +15,7 @@ Provides syntax highlighting and language configuration for Mux files (`.mux`) i
 
 ### Build and Package
 ```bash
-cd mux-syntax-highlighting/textmate/vscode-language-mux
+cd mux-syntax-highlighting/textmate-mux/vscode-language-mux
 vsce package
 ```
 
@@ -26,13 +26,13 @@ code -r /path/to/mux-lang
 ```
 
 ### Test Changes
-1. Edit `source.mux.tmLanguage` (XML TextMate grammar)
+1. Edit `source.mux.json` (canonical TextMate grammar)
 2. Repackage with `vsce package`
 3. Reinstall the `.vsix` in VSCode
 4. Reload window (Ctrl+Shift+P → "Developer: Reload Window")
 
 ## File Structure
-- `source.mux.tmLanguage` - TextMate grammar (XML/PLIST format)
+- `source.mux.json` - TextMate grammar (JSON format)
 - `language-configuration.json` - Editor behavior (brackets, comments)
 - `mux-icon.png` - Extension icon
 - `package.json` - VSCode extension manifest

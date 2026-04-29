@@ -4,6 +4,7 @@
 - [ ] TextMate grammar (`textmate-mux/source.mux.json`) complete
 - [ ] Sample Mux files added to `shared/linguist/samples/`
 - [ ] Language metadata defined below
+- [ ] `node ../../scripts/check-parity.js` passes
 
 ## Language Metadata (for Linguist PR)
 ```yaml
@@ -27,3 +28,7 @@
 4. Add sample files to `samples/Mux/`
 5. Submit PR to Linguist with description: "Add support for Mux programming language"
 6. GitHub highlighting will be available after merge (latency: ~1-2 weeks)
+
+## Shared Validation
+- Run `node ../../scripts/check-parity.js` before updating samples or grammar artifacts.
+- Keep `shared/syntax-matrix.json` in sync with both editor grammars.

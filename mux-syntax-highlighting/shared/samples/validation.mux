@@ -35,7 +35,7 @@ func unwrap<T>(result<T, string> res) returns T {
 }
 
 // References and operators
-auto ref &x = &y
+auto ref_x = &x
 auto z = x ** 2 + 10 / 3
 auto is_eq = x == 10
 auto logical = true && false || !is_eq

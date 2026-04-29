@@ -1,6 +1,6 @@
 # TextMate Grammar Compatibility
 
-The `source.mux.json` TextMate grammar works with all editors supporting TextMate grammars:
+The canonical TextMate grammar is `source.mux.json`. The VSCode package uses the same JSON grammar file.
 
 ## Sublime Text
 1. Copy `source.mux.json` to `Packages/User/Mux/`
@@ -27,3 +27,7 @@ The `source.mux.json` TextMate grammar works with all editors supporting TextMat
 1. Create a new extension in Nova
 2. Add `source.mux.json` as the syntax grammar
 3. Set file extension to `.mux` in extension manifest
+
+## Notes
+- Keep `source.mux.json` as the source of truth for TextMate updates.
+- Rebuild the VSCode package after grammar edits so the packaged copy stays in sync.

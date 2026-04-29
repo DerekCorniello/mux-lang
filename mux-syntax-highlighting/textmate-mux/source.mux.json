@@ -2,14 +2,14 @@
   "name": "Mux",
   "scopeName": "source.mux",
   "fileTypes": [".mux"],
-    "patterns": [
-      { "include": "#comments" },
-      { "include": "#keywords" },
-      { "include": "#specials" },
-      { "include": "#literals" },
-      { "include": "#delimiters" },
-      { "include": "#identifiers" }
-    ],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#operators" },
+    { "include": "#literals" },
+    { "include": "#delimiters" },
+    { "include": "#identifiers" }
+  ],
   "repository": {
     "comments": {
       "patterns": [
@@ -38,7 +38,7 @@
         },
         {
           "name": "keyword.declaration.mux",
-          "match": "\\b(auto|func|returns|return|const|class|interface|enum|import|as|in|is)\\b"
+          "match": "\\b(auto|func|returns|return|const|class|interface|enum|import)\\b"
         },
         {
           "name": "constant.language.mux",
@@ -46,29 +46,31 @@
         }
       ]
     },
-    "specials": {
+    "operators": {
       "patterns": [
         {
-          "name": "entity.name.function.mux",
-          "match": "\\bfunc\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-          "captures": {
-            "1": { "name": "entity.name.function.mux" }
-          }
+          "name": "keyword.operator.mux",
+          "match": "\\b(as|in|is)\\b"
         },
         {
-          "name": "entity.name.function.call.mux",
-          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
-          "captures": {
-            "1": { "name": "entity.name.function.call.mux" }
-          }
+          "name": "keyword.operator.assignment.mux",
+          "match": "(=|\\+=|-=|\\*=|/=|%=)"
         },
         {
-          "name": "storage.type.mux",
-          "match": "\\b(string|bool|void|int|float|char|optional|result|list|map|tuple|set|range|Stringable|Hashable|Thread|Outer|Point)\\b"
+          "name": "keyword.operator.arithmetic.mux",
+          "match": "(\\+|\\-|\\*|\\*\\*|/|%|\\+\\+|--)"
         },
         {
-          "name": "variable.language.mux",
-          "match": "\\bself\\b"
+          "name": "keyword.operator.comparison.mux",
+          "match": "(==|!=|<|<=|>|>=)"
+        },
+        {
+          "name": "keyword.operator.logical.mux",
+          "match": "(&&|\\|\\|)"
+        },
+        {
+          "name": "keyword.operator.mux",
+          "match": "(!|&|\\.\\.|\\.)"
         }
       ]
     },
@@ -133,7 +135,7 @@
       "patterns": [
         {
           "name": "variable.other.mux",
-          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+          "match": "\\b[a-zA-Z][a-zA-Z0-9_]*\\b"
         }
       ]
     }

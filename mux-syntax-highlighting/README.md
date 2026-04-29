@@ -4,8 +4,8 @@ First-class syntax highlighting support for the Mux programming language across 
 
 ## Structure
 - `textmate-mux/` - TextMate grammar (VSCode, Sublime, JetBrains, Nova)
-  - `source.mux.json` - TextMate grammar (JSON format)
-  - `vscode-language-mux/` - VSCode extension package (contains XML grammar)
+  - `source.mux.json` - Canonical TextMate grammar source
+  - `vscode-language-mux/` - VSCode extension package
 - `tree-sitter-mux/` - Tree-sitter parser (Neovim, Helix, GitHub code intelligence)
   - `grammar.js` - Tree-sitter grammar
   - `tree-sitter.json` - ABI 15 config
@@ -25,17 +25,15 @@ First-class syntax highlighting support for the Mux programming language across 
 - vsce: `npm install -g @vscode/vsce`
 
 ### Working with the Grammar
-The TextMate grammar is available in two formats:
-1. **JSON** (`textmate-mux/source.mux.json`) - Easier to read/edit
-2. **XML/PLIST** (`textmate-mux/vscode-language-mux/source.mux.tmLanguage`) - Better VSCode compatibility
+The canonical TextMate grammar lives at `textmate-mux/source.mux.json`.
 
-When editing, update both files to keep them in sync.
+When editing, update the canonical source and keep the VSCode package copy in sync.
 
 ### Building and Testing (VSCode)
 ```bash
 cd mux-syntax-highlighting/textmate-mux/vscode-language-mux
 
-# Edit source.mux.tmLanguage (XML grammar)
+# Edit source.mux.json (canonical grammar)
 
 # Package the extension
 vsce package
@@ -102,9 +100,10 @@ See `tree-sitter-mux/INTEGRATION.md` for Neovim and Helix setup instructions.
 ---
 
 ## Validation
-Test samples are in `shared/linguist/sample.mux` and `shared/samples/`. Use:
-- TextMate: Paste sample code into VSCode with extension installed
-- Tree-sitter: `tree-sitter test` in `treesitter/` directory
+Test samples are in `shared/samples/`. Use:
+- TextMate: open `shared/samples/validation.mux` in VSCode with the extension installed
+- Tree-sitter: `tree-sitter test` in `tree-sitter-mux/`
+- Parity: `node scripts/check-parity.js`
 
 ## GitHub Highlighting
 Contribute to GitHub Linguist using artifacts in `shared/linguist/`. Status tracked in `shared/linguist/README.md`.
