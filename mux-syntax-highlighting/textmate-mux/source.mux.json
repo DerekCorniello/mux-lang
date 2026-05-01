@@ -9,13 +9,22 @@
       "include": "#comments"
     },
     {
+      "include": "#literals"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#calls"
+    },
+    {
+      "include": "#types"
+    },
+    {
       "include": "#keywords"
     },
     {
       "include": "#operators"
-    },
-    {
-      "include": "#literals"
     },
     {
       "include": "#delimiters"
@@ -52,11 +61,19 @@
         },
         {
           "name": "keyword.declaration.mux",
-          "match": "\\b(auto|func|returns|return|const|class|interface|enum|import)\\b"
+          "match": "\\b(func|returns|return|const|class|interface|enum|import|common)\\b"
+        },
+        {
+          "name": "storage.type.mux",
+          "match": "\\bauto\\b"
+        },
+        {
+          "name": "keyword.operator.mux",
+          "match": "\\b(as|in|is)\\b"
         },
         {
           "name": "constant.language.mux",
-          "match": "\\b(none|true|false|common)\\b"
+          "match": "\\b(none|true|false)\\b"
         }
       ]
     },
@@ -77,10 +94,6 @@
         {
           "name": "keyword.operator.logical.mux",
           "match": "(&&|\\|\\|)"
-        },
-        {
-          "name": "keyword.operator.mux",
-          "match": "\\b(as|in|is)\\b"
         },
         {
           "name": "keyword.operator.mux",
@@ -142,6 +155,73 @@
         {
           "name": "punctuation.mux",
           "match": "[(){}[\\],:]"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(func)\\s+([a-zA-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.mux"
+            },
+            "2": {
+              "name": "entity.name.function.mux"
+            }
+          }
+        },
+        {
+          "match": "\\b(class|interface|enum)\\s+([a-zA-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.mux"
+            },
+            "2": {
+              "name": "entity.name.type.mux"
+            }
+          }
+        }
+      ]
+    },
+    "calls": {
+      "patterns": [
+        {
+          "name": "support.function.mux",
+          "match": "\\b[a-zA-Z][a-zA-Z0-9_]*\\b\\s*(?=(?:<[^()<>\\n]+>\\s*)?\\()"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "match": "\\b(returns)\\s+([a-zA-Z][a-zA-Z0-9_]*(?:<[^>\\n]+>)?)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.mux"
+            },
+            "2": {
+              "name": "storage.type.mux"
+            }
+          }
+        },
+        {
+          "match": "\\b(const)\\s+([a-zA-Z][a-zA-Z0-9_]*(?:<[^>\\n]+>)?)\\s+([a-zA-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.mux"
+            },
+            "2": {
+              "name": "storage.type.mux"
+            },
+            "3": {
+              "name": "variable.other.mux"
+            }
+          }
+        },
+        {
+          "name": "storage.type.mux",
+          "match": "\\b(?:string|bool|void|int|float|char|optional|result|list|map|tuple|set|range|Stringable|Hashable|Thread|[A-Z][a-zA-Z0-9_]*)\\b"
         }
       ]
     },

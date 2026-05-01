@@ -6,19 +6,28 @@ module.exports = grammar({
     [$.type_name, $.call_expression],
     [$.primary_expression, $.type_path],
     [$.field_access, $.type_path],
+    [$.field_access, $.reference_type],
     [$.declaration, $.primary_expression],
     [$.source_file, $.expression_statement],
     [$.block, $.expression_statement],
     [$.postfix_expression, $.call_expression],
     [$.postfix_expression, $.index_access],
-    [$.param_item, $.type_arg],
-    [$.param_item, $.type_path],
-    [$.param_item, $.type_list],
+    [$.parameter, $.type_arg],
+    [$.parameter, $.type_path],
+    [$.parameter, $.type_list],
     [$.type_param, $.type_path],
     [$.identifier_pattern, $.enum_variant_pattern],
     [$.if_statement, $.guard_clause],
     [$.pattern, $.expression],
     [$.match_arm, $.statement],
+    [$.primary_expression, $.call_target],
+    [$.primary_expression, $.call_target, $.type_path],
+    [$.member_object, $.type_path],
+    [$.primary_expression, $.member_object, $.type_path],
+    [$.postfix_expression, $.call_target],
+    [$.postfix_expression, $.member_object],
+    [$.primary_expression, $.member_object],
+    [$.member_object, $.reference_type],
   ],
 
   rules: {
@@ -27,21 +36,12 @@ module.exports = grammar({
       $.statement,
       $.expression,
       $.line_comment,
-      $.block_comment,
-      $.keyword_control,
-      $.keyword_declaration,
-      $.keyword_operator,
-      $.op_assign,
-      $.op_arithmetic,
-      $.op_comparison,
-      $.op_logical,
-      $.op_other,
-      $.delimiter
+      $.block_comment
     )),
 
     declaration: $ => choice(
       $.function_declaration,
-      $.lambda_expression,
+      $.interface_method_declaration,
       $.auto_declaration,
       $.typed_declaration,
       $.const_declaration,
@@ -70,21 +70,13 @@ module.exports = grammar({
         $.statement,
         $.expression,
         $.line_comment,
-        $.block_comment,
-        $.keyword_control,
-        $.keyword_declaration,
-        $.keyword_operator,
-        $.op_assign,
-        $.op_arithmetic,
-        $.op_comparison,
-        $.op_logical,
-        $.op_other,
-        $.delimiter
+        $.block_comment
       )),
       '}'
     ),
 
     function_declaration: $ => prec.right(seq(
+      optional('common'),
       'func',
       field('name', $.identifier),
       optional($.type_params),
@@ -94,6 +86,18 @@ module.exports = grammar({
       'returns',
       field('return_type', $.type_name),
       $.block
+    )),
+
+    interface_method_declaration: $ => prec.right(seq(
+      optional('common'),
+      'func',
+      field('name', $.identifier),
+      optional($.type_params),
+      '(',
+      optional($.param_list),
+      ')',
+      'returns',
+      field('return_type', $.type_name)
     )),
 
     lambda_expression: $ => prec.right(seq(
@@ -168,8 +172,17 @@ module.exports = grammar({
     ),
 
     class_body: $ => seq('{', repeat(choice($.field_declaration, $.function_declaration, $.statement, $.line_comment, $.block_comment)), '}'),
-    interface_body: $ => seq('{', repeat(choice($.field_declaration, $.function_declaration, $.statement, $.line_comment, $.block_comment)), '}'),
-    enum_body: $ => seq('{', repeat(choice($.enum_variant, $.line_comment, $.block_comment)), '}'),
+    interface_body: $ => seq('{', repeat(choice($.field_declaration, $.interface_method_declaration, $.line_comment, $.block_comment)), '}'),
+    enum_body: $ => seq(
+      '{',
+      optional(seq(
+        $.enum_variant,
+        repeat(seq(',', $.enum_variant)),
+        optional(',')
+      )),
+      repeat(choice($.line_comment, $.block_comment)),
+      '}'
+    ),
 
     field_declaration: $ => seq(
       optional('const'),
@@ -179,21 +192,14 @@ module.exports = grammar({
     ),
 
     param_list: $ => seq(
-      $.param_item,
-      repeat(seq(',', $.param_item))
+      $.parameter,
+      repeat(seq(',', $.parameter))
     ),
 
-    param_item: $ => choice(
-      $.type_name,
-      $.identifier,
-      $.keyword_constant,
-      $.boolean,
-      $.char_literal,
-      $.string_literal,
-      $.triple_string_literal,
-      $.underscore,
-      $.call_expression,
-      $.field_access
+    parameter: $ => seq(
+      field('type', $.type_name),
+      field('name', choice($.identifier, $.underscore)),
+      optional(seq('=', field('default', $.expression)))
     ),
 
     enum_variant: $ => seq(
@@ -283,8 +289,13 @@ module.exports = grammar({
     )),
 
     comparison_expression: $ => prec.left(seq(
+      $.range_expression,
+      repeat(seq(choice('<', '<=', '>', '>='), $.range_expression))
+    )),
+
+    range_expression: $ => prec.left(seq(
       $.sum_expression,
-      repeat(seq(choice('<', '<=', '>', '>='), $.sum_expression))
+      repeat(seq('..', $.sum_expression))
     )),
 
     sum_expression: $ => prec.left(seq(
@@ -307,17 +318,15 @@ module.exports = grammar({
       $.postfix_expression
     )),
 
-    postfix_expression: $ => prec.left(seq(
-      $.primary_expression,
-      repeat(choice(
-        $.call_expression,
-        $.field_access,
-        $.index_access
-      ))
-    )),
+    postfix_expression: $ => choice(
+      $.call_expression,
+      $.field_access,
+      $.index_access,
+      $.primary_expression
+    ),
 
     call_expression: $ => prec.left(seq(
-      field('function', choice($.field_access, $.identifier)),
+      field('function', $.call_target),
       optional($.type_args),
       '(',
       optional($.argument_list),
@@ -325,13 +334,13 @@ module.exports = grammar({
     )),
 
     field_access: $ => prec.left(seq(
-      field('object', choice($.call_expression, $.field_access, $.identifier, $.type_name)),
+      field('object', $.member_object),
       '.',
       field('field', $.identifier)
     )),
 
     index_access: $ => prec.left(seq(
-      field('object', choice($.call_expression, $.field_access, $.identifier)),
+      field('object', $.member_object),
       '[',
       field('index', $.expression),
       ']'
@@ -345,6 +354,25 @@ module.exports = grammar({
       $.grouped_expression,
       $.list_literal,
       $.lambda_expression
+    ),
+
+    call_target: $ => choice(
+      $.identifier,
+      $.grouped_expression,
+      $.field_access,
+      $.index_access,
+      $.call_expression,
+      $.lambda_expression
+    ),
+
+    member_object: $ => choice(
+      $.identifier,
+      $.grouped_expression,
+      $.call_expression,
+      $.field_access,
+      $.index_access,
+      $.list_literal,
+      $.type_name
     ),
 
     grouped_expression: $ => seq('(', $.expression, ')'),
@@ -373,9 +401,15 @@ module.exports = grammar({
       repeat(seq(',', $.type_param))
     ),
 
-    type_param: $ => choice(
+    type_param: $ => seq(
       $.identifier,
-      $.type_name
+      optional($.type_bound_clause)
+    ),
+
+    type_bound_clause: $ => seq(
+      'is',
+      $.type_path,
+      repeat(seq('&', $.type_path))
     ),
 
     type_args: $ => seq(
@@ -399,7 +433,7 @@ module.exports = grammar({
       repeat(seq(',', $.type_name))
     ),
 
-    reference_type: $ => seq('&', $.type_name),
+    reference_type: $ => prec.right(seq('&', $.type_name)),
 
     function_type: $ => seq(
       'func',
@@ -487,9 +521,7 @@ module.exports = grammar({
       'is', 'as', 'in'
     ))),
 
-    keyword_constant: $ => token(prec(1, choice(
-      'none', 'common'
-    ))),
+    keyword_constant: $ => token(prec(1, 'none')),
 
     boolean: $ => token(prec(1, choice('true', 'false'))),
 

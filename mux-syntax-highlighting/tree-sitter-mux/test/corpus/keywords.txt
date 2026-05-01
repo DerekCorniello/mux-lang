@@ -1,43 +1,77 @@
 ==================
-Keywords
+Declarations
 ==================
 
-auto func returns return if else for while match const class interface enum import is as in break continue none common
+common func build() returns string { return none }
 
 ---
 
 (source_file
-  (keyword_declaration)
-  (keyword_declaration)
-  (keyword_declaration)
-  (keyword_declaration)
-  (keyword_control)
-  (keyword_control)
-  (keyword_control)
-  (keyword_control)
-  (keyword_control)
-  (keyword_declaration)
-  (keyword_declaration)
-  (keyword_declaration)
-  (keyword_declaration)
-  (keyword_declaration)
-  (keyword_operator)
-  (keyword_operator)
-  (keyword_operator)
-  (keyword_control)
-  (keyword_control)
-  (expression
-    (logic_or_expression
-      (logic_and_expression
-        (equality_expression
-          (comparison_expression
-            (sum_expression
-              (product_expression
-                (power_expression
-                  (unary_expression
-                    (postfix_expression
-                      (primary_expression
-                        (keyword_constant))))))))))))
+  (declaration
+    (function_declaration
+      name: (identifier)
+      return_type: (type_name
+        (type_path
+          (identifier)))
+      (block
+        (statement
+          (return_statement
+            value: (expression
+              (logic_or_expression
+                (logic_and_expression
+                  (equality_expression
+                    (comparison_expression
+                      (range_expression
+                        (sum_expression
+                          (product_expression
+                            (power_expression
+                              (unary_expression
+                                (postfix_expression
+                                  (primary_expression
+                                    (keyword_constant)))))))))))))))))))
+
+==================
+Control
+==================
+
+if true { break } else { continue }
+
+---
+
+(source_file
+  (statement
+    (if_statement
+      condition: (expression
+        (logic_or_expression
+          (logic_and_expression
+            (equality_expression
+              (comparison_expression
+                (range_expression
+                  (sum_expression
+                    (product_expression
+                      (power_expression
+                        (unary_expression
+                          (postfix_expression
+                            (primary_expression
+                              (literal
+                                (boolean))))))))))))))
+      (block
+        (statement
+          (break_statement)))
+      (else_clause
+        (block
+          (statement
+            (continue_statement)))))))
+
+==================
+Calls
+==================
+
+print("x")
+
+---
+
+(source_file
   (statement
     (expression_statement
       (expression
@@ -45,55 +79,36 @@ auto func returns return if else for while match const class interface enum impo
           (logic_and_expression
             (equality_expression
               (comparison_expression
-                (sum_expression
-                  (product_expression
-                    (power_expression
-                      (unary_expression
-                        (postfix_expression
-                          (primary_expression
-                            (keyword_constant)))))))))))))))
-
-==================
-Operators
-==================
-
-= += -= *= /= %= + - * ** / % ++ -- == != < <= > >= && || ! & .. .
-
----
-
-(source_file
-  (op_assign)
-  (op_assign)
-  (op_assign)
-  (op_assign)
-  (op_assign)
-  (op_assign)
-  (op_arithmetic)
-  (op_arithmetic)
-  (op_arithmetic)
-  (op_arithmetic)
-  (op_arithmetic)
-  (op_arithmetic)
-  (op_arithmetic)
-  (op_arithmetic)
-  (op_comparison)
-  (op_comparison)
-  (op_comparison)
-  (op_comparison)
-  (op_comparison)
-  (op_comparison)
-  (op_logical)
-  (op_logical)
-  (op_other)
-  (op_other)
-  (op_other)
-  (op_other))
+                (range_expression
+                  (sum_expression
+                    (product_expression
+                      (power_expression
+                        (unary_expression
+                          (postfix_expression
+                            (call_expression
+                              function: (call_target
+                                (identifier))
+                              (argument_list
+                                (expression
+                                  (logic_or_expression
+                                    (logic_and_expression
+                                      (equality_expression
+                                        (comparison_expression
+                                          (range_expression
+                                            (sum_expression
+                                              (product_expression
+                                                (power_expression
+                                                  (unary_expression
+                                                    (postfix_expression
+                                                      (primary_expression
+                                                        (literal
+                                                          (string_literal))))))))))))))))))))))))))))))
 
 ==================
 Literals
 ==================
 
-42 3.14 true false 'a' "hello" _
+42
 
 ---
 
@@ -105,90 +120,12 @@ Literals
           (logic_and_expression
             (equality_expression
               (comparison_expression
-                (sum_expression
-                  (product_expression
-                    (power_expression
-                      (unary_expression
-                        (postfix_expression
-                          (primary_expression
-                            (literal
-                              (int_literal)))))))))))))))
-  (expression
-    (logic_or_expression
-      (logic_and_expression
-        (equality_expression
-          (comparison_expression
-            (sum_expression
-              (product_expression
-                (power_expression
-                  (unary_expression
-                    (postfix_expression
-                      (primary_expression
-                        (literal
-                          (float_literal)))))))))))))
-  (expression
-    (logic_or_expression
-      (logic_and_expression
-        (equality_expression
-          (comparison_expression
-            (sum_expression
-              (product_expression
-                (power_expression
-                  (unary_expression
-                    (postfix_expression
-                      (primary_expression
-                        (literal
-                          (boolean)))))))))))))
-  (expression
-    (logic_or_expression
-      (logic_and_expression
-        (equality_expression
-          (comparison_expression
-            (sum_expression
-              (product_expression
-                (power_expression
-                  (unary_expression
-                    (postfix_expression
-                      (primary_expression
-                        (literal
-                          (boolean)))))))))))))
-  (expression
-    (logic_or_expression
-      (logic_and_expression
-        (equality_expression
-          (comparison_expression
-            (sum_expression
-              (product_expression
-                (power_expression
-                  (unary_expression
-                    (postfix_expression
-                      (primary_expression
-                        (literal
-                          (char_literal)))))))))))))
-  (expression
-    (logic_or_expression
-      (logic_and_expression
-        (equality_expression
-          (comparison_expression
-            (sum_expression
-              (product_expression
-                (power_expression
-                  (unary_expression
-                    (postfix_expression
-                      (primary_expression
-                        (literal
-                          (string_literal)))))))))))))
-  (statement
-    (expression_statement
-      (expression
-        (logic_or_expression
-          (logic_and_expression
-            (equality_expression
-              (comparison_expression
-                (sum_expression
-                  (product_expression
-                    (power_expression
-                      (unary_expression
-                        (postfix_expression
-                          (primary_expression
-                            (underscore)))))))))))))))
+                (range_expression
+                  (sum_expression
+                    (product_expression
+                      (power_expression
+                        (unary_expression
+                          (postfix_expression
+                            (primary_expression
+                              (literal
+                                (int_literal)))))))))))))))))

@@ -4,6 +4,23 @@ func add(int a, int b) returns int {
     return a + b
 }
 
+class User {
+    string name
+
+    func to_string() returns string {
+        return name
+    }
+}
+
+interface StringableThing {
+    func to_string() returns string
+}
+
+enum Status {
+    ready,
+    failed(string)
+}
+
 // Control flow
 if x > 40 {
     print("High")
@@ -45,12 +62,23 @@ auto int_val = 1_000
 auto float_val = 3.14e-2
 auto char_val = 'a'
 auto str_val = "hello"
+auto keyword_str = "in common string"
 auto multi_str = """
 multi-line
 string
 """
 auto none_val = none
 auto bool_val = true
+
+class Factory {
+    common func build() returns string {
+        return "ready"
+    }
+}
+
+func stringify(User user) returns string {
+    return user.to_string()
+}
 
 // Comments
 /* multi-line

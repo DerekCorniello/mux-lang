@@ -38,3 +38,4 @@ ci-artifacts/
 **/__pycache__/*
 **/__pycache__/
 **/*.pyc
+.codex
