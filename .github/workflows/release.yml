@@ -34,6 +34,7 @@ jobs:
         run: |
           pushd mux-syntax-highlighting
           node scripts/generate-syntax.js
+          node scripts/check-parity.js
           popd
           git diff --exit-code
 

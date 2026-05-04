@@ -457,17 +457,6 @@ module.exports = grammar({
       optional($.type_args)
     )),
 
-    type_args: $ => seq(
-      '<',
-      optional($.type_list),
-      '>'
-    ),
-
-    type_list: $ => seq(
-      $.type_name,
-      repeat(seq(',', $.type_name))
-    ),
-
     pattern: $ => choice(
       $.wildcard_pattern,
       $.literal_pattern,
@@ -516,25 +505,9 @@ module.exports = grammar({
     line_comment: $ => token(prec(1, regex_of(syntax.comments.line.pattern))),
     block_comment: $ => token(prec(1, regex_of(syntax.comments.block.pattern))),
 
-    keyword_control: $ => token_of(syntax.keywords.control),
-
-    keyword_declaration: $ => token_of(declaration_keywords),
-
-    keyword_operator: $ => token_of(syntax.keywords.operator),
-
     keyword_constant: $ => token_of(syntax.keywords.constant),
 
     boolean: $ => token_of(syntax.keywords.boolean_literals),
-
-    op_assign: $ => token_of(syntax.operators.assignment.map(op => op.symbol)),
-
-    op_arithmetic: $ => token_of(syntax.operators.arithmetic.map(op => op.symbol)),
-
-    op_comparison: $ => token_of(syntax.operators.comparison.map(op => op.symbol)),
-
-    op_logical: $ => token_of(syntax.operators.logical.map(op => op.symbol)),
-
-    op_other: $ => token_of(syntax.operators.other.map(op => op.symbol)),
 
     int_literal: $ => token(prec(1, regex_of(syntax.literals.integer.pattern))),
     float_literal: $ => token(prec(1, regex_of(syntax.literals.float.pattern))),
@@ -544,7 +517,6 @@ module.exports = grammar({
     triple_string_literal: $ => token(regex_of(syntax.literals.string.multi_line.pattern)),
 
     underscore: $ => token(syntax.identifiers.underscore),
-    delimiter: $ => token(choice_of(syntax.delimiters.map(item => item.symbol))),
 
     identifier: $ => token(regex_of(syntax.identifiers.pattern)),
   }

@@ -69,8 +69,8 @@
     { "token": "Colon", "symbol": ":", "description": "colon" }
   ],
   "literals": {
-    "integer": { "token": "Int", "pattern": "[-+]?[0-9][0-9_]*", "description": "64-bit integer" },
-    "float": { "token": "Float", "pattern": "[-+]?([0-9][0-9_]*\\.([0-9][0-9_]*)?|\\.[0-9][0-9_]*)([eE][-+]?[0-9][0-9_]*)?", "description": "64-bit float" },
+    "integer": { "token": "Int", "pattern": "[0-9][0-9_]*", "description": "64-bit integer" },
+    "float": { "token": "Float", "pattern": "([0-9][0-9_]*\\.([0-9][0-9_]*)?|\\.[0-9][0-9_]*)([eE][-+]?[0-9][0-9_]*)?", "description": "64-bit float" },
     "boolean": { "token": "Bool", "values": ["true", "false"] },
     "char": { "token": "Char", "pattern": "'(\\\\.|[^'\\\\])'", "description": "single character" },
     "string": {

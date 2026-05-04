@@ -23,6 +23,7 @@ runtime_toml = repo_root / "mux-runtime" / "Cargo.toml"
 readme = repo_root / "README.md"
 website_package = repo_root / "mux-website" / "package.json"
 syntax_package = repo_root / "mux-syntax-highlighting" / "textmate-mux" / "vscode-language-mux" / "package.json"
+tree_sitter_json = repo_root / "mux-syntax-highlighting" / "tree-sitter-mux" / "tree-sitter.json"
 changelog = repo_root / "CHANGELOG.md"
 
 
@@ -128,6 +129,12 @@ def update_syntax_package(version: str) -> None:
     write_text(syntax_package, json.dumps(package_data, indent=2) + "\n")
 
 
+def update_tree_sitter_json(version: str) -> None:
+    package_data = read_json(tree_sitter_json)
+    package_data["version"] = version
+    write_text(tree_sitter_json, json.dumps(package_data, indent=2) + "\n")
+
+
 def is_synced(version: str) -> tuple[bool, list[str]]:
     failures: list[str] = []
 
@@ -151,6 +158,9 @@ def is_synced(version: str) -> tuple[bool, list[str]]:
     syntax_package_data = read_json(syntax_package)
     if syntax_package_data.get("version") != version:
         failures.append("mux-syntax-highlighting/textmate-mux/vscode-language-mux/package.json version")
+    tree_sitter_data = read_json(tree_sitter_json)
+    if tree_sitter_data.get("version") != version:
+        failures.append("mux-syntax-highlighting/tree-sitter-mux/tree-sitter.json version")
 
     return len(failures) == 0, failures
 
@@ -172,6 +182,7 @@ update_toml_scalar(runtime_toml, "package", "version", version)
 update_readme(version)
 update_website_package(version)
 update_syntax_package(version)
+update_tree_sitter_json(version)
 
 print(
     "Synchronized Mux version references to "
