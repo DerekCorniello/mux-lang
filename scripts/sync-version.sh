@@ -10,7 +10,6 @@ if [[ -n "${1:-}" ]]; then
 fi
 
 python3 - "$REPO_ROOT" <<'PY'
-import json
 import re
 import sys
 from pathlib import Path
@@ -113,26 +112,43 @@ def update_readme(version: str) -> None:
     write_text(readme, "\n".join(lines) + "\n")
 
 
-def read_json(path: Path):
-    return json.loads(read_text(path))
-
-
 def update_website_package(version: str) -> None:
-    package_data = read_json(website_package)
-    package_data["version"] = version
-    write_text(website_package, json.dumps(package_data, indent=2) + "\n")
+    content = read_text(website_package)
+    updated, count = re.subn(
+        r'("version"\s*:\s*")([^"\n]+)(")',
+        rf'\g<1>{version}\g<3>',
+        content,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit(f"Could not update version in {website_package}")
+    write_text(website_package, updated)
 
 
 def update_syntax_package(version: str) -> None:
-    package_data = read_json(syntax_package)
-    package_data["version"] = version
-    write_text(syntax_package, json.dumps(package_data, indent=2) + "\n")
+    content = read_text(syntax_package)
+    updated, count = re.subn(
+        r'("version"\s*:\s*")([^"\n]+)(")',
+        rf'\g<1>{version}\g<3>',
+        content,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit(f"Could not update version in {syntax_package}")
+    write_text(syntax_package, updated)
 
 
 def update_tree_sitter_json(version: str) -> None:
-    package_data = read_json(tree_sitter_json)
-    package_data["version"] = version
-    write_text(tree_sitter_json, json.dumps(package_data, indent=2) + "\n")
+    content = read_text(tree_sitter_json)
+    updated, count = re.subn(
+        r'("version"\s*:\s*")([^"\n]+)(")',
+        rf'\g<1>{version}\g<3>',
+        content,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit(f"Could not update version in {tree_sitter_json}")
+    write_text(tree_sitter_json, updated)
 
 
 def is_synced(version: str) -> tuple[bool, list[str]]:
@@ -141,8 +157,6 @@ def is_synced(version: str) -> tuple[bool, list[str]]:
     compiler = read_text(compiler_toml)
     runtime = read_text(runtime_toml)
     readme_text = read_text(readme)
-    package_data = read_json(website_package)
-
     if f'version = "{version}"' not in compiler:
         failures.append("mux-compiler/Cargo.toml package version")
     if f'mux-runtime = "{version}"' not in compiler:
@@ -153,13 +167,11 @@ def is_synced(version: str) -> tuple[bool, list[str]]:
         failures.append("README.md version badge")
     if f"- **Current Version:** {version}" not in readme_text:
         failures.append("README.md current version")
-    if package_data.get("version") != version:
+    if f'"version": "{version}"' not in read_text(website_package):
         failures.append("mux-website/package.json version")
-    syntax_package_data = read_json(syntax_package)
-    if syntax_package_data.get("version") != version:
+    if f'"version": "{version}"' not in read_text(syntax_package):
         failures.append("mux-syntax-highlighting/textmate-mux/vscode-language-mux/package.json version")
-    tree_sitter_data = read_json(tree_sitter_json)
-    if tree_sitter_data.get("version") != version:
+    if f'"version": "{version}"' not in read_text(tree_sitter_json):
         failures.append("mux-syntax-highlighting/tree-sitter-mux/tree-sitter.json version")
 
     return len(failures) == 0, failures

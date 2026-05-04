@@ -30,6 +30,9 @@ jobs:
       - name: Version consistency check
         run: ./scripts/sync-version.sh && git diff --exit-code
 
+      - name: Install Tree-sitter CLI
+        run: npm install -g tree-sitter-cli
+
       - name: Verify syntax-generated files
         run: |
           pushd mux-syntax-highlighting
