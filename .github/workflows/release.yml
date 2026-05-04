@@ -31,11 +31,7 @@ jobs:
         run: ./scripts/sync-version.sh && git diff --exit-code
 
       - name: Sync syntax package version
-        run: |
-          pushd mux-syntax-highlighting
-          node scripts/generate-syntax.js
-          popd
-          git diff --exit-code
+        run: ./scripts/release-syntax.sh
 
       - name: Check whether tag commit is on main
         id: branch_policy
@@ -115,11 +111,7 @@ jobs:
         run: ./scripts/sync-version.sh && git diff --exit-code
 
       - name: Sync syntax package version
-        run: |
-          pushd mux-syntax-highlighting
-          node scripts/generate-syntax.js
-          popd
-          git diff --exit-code
+        run: ./scripts/release-syntax.sh
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9

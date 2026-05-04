@@ -2,8 +2,8 @@
 
 ## Neovim
 
-1. Edit `shared/syntax-matrix.json` if the vocabulary changes, then run `node scripts/generate-syntax.js` from `mux-syntax-highlighting/`
-2. Clone this repository or copy `tree-sitter-mux/` to `~/.local/share/nvim/site/parser/`
+1. Edit `shared/syntax-matrix.json` if the vocabulary changes, then run `./scripts/release-syntax.sh` or `node scripts/generate-syntax.js` from `mux-syntax-highlighting/`
+2. Install the generated parser and query files from `tree-sitter-mux/`
 3. Add to your Neovim config (`~/.config/nvim/init.lua`):
 ```lua
 local parser_config = require "nvim-treesitter.parsers".get_parser_configs()
@@ -21,8 +21,8 @@ parser_config.mux = {
 
 ## Helix
 
-1. Edit `shared/syntax-matrix.json` if the vocabulary changes, then run `node scripts/generate-syntax.js` from `mux-syntax-highlighting/`
-2. Add the parser to Helix's runtime:
+1. Edit `shared/syntax-matrix.json` if the vocabulary changes, then run `./scripts/release-syntax.sh` or `node scripts/generate-syntax.js` from `mux-syntax-highlighting/`
+2. Add the generated parser to Helix's runtime:
 ```bash
 mkdir -p ~/.config/helix/runtime/grammars
 cd mux-syntax-highlighting/tree-sitter-mux

@@ -32,9 +32,7 @@ Run `node scripts/generate-syntax.js` before packaging or testing editor output.
 ### Building and Testing (VSCode)
 ```bash
 cd mux-syntax-highlighting
-node scripts/generate-syntax.js
-cd textmate-mux/vscode-language-mux
-vsce package
+./scripts/release-syntax.sh
 ```
 
 ### Scope Names
@@ -99,6 +97,10 @@ Test samples are in `shared/samples/`. Use:
 2. TextMate: package from `textmate-mux/vscode-language-mux/` and install the VSIX locally
 3. Tree-sitter: `tree-sitter test` in `tree-sitter-mux/`
 4. Parity: `node scripts/check-parity.js`
+
+## Release Helper
+- `./scripts/release-syntax.sh` regenerates the syntax files, rebuilds Tree-sitter, and packages the VSCode extension.
+- Generated editor outputs are intentionally not committed.
 
 ## GitHub Highlighting
 Contribute to GitHub Linguist using artifacts in `shared/linguist/`. Status tracked in `shared/linguist/README.md`.

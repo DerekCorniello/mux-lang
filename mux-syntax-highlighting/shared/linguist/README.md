@@ -1,7 +1,7 @@
 # Linguist Upstream Contribution Checklist
 
 ## Prerequisites
-- [ ] TextMate grammar (`textmate-mux/source.mux.json`) complete
+- [ ] TextMate grammar generation works from `shared/syntax-matrix.json`
 - [ ] Sample Mux files added to `shared/linguist/samples/`
 - [ ] Language metadata defined below
 - [ ] `node ../../scripts/check-parity.js` passes
@@ -24,7 +24,7 @@
 ## Steps to Contribute
 1. Fork https://github.com/github/linguist
 2. Add language entry to `lib/linguist/languages.yml`
-3. Add `source.mux.json` to `lib/linguist/grammars/`
+3. Add the generated TextMate grammar to `lib/linguist/grammars/`
 4. Add sample files to `samples/Mux/`
 5. Submit PR to Linguist with description: "Add support for Mux programming language"
 6. GitHub highlighting will be available after merge (latency: ~1-2 weeks)
