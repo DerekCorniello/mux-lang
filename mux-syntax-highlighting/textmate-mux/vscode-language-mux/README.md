@@ -18,7 +18,7 @@ The extension grammar is generated from `../../shared/syntax-matrix.json` via `.
 ### Build and Package
 ```bash
 cd mux-syntax-highlighting
-./scripts/release-syntax.sh
+../scripts/release-syntax.sh
 ```
 
 ### Install Locally

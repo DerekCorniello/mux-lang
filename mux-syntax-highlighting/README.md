@@ -3,7 +3,7 @@
 First-class syntax highlighting support for the Mux programming language across editors and tools.
 
 ## Structure
-- `textmate-mux/` - TextMate grammar (VSCode, Sublime, JetBrains, Nova)
+- `textmate-mux/` - TextMate grammar (VSCode, Sublime, JetBrains)
   - `vscode-language-mux/` - VSCode extension package
 - `tree-sitter-mux/` - Tree-sitter parser (Neovim, Helix, GitHub code intelligence)
   - `grammar.js` - Tree-sitter grammar
@@ -32,7 +32,7 @@ Run `node scripts/generate-syntax.js` before packaging or testing editor output.
 ### Building and Testing (VSCode)
 ```bash
 cd mux-syntax-highlighting
-./scripts/release-syntax.sh
+../scripts/release-syntax.sh
 ```
 
 ### Scope Names
@@ -48,7 +48,7 @@ The grammar uses standard TextMate scope names. Colors are determined by the act
 - `variable.other.mux` - Identifiers
 
 ### Editor Compatibility
-See `textmate-mux/COMPATIBILITY.md` for Sublime Text, JetBrains, and Nova setup.
+See `textmate-mux/COMPATIBILITY.md` for Sublime Text and JetBrains setup.
 
 ---
 
@@ -99,12 +99,8 @@ Test samples are in `shared/samples/`. Use:
 4. Parity: `node scripts/check-parity.js`
 
 ## Release Helper
-- `./scripts/release-syntax.sh` regenerates the syntax files, rebuilds Tree-sitter, and packages the VSCode extension.
+- `../scripts/release-syntax.sh` regenerates the syntax files, rebuilds Tree-sitter, and packages the VSCode extension.
 - Generated editor outputs are intentionally not committed.
 
 ## GitHub Highlighting
 Contribute to GitHub Linguist using artifacts in `shared/linguist/`. Status tracked in `shared/linguist/README.md`.
-
-## Release Workflow
-- `./scripts/release-syntax.sh` regenerates the syntax files, rebuilds Tree-sitter, and packages the VSCode extension.
-- Generated editor outputs are intentionally not committed.
