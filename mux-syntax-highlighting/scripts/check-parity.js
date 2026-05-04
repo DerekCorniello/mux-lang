@@ -51,6 +51,7 @@ function assertContainsAll(haystack, needles, label) {
 }
 
 const matrix = readJson('shared/syntax-matrix.json');
+const generatedSyntax = require(path.join(root, 'tree-sitter-mux/generated/syntax.js'));
 const textmateCanonical = readJson('textmate-mux/source.mux.json');
 const textmatePackage = readJson('textmate-mux/vscode-language-mux/source.mux.json');
 const treeSitterGrammar = readText('tree-sitter-mux/grammar.js');
@@ -61,11 +62,19 @@ assert(
   'TextMate canonical grammar and VSCode package grammar are out of sync',
 );
 
+assert(
+  stableStringify(generatedSyntax) === stableStringify(matrix),
+  'Tree-sitter generated syntax module is out of sync with shared syntax matrix',
+);
+
 const normalizedTextmate = readText('textmate-mux/source.mux.json').replace(/\\/g, '');
 const normalizedTreeSitter = readText('tree-sitter-mux/src/grammar.json').replace(/\\/g, '');
 
 const expectedKeywords = [
-  ...matrix.keywords.reserved,
+  ...matrix.keywords.control,
+  ...matrix.keywords.declaration,
+  ...matrix.keywords.operator,
+  ...matrix.keywords.constant,
   ...matrix.keywords.boolean_literals,
 ];
 const expectedOperators = flattenNumbers(matrix);
@@ -110,6 +119,10 @@ assertContainsAll(
     '@variable.language',
     '@variable.other',
     '@punctuation.bracket',
+    '@function',
+    '@function.call',
+    '@function.declaration',
+    '@type',
   ],
   'Tree-sitter highlight captures',
 );

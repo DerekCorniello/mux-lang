@@ -1,33 +1,33 @@
+const syntax = require('../shared/syntax-matrix.json');
+
+const choice_of = values => choice(...values);
+const token_of = values => (
+  values.length === 1
+    ? token(prec(1, values[0]))
+    : token(prec(1, choice(...values)))
+);
+const regex_of = pattern => new RegExp(pattern);
+
+const declaration_keywords = syntax.keywords.declaration.filter(keyword => keyword !== 'common');
+
 module.exports = grammar({
   name: 'mux',
 
   conflicts: $ => [
-    [$.call_expression, $.field_access],
-    [$.type_name, $.call_expression],
     [$.primary_expression, $.type_path],
-    [$.field_access, $.type_path],
-    [$.field_access, $.reference_type],
-    [$.declaration, $.primary_expression],
     [$.source_file, $.expression_statement],
     [$.block, $.expression_statement],
-    [$.postfix_expression, $.call_expression],
-    [$.postfix_expression, $.index_access],
-    [$.parameter, $.type_arg],
-    [$.parameter, $.type_path],
-    [$.parameter, $.type_list],
-    [$.type_param, $.type_path],
     [$.identifier_pattern, $.enum_variant_pattern],
     [$.if_statement, $.guard_clause],
-    [$.pattern, $.expression],
     [$.match_arm, $.statement],
     [$.primary_expression, $.call_target],
     [$.primary_expression, $.call_target, $.type_path],
-    [$.member_object, $.type_path],
-    [$.primary_expression, $.member_object, $.type_path],
-    [$.postfix_expression, $.call_target],
-    [$.postfix_expression, $.member_object],
     [$.primary_expression, $.member_object],
+    [$.primary_expression, $.member_object, $.type_path],
+    [$.member_object, $.type_path],
     [$.member_object, $.reference_type],
+    [$.postfix_expression, $.member_object],
+    [$.postfix_expression, $.call_target],
   ],
 
   rules: {
@@ -269,28 +269,28 @@ module.exports = grammar({
 
     assignment_expression: $ => prec.right(seq(
       field('left', $.logic_or_expression),
-      field('operator', choice('=', '+=', '-=', '*=', '/=', '%=')),
+      field('operator', choice_of(syntax.operators.assignment.map(op => op.symbol))),
       field('right', $.expression)
     )),
 
     logic_or_expression: $ => prec.left(seq(
       $.logic_and_expression,
-      repeat(seq('||', $.logic_and_expression))
+      repeat(seq(syntax.operators.logical.find(op => op.symbol === '||').symbol, $.logic_and_expression))
     )),
 
     logic_and_expression: $ => prec.left(seq(
       $.equality_expression,
-      repeat(seq('&&', $.equality_expression))
+      repeat(seq(syntax.operators.logical.find(op => op.symbol === '&&').symbol, $.equality_expression))
     )),
 
     equality_expression: $ => prec.left(seq(
       $.comparison_expression,
-      repeat(seq(choice('==', '!='), $.comparison_expression))
+      repeat(seq(choice_of(syntax.operators.comparison.filter(op => op.symbol === '==' || op.symbol === '!=').map(op => op.symbol)), $.comparison_expression))
     )),
 
     comparison_expression: $ => prec.left(seq(
       $.range_expression,
-      repeat(seq(choice('<', '<=', '>', '>='), $.range_expression))
+      repeat(seq(choice_of(syntax.operators.comparison.map(op => op.symbol)), $.range_expression))
     )),
 
     range_expression: $ => prec.left(seq(
@@ -300,21 +300,28 @@ module.exports = grammar({
 
     sum_expression: $ => prec.left(seq(
       $.product_expression,
-      repeat(seq(choice('+', '-'), $.product_expression))
+      repeat(seq(choice_of(syntax.operators.arithmetic.filter(op => op.symbol === '+' || op.symbol === '-').map(op => op.symbol)), $.product_expression))
     )),
 
     product_expression: $ => prec.left(seq(
       $.power_expression,
-      repeat(seq(choice('*', '/', '%'), $.power_expression))
+      repeat(seq(choice_of(syntax.operators.arithmetic.filter(op => op.symbol === '*' || op.symbol === '/' || op.symbol === '%').map(op => op.symbol)), $.power_expression))
     )),
 
     power_expression: $ => prec.right(choice(
-      seq($.unary_expression, '**', $.power_expression),
+      seq($.unary_expression, syntax.operators.arithmetic.find(op => op.symbol === '**').symbol, $.power_expression),
       $.unary_expression
     )),
 
     unary_expression: $ => prec.right(choice(
-      seq(choice('!', '-', '&', '*', '++', '--'), $.unary_expression),
+      seq(choice_of([
+        syntax.operators.logical.find(op => op.symbol === '!').symbol,
+        syntax.operators.arithmetic.find(op => op.symbol === '-').symbol,
+        syntax.operators.other.find(op => op.symbol === '&').symbol,
+        syntax.operators.arithmetic.find(op => op.symbol === '*').symbol,
+        syntax.operators.arithmetic.find(op => op.symbol === '++').symbol,
+        syntax.operators.arithmetic.find(op => op.symbol === '--').symbol,
+      ]), $.unary_expression),
       $.postfix_expression
     )),
 
@@ -506,60 +513,39 @@ module.exports = grammar({
       $.triple_string_literal
     ),
 
-    line_comment: $ => token(prec(1, seq('//', /.*/))),
-    block_comment: $ => token(prec(1, seq('/*', /[^*]*\*+([^/*][^*]*\*+)*/, '/'))),
+    line_comment: $ => token(prec(1, regex_of(syntax.comments.line.pattern))),
+    block_comment: $ => token(prec(1, regex_of(syntax.comments.block.pattern))),
 
-    keyword_control: $ => token(prec(1, choice(
-      'if', 'else', 'for', 'while', 'match', 'break', 'continue'
-    ))),
+    keyword_control: $ => token_of(syntax.keywords.control),
 
-    keyword_declaration: $ => token(prec(1, choice(
-      'auto', 'func', 'returns', 'return', 'const', 'class', 'interface', 'enum', 'import'
-    ))),
+    keyword_declaration: $ => token_of(declaration_keywords),
 
-    keyword_operator: $ => token(prec(1, choice(
-      'is', 'as', 'in'
-    ))),
+    keyword_operator: $ => token_of(syntax.keywords.operator),
 
-    keyword_constant: $ => token(prec(1, 'none')),
+    keyword_constant: $ => token_of(syntax.keywords.constant),
 
-    boolean: $ => token(prec(1, choice('true', 'false'))),
+    boolean: $ => token_of(syntax.keywords.boolean_literals),
 
-    op_assign: $ => token(prec(1, choice(
-      '=', '+=', '-=', '*=', '/=', '%='
-    ))),
+    op_assign: $ => token_of(syntax.operators.assignment.map(op => op.symbol)),
 
-    op_arithmetic: $ => token(prec(1, choice(
-      '+', '-', '*', '**', '/', '%', '++', '--'
-    ))),
+    op_arithmetic: $ => token_of(syntax.operators.arithmetic.map(op => op.symbol)),
 
-    op_comparison: $ => token(prec(1, choice(
-      '==', '!=', '<', '<=', '>', '>='
-    ))),
+    op_comparison: $ => token_of(syntax.operators.comparison.map(op => op.symbol)),
 
-    op_logical: $ => token(prec(1, choice(
-      '&&', '||'
-    ))),
+    op_logical: $ => token_of(syntax.operators.logical.map(op => op.symbol)),
 
-    op_other: $ => token(prec(1, choice(
-      '!', '&', '.', '..'
-    ))),
+    op_other: $ => token_of(syntax.operators.other.map(op => op.symbol)),
 
-    int_literal: $ => token(prec(1, seq(optional('-'), /[0-9][0-9_]*/))),
-    float_literal: $ => token(prec(1, choice(
-      seq(optional('-'), /[0-9][0-9_]*\.[0-9][0-9_]*/),
-      seq(optional('-'), /[0-9][0-9_]*\.[0-9][0-9_]*[eE][-+]?[0-9][0-9_]*/),
-      seq(optional('-'), /\.[0-9][0-9_]*/),
-      seq(optional('-'), /\.[0-9][0-9_]*[eE][-+]?[0-9][0-9_]*/)
-    ))),
+    int_literal: $ => token(prec(1, regex_of(syntax.literals.integer.pattern))),
+    float_literal: $ => token(prec(1, regex_of(syntax.literals.float.pattern))),
 
-    char_literal: $ => token(seq("'", choice(/\\./, /[^'\\]/), "'")),
-    string_literal: $ => token(seq('"', repeat(choice(/\\./, /[^"\\]/)), '"')),
-    triple_string_literal: $ => token(seq('"""', repeat(choice(/\\./, /[^"\\]/, '\n')), '"""')),
+    char_literal: $ => token(regex_of(syntax.literals.char.pattern)),
+    string_literal: $ => token(regex_of(syntax.literals.string.single_line.pattern)),
+    triple_string_literal: $ => token(regex_of(syntax.literals.string.multi_line.pattern)),
 
-    underscore: $ => token('_'),
-    delimiter: $ => token(choice('(', ')', '{', '}', '[', ']', ',', ':')),
+    underscore: $ => token(syntax.identifiers.underscore),
+    delimiter: $ => token(choice_of(syntax.delimiters.map(item => item.symbol))),
 
-    identifier: $ => token(seq(/[a-zA-Z]/, repeat(/[a-zA-Z0-9_]/))),
+    identifier: $ => token(regex_of(syntax.identifiers.pattern)),
   }
 });

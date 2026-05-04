@@ -13,6 +13,8 @@ Provides syntax highlighting and language configuration for Mux files (`.mux`) i
 - Node.js and npm
 - vsce: `npm install -g @vscode/vsce`
 
+The extension grammar is generated from `../../shared/syntax-matrix.json` via `../../scripts/generate-syntax.js`.
+
 ### Build and Package
 ```bash
 cd mux-syntax-highlighting/textmate-mux/vscode-language-mux
@@ -26,10 +28,11 @@ code -r /path/to/mux-lang
 ```
 
 ### Test Changes
-1. Edit `source.mux.json` (canonical TextMate grammar)
-2. Repackage with `vsce package`
-3. Reinstall the `.vsix` in VSCode
-4. Reload window (Ctrl+Shift+P → "Developer: Reload Window")
+1. Edit `../../shared/syntax-matrix.json`
+2. Run `node ../../scripts/generate-syntax.js`
+3. Repackage with `vsce package`
+4. Reinstall the `.vsix` in VSCode
+5. Reload window (Ctrl+Shift+P -> "Developer: Reload Window")
 
 ## File Structure
 - `source.mux.json` - TextMate grammar (JSON format)

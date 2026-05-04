@@ -47,8 +47,9 @@
 ;; Delimiters
 ["(" ")" "{" "}" "[" "]" ","] @punctuation.bracket
 
-;; Identifiers
-(identifier) @variable @variable.other
+;; Member access
+(field_access field: (identifier) @property)
+(type_path (identifier) "." (identifier) @property)
 
 ;; Structured names
 (class_declaration name: (identifier) @type)
@@ -57,14 +58,18 @@
 (function_declaration name: (identifier) @function @function.declaration)
 (interface_method_declaration name: (identifier) @function @function.declaration)
 (call_expression function: (call_target (identifier) @function.call))
-(call_expression function: (call_target (field_access field: (identifier) @function.call)))
-(parameter name: (identifier) @variable.parameter)
-(parameter type: (type_name (type_path (identifier) @type)))
-(type_path (identifier) @type)
+(parameter type: (type_name) @type)
+(field_declaration type: (type_name) @type)
+(typed_declaration type: (type_name) @type)
+(const_declaration type: (type_name) @type)
+(function_declaration return_type: (type_name) @type)
+(interface_method_declaration return_type: (type_name) @type)
+(trait_clause (type_path) @type)
+(type_bound_clause (type_path) @type)
 (enum_variant name: (identifier) @constructor)
 
 ((identifier) @type
- (#match? @type "^(string|bool|void|int|float|char|optional|result|list|map|tuple|set|range|Stringable|Hashable|Thread)$"))
+ (#match? @type "^(string|bool|void|int|float|char|optional|result|list|map|tuple|set|range|Stringable|Hashable|Thread|Error|Self)$"))
 
 ((identifier) @variable.builtin
  (#eq? @variable.builtin "self"))

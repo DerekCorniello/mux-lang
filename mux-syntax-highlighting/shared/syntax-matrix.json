@@ -3,12 +3,21 @@
   "scope": "source.mux",
   "file_extensions": [".mux"],
   "keywords": {
+    "control": [
+      "if", "else", "for", "while", "match", "break", "continue"
+    ],
+    "declaration": [
+      "auto", "func", "returns", "return", "const", "class", "interface",
+      "enum", "import", "common"
+    ],
+    "operator": ["is", "as", "in"],
+    "constant": ["none"],
+    "boolean_literals": ["true", "false"],
     "reserved": [
       "auto", "func", "returns", "return", "if", "else", "for", "while",
       "match", "const", "class", "interface", "enum", "import", "is",
       "as", "in", "break", "continue", "none", "common"
     ],
-    "boolean_literals": ["true", "false"],
     "note": "none is a tokenized keyword; some/ok/err are enum variant identifiers, not keywords"
   },
   "operators": {
@@ -69,6 +78,17 @@
       "multi_line": { "pattern": "\"\"\"(\\\\.|[^\"\\\\]|\\n)*\"\"\"", "description": "triple-quoted string" }
     },
     "underscore": { "token": "Underscore", "symbol": "_", "description": "wildcard in match patterns" }
+  },
+  "types": {
+    "builtin": [
+      "string", "bool", "void", "int", "float", "char", "optional", "result",
+      "list", "map", "tuple", "set", "range", "Stringable", "Hashable",
+      "Thread", "Error", "Self"
+    ]
+  },
+  "identifiers": {
+    "pattern": "[a-zA-Z][a-zA-Z0-9_]*",
+    "underscore": "_"
   },
   "comments": {
     "line": { "token": "LineComment", "pattern": "//[^\n]*", "description": "single-line comment" },

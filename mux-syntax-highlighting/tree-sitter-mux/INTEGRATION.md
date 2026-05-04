@@ -2,8 +2,9 @@
 
 ## Neovim
 
-1. Clone this repository or copy `tree-sitter-mux/` to `~/.local/share/nvim/site/parser/`
-2. Add to your Neovim config (`~/.config/nvim/init.lua`):
+1. Edit `shared/syntax-matrix.json` if the vocabulary changes, then run `node scripts/generate-syntax.js` from `mux-syntax-highlighting/`
+2. Clone this repository or copy `tree-sitter-mux/` to `~/.local/share/nvim/site/parser/`
+3. Add to your Neovim config (`~/.config/nvim/init.lua`):
 ```lua
 local parser_config = require "nvim-treesitter.parsers".get_parser_configs()
 parser_config.mux = {
@@ -16,18 +17,20 @@ parser_config.mux = {
 }
 ```
 
-3. Run `:TSInstall mux` in Neovim, then `:TSBufEnable highlight`
+4. Run `:TSInstall mux` in Neovim, then `:TSBufEnable highlight`
 
 ## Helix
 
-1. Add the parser to Helix's runtime:
+1. Edit `shared/syntax-matrix.json` if the vocabulary changes, then run `node scripts/generate-syntax.js` from `mux-syntax-highlighting/`
+2. Add the parser to Helix's runtime:
 ```bash
 mkdir -p ~/.config/helix/runtime/grammars
-tree-sitter generate mux-syntax-highlighting/tree-sitter-mux/grammar.js
+cd mux-syntax-highlighting/tree-sitter-mux
+tree-sitter generate grammar.js
 cp mux.so ~/.config/helix/runtime/grammars/
 ```
 
-2. Add to `~/.config/helix/languages.toml`:
+3. Add to `~/.config/helix/languages.toml`:
 ```toml
 [[language]]
 name = "mux"

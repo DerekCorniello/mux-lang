@@ -38,7 +38,7 @@
       "patterns": [
         {
           "name": "comment.line.double-slash.mux",
-          "match": "//.*$"
+          "match": "//[^\n]*"
         },
         {
           "name": "comment.block.mux",
@@ -57,11 +57,11 @@
       "patterns": [
         {
           "name": "keyword.control.mux",
-          "match": "\\b(if|else|for|while|match|break|continue)\\b"
+          "match": "\\b(?:if|else|for|while|match|break|continue)\\b"
         },
         {
           "name": "keyword.declaration.mux",
-          "match": "\\b(func|returns|return|const|class|interface|enum|import|common)\\b"
+          "match": "\\b(?:auto|func|returns|return|const|class|interface|enum|import|common)\\b"
         },
         {
           "name": "storage.type.mux",
@@ -69,11 +69,11 @@
         },
         {
           "name": "keyword.operator.mux",
-          "match": "\\b(as|in|is)\\b"
+          "match": "\\b(?:is|as|in)\\b"
         },
         {
           "name": "constant.language.mux",
-          "match": "\\b(none|true|false)\\b"
+          "match": "\\b(?:none|true|false)\\b"
         }
       ]
     },
@@ -105,11 +105,11 @@
       "patterns": [
         {
           "name": "constant.numeric.integer.mux",
-          "match": "\\b[-+]?[0-9][0-9_]*\\b"
+          "match": "[-+]?[0-9][0-9_]*"
         },
         {
           "name": "constant.numeric.float.mux",
-          "match": "\\b[-+]?([0-9][0-9_]*\\.([0-9][0-9_]*)?|\\.[0-9][0-9_]*)([eE][-+]?[0-9][0-9_]*)?\\b"
+          "match": "[-+]?([0-9][0-9_]*\\.([0-9][0-9_]*)?|\\.[0-9][0-9_]*)([eE][-+]?[0-9][0-9_]*)?"
         },
         {
           "name": "string.quoted.single.mux",
@@ -154,7 +154,7 @@
       "patterns": [
         {
           "name": "punctuation.mux",
-          "match": "[(){}[\\],:]"
+          "match": "[\\(\\)\\{\\}\\[\\],:]"
         }
       ]
     },
@@ -189,6 +189,20 @@
         {
           "name": "support.function.mux",
           "match": "\\b[a-zA-Z][a-zA-Z0-9_]*\\b\\s*(?=(?:<[^()<>\\n]+>\\s*)?\\()"
+        },
+        {
+          "match": "\\b([a-zA-Z][a-zA-Z0-9_]*)(\\s*\\.\\s*)([a-zA-Z][a-zA-Z0-9_]*)\\b\\s*(?=(?:<[^()<>\\n]+>\\s*)?\\()",
+          "captures": {
+            "1": {
+              "name": "variable.other.mux"
+            },
+            "2": {
+              "name": "punctuation.delimiter.mux"
+            },
+            "3": {
+              "name": "support.function.mux"
+            }
+          }
         }
       ]
     },
@@ -221,7 +235,7 @@
         },
         {
           "name": "storage.type.mux",
-          "match": "\\b(?:string|bool|void|int|float|char|optional|result|list|map|tuple|set|range|Stringable|Hashable|Thread|[A-Z][a-zA-Z0-9_]*)\\b"
+          "match": "\\b(?:string|bool|void|int|float|char|optional|result|list|map|tuple|set|range|Stringable|Hashable|Thread|Error|Self|[A-Z][a-zA-Z0-9_]*)\\b"
         }
       ]
     },

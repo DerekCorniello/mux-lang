@@ -15,6 +15,7 @@ First-class syntax highlighting support for the Mux programming language across 
   - `syntax-matrix.json` - Single source of truth for syntax elements
   - `linguist/` - GitHub Linguist contribution artifacts
   - `samples/` - Validation samples for both tracks
+- `scripts/` - Generates both grammars from `shared/syntax-matrix.json`
 
 ---
 
@@ -72,6 +73,9 @@ See `textmate-mux/COMPATIBILITY.md` for Sublime Text, JetBrains, and Nova setup.
 ```bash
 cd mux-syntax-highlighting/tree-sitter-mux
 
+# Regenerate the shared outputs first if shared/syntax-matrix.json changed
+node ../scripts/generate-syntax.js
+
 # Generate parser (ABI 15, requires tree-sitter.json)
 tree-sitter generate grammar.js
 
@@ -101,9 +105,12 @@ See `tree-sitter-mux/INTEGRATION.md` for Neovim and Helix setup instructions.
 
 ## Validation
 Test samples are in `shared/samples/`. Use:
-- TextMate: open `shared/samples/validation.mux` in VSCode with the extension installed
-- Tree-sitter: `tree-sitter test` in `tree-sitter-mux/`
-- Parity: `node scripts/check-parity.js`
+
+1. Regenerate both grammars after editing `shared/syntax-matrix.json`:
+   `node scripts/generate-syntax.js`
+2. TextMate: open `shared/samples/validation.mux` in VSCode with the extension installed
+3. Tree-sitter: `tree-sitter test` in `tree-sitter-mux/`
+4. Parity: `node scripts/check-parity.js`
 
 ## GitHub Highlighting
 Contribute to GitHub Linguist using artifacts in `shared/linguist/`. Status tracked in `shared/linguist/README.md`.
