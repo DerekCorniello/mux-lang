@@ -17,7 +17,9 @@ The extension grammar is generated from `../../shared/syntax-matrix.json` via `.
 
 ### Build and Package
 ```bash
-cd mux-syntax-highlighting/textmate-mux/vscode-language-mux
+cd mux-syntax-highlighting
+node scripts/generate-syntax.js
+cd textmate-mux/vscode-language-mux
 vsce package
 ```
 
@@ -31,11 +33,10 @@ code -r /path/to/mux-lang
 1. Edit `../../shared/syntax-matrix.json`
 2. Run `node ../../scripts/generate-syntax.js`
 3. Repackage with `vsce package`
-4. Reinstall the `.vsix` in VSCode
+4. Install the `.vsix` in VSCode
 5. Reload window (Ctrl+Shift+P -> "Developer: Reload Window")
 
 ## File Structure
-- `source.mux.json` - TextMate grammar (JSON format)
 - `language-configuration.json` - Editor behavior (brackets, comments)
 - `mux-icon.png` - Extension icon
 - `package.json` - VSCode extension manifest

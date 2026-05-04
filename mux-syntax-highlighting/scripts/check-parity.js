@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
+const { execFileSync } = require('node:child_process');
 
 function readText(relPath) {
   return fs.readFileSync(path.join(root, relPath), 'utf8');
@@ -51,6 +52,8 @@ function assertContainsAll(haystack, needles, label) {
 }
 
 const matrix = readJson('shared/syntax-matrix.json');
+execFileSync('node', [path.join(root, 'scripts', 'generate-syntax.js')], { stdio: 'inherit' });
+execFileSync('tree-sitter', ['generate', 'grammar.js'], { cwd: path.join(root, 'tree-sitter-mux'), stdio: 'inherit' });
 const generatedSyntax = require(path.join(root, 'tree-sitter-mux/generated/syntax.js'));
 const textmateCanonical = readJson('textmate-mux/source.mux.json');
 const textmatePackage = readJson('textmate-mux/vscode-language-mux/source.mux.json');

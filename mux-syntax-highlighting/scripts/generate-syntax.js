@@ -330,4 +330,5 @@ function treeSitterHighlights() {
 
 writeText('tree-sitter-mux/generated/syntax.js', generatedSyntaxModule());
 writeText('textmate-mux/source.mux.json', textmateGrammar());
+writeText('textmate-mux/vscode-language-mux/source.mux.json', textmateGrammar());
 writeText('tree-sitter-mux/queries/highlights.scm', treeSitterHighlights());

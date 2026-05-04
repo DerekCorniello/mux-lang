@@ -4,7 +4,6 @@ First-class syntax highlighting support for the Mux programming language across 
 
 ## Structure
 - `textmate-mux/` - TextMate grammar (VSCode, Sublime, JetBrains, Nova)
-  - `source.mux.json` - Canonical TextMate grammar source
   - `vscode-language-mux/` - VSCode extension package
 - `tree-sitter-mux/` - Tree-sitter parser (Neovim, Helix, GitHub code intelligence)
   - `grammar.js` - Tree-sitter grammar
@@ -26,24 +25,16 @@ First-class syntax highlighting support for the Mux programming language across 
 - vsce: `npm install -g @vscode/vsce`
 
 ### Working with the Grammar
-The canonical TextMate grammar lives at `textmate-mux/source.mux.json`.
+The canonical TextMate grammar is generated from `shared/syntax-matrix.json`.
 
-When editing, update the canonical source and keep the VSCode package copy in sync.
+Run `node scripts/generate-syntax.js` before packaging or testing editor output.
 
 ### Building and Testing (VSCode)
 ```bash
-cd mux-syntax-highlighting/textmate-mux/vscode-language-mux
-
-# Edit source.mux.json (canonical grammar)
-
-# Package the extension
+cd mux-syntax-highlighting
+node scripts/generate-syntax.js
+cd textmate-mux/vscode-language-mux
 vsce package
-
-# Install locally
-code --install-extension language-mux-0.2.1.vsix
-
-# Reload VSCode
-code -r /path/to/mux-lang
 ```
 
 ### Scope Names
@@ -73,9 +64,6 @@ See `textmate-mux/COMPATIBILITY.md` for Sublime Text, JetBrains, and Nova setup.
 ```bash
 cd mux-syntax-highlighting/tree-sitter-mux
 
-# Regenerate the shared outputs first if shared/syntax-matrix.json changed
-node ../scripts/generate-syntax.js
-
 # Generate parser (ABI 15, requires tree-sitter.json)
 tree-sitter generate grammar.js
 
@@ -95,7 +83,7 @@ tree-sitter parse /home/derekcorn/code/mux-lang/mux-syntax-highlighting/shared/s
 **Note:** The `tree-sitter highlight` command requires proper language registration in your config. For reliable highlighting, integrate with Neovim/Helix (see INTEGRATION.md).
 
 ### Highlight Queries
-- `queries/highlights.scm` - Syntax highlighting queries
+- `queries/highlights.scm` - Generated syntax highlighting queries
 - Queries map tree-sitter nodes to TextMate-like scope names
 
 ### Editor Integration
@@ -108,9 +96,13 @@ Test samples are in `shared/samples/`. Use:
 
 1. Regenerate both grammars after editing `shared/syntax-matrix.json`:
    `node scripts/generate-syntax.js`
-2. TextMate: open `shared/samples/validation.mux` in VSCode with the extension installed
+2. TextMate: package from `textmate-mux/vscode-language-mux/` and install the VSIX locally
 3. Tree-sitter: `tree-sitter test` in `tree-sitter-mux/`
 4. Parity: `node scripts/check-parity.js`
 
 ## GitHub Highlighting
 Contribute to GitHub Linguist using artifacts in `shared/linguist/`. Status tracked in `shared/linguist/README.md`.
+
+## Release Workflow
+- `./scripts/release-syntax.sh` regenerates the syntax files, rebuilds Tree-sitter, and packages the VSCode extension.
+- Generated editor outputs are intentionally not committed.

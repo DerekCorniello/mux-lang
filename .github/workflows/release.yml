@@ -30,6 +30,13 @@ jobs:
       - name: Version consistency check
         run: ./scripts/sync-version.sh && git diff --exit-code
 
+      - name: Sync syntax package version
+        run: |
+          pushd mux-syntax-highlighting
+          node scripts/generate-syntax.js
+          popd
+          git diff --exit-code
+
       - name: Check whether tag commit is on main
         id: branch_policy
         run: |
@@ -106,6 +113,13 @@ jobs:
 
       - name: Version consistency check
         run: ./scripts/sync-version.sh && git diff --exit-code
+
+      - name: Sync syntax package version
+        run: |
+          pushd mux-syntax-highlighting
+          node scripts/generate-syntax.js
+          popd
+          git diff --exit-code
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
@@ -460,6 +474,11 @@ jobs:
         with:
           path: dist
 
+      - name: Build syntax package
+        run: |
+          npm install -g tree-sitter-cli @vscode/vsce
+          ./scripts/release-syntax.sh
+
       - name: Extract changelog for release
         id: changelog
         run: |
@@ -514,3 +533,7 @@ jobs:
             dist/**/*.tar.gz
             dist/**/*.zip
             dist/**/*.sha256
+            mux-syntax-highlighting/tree-sitter-mux/mux.so
+            mux-syntax-highlighting/tree-sitter-mux/mux.so.sha256
+            mux-syntax-highlighting/textmate-mux/vscode-language-mux/language-mux-*.vsix
+            mux-syntax-highlighting/textmate-mux/vscode-language-mux/language-mux.vsix.sha256

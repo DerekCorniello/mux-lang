@@ -22,6 +22,7 @@ compiler_toml = repo_root / "mux-compiler" / "Cargo.toml"
 runtime_toml = repo_root / "mux-runtime" / "Cargo.toml"
 readme = repo_root / "README.md"
 website_package = repo_root / "mux-website" / "package.json"
+syntax_package = repo_root / "mux-syntax-highlighting" / "textmate-mux" / "vscode-language-mux" / "package.json"
 changelog = repo_root / "CHANGELOG.md"
 
 
@@ -121,6 +122,12 @@ def update_website_package(version: str) -> None:
     write_text(website_package, json.dumps(package_data, indent=2) + "\n")
 
 
+def update_syntax_package(version: str) -> None:
+    package_data = read_json(syntax_package)
+    package_data["version"] = version
+    write_text(syntax_package, json.dumps(package_data, indent=2) + "\n")
+
+
 def is_synced(version: str) -> tuple[bool, list[str]]:
     failures: list[str] = []
 
@@ -141,6 +148,9 @@ def is_synced(version: str) -> tuple[bool, list[str]]:
         failures.append("README.md current version")
     if package_data.get("version") != version:
         failures.append("mux-website/package.json version")
+    syntax_package_data = read_json(syntax_package)
+    if syntax_package_data.get("version") != version:
+        failures.append("mux-syntax-highlighting/textmate-mux/vscode-language-mux/package.json version")
 
     return len(failures) == 0, failures
 
@@ -161,6 +171,7 @@ update_toml_scalar(compiler_toml, "dependencies", "mux-runtime", version)
 update_toml_scalar(runtime_toml, "package", "version", version)
 update_readme(version)
 update_website_package(version)
+update_syntax_package(version)
 
 print(
     "Synchronized Mux version references to "
