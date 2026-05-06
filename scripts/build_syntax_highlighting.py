@@ -322,26 +322,25 @@ def generate_outputs(spec: dict[str, Any]) -> dict[Path, str]:
     }
 
 
+def sync_output(path: Path, expected: str, check_only: bool) -> bool:
+    if path.exists():
+        actual = path.read_text(encoding="utf-8")
+        if actual == expected:
+            return False
+    if check_only:
+        print(f"Stale: {path}", file=sys.stderr)
+    else:
+        write_text(path, expected)
+    return True
+
+
 def run(check_only: bool) -> int:
     spec = read_spec()
     outputs = generate_outputs(spec)
 
     had_difference = False
     for path, expected in outputs.items():
-        if path.exists():
-            actual = path.read_text(encoding="utf-8")
-            if actual != expected:
-                had_difference = True
-                if check_only:
-                    print(f"Stale: {path}", file=sys.stderr)
-                if not check_only:
-                    write_text(path, expected)
-        else:
-            had_difference = True
-            if check_only:
-                print(f"Stale: {path}", file=sys.stderr)
-            if not check_only:
-                write_text(path, expected)
+        had_difference |= sync_output(path, expected, check_only)
 
     if check_only and had_difference:
         return 1
