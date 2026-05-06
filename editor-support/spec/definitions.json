@@ -1,0 +1,107 @@
+{
+  "language": {
+    "name": "Mux",
+    "scope_name": "source.mux",
+    "file_extensions": [
+      "mux"
+    ]
+  },
+  "keywords": {
+    "control": [
+      "if",
+      "else",
+      "for",
+      "while",
+      "match",
+      "break",
+      "continue",
+      "return",
+      "in"
+    ],
+    "declaration": [
+      "func",
+      "class",
+      "interface",
+      "enum",
+      "import",
+      "const",
+      "auto",
+      "common",
+      "returns",
+      "is",
+      "as"
+    ],
+    "literal": [
+      "true",
+      "false",
+      "none",
+      "ok",
+      "err"
+    ]
+  },
+  "types": {
+    "builtin": [
+      "int",
+      "float",
+      "bool",
+      "char",
+      "string",
+      "void",
+      "optional",
+      "result"
+    ]
+  },
+  "operators": {
+    "comparison": [
+      "==",
+      "!=",
+      ">=",
+      "<=",
+      ">",
+      "<"
+    ],
+    "logical": [
+      "&&",
+      "||",
+      "!"
+    ],
+    "assignment": [
+      "=",
+      "+=",
+      "-=",
+      "*=",
+      "/=",
+      "%="
+    ],
+    "arithmetic": [
+      "+",
+      "-",
+      "*",
+      "/",
+      "%"
+    ],
+    "member": [
+      ".",
+      "::",
+      "->"
+    ]
+  },
+  "punctuation": {
+    "brackets": [
+      "(",
+      ")",
+      "{",
+      "}",
+      "[",
+      "]"
+    ],
+    "delimiters": [
+      ",",
+      ":"
+    ]
+  },
+  "regex": {
+    "identifier": "\\b[_A-Za-z][_A-Za-z0-9]*\\b",
+    "number": "\\b(?:\\d+\\.\\d+|\\d+)\\b"
+  }
+}
