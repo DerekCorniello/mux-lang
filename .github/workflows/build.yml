@@ -42,6 +42,8 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Formatting check
         run: cargo fmt -- --check
+      - name: Syntax highlighting artifact check
+        run: python3 scripts/build_syntax_highlighting.py --check
       - name: Rust checks
         run: ./scripts/run-checks.sh
   integration_checks:

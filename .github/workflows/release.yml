@@ -23,12 +23,23 @@ jobs:
       CXX: clang++-17
       MUX_RUNTIME_SRC: ${{ github.workspace }}/mux-runtime
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
       - name: Version consistency check
         run: ./scripts/sync-version.sh && git diff --exit-code
+
+      - name: Install Tree-sitter CLI
+        run: npm install -g --ignore-scripts tree-sitter-cli@0.26.8
+
+      - name: Verify syntax-generated files
+        run: |
+          pushd mux-syntax-highlighting
+          node scripts/generate-syntax.js
+          node scripts/check-parity.js
+          popd
+          git diff --exit-code
 
       - name: Check whether tag commit is on main
         id: branch_policy
@@ -55,13 +66,13 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Tests
-        run: cargo test
+        run: cargo test --locked
 
       - name: Build
-        run: cargo build
+        run: cargo build --locked
 
   build-artifacts:
     name: Build ${{ matrix.runner_name }}
@@ -102,10 +113,17 @@ jobs:
       LLVM_SYS_170_STRICT_VERSIONING: "1"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Version consistency check
         run: ./scripts/sync-version.sh && git diff --exit-code
+
+      - name: Verify syntax-generated files
+        run: |
+          pushd mux-syntax-highlighting
+          node scripts/generate-syntax.js
+          popd
+          git diff --exit-code
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
@@ -365,19 +383,19 @@ jobs:
 
       - name: Build runtime (Windows MSVC)
         if: runner.os == 'Windows'
-        run: cargo build -p mux-runtime --release --target x86_64-pc-windows-msvc
+        run: cargo build -p mux-runtime --release --locked --target x86_64-pc-windows-msvc
 
       - name: Build compiler (Windows MSVC)
         if: runner.os == 'Windows'
-        run: cargo build -p mux-lang --release --target x86_64-pc-windows-msvc
+        run: cargo build -p mux-lang --release --locked --target x86_64-pc-windows-msvc
 
       - name: Build runtime (Non-Windows)
         if: runner.os != 'Windows'
-        run: cargo build -p mux-runtime --release
+        run: cargo build -p mux-runtime --release --locked
 
       - name: Build compiler (Non-Windows)
         if: runner.os != 'Windows'
-        run: cargo build -p mux-lang --release
+        run: cargo build -p mux-lang --release --locked
 
       - name: Package artifact (Unix)
         if: runner.os != 'Windows' && matrix.publish
@@ -435,7 +453,7 @@ jobs:
 
       - name: Upload build artifacts
         if: matrix.publish
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: mux-${{ matrix.target }}
           path: |
@@ -453,12 +471,17 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
         with:
           path: dist
+
+      - name: Build syntax package
+        run: |
+          npm install -g --ignore-scripts tree-sitter-cli@0.26.8 @vscode/vsce@3.9.1
+          ./scripts/release-syntax.sh
 
       - name: Extract changelog for release
         id: changelog
@@ -514,3 +537,7 @@ jobs:
             dist/**/*.tar.gz
             dist/**/*.zip
             dist/**/*.sha256
+            mux-syntax-highlighting/tree-sitter-mux/mux.so
+            mux-syntax-highlighting/tree-sitter-mux/mux.so.sha256
+            mux-syntax-highlighting/textmate-mux/vscode-language-mux/language-mux-*.vsix
+            mux-syntax-highlighting/textmate-mux/vscode-language-mux/language-mux.vsix.sha256

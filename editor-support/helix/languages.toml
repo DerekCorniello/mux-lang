@@ -1,0 +1,12 @@
+[[language]]
+name = "mux"
+scope = "source.mux"
+injection-regex = "mux"
+file-types = ["mux"]
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
+grammar = "mux"
+
+[[grammar]]
+name = "mux"
+source = { path = "../tree-sitter-mux" }

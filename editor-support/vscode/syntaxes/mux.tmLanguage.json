@@ -1,0 +1,131 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Mux",
+  "scopeName": "source.mux",
+  "fileTypes": [
+    "mux"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.mux",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.mux",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.mux",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.mux",
+              "match": "\\\\\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.mux",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.mux",
+              "match": "\\\\\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.mux",
+          "match": "\\b(?:\\d+\\.\\d+|\\d+)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.mux",
+          "match": "\\b(?:if|else|for|while|match|break|continue|return|in|func|class|interface|enum|import|const|auto|common|returns|is|as)\\b"
+        },
+        {
+          "name": "constant.language.mux",
+          "match": "\\b(?:true|false|none|ok|err)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.builtin.mux",
+          "match": "\\b(?:int|float|bool|char|string|void|optional|result)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.mux",
+          "match": "(?:==|!=|>=|<=|>|<|&&|\\|\\||!|=|\\+=|-=|\\*=|/=|%=|\\+|-|\\*|/|%|\\.|::|->)"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.bracket.mux",
+          "match": "[(){}\\[\\]]"
+        },
+        {
+          "name": "punctuation.separator.mux",
+          "match": "[,:]"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.readwrite.mux",
+          "match": "\\b[_A-Za-z][_A-Za-z0-9]*\\b"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,64 @@
+%YAML 1.2
+---
+name: Mux
+file_extensions:
+  - mux
+scope: source.mux
+contexts:
+  main:
+    - include: comments
+    - include: strings
+    - include: numbers
+    - include: keywords
+    - include: types
+    - include: operators
+    - include: punctuation
+  comments:
+    - match: //.*$
+      scope: comment.line.double-slash.mux
+    - match: /\*
+      scope: punctuation.definition.comment.begin.mux
+      push:
+        - meta_scope: comment.block.mux
+        - match: \*/
+          scope: punctuation.definition.comment.end.mux
+          pop: true
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.mux
+      push:
+        - meta_scope: string.quoted.double.mux
+        - match: '\.'
+          scope: constant.character.escape.mux
+        - match: '"'
+          scope: punctuation.definition.string.end.mux
+          pop: true
+    - match: "'"
+      scope: punctuation.definition.string.begin.mux
+      push:
+        - meta_scope: string.quoted.single.mux
+        - match: '\.'
+          scope: constant.character.escape.mux
+        - match: "'"
+          scope: punctuation.definition.string.end.mux
+          pop: true
+  numbers:
+    - match: '\b(?:\d+\.\d+|\d+)\b'
+      scope: constant.numeric.mux
+  keywords:
+    - match: '\b(?:if|else|for|while|match|break|continue|return|in|func|class|interface|enum|import|const|auto|common|returns|is|as)\b'
+      scope: keyword.control.mux
+    - match: '\b(?:true|false|none|ok|err)\b'
+      scope: constant.language.mux
+  types:
+    - match: '\b(?:int|float|bool|char|string|void|optional|result)\b'
+      scope: storage.type.builtin.mux
+  operators:
+    - match: '(?:==|!=|>=|<=|&&|\|\||\+=|-=|\*=|/=|%=|::|->|>|<|!|=|\+|-|\*|/|%|\.)'
+      scope: keyword.operator.mux
+  punctuation:
+    - match: '[(){}\[\]]'
+      scope: punctuation.bracket.mux
+    - match: '[,:]'
+      scope: punctuation.separator.mux
+...
