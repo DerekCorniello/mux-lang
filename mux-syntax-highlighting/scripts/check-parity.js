@@ -20,7 +20,7 @@ function sortValue(value) {
   }
   if (value && typeof value === 'object') {
     return Object.keys(value)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .reduce((acc, key) => {
         if (key === '$schema') {
           return acc;
@@ -70,8 +70,8 @@ assert(
   'Tree-sitter generated syntax module is out of sync with shared syntax matrix',
 );
 
-const normalizedTextmate = readText('textmate-mux/source.mux.json').replace(/\\/g, '');
-const normalizedTreeSitter = readText('tree-sitter-mux/src/grammar.json').replace(/\\/g, '');
+const normalizedTextmate = readText('textmate-mux/source.mux.json').replaceAll('\\', '');
+const normalizedTreeSitter = readText('tree-sitter-mux/src/grammar.json').replaceAll('\\', '');
 
 const expectedKeywords = [
   ...matrix.keywords.control,

@@ -23,7 +23,7 @@ jobs:
       CXX: clang++-17
       MUX_RUNTIME_SRC: ${{ github.workspace }}/mux-runtime
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
@@ -66,13 +66,13 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Tests
-        run: cargo test
+        run: cargo test --locked
 
       - name: Build
-        run: cargo build
+        run: cargo build --locked
 
   build-artifacts:
     name: Build ${{ matrix.runner_name }}
@@ -113,7 +113,7 @@ jobs:
       LLVM_SYS_170_STRICT_VERSIONING: "1"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Version consistency check
         run: ./scripts/sync-version.sh && git diff --exit-code
@@ -383,19 +383,19 @@ jobs:
 
       - name: Build runtime (Windows MSVC)
         if: runner.os == 'Windows'
-        run: cargo build -p mux-runtime --release --target x86_64-pc-windows-msvc
+        run: cargo build -p mux-runtime --release --locked --target x86_64-pc-windows-msvc
 
       - name: Build compiler (Windows MSVC)
         if: runner.os == 'Windows'
-        run: cargo build -p mux-lang --release --target x86_64-pc-windows-msvc
+        run: cargo build -p mux-lang --release --locked --target x86_64-pc-windows-msvc
 
       - name: Build runtime (Non-Windows)
         if: runner.os != 'Windows'
-        run: cargo build -p mux-runtime --release
+        run: cargo build -p mux-runtime --release --locked
 
       - name: Build compiler (Non-Windows)
         if: runner.os != 'Windows'
-        run: cargo build -p mux-lang --release
+        run: cargo build -p mux-lang --release --locked
 
       - name: Package artifact (Unix)
         if: runner.os != 'Windows' && matrix.publish
@@ -453,7 +453,7 @@ jobs:
 
       - name: Upload build artifacts
         if: matrix.publish
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: mux-${{ matrix.target }}
           path: |
@@ -471,10 +471,10 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
         with:
           path: dist
 

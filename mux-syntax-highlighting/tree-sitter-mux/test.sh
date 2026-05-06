@@ -26,7 +26,7 @@ tree-sitter test
 echo
 
 echo "5. Testing highlighting (if configured)..."
-if [ -f "test.mux" ]; then
+if [[ -f "test.mux" ]]; then
   tree-sitter highlight test.mux 2>&1 | head -20
 else
   echo "   No test.mux file found, skipping highlight test"

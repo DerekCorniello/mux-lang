@@ -11,6 +11,10 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = REPO_ROOT / "editor-support" / "spec" / "definitions.json"
+PUSH_LINE = "      push:"
+POP_TRUE_LINE = "          pop: true"
+TEXTMATE_FILENAME = "mux.tmLanguage.json"
+TREE_SITTER_HIGHLIGHTS = "highlights.scm"
 
 
 def read_spec() -> dict[str, Any]:
@@ -175,30 +179,30 @@ def build_sublime_syntax(spec: dict[str, Any]) -> str:
             "      scope: comment.line.double-slash.mux",
             "    - match: /\\*",
             "      scope: punctuation.definition.comment.begin.mux",
-            "      push:",
+            PUSH_LINE,
             "        - meta_scope: comment.block.mux",
             "        - match: \\*/",
             "          scope: punctuation.definition.comment.end.mux",
-            "          pop: true",
+            POP_TRUE_LINE,
             "  strings:",
             "    - match: '\"'",
             "      scope: punctuation.definition.string.begin.mux",
-            "      push:",
+            PUSH_LINE,
             "        - meta_scope: string.quoted.double.mux",
             "        - match: '\\.'",
             "          scope: constant.character.escape.mux",
             "        - match: '\"'",
             "          scope: punctuation.definition.string.end.mux",
-            "          pop: true",
+            POP_TRUE_LINE,
             "    - match: \"'\"",
             "      scope: punctuation.definition.string.begin.mux",
-            "      push:",
+            PUSH_LINE,
             "        - meta_scope: string.quoted.single.mux",
             "        - match: '\\.'",
             "          scope: constant.character.escape.mux",
             "        - match: \"'\"",
             "          scope: punctuation.definition.string.end.mux",
-            "          pop: true",
+            POP_TRUE_LINE,
             "  numbers:",
             f"    - match: '{spec['regex']['number']}'",
             "      scope: constant.numeric.mux",
@@ -311,14 +315,14 @@ def generate_outputs(spec: dict[str, Any]) -> dict[Path, str]:
     language_config_json = json.dumps(language_config, indent=2) + "\n"
 
     return {
-        REPO_ROOT / "editor-support" / "textmate" / "mux.tmLanguage.json": textmate_json,
-        REPO_ROOT / "editor-support" / "vscode" / "syntaxes" / "mux.tmLanguage.json": textmate_json,
+        REPO_ROOT / "editor-support" / "textmate" / TEXTMATE_FILENAME: textmate_json,
+        REPO_ROOT / "editor-support" / "vscode" / "syntaxes" / TEXTMATE_FILENAME: textmate_json,
         REPO_ROOT / "editor-support" / "vscode" / "language-configuration.json": language_config_json,
-        REPO_ROOT / "editor-support" / "jetbrains" / "textmate" / "mux.tmLanguage.json": textmate_json,
+        REPO_ROOT / "editor-support" / "jetbrains" / "textmate" / TEXTMATE_FILENAME: textmate_json,
         REPO_ROOT / "editor-support" / "sublime" / "Mux.sublime-syntax": sublime,
-        REPO_ROOT / "editor-support" / "treesitter" / "queries" / "highlights.scm": treesitter,
-        REPO_ROOT / "editor-support" / "neovim" / "queries" / "mux" / "highlights.scm": treesitter,
-        REPO_ROOT / "editor-support" / "helix" / "runtime" / "queries" / "mux" / "highlights.scm": treesitter,
+        REPO_ROOT / "editor-support" / "treesitter" / "queries" / TREE_SITTER_HIGHLIGHTS: treesitter,
+        REPO_ROOT / "editor-support" / "neovim" / "queries" / "mux" / TREE_SITTER_HIGHLIGHTS: treesitter,
+        REPO_ROOT / "editor-support" / "helix" / "runtime" / "queries" / "mux" / TREE_SITTER_HIGHLIGHTS: treesitter,
     }
 
 

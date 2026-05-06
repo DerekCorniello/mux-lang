@@ -7,15 +7,19 @@ const root = path.resolve(__dirname, '..');
 const matrix = JSON.parse(fs.readFileSync(path.join(root, 'shared/syntax-matrix.json'), 'utf8'));
 
 function writeText(relPath, text) {
-  fs.writeFileSync(path.join(root, relPath), `${text.endsWith('\n') ? text : `${text}\n`}`);
+  fs.writeFileSync(path.join(root, relPath), text.endsWith('\n') ? text : `${text}\n`);
 }
 
 function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let escaped = value;
+  for (const ch of ['\\', '.', '*', '+', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']']) {
+    escaped = escaped.replaceAll(ch, `\\${ch}`);
+  }
+  return escaped;
 }
 
 function wordBoundaryRegex(words) {
-  return `\\b(?:${words.map(escapeRegex).join('|')})\\b`;
+  return String.raw`\b(?:${words.map(escapeRegex).join('|')})\b`;
 }
 
 function charClassRegex(symbols) {
@@ -61,12 +65,12 @@ function textmateGrammar() {
           },
           {
             name: 'comment.block.mux',
-            begin: '/\\*',
-            end: '\\*/',
+            begin: String.raw`/\*`,
+            end: String.raw`\*/`,
             patterns: [
               {
                 name: 'comment.block.mux',
-                match: '/\\*.*?\\*/',
+                match: String.raw`/\*.*?\*/`,
               },
             ],
           },
@@ -84,7 +88,7 @@ function textmateGrammar() {
           },
           {
             name: 'storage.type.mux',
-            match: '\\bauto\\b',
+            match: String.raw`\bauto\b`,
           },
           {
             name: 'keyword.operator.mux',
@@ -100,23 +104,23 @@ function textmateGrammar() {
         patterns: [
           {
             name: 'keyword.operator.arithmetic.mux',
-            match: '(\\+\\+|--|\\*\\*|/|%|\\+|\\-|\\*)',
+            match: String.raw`(\+\+|--|\*\*|/|%|\+|\-|\*)`,
           },
           {
             name: 'keyword.operator.assignment.mux',
-            match: '(\\+=|-=|\\*=|/=|%=|=)',
+            match: String.raw`(\+=|-=|\*=|/=|%=|=)`,
           },
           {
             name: 'keyword.operator.comparison.mux',
-            match: '(==|!=|<=|>=|<|>)',
+            match: String.raw`(==|!=|<=|>=|<|>)`,
           },
           {
             name: 'keyword.operator.logical.mux',
-            match: '(&&|\\|\\|)',
+            match: String.raw`(&&|\|\|)`,
           },
           {
             name: 'keyword.operator.mux',
-            match: '(!|&|\\.\\.|\\.)',
+            match: String.raw`(!|&|\.\.|\.)`,
           },
         ],
       },
@@ -137,7 +141,7 @@ function textmateGrammar() {
             patterns: [
               {
                 name: 'constant.character.escape.mux',
-                match: '\\\\([nrt0\\\\\'" ])',
+                match: String.raw`\\([nrt0\\'" ])`,
               },
             ],
           },
@@ -148,7 +152,7 @@ function textmateGrammar() {
             patterns: [
               {
                 name: 'constant.character.escape.mux',
-                match: '\\\\([nrt0\\\\\'" ])',
+                match: String.raw`\\([nrt0\\'" ])`,
               },
             ],
           },
@@ -159,13 +163,13 @@ function textmateGrammar() {
             patterns: [
               {
                 name: 'constant.character.escape.mux',
-                match: '\\\\([nrt0\\\\\'" ])',
+                match: String.raw`\\([nrt0\\'" ])`,
               },
             ],
           },
           {
             name: 'variable.language.mux',
-            match: `\\b${escapeRegex(matrix.identifiers.underscore)}\\b`,
+            match: String.raw`\b${escapeRegex(matrix.identifiers.underscore)}\b`,
           },
         ],
       },
@@ -180,14 +184,14 @@ function textmateGrammar() {
       declarations: {
         patterns: [
           {
-            match: `\\b(func)\\s+(${identifierPattern})\\b`,
+            match: String.raw`\b(func)\s+(${identifierPattern})\b`,
             captures: {
               1: { name: 'keyword.declaration.mux' },
               2: { name: 'entity.name.function.mux' },
             },
           },
           {
-            match: `\\b(class|interface|enum)\\s+(${identifierPattern})\\b`,
+            match: String.raw`\b(class|interface|enum)\s+(${identifierPattern})\b`,
             captures: {
               1: { name: 'keyword.declaration.mux' },
               2: { name: 'entity.name.type.mux' },
@@ -199,10 +203,10 @@ function textmateGrammar() {
         patterns: [
           {
             name: 'support.function.mux',
-            match: `\\b${identifierPattern}\\b\\s*(?=(?:<[^()<>\\n]+>\\s*)?\\()`,
+            match: String.raw`\b${identifierPattern}\b\s*(?=(?:<[^()<>\n]+>\s*)?\()`,
           },
           {
-            match: `\\b(${identifierPattern})(\\s*\\.\\s*)(${identifierPattern})\\b\\s*(?=(?:<[^()<>\\n]+>\\s*)?\\()`,
+            match: String.raw`\b(${identifierPattern})(\s*\.\s*)(${identifierPattern})\b\s*(?=(?:<[^()<>\n]+>\s*)?\()`,
             captures: {
               1: { name: 'variable.other.mux' },
               2: { name: 'punctuation.delimiter.mux' },
@@ -214,14 +218,14 @@ function textmateGrammar() {
       types: {
         patterns: [
           {
-            match: `\\b(returns)\\s+(${identifierPattern}(?:<[^>\\n]+>)?)`,
+            match: String.raw`\b(returns)\s+(${identifierPattern}(?:<[^>\n]+>)?)`,
             captures: {
               1: { name: 'keyword.declaration.mux' },
               2: { name: 'storage.type.mux' },
             },
           },
           {
-            match: `\\b(const)\\s+(${identifierPattern}(?:<[^>\\n]+>)?)\\s+(${identifierPattern})\\b`,
+            match: String.raw`\b(const)\s+(${identifierPattern}(?:<[^>\n]+>)?)\s+(${identifierPattern})\b`,
             captures: {
               1: { name: 'keyword.declaration.mux' },
               2: { name: 'storage.type.mux' },
@@ -230,7 +234,7 @@ function textmateGrammar() {
           },
           {
             name: 'storage.type.mux',
-            match: `\\b(?:${builtinTypes.map(escapeRegex).join('|')}|[A-Z][a-zA-Z0-9_]*)\\b`,
+            match: String.raw`\b(?:${builtinTypes.map(escapeRegex).join('|')}|[A-Z][a-zA-Z0-9_]*)\b`,
           },
         ],
       },
@@ -238,7 +242,7 @@ function textmateGrammar() {
         patterns: [
           {
             name: 'variable.other.mux',
-            match: `\\b${identifierPattern}\\b`,
+            match: String.raw`\b${identifierPattern}\b`,
           },
         ],
       },
