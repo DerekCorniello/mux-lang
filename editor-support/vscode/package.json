@@ -1,0 +1,35 @@
+{
+  "name": "mux-syntax",
+  "displayName": "Mux Syntax",
+  "description": "Syntax highlighting and language configuration for Mux.",
+  "version": "0.1.0",
+  "publisher": "mux-lang",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "mux",
+        "aliases": [
+          "Mux",
+          "mux"
+        ],
+        "extensions": [
+          ".mux"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mux",
+        "scopeName": "source.mux",
+        "path": "./syntaxes/mux.tmLanguage.json"
+      }
+    ]
+  }
+}
