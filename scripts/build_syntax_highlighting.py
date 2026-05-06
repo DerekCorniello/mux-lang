@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +42,7 @@ def build_textmate(spec: dict[str, Any]) -> dict[str, Any]:
     operator_terms: list[str] = []
     for operator_group in spec["operators"].values():
         operator_terms.extend(operator_group)
-    operator_pattern = "|".join(escape_regex_terms(sorted(operator_terms, key=len, reverse=True)))
+    operator_pattern = "|".join(escape_regex_terms(list(dict.fromkeys(operator_terms))))
 
     return {
         "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
@@ -138,6 +139,7 @@ def build_textmate(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_sublime_syntax(spec: dict[str, Any]) -> str:
+    language = spec["language"]
     keywords = grouped_keywords(spec)
     literals = spec["keywords"]["literal"]
     types = spec["types"]["builtin"]
@@ -155,10 +157,10 @@ def build_sublime_syntax(spec: dict[str, Any]) -> str:
         [
             "%YAML 1.2",
             "---",
-            "name: Mux",
+            f'name: {language["name"]}',
             "file_extensions:",
-            "  - mux",
-            "scope: source.mux",
+            *[f"  - {ext}" for ext in language["file_extensions"]],
+            f'scope: {language["scope_name"]}',
             "contexts:",
             "  main:",
             "    - include: comments",
@@ -259,7 +261,7 @@ def build_treesitter_query(spec: dict[str, Any]) -> str:
     for typ in types:
         lines.append(f'  "{typ}"')
     lines.extend(["] @type.builtin", "", "["])
-    for operator in sorted(set(operator_terms), key=len, reverse=True):
+    for operator in dict.fromkeys(operator_terms):
         lines.append(f'  "{operator}"')
     lines.extend(["] @operator", "", "["])
     for bracket in spec["punctuation"]["brackets"]:
@@ -330,19 +332,19 @@ def run(check_only: bool) -> int:
             actual = path.read_text(encoding="utf-8")
             if actual != expected:
                 had_difference = True
+                if check_only:
+                    print(f"Stale: {path}", file=sys.stderr)
                 if not check_only:
                     write_text(path, expected)
         else:
             had_difference = True
+            if check_only:
+                print(f"Stale: {path}", file=sys.stderr)
             if not check_only:
                 write_text(path, expected)
 
     if check_only and had_difference:
         return 1
-
-    if not check_only:
-        # Keep serialized config output deterministic and validated.
-        write_json(REPO_ROOT / "editor-support" / "vscode" / "language-configuration.json", build_language_configuration())
 
     return 0
 
