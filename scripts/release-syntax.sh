@@ -26,7 +26,7 @@ tree-sitter build
 sha256sum mux.so > mux.so.sha256
 popd >/dev/null
 pushd mux-syntax-highlighting/textmate-mux/vscode-language-mux >/dev/null
-npx --yes vsce package
+npx --yes --ignore-scripts @vscode/vsce@3.9.1 package
 sha256sum language-mux-*.vsix > language-mux.vsix.sha256
 popd >/dev/null
 

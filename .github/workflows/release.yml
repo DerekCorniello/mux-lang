@@ -31,7 +31,7 @@ jobs:
         run: ./scripts/sync-version.sh && git diff --exit-code
 
       - name: Install Tree-sitter CLI
-        run: npm install -g tree-sitter-cli
+        run: npm install -g --ignore-scripts tree-sitter-cli@0.26.8
 
       - name: Verify syntax-generated files
         run: |
@@ -480,7 +480,7 @@ jobs:
 
       - name: Build syntax package
         run: |
-          npm install -g tree-sitter-cli @vscode/vsce
+          npm install -g --ignore-scripts tree-sitter-cli@0.26.8 @vscode/vsce@3.9.1
           ./scripts/release-syntax.sh
 
       - name: Extract changelog for release
