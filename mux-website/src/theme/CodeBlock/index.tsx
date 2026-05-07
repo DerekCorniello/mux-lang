@@ -1,8 +1,8 @@
-import React, {isValidElement, useState, type ReactNode, useEffect, useRef} from 'react';
+import React, { isValidElement, useState, type ReactNode, useEffect, useRef } from 'react';
 import useIsBrowser from '@docusaurus/useIsBrowser';
-import type {Props} from '@theme/CodeBlock';
-import {CopyIcon, CheckIcon} from '@site/src/components/CodeIcons';
-import {codeToHtml} from 'shiki';
+import type { Props } from '@theme/CodeBlock';
+import { CopyIcon, CheckIcon } from '@site/src/components/CodeIcons';
+import { getHighlighter } from '@site/src/shiki/highlighter';
 
 function maybeStringifyChildren(children: ReactNode): ReactNode {
   if (React.Children.toArray(children).some((el) => isValidElement(el))) {
@@ -19,7 +19,7 @@ function parseMetastring(
 } {
   if (!metastring) return {};
 
-  const result: {title?: string; showLineNumbers?: boolean | number} = {};
+  const result: { title?: string; showLineNumbers?: boolean | number } = {};
 
   const titleRegex = /title=["']([^"']+)["']/;
   const titleMatch = titleRegex.exec(metastring);
@@ -42,7 +42,8 @@ function parseMetastring(
 
 function getThemeFromBody(): 'github-dark' | 'github-light' {
   if (typeof document !== 'undefined') {
-    return document.body.classList.contains('theme-dark')
+    return document.body.classList.contains('theme-dark') ||
+           document.documentElement.getAttribute('data-theme') === 'dark'
       ? 'github-dark'
       : 'github-light';
   }
@@ -60,8 +61,7 @@ export default function CodeBlock({
 }: Props): ReactNode {
   const [copied, setCopied] = useState(false);
   const [highlighted, setHighlighted] = useState<string | null>(null);
-  const [isDark, setIsDark] = useState(false);
-  const codeRef = useRef<HTMLPreElement>(null);
+  const [isDark, setIsDark] = useState<boolean | null>(null);
   const isBrowser = useIsBrowser();
 
   const parsedMeta = parseMetastring(metastring);
@@ -85,15 +85,21 @@ export default function CodeBlock({
 
   useEffect(() => {
     if (isBrowser) {
-      setIsDark(getThemeFromBody() === 'github-dark');
+      const initialTheme = getThemeFromBody();
+      setIsDark(initialTheme === 'github-dark');
 
       const observer = new MutationObserver(() => {
-        setIsDark(getThemeFromBody() === 'github-dark');
+        const newTheme = getThemeFromBody();
+        setIsDark(newTheme === 'github-dark');
       });
 
       observer.observe(document.body, {
         attributes: true,
         attributeFilter: ['class'],
+      });
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme'],
       });
 
       return () => observer.disconnect();
@@ -103,26 +109,23 @@ export default function CodeBlock({
   useEffect(() => {
     if (
       isBrowser &&
+      isDark !== null &&
       typeof children === 'string' &&
       children.includes('\n')
     ) {
       const trimmedCode = children.trimEnd();
       const theme = isDark ? 'github-dark' : 'github-light';
 
-      const lang = language || 'text';
-
       const doHighlight = async () => {
         try {
-          const html = await codeToHtml(trimmedCode, {
-            lang: lang as 'javascript',
-            themes: {
-              light: 'github-light',
-              dark: 'github-dark',
-            },
-            defaultColor: false,
+          const highlighter = await getHighlighter();
+          const html = highlighter.codeToHtml(trimmedCode, {
+            lang: 'source.mux',
+            theme,
           });
           setHighlighted(html);
-        } catch {
+        } catch (err) {
+          console.error('Highlighting error:', err);
           setHighlighted(null);
         }
       };
@@ -148,7 +151,7 @@ export default function CodeBlock({
         {highlighted ? (
           <div
             className="shiki-wrapper"
-            dangerouslySetInnerHTML={{__html: highlighted}}
+            dangerouslySetInnerHTML={{ __html: highlighted }}
           />
         ) : (
           <pre className="shiki-pre">

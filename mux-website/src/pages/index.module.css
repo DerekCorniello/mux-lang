@@ -76,28 +76,66 @@
 
 /* Install Bar */
 .installBar {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
   background: var(--ifm-background-surface-color);
   border: 1px solid var(--ifm-color-emphasis-200);
   border-radius: 8px;
-  padding: 0.75rem 1rem;
+  padding: 1rem;
   margin: 1.5rem 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   max-width: 100%;
-  overflow-x: auto;
+}
+
+.installToggle {
+  display: flex;
+  background: var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.toggleOption {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--ifm-color-emphasis-700);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toggleOptionActive {
+  background: var(--ifm-color-primary);
+  color: white;
+  padding: 0.4rem 0.8rem;
+}
+
+.installCommandRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--terminal-bg);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  gap: 0.75rem;
 }
 
 .installCommand {
   font-family: var(--ifm-font-family-monospace);
-  font-size: 0.875rem;
-  color: var(--ifm-code-color);
+  font-size: 0.8rem;
+  color: var(--ifm-color-emphasis-800);
   background: transparent;
   border: none;
   padding: 0;
   margin: 0;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
 }
 
 .copyButton {
@@ -170,13 +208,15 @@
 }
 
 .secondaryButton {
-  border: 2px solid var(--ifm-color-emphasis-300);
-  color: var(--ifm-color-emphasis-700);
+  border: 2px solid var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+  background: transparent;
 }
 
 .secondaryButton:hover {
-  border-color: var(--ifm-color-primary);
-  color: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary-dark);
+  color: var(--ifm-color-primary-dark);
+  background: rgba(37, 99, 235, 0.05);
 }
 
 /* Badges */
@@ -243,11 +283,6 @@
   border-radius: 12px;
   padding: 1.5rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.installCard:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  border-color: var(--ifm-color-emphasis-300);
 }
 
 .installHeader {
@@ -402,13 +437,6 @@
   border-radius: 12px;
   padding: 1.5rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
-}
-
-.featureCard:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  border-color: var(--ifm-color-emphasis-300);
-  transform: translateY(-2px);
 }
 
 .featureIcon {
@@ -455,18 +483,10 @@
   }
 }
 
-.exampleCard {
-  background: var(--ifm-background-surface-color);
-  border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.exampleCard h3 {
-  font-size: 1.25rem;
-  margin-bottom: 1rem;
-  color: var(--ifm-color-primary-dark);
+.exampleSection h3 {
+  font-size: 1.125rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 0.75rem;
 }
 
 .exampleCode {

@@ -251,6 +251,7 @@ pre code {
   padding: 0 80px;
 }
 
+.terminal-code .shiki,
 .terminal-code .shiki-pre {
   background: transparent !important;
   border: none !important;
@@ -260,12 +261,12 @@ pre code {
   box-shadow: none !important;
 }
 
+.terminal-code .shiki code,
 .terminal-code .shiki-pre code {
   display: block;
   padding: 1rem 1.25rem;
   background: transparent;
   border: none;
-  color: var(--terminal-code-color);
   font-size: 0.875rem;
   line-height: 1.7;
   margin: 0;
@@ -276,14 +277,17 @@ pre code {
   scrollbar-gutter: stable both-edges;
 }
 
+.terminal-code .shiki code::-webkit-scrollbar,
 .terminal-code .shiki-pre code::-webkit-scrollbar {
   height: 10px;
 }
 
+.terminal-code .shiki code::-webkit-scrollbar-track,
 .terminal-code .shiki-pre code::-webkit-scrollbar-track {
   background: var(--ifm-scrollbar-track-background-color);
 }
 
+.terminal-code .shiki code::-webkit-scrollbar-thumb,
 .terminal-code .shiki-pre code::-webkit-scrollbar-thumb {
   background: var(--ifm-scrollbar-thumb-background-color);
   border-radius: 8px;
