@@ -134,3 +134,16 @@ node scripts/generate-syntax.js
 ## LSP
 
 In development. There is no supported Mux LSP release yet.
+
+## Profiling
+
+Profiling is done with external tools so it stays decoupled from the compiler and runtime.
+
+**Linux:**
+- `perf` + flamegraph
+
+**macOS:**
+- Instruments
+
+**Windows:**
+- Windows Performance Analyzer or Visual Studio Profiler

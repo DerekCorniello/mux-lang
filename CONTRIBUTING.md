@@ -54,21 +54,7 @@ Thanks for your interest! This guide explains how to contribute to Mux.
    ./scripts/measure-baseline.sh
    ```
 
-10. Profile the compiler when you want to investigate slow parsing, generics, semantics, or codegen:
-
-    ```bash
-    ./scripts/profile-compiler.sh test_scripts/nested_generics.mux
-    ```
-
-    This writes profiles under `target/profile/compiler/<script-name>` by default.
-
-11. Profile runtime behavior when you want to investigate hot string, JSON, network, or SQL paths:
-
-    ```bash
-    ./scripts/profile-runtime.sh test_scripts/test_std_http_server.mux
-    ```
-
-    This writes profiles under `target/profile/runtime/<script-name>` by default.
+10. Profile the compiler and runtime with external tools (see the Setup documentation for platform-specific guidance).
 
 12. Always run `cargo fmt` and `cargo clippy` before committing changes.
 13. For releases, update `VERSION` first, then update the matching section in `CHANGELOG.md`, then run `./scripts/sync-version.sh`.
@@ -114,8 +100,8 @@ We generally don't accept contributions that:
 - Canonical local verification: `./scripts/run-checks.sh`
 - Docker-backed integration verification: `./scripts/integration-checks.sh`
 - Profiling baseline capture: `./scripts/measure-baseline.sh`
-- Compiler profiling: `./scripts/profile-compiler.sh`
-- Runtime profiling: `./scripts/profile-runtime.sh`
+- Compiler profiling: external tools only
+- Runtime profiling: external tools only
 - Fuzzing targets live under `mux-compiler/fuzz/` and are intended for local `cargo fuzz` runs.
 
 ---
