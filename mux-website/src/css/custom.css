@@ -167,11 +167,39 @@ pre code {
   background: transparent;
 }
 
-.prism-code {
+/* Shiki code block styling */
+.shiki-pre {
   font-size: 0.875rem;
   line-height: 1.6;
   font-weight: 400;
-  background: var(--ifm-code-background) !important;
+}
+
+.shiki-pre code {
+  display: block;
+  padding: 1rem 1.25rem;
+  background: transparent;
+  border: none;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  margin: 0;
+  font-family: var(--ifm-font-family-monospace);
+  white-space: pre;
+  overflow-x: scroll;
+  scrollbar-width: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
+.shiki-pre code::-webkit-scrollbar {
+  height: 10px;
+}
+
+.shiki-pre code::-webkit-scrollbar-track {
+  background: var(--ifm-scrollbar-track-background-color);
+}
+
+.shiki-pre code::-webkit-scrollbar-thumb {
+  background: var(--ifm-scrollbar-thumb-background-color);
+  border-radius: 8px;
 }
 
 /* Unified Terminal Code Block */
@@ -223,7 +251,7 @@ pre code {
   padding: 0 80px;
 }
 
-.terminal-code pre {
+.terminal-code .shiki-pre {
   background: transparent !important;
   border: none !important;
   border-radius: 0 !important;
@@ -232,7 +260,7 @@ pre code {
   box-shadow: none !important;
 }
 
-.terminal-code code {
+.terminal-code .shiki-pre code {
   display: block;
   padding: 1rem 1.25rem;
   background: transparent;
@@ -248,15 +276,15 @@ pre code {
   scrollbar-gutter: stable both-edges;
 }
 
-.terminal-code code::-webkit-scrollbar {
+.terminal-code .shiki-pre code::-webkit-scrollbar {
   height: 10px;
 }
 
-.terminal-code code::-webkit-scrollbar-track {
+.terminal-code .shiki-pre code::-webkit-scrollbar-track {
   background: var(--ifm-scrollbar-track-background-color);
 }
 
-.terminal-code code::-webkit-scrollbar-thumb {
+.terminal-code .shiki-pre code::-webkit-scrollbar-thumb {
   background: var(--ifm-scrollbar-thumb-background-color);
   border-radius: 8px;
 }
