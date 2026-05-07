@@ -26,6 +26,11 @@ const docsSidebar: NonNullable<SidebarsConfig['docsSidebar']> = [
     ],
   },
   {
+    type: 'doc',
+    id: 'setup',
+    label: 'Setup',
+  },
+  {
     type: 'category',
     label: 'Language Reference',
     collapsed: false,

@@ -2,7 +2,7 @@
   "name": "language-mux",
   "displayName": "Mux Language Support",
   "description": "Syntax highlighting and language support for the Mux programming language",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "mux-lang",
   "license": "MIT",
   "icon": "./mux-icon.png",

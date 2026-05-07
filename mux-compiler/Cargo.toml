@@ -1,6 +1,6 @@
 [package]
 name = "mux-lang"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 default-run = "mux"
 description = "The Mux Programming Language Compiler"
@@ -30,7 +30,7 @@ unicode-width = "0.1.11"
 lazy_static = "1.4"
 inkwell = { version = "0.6.0", features = ["llvm17-0"] }
 clap = { version = "4", features = ["derive"] }
-mux-runtime = "0.2.1"
+mux-runtime = "0.3.0"
 phf = { version = "0.11", features = ["macros"] }
 mux-profiling = { path = "../mux-profiling" }
 

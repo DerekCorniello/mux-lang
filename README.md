@@ -6,7 +6,7 @@
 
 **The Programming Language For Everyone**
 
-[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg?style=flat-square)](https://github.com/DerekCorniello/mux-lang/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg?style=flat-square)](https://github.com/DerekCorniello/mux-lang/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/mux-lang.svg?style=flat-square)](https://crates.io/crates/mux-lang)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg?style=flat-square)](https://mux-lang.dev)
@@ -61,6 +61,7 @@ mux run hello.mux
 ## Documentation
 
 - **[Getting Started](https://mux-lang.dev/docs/getting-started/quick-start)** - Installation and first steps
+- **[Setup](https://mux-lang.dev/docs/setup)** - Full install, editor setup, and tooling
 - **[Language Guide](https://mux-lang.dev/docs/language-guide/overview)** - Complete language overview
 - **[API Reference](https://mux-lang.dev/docs/reference/overview)** - Language reference
 - **[Standard Library](https://mux-lang.dev/docs/stdlib/)** - Built-in modules and functions
@@ -180,7 +181,7 @@ Both scripts open the profile viewer automatically and store outputs under `targ
 
 ⚠️ **Alpha Stage**: Mux is actively being developed. Expect breaking changes and incomplete features as we work toward a stable release.
 
-- **Current Version:** 0.2.1
+- **Current Version:** 0.3.0
 
 ## Versioning
 
