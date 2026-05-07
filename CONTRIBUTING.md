@@ -56,15 +56,15 @@ Thanks for your interest! This guide explains how to contribute to Mux.
 
 10. Profile the compiler and runtime with external tools (see the Setup documentation for platform-specific guidance).
 
-12. Always run `cargo fmt` and `cargo clippy` before committing changes.
-13. For releases, update `VERSION` first, then update the matching section in `CHANGELOG.md`, then run `./scripts/sync-version.sh`.
-14. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
-15. Make your changes.
-16. Run tests again to ensure nothing is broken.
-17. Commit your changes with clear messages.
-18. Push your branch to your fork.
-19. Open a Pull Request against the `main` branch of the original repository.
-20. AI agents should follow the guidelines in [AGENTS.md](AGENTS.md).
+11. Always run `cargo fmt` and `cargo clippy` before committing changes.
+12. For releases, update `VERSION` first, then update the matching section in `CHANGELOG.md`, then run `./scripts/sync-version.sh`.
+13. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
+14. Make your changes.
+15. Run tests again to ensure nothing is broken.
+16. Commit your changes with clear messages.
+17. Push your branch to your fork.
+18. Open a Pull Request against the `main` branch of the original repository.
+19. AI agents should follow the guidelines in [AGENTS.md](AGENTS.md).
 
 ---
 
