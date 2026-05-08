@@ -256,7 +256,7 @@ function VideoPlaceholder({ topic }: { topic: string }) {
 4.1. Create `VideoPlaceholder` component
 4.2. Create tour index page
 4.3. Create 18 tour pages (ONE focused example each)
-4.4. Add embedded playground to each page
+4.4. Add embedded playground to each page (DONE)
 4.5. Add video placeholder at the start of each page
 4.6. Add "Tour" to navbar
 

@@ -113,6 +113,11 @@ const config: Config = {
           position: 'left',
         },
         {
+          to: '/docs/tour',
+          label: 'Tour',
+          position: 'left',
+        },
+        {
           type: 'search',
           position: 'right',
         },
