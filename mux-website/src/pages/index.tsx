@@ -169,9 +169,7 @@ function HomepageHeader() {
             </div>
             <div className={styles.installCommandRow}>
               <code className={styles.installCommand}>
-                {platform === 'windows'
-                  ? installCommands[platform]
-                  : installCommands[platform].split(' | ').join(' |\n  ')}
+                {installCommands[platform]}
               </code>
               <button
                 className={styles.copyButton}
@@ -200,6 +198,11 @@ function HomepageHeader() {
               className={clsx('button', 'button--secondary', 'button--lg', styles.secondaryButton)}
               to="https://github.com/DerekCorniello/mux-lang">
               View on GitHub
+            </Link>
+                      <Link
+              className={clsx('button', 'button--secondary', 'button--lg', styles.secondaryButton)}
+              to="/playground">
+              Try in Playground
             </Link>
           </div>
         </div>
@@ -451,6 +454,11 @@ function CTASection() {
               className={clsx('button', 'button--secondary', 'button--lg')}
               to="/docs/language-guide/overview">
               Explore the Language
+            </Link>
+            <Link
+              className={clsx('button', 'button--secondary', 'button--lg')}
+              to="/docs/examples">
+              Browse Examples
             </Link>
           </div>
           <div className={styles.ctaLinks}>

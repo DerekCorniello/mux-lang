@@ -293,11 +293,18 @@ pre code {
   border-radius: 8px;
 }
 
-/* Copy button in terminal header */
-.terminal-code .terminal-copy-button {
+/* Terminal buttons container - positioned in header bar */
+.terminal-code .terminal-buttons {
   position: absolute;
   top: 6px;
   right: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+}
+
+/* Copy button in terminal header */
+.terminal-code .terminal-copy-button {
   width: 20px;
   height: 20px;
   background: rgba(255, 255, 255, 0.1);
@@ -310,7 +317,6 @@ pre code {
   justify-content: center;
   opacity: 1;
   transition: all 0.2s ease;
-  z-index: 10;
 }
 
 .terminal-code .terminal-copy-button:hover {
@@ -321,6 +327,40 @@ pre code {
 .terminal-code .terminal-copy-button svg {
   width: 12px;
   height: 12px;
+}
+
+/* Try it button in terminal header */
+.terminal-code .terminal-try-button {
+  padding: 0 8px;
+  height: 20px;
+  background: var(--ifm-color-primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.9;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.terminal-code .terminal-try-button:hover {
+  background: var(--ifm-color-primary-dark);
+  opacity: 1;
+}
+
+[data-theme='dark'] .terminal-code .terminal-try-button {
+  background: var(--ifm-color-primary-light);
+  color: #1e1e1e;
+}
+
+[data-theme='dark'] .terminal-code .terminal-try-button:hover {
+  background: var(--ifm-color-primary);
+  color: white;
 }
 
 /* Hide Docusaurus copy button inside terminal blocks */
@@ -865,4 +905,265 @@ hr {
 
 [data-theme='dark'] .dsla-search-wrapper .aa-DetachedSearchButtonIcon {
   color: var(--ifm-color-primary);
+}
+
+/* Playground styles */
+.playground-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.playground-header {
+  padding: 1rem;
+  border-bottom: 1px solid #333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.playground-actions {
+  display: flex;
+  gap: 1rem;
+}
+.playground-button {
+  padding: 0.5rem 1rem;
+  background-color: #007acc;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.playground-button:hover {
+  background-color: #005a9e;
+}
+.playground-button.secondary {
+  background-color: #555;
+}
+.playground-button.secondary:hover {
+  background-color: #444;
+}
+.playground-button:disabled {
+  background-color: #777;
+  cursor: not-allowed;
+}
+.wasm-fallback-notice {
+  color: #888;
+  font-size: 0.9rem;
+}
+.playground-main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+.playground-editor, .playground-output {
+  flex: 1;
+  overflow: auto;
+}
+.playground-editor {
+  border-right: 1px solid #333;
+}
+.playground-output-header {
+  padding: 0.5rem;
+  border-bottom: 1px solid #333;
+  font-weight: bold;
+}
+.playground-output-content {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+}
+.playground-output-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+}
+.playground-output-loading {
+  color: #888;
+  text-align: center;
+  padding: 2rem;
+}
+
+/* Playground specific styles */
+.playground-editor {
+  background-color: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 4px;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  padding: 1rem;
+  resize: vertical;
+  min-height: 200px;
+  color: var(--ifm-color-emphasis-800);
+}
+
+[data-theme='dark'] .playground-editor {
+  background-color: var(--ifm-background-color);
+  color: var(--ifm-color-emphasis-200);
+}
+
+.playground-editor:focus {
+  outline: none;
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+
+[data-theme='dark'] .playground-editor:focus {
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
+}
+
+.playground-output {
+  background-color: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 4px;
+}
+
+[data-theme='dark'] .playground-output {
+  background-color: var(--ifm-background-color);
+}
+
+.playground-output-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--ifm-color-emphasis-600);
+  background-color: var(--ifm-color-emphasis-50);
+}
+
+[data-theme='dark'] .playground-output-header {
+  background-color: var(--ifm-color-emphasis-900);
+  color: var(--ifm-color-emphasis-200);
+}
+
+.playground-output-content {
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.playground-output-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--ifm-color-emphasis-500);
+  font-style: italic;
+}
+
+.playground-output-error {
+  background-color: rgba(220, 53, 69, 0.1);
+  border-left: 4px solid #dc3545;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  border-radius: 0 4px 4px 0;
+}
+
+[data-theme='dark'] .playground-output-error {
+  background-color: rgba(220, 53, 69, 0.2);
+  border-left-color: #ff6b6b;
+}
+
+.playground-output-success {
+  background-color: rgba(40, 167, 69, 0.1);
+  border-left: 4px solid #28a745;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  border-radius: 0 4px 4px 0;
+}
+
+[data-theme='dark'] .playground-output-success {
+  background-color: rgba(40, 167, 69, 0.2);
+  border-left-color: #34d399;
+}
+
+.playground-output-empty {
+  color: var(--ifm-color-emphasis-500);
+  font-style: italic;
+  text-align: center;
+  padding: 2rem;
+}
+
+.playground-output-text {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--ifm-color-emphasis-800);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+[data-theme='dark'] .playground-output-text {
+  color: var(--ifm-color-emphasis-200);
+}
+
+.execution-status {
+  font-size: 0.75rem;
+  color: var(--ifm-color-emphasis-500);
+  font-style: italic;
+}
+
+.playground-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.playground-button {
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.playground-button:primary {
+  background-color: var(--ifm-color-primary);
+  color: white;
+}
+
+.playground-button:primary:hover {
+  background-color: var(--ifm-color-primary-dark);
+}
+
+.playground-button:secondary {
+  background-color: var(--ifm-color-emphasis-200);
+  color: var(--ifm-color-emphasis-800);
+}
+
+.playground-button:secondary:hover {
+  background-color: var(--ifm-color-emphasis-300);
+}
+
+.playground-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .playground-container {
+    height: auto;
+  }
+  
+  .playground-main {
+    flex-direction: column;
+  }
+  
+  .playground-editor, .playground-output {
+    flex: none;
+    height: 300px;
+  }
+  
+  .playground-editor {
+    border-right: none;
+    border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  }
+  
+  .playground-actions {
+    justify-content: center;
+  }
 }

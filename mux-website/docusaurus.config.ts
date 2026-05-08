@@ -108,6 +108,11 @@ const config: Config = {
           position: 'left',
         },
         {
+          to: '/docs/examples',
+          label: 'Examples',
+          position: 'left',
+        },
+        {
           type: 'search',
           position: 'right',
         },

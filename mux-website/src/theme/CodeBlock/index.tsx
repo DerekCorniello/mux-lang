@@ -11,6 +11,18 @@ function maybeStringifyChildren(children: ReactNode): ReactNode {
   return Array.isArray(children) ? children.join('') : (children as string);
 }
 
+function getCodeString(rawChildren: ReactNode): string {
+  let text = '';
+  if (typeof rawChildren === 'string') {
+    text = rawChildren;
+  } else if (Array.isArray(rawChildren)) {
+    text = rawChildren
+      .filter((child): child is string => typeof child === 'string')
+      .join('');
+  }
+  return text.trimEnd();
+}
+
 function parseMetastring(
   metastring: string | undefined,
 ): {
@@ -70,18 +82,19 @@ export default function CodeBlock({
   const children = maybeStringifyChildren(rawChildren);
 
   const handleCopy = () => {
-    let textToCopy = '';
-    if (typeof rawChildren === 'string') {
-      textToCopy = rawChildren;
-    } else if (Array.isArray(rawChildren)) {
-      textToCopy = rawChildren
-        .filter((child): child is string => typeof child === 'string')
-        .join('');
-    }
-    navigator.clipboard.writeText(textToCopy.trimEnd());
+    const textToCopy = getCodeString(rawChildren);
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const handleTryIt = () => {
+    const code = getCodeString(rawChildren);
+    const encodedCode = encodeURIComponent(code);
+    window.open(`/playground?code=${encodedCode}`, '_blank');
+  };
+
+  const hasTitle = !!title;
 
   useEffect(() => {
     if (isBrowser) {
@@ -140,14 +153,24 @@ export default function CodeBlock({
         className={`terminal-code ${className || ''}`}
         data-filename={title || ''}
       >
-        <button
-          className="terminal-copy-button"
-          onClick={handleCopy}
-          title={copied ? 'Copied!' : 'Copy to clipboard'}
-          type="button"
-        >
-          {copied ? <CheckIcon /> : <CopyIcon />}
-        </button>
+        <div className="terminal-buttons">
+          <button
+            className="terminal-try-button"
+            onClick={handleTryIt}
+            title="Try It"
+            type="button"
+          >
+            Try It
+          </button>
+          <button
+            className="terminal-copy-button"
+            onClick={handleCopy}
+            title={copied ? 'Copied!' : 'Copy to clipboard'}
+            type="button"
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </button>
+        </div>
         {highlighted ? (
           <div
             className="shiki-wrapper"
