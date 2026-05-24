@@ -545,20 +545,94 @@ a:hover {
   border-radius: 4px;
   font-size: 0.9rem;
   transition: all 0.2s ease;
+  padding-left: 1rem !important;
+}
+
+/* Sidebar depth indicators (vertical lines) */
+.menu__list {
+  position: relative;
+}
+
+.menu__list:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  left: 0.75rem;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--ifm-color-emphasis-200);
+}
+
+.menu__list-item {
+  position: relative;
+}
+
+.menu__list-item:not(:last-child) {
+  margin-bottom: 0;
+}
+
+/* Indent nested items */
+.menu__list .menu__list {
+  padding-left: 1rem;
+}
+
+.menu__list .menu__list .menu__link {
+  padding-left: 1.5rem !important;
 }
 
 .menu__link--active {
+  background-color: transparent;
+  color: var(--ifm-color-primary);
+  font-weight: 600;
+}
+
+.menu__link--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
   background-color: var(--ifm-color-primary);
-  color: white;
 }
 
 .menu__link:hover {
-  background-color: var(--ifm-color-emphasis-100);
+  background-color: transparent;
   text-decoration: none;
 }
 
-.menu__link--active:hover {
-  background-color: var(--ifm-color-primary-dark);
+.menu__link {
+  position: relative;
+}
+
+/* Color mode toggle - custom styling with just light/dark buttons */
+.cleanupToggle_TAltq {
+  display: flex;
+  gap: 0;
+  background: var(--ifm-color-emphasis-200);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.cleanupToggle_TAltq button {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cleanupToggle_TAltq button:hover {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.cleanupToggle_TAltq button[class*="selected"] {
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .table-of-contents__link {

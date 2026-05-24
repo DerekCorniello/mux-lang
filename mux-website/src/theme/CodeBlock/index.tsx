@@ -4,6 +4,12 @@ import type { Props } from '@theme/CodeBlock';
 import { CopyIcon, CheckIcon } from '@site/src/components/CodeIcons';
 import { getHighlighter } from '@site/src/shiki/highlighter';
 
+function parseLanguage(className: string | undefined): string | undefined {
+  if (!className) return undefined;
+  const match = className.split(' ').find((str) => str.startsWith('language-'));
+  return match?.replace(/language-/, '');
+}
+
 function maybeStringifyChildren(children: ReactNode): ReactNode {
   if (React.Children.toArray(children).some((el) => isValidElement(el))) {
     return children;
@@ -81,6 +87,9 @@ export default function CodeBlock({
 
   const children = maybeStringifyChildren(rawChildren);
 
+  const detectedLang = language || parseLanguage(className);
+  const isMuxCode = !detectedLang || detectedLang === 'mux';
+
   const handleCopy = () => {
     const textToCopy = getCodeString(rawChildren);
     navigator.clipboard.writeText(textToCopy);
@@ -132,8 +141,9 @@ export default function CodeBlock({
       const doHighlight = async () => {
         try {
           const highlighter = await getHighlighter();
+          const effectiveLang = detectedLang || 'mux';
           const html = highlighter.codeToHtml(trimmedCode, {
-            lang: 'source.mux',
+            lang: effectiveLang === 'mux' ? 'source.mux' : effectiveLang,
             theme,
           });
           setHighlighted(html);
@@ -145,7 +155,7 @@ export default function CodeBlock({
 
       doHighlight();
     }
-  }, [children, language, isDark, isBrowser]);
+  }, [children, language, className, isDark, isBrowser]);
 
   if (typeof children === 'string' && children.includes('\n')) {
     return (
@@ -154,14 +164,16 @@ export default function CodeBlock({
         data-filename={title || ''}
       >
         <div className="terminal-buttons">
-          <button
-            className="terminal-try-button"
-            onClick={handleTryIt}
-            title="Try It"
-            type="button"
-          >
-            Try It
-          </button>
+          {isMuxCode && (
+            <button
+              className="terminal-try-button"
+              onClick={handleTryIt}
+              title="Try It"
+              type="button"
+            >
+              Try It
+            </button>
+          )}
           <button
             className="terminal-copy-button"
             onClick={handleCopy}

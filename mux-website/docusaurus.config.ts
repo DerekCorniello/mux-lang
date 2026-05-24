@@ -4,7 +4,6 @@ import type * as Preset from '@docusaurus/preset-classic';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 const versionFilePath = path.resolve(__dirname, '..', 'VERSION');
 let siteVersion = 'unknown';
 
@@ -22,28 +21,19 @@ const config: Config = {
   tagline: 'A Programming Language For The People',
   favicon: 'img/mux-logo.png',
 
-  // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
-    v4: true, // Improve compatibility with the upcoming Docusaurus v4
+    v4: true,
   },
 
-  // Set the production url of your site here
   url: 'https://mux-lang.dev/',
-  // Set the /<baseUrl>/ pathname under which your site is served
-  // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
   trailingSlash: true,
 
-  // GitHub pages deployment config.
-  // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'DerekCorniello', // Usually your GitHub org/user name.
-  projectName: 'mux-lang', // Usually your repo name.
+  organizationName: 'DerekCorniello',
+  projectName: 'mux-lang',
 
   onBrokenLinks: 'throw',
 
-  // Even if you don't use internationalization, you can use this field to set
-  // useful metadata like html lang. For example, if your site is Chinese, you
-  // may want to replace "en" with "zh-Hans".
   i18n: {
     defaultLocale: 'en',
     locales: ['en'],
@@ -82,7 +72,7 @@ const config: Config = {
     image: 'img/mux-social-card.jpg',
     colorMode: {
       defaultMode: 'light',
-      respectPrefersColorScheme: true,
+      disableSwitch: false,
     },
     docs: {
       sidebar: {
@@ -97,25 +87,28 @@ const config: Config = {
       },
       items: [
         {
-          type: 'docSidebar',
-          sidebarId: 'docsSidebar',
-          position: 'left',
+          to: '/docs/',
           label: 'Documentation',
+          position: 'left',
+          activeBaseRegex: '/docs/?$',
         },
         {
           to: '/docs/getting-started/quick-start',
           label: 'Quick Start',
           position: 'left',
+          activeBaseRegex: '/docs/getting-started/quick-start/?$',
         },
         {
           to: '/docs/examples',
           label: 'Examples',
           position: 'left',
+          activeBaseRegex: '/docs/examples/?$',
         },
         {
           to: '/docs/tour',
           label: 'Tour',
           position: 'left',
+          activeBaseRegex: '/docs/tour/?$',
         },
         {
           type: 'search',
