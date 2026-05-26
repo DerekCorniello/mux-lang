@@ -102,6 +102,81 @@ mod sync_backend {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+mod sync_backend {
+    pub type MuxMutex = ();
+    pub type MuxRwLock = ();
+    pub type MuxCondVar = ();
+
+    pub fn init_mutex() -> Result<*mut MuxMutex, String> {
+        Ok(Box::into_raw(Box::new(())))
+    }
+
+    pub fn destroy_mutex(ptr: *mut MuxMutex) {
+        if !ptr.is_null() {
+            unsafe {
+                drop(Box::from_raw(ptr));
+            }
+        }
+    }
+
+    pub fn lock_mutex(_ptr: *mut MuxMutex) -> i32 {
+        0
+    }
+
+    pub fn unlock_mutex(_ptr: *mut MuxMutex) -> i32 {
+        0
+    }
+
+    pub fn init_rwlock() -> Result<*mut MuxRwLock, String> {
+        Ok(Box::into_raw(Box::new(())))
+    }
+
+    pub fn destroy_rwlock(ptr: *mut MuxRwLock) {
+        if !ptr.is_null() {
+            unsafe {
+                drop(Box::from_raw(ptr));
+            }
+        }
+    }
+
+    pub fn rwlock_read_lock(_ptr: *mut MuxRwLock) -> i32 {
+        0
+    }
+
+    pub fn rwlock_write_lock(_ptr: *mut MuxRwLock) -> i32 {
+        0
+    }
+
+    pub fn rwlock_unlock(_ptr: *mut MuxRwLock) -> i32 {
+        0
+    }
+
+    pub fn init_condvar() -> Result<*mut MuxCondVar, String> {
+        Ok(Box::into_raw(Box::new(())))
+    }
+
+    pub fn destroy_condvar(ptr: *mut MuxCondVar) {
+        if !ptr.is_null() {
+            unsafe {
+                drop(Box::from_raw(ptr));
+            }
+        }
+    }
+
+    pub fn condvar_wait(_cond_ptr: *mut MuxCondVar, _mutex_ptr: *mut MuxMutex) -> i32 {
+        0
+    }
+
+    pub fn condvar_signal(_ptr: *mut MuxCondVar) -> i32 {
+        0
+    }
+
+    pub fn condvar_broadcast(_ptr: *mut MuxCondVar) -> i32 {
+        0
+    }
+}
+
 #[cfg(windows)]
 mod sync_backend {
     use lazy_static::lazy_static;
@@ -384,49 +459,57 @@ pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut Value {
         return err_string("sync.spawn received null function value");
     }
 
-    let closure_addr = closure as usize;
-    let handle = thread::Builder::new().spawn(move || {
-        let closure_ptr = closure_addr as *mut ClosureRepr;
-        if closure_ptr.is_null() {
-            return;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let closure_addr = closure as usize;
+        let handle = thread::Builder::new().spawn(move || {
+            let closure_ptr = closure_addr as *mut ClosureRepr;
+            if closure_ptr.is_null() {
+                return;
+            }
+            let closure_ref = unsafe { &*closure_ptr };
+            if closure_ref.captures_ptr.is_null() {
+                let func: extern "C" fn() =
+                    unsafe { std::mem::transmute(closure_ref.function_ptr) };
+                func();
+            } else {
+                let func: extern "C" fn(*mut c_void) =
+                    unsafe { std::mem::transmute(closure_ref.function_ptr) };
+                func(closure_ref.captures_ptr);
+            }
+        });
+
+        let join_handle = match handle {
+            Ok(h) => h,
+            Err(e) => return err_string(format!("Failed to spawn thread: {}", e)),
+        };
+
+        let id = NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed);
+        let mut threads = THREADS
+            .lock()
+            .expect("THREADS mutex lock should not be poisoned");
+        threads.insert(
+            id,
+            ThreadEntry {
+                handle: Some(join_handle),
+            },
+        );
+        drop(threads);
+
+        let obj_ptr = alloc_object(*THREAD_TYPE_ID);
+        let data_ptr = unsafe { get_object_ptr(obj_ptr) };
+        if !data_ptr.is_null() {
+            unsafe { *(data_ptr as *mut i64) = id };
         }
-        let closure_ref = unsafe { &*closure_ptr };
-        // Dispatch based on captures: null captures_ptr means no captures
-        if closure_ref.captures_ptr.is_null() {
-            let func: extern "C" fn() = unsafe { std::mem::transmute(closure_ref.function_ptr) };
-            func();
-        } else {
-            let func: extern "C" fn(*mut c_void) =
-                unsafe { std::mem::transmute(closure_ref.function_ptr) };
-            func(closure_ref.captures_ptr);
-        }
-    });
-
-    let join_handle = match handle {
-        Ok(h) => h,
-        Err(e) => return err_string(format!("Failed to spawn thread: {}", e)),
-    };
-
-    let id = NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed);
-    let mut threads = THREADS
-        .lock()
-        .expect("THREADS mutex lock should not be poisoned");
-    threads.insert(
-        id,
-        ThreadEntry {
-            handle: Some(join_handle),
-        },
-    );
-    drop(threads);
-
-    let obj_ptr = alloc_object(*THREAD_TYPE_ID);
-    let data_ptr = unsafe { get_object_ptr(obj_ptr) };
-    if !data_ptr.is_null() {
-        unsafe { *(data_ptr as *mut i64) = id };
+        let value = unsafe { (*obj_ptr).clone() };
+        mux_rc_dec(obj_ptr);
+        mux_rc_alloc(Value::Result(Ok(Box::new(value))))
     }
-    let value = unsafe { (*obj_ptr).clone() };
-    mux_rc_dec(obj_ptr);
-    mux_rc_alloc(Value::Result(Ok(Box::new(value))))
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        err_string("sync.spawn is not supported on this platform")
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -765,5 +848,6 @@ pub extern "C" fn mux_sync_sleep(ms: i64) {
     if ms <= 0 {
         return;
     }
+    #[cfg(not(target_arch = "wasm32"))]
     thread::sleep(Duration::from_millis(ms as u64));
 }

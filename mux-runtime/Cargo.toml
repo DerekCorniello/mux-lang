@@ -33,7 +33,6 @@ sync = []
 full = ["core", "json", "csv", "net", "sql", "sync"]
 
 [dependencies]
-gc = "0.4"
 ordered-float = "4.0"
 lazy_static = "1.4"
 libc = "0.2"

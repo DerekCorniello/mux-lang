@@ -1,0 +1,28 @@
+# fly.toml for Mux Compiler API
+# Run: fly launch --dockerfile Dockerfile (first time)
+# Then: fly deploy
+
+app = "mux-lang-api"
+
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  max_machines_running = 2
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 2
+
+[env]
+  COMPILE_TIMEOUT = "30"
+  MUX_BIN = "mux"
+  GUNICORN_CMD_ARGS = "--capture-output --log-level info"
