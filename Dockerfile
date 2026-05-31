@@ -71,6 +71,10 @@ RUN ln -sf /usr/bin/clang-17 /usr/local/bin/clang
 COPY api/ /app/api/
 RUN pip3 install --no-cache-dir -r /app/api/requirements.txt
 
+# Run as non-root in production
+RUN useradd --create-home --uid 10001 appuser
+USER appuser
+
 WORKDIR /tmp
 EXPOSE 8080
 

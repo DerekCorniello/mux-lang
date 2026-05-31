@@ -6,6 +6,7 @@ import { registerMuxLanguage } from '@site/src/monaco/muxLanguage';
 interface MonacoEditorComponentProps {
   value: string;
   onChange: (value: string) => void;
+  onRun?: () => void;
 }
 
 function getTheme(): 'vs-dark' | 'vs' {
@@ -26,11 +27,11 @@ function EditorFallback() {
   );
 }
 
-const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, onChange }) => {
+const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, onChange, onRun }) => {
   const [theme, setTheme] = useState(getTheme);
   const [height, setHeight] = useState('200px');
 
-  const handleEditorMount = useCallback((editor: any) => {
+  const handleEditorMount = useCallback((editor: any, monaco: any) => {
     const updateHeight = () => {
       const lineCount = editor.getModel()?.getLineCount() || 10;
       const newHeight = Math.max(150, Math.min(lineCount * 21 + 24, 400));
@@ -39,6 +40,15 @@ const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, on
 
     updateHeight();
     editor.onDidChangeModelContent(updateHeight);
+
+    editor.addAction({
+      id: 'run-mux',
+      label: 'Run Mux',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+      run: () => {
+        onRun?.();
+      },
+    });
 
     const observer = new MutationObserver(() => {
       setTheme(getTheme());
@@ -51,7 +61,7 @@ const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, on
       attributes: true,
       attributeFilter: ['data-theme'],
     });
-  }, []);
+  }, [onRun]);
 
   return (
     <BrowserOnly fallback={<EditorFallback />}>

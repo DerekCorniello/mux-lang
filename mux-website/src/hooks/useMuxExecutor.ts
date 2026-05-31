@@ -1,44 +1,72 @@
 import { useState, useCallback } from 'react';
-import type { ExecuteRequest, ExecuteResponse } from '../lib/executeTypes';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
+import type { ExecuteResponse } from '../lib/executeTypes';
 
-type Executor = (source: string) => Promise<ExecuteResponse>;
+async function readExecuteResponse(res: Response): Promise<ExecuteResponse> {
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      return (await res.json()) as ExecuteResponse;
+    } catch {
+      // Fall through to text parsing.
+    }
+  }
+
+  const text = (await res.text()).trim();
+
+  if (res.status === 429) {
+    return { error: 'Too many requests. Please wait and try again.' };
+  }
+
+  if (text) {
+    return { error: text };
+  }
+
+  return { error: `Request failed (${res.status})` };
+}
 
 const useMuxExecutor = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const { siteConfig } = useDocusaurusContext();
+  const customFields = siteConfig.customFields as Record<string, unknown> | undefined;
+  const apiUrl =
+    typeof customFields?.apiUrl === 'string'
+      ? customFields.apiUrl
+      : 'http://localhost:8080';
 
-  // Mock execution function
-  const executeWithMock = useCallback(async (source: string): Promise<ExecuteResponse> => {
-    // Simulate network request delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Simple mock: if the code contains the word "error", return an error, else return a fixed output.
-    if (source.includes('error')) {
-      return { output: '', error: 'Mock error: intentional error for testing' };
-    }
-    
-    // For demonstration, we'll return a fixed output that includes the input code
-    const output = `Execution successful:\n${source}`;
-    return { output, error: undefined };
-  }, []);
-
-  // Main execute function that uses the mock
   const executeCode = useCallback(async (source: string): Promise<ExecuteResponse> => {
     setLoading(true);
     setError(null);
     try {
-      return await executeWithMock(source);
+      const res = await fetch(`${apiUrl}/api/compile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: source }),
+      });
+
+      const data = await readExecuteResponse(res);
+      if (res.ok && !data.output && !data.error) {
+        const msg = 'Server returned an unexpected response';
+        setError(msg);
+        return { error: msg };
+      }
+      if (!res.ok || data.error) {
+        setError(data.error || 'Request failed');
+      }
+      return data;
     } catch (err: any) {
-      setError(err.message || 'Unknown error');
-      return { output: '', error: err.message || 'Unknown error' };
+      const msg = err.message || 'Unknown error';
+      setError(msg);
+      return { error: msg };
     } finally {
       setLoading(false);
     }
-  }, [executeWithMock]);
+  }, [apiUrl]);
 
   return {
     executeCode,
-    wasmLoaded: false, // We're not using WASM in the stub
+    wasmLoaded: false,
     loading,
     error,
   };

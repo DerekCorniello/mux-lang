@@ -111,6 +111,12 @@ const config: Config = {
           activeBaseRegex: '/docs/tour/?$',
         },
         {
+          to: '/playground',
+          label: 'Playground',
+          position: 'left',
+          activeBaseRegex: '/playground/?$',
+        },
+        {
           type: 'search',
           position: 'right',
         },
@@ -133,6 +139,7 @@ const config: Config = {
   } satisfies Preset.ThemeConfig,
   customFields: {
     version: siteVersion,
+    apiUrl: process.env.MUX_API_URL ?? 'http://localhost:8080',
   },
 };
 

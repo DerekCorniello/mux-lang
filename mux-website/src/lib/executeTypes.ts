@@ -3,6 +3,6 @@ export interface ExecuteRequest {
 }
 
 export interface ExecuteResponse {
-  output: string;
+  output?: string;
   error?: string;
 }

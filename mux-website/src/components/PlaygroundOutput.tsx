@@ -1,6 +1,12 @@
 import React from 'react';
 
-const PlaygroundOutput = ({ value, loading, error }) => {
+interface PlaygroundOutputProps {
+  value: string;
+  loading: boolean;
+  error: string | null;
+}
+
+const PlaygroundOutput: React.FC<PlaygroundOutputProps> = ({ value, loading, error }) => {
   return (
     <div className="playground-output">
       <div className="playground-output-header">

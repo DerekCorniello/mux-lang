@@ -305,7 +305,7 @@ function QuickStartSection() {
           </div>
           
           <div className={styles.codeBlockWrapper}>
-            <CodeBlock title="error-handling.mux" className={styles.featuredCode}>
+            <CodeBlock title="error-handling.mux" className={`language-mux ${styles.featuredCode}`}>
 {`func divide(int a, int b) returns result<int, string> {
     if b == 0 {
         return err("division by zero")
@@ -372,7 +372,7 @@ function CodeExamplesSection() {
         <div className={styles.examplesGrid}>
           <div className={styles.exampleSection}>
             <Heading as="h3">Generics & Collections</Heading>
-            <CodeBlock title="stack.mux" className={styles.exampleCode}>
+            <CodeBlock title="stack.mux" className={`language-mux ${styles.exampleCode}`}>
 {`class Stack<T> {
     list<T> items
 
@@ -403,7 +403,7 @@ match stack.pop() {
 
           <div className={styles.exampleSection}>
             <Heading as="h3">Pattern Matching</Heading>
-            <CodeBlock title="enums.mux" className={styles.exampleCode}>
+            <CodeBlock title="enums.mux" className={`language-mux ${styles.exampleCode}`}>
 {`enum Shape {
     Circle(float radius)
     Rectangle(float width, float height)

@@ -1,8 +1,9 @@
-import React, { isValidElement, useState, type ReactNode, useEffect, useRef } from 'react';
+import React, { isValidElement, useState, type ReactNode, useEffect } from 'react';
 import useIsBrowser from '@docusaurus/useIsBrowser';
 import type { Props } from '@theme/CodeBlock';
 import { CopyIcon, CheckIcon } from '@site/src/components/CodeIcons';
-import { getHighlighter } from '@site/src/shiki/highlighter';
+import { getHighlighter, resolveShikiLanguage } from '@site/src/shiki/highlighter';
+import MuxTerminal from '@site/src/components/MuxTerminal';
 
 function parseLanguage(className: string | undefined): string | undefined {
   if (!className) return undefined;
@@ -84,11 +85,12 @@ export default function CodeBlock({
 
   const parsedMeta = parseMetastring(metastring);
   const title = titleProp || parsedMeta.title;
+  const terminalTitle = typeof title === 'string' ? title : 'snippet.mux';
 
   const children = maybeStringifyChildren(rawChildren);
 
   const detectedLang = language || parseLanguage(className);
-  const isMuxCode = !detectedLang || detectedLang === 'mux';
+  const isMuxCode = detectedLang === 'mux' || detectedLang === 'source.mux';
 
   const handleCopy = () => {
     const textToCopy = getCodeString(rawChildren);
@@ -96,14 +98,6 @@ export default function CodeBlock({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  const handleTryIt = () => {
-    const code = getCodeString(rawChildren);
-    const encodedCode = encodeURIComponent(code);
-    window.open(`/playground?code=${encodedCode}`, '_blank');
-  };
-
-  const hasTitle = !!title;
 
   useEffect(() => {
     if (isBrowser) {
@@ -130,6 +124,7 @@ export default function CodeBlock({
 
   useEffect(() => {
     if (
+      !isMuxCode &&
       isBrowser &&
       isDark !== null &&
       typeof children === 'string' &&
@@ -140,10 +135,15 @@ export default function CodeBlock({
 
       const doHighlight = async () => {
         try {
+          const effectiveLang = resolveShikiLanguage(detectedLang || 'mux');
+          if (!effectiveLang) {
+            setHighlighted(null);
+            return;
+          }
+
           const highlighter = await getHighlighter();
-          const effectiveLang = detectedLang || 'mux';
           const html = highlighter.codeToHtml(trimmedCode, {
-            lang: effectiveLang === 'mux' ? 'source.mux' : effectiveLang,
+            lang: effectiveLang,
             theme,
           });
           setHighlighted(html);
@@ -157,6 +157,10 @@ export default function CodeBlock({
     }
   }, [children, language, className, isDark, isBrowser]);
 
+  if (typeof children === 'string' && isMuxCode) {
+    return <MuxTerminal initialCode={children.trimEnd()} title={terminalTitle} />;
+  }
+
   if (typeof children === 'string' && children.includes('\n')) {
     return (
       <div
@@ -164,16 +168,6 @@ export default function CodeBlock({
         data-filename={title || ''}
       >
         <div className="terminal-buttons">
-          {isMuxCode && (
-            <button
-              className="terminal-try-button"
-              onClick={handleTryIt}
-              title="Try It"
-              type="button"
-            >
-              Try It
-            </button>
-          )}
           <button
             className="terminal-copy-button"
             onClick={handleCopy}

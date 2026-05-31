@@ -135,6 +135,31 @@ node scripts/generate-syntax.js
 
 In development. There is no supported Mux LSP release yet.
 
+## Playground local development
+
+To run the docs site and compiler API locally for playground testing:
+
+1. Start the API server from the repo root:
+
+```bash
+uv run python api/server.py
+```
+
+2. In a second terminal, start the website:
+
+```bash
+cd mux-website
+npm start
+```
+
+The site runs on `http://localhost:3000` and uses `http://localhost:8080` for the playground API by default.
+
+If you want to point the website at a different API URL, set this before starting the docs site:
+
+```bash
+MUX_API_URL=https://your-api-url npm start
+```
+
 ## Profiling
 
 Profiling is done with external tools so it stays decoupled from the compiler and runtime.

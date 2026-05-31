@@ -1,26 +1,130 @@
 import os
 import uuid
 import shutil
+import logging
+import threading
 import subprocess
 import tempfile
+import time
+import signal
+from pathlib import Path
 
 from flask import Flask, request, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("mux-api")
+
 app = Flask(__name__)
-CORS(app)
+app.config["MAX_CONTENT_LENGTH"] = 512 * 1024
+
+CORS(app, origins=[
+    "https://mux-lang.dev",
+    "http://localhost:3000",
+])
 
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["10 per minute"],
+    default_limits=["20 per minute"],
     storage_uri="memory://",
 )
 
-MUX_BIN = os.environ.get("MUX_BIN", "mux")
-COMPILE_TIMEOUT = int(os.environ.get("COMPILE_TIMEOUT", "30"))
+MAX_CODE_SIZE = 100 * 1024
+MAX_OUTPUT_SIZE = 1 * 1024 * 1024
+READ_POLL_INTERVAL = 0.05
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        parsed = int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default=%d", name, raw, default)
+        return default
+    if parsed <= 0:
+        logger.warning("Non-positive %s=%r; using default=%d", name, raw, default)
+        return default
+    return parsed
+
+
+COMPILE_TIMEOUT = _env_int("COMPILE_TIMEOUT", 30)
+
+
+def _find_mux() -> str:
+    env_val = os.environ.get("MUX_BIN")
+    if env_val:
+        return env_val
+
+    found = shutil.which("mux")
+    if found:
+        return found
+
+    root = Path(__file__).resolve().parent.parent
+    for candidate in [root / "target/release/mux", root / "target/debug/mux"]:
+        if candidate.exists():
+            return str(candidate)
+
+    return "mux"
+
+
+MUX_BIN = _find_mux()
+
+
+def _read_stream(
+    stream,
+    chunks,
+    limit,
+    stop_event,
+    limit_exceeded_event,
+    total_bytes,
+    total_lock,
+):
+    try:
+        for chunk in iter(lambda: stream.read(4096), ""):
+            if stop_event.is_set():
+                break
+            chunk_size = len(chunk.encode("utf-8", errors="replace"))
+            with total_lock:
+                total_bytes[0] += chunk_size
+                if total_bytes[0] > limit:
+                    limit_exceeded_event.set()
+                    break
+            chunks.append(chunk)
+    except ValueError:
+        pass
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+
+def _clean_output(text: str) -> str:
+    return text.replace("\x00", "")
+
+
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except Exception:
+        logger.exception("Failed to kill process group for pid=%s", proc.pid)
+
+
+@app.errorhandler(413)
+def request_too_large(_err):
+    return jsonify({"error": "Request body exceeds 512KB limit"}), 413
+
+
+@app.errorhandler(429)
+def too_many_requests(_err):
+    return jsonify({"error": "Too many requests. Please wait and try again."}), 429
 
 
 @app.route("/health")
@@ -29,13 +133,25 @@ def health():
 
 
 @app.route("/api/compile", methods=["POST"])
-@limiter.limit("10 per minute")
+@limiter.limit("20 per minute")
 def compile_code():
     data = request.get_json(silent=True)
-    if not data or "code" not in data:
-        return jsonify({"output": "", "error": "Missing 'code' in request body"}), 400
+
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+
+    if "code" not in data:
+        return jsonify({"error": "Missing 'code' in request body"}), 400
 
     code = data["code"]
+
+    if not isinstance(code, str):
+        return jsonify({"error": "'code' must be a string"}), 400
+
+    code_size = len(code.encode("utf-8", errors="replace"))
+    if code_size > MAX_CODE_SIZE:
+        return jsonify({"error": f"Source code exceeds {MAX_CODE_SIZE // 1024}KB limit"}), 413
+
     tmp_dir = None
 
     try:
@@ -45,37 +161,103 @@ def compile_code():
         with open(src_file, "w") as f:
             f.write(code)
 
-        result = subprocess.run(
+        proc = subprocess.Popen(
             [MUX_BIN, "run", src_file],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=COMPILE_TIMEOUT,
+            encoding="utf-8",
+            errors="replace",
             cwd=tmp_dir,
+            start_new_session=True,
         )
 
-        output = result.stdout
-        error = result.stderr or None
+        stop_event = threading.Event()
+        output_limit_exceeded = threading.Event()
+        total_output_bytes = [0]
+        total_output_lock = threading.Lock()
+        stdout_lines = []
+        stderr_lines = []
 
-        if result.returncode != 0:
-            if error:
-                error = error.strip()
-            else:
-                error = f"Process exited with code {result.returncode}"
+        stdout_thread = threading.Thread(
+            target=_read_stream,
+            args=(
+                proc.stdout,
+                stdout_lines,
+                MAX_OUTPUT_SIZE,
+                stop_event,
+                output_limit_exceeded,
+                total_output_bytes,
+                total_output_lock,
+            ),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=_read_stream,
+            args=(
+                proc.stderr,
+                stderr_lines,
+                MAX_OUTPUT_SIZE,
+                stop_event,
+                output_limit_exceeded,
+                total_output_bytes,
+                total_output_lock,
+            ),
+            daemon=True,
+        )
 
-        return jsonify({"output": output or "", "error": error})
+        stdout_thread.start()
+        stderr_thread.start()
 
-    except subprocess.TimeoutExpired:
-        return jsonify({
-            "output": "",
-            "error": f"Execution timed out after {COMPILE_TIMEOUT}s",
-        })
+        timed_out = False
+        output_too_large = False
+        deadline = time.monotonic() + COMPILE_TIMEOUT
+
+        while proc.poll() is None:
+            if output_limit_exceeded.is_set():
+                output_too_large = True
+                _kill_process_group(proc)
+                break
+            if time.monotonic() >= deadline:
+                timed_out = True
+                _kill_process_group(proc)
+                break
+            time.sleep(READ_POLL_INTERVAL)
+
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            _kill_process_group(proc)
+            proc.wait()
+
+        stop_event.set()
+        stdout_thread.join(timeout=1)
+        stderr_thread.join(timeout=1)
+
+        if timed_out:
+            return jsonify({"error": f"Execution timed out after {COMPILE_TIMEOUT}s"})
+
+        if output_too_large:
+            return jsonify({"error": f"Program output exceeds {MAX_OUTPUT_SIZE // 1024}KB limit"}), 413
+
+        stderr_text = _clean_output("".join(stderr_lines)).strip()
+        if proc.returncode != 0:
+            msg = stderr_text if stderr_text else f"Process exited with code {proc.returncode}"
+            return jsonify({"error": msg})
+
+        output = _clean_output("".join(stdout_lines))
+
+        if len(output) > MAX_OUTPUT_SIZE:
+            output = output[:MAX_OUTPUT_SIZE] + "\n... (output truncated)"
+
+        return jsonify({"output": output})
+
     except FileNotFoundError:
-        return jsonify({
-            "output": "",
-            "error": f"Compiler binary '{MUX_BIN}' not found",
-        })
-    except Exception as e:
-        return jsonify({"output": "", "error": str(e)})
+        logger.error("Compiler binary not found at %s", MUX_BIN)
+        return jsonify({"error": "Compiler not found on server"})
+    except Exception:
+        logger.exception("Unexpected error during compilation")
+        return jsonify({"error": "Internal server error"})
     finally:
         if tmp_dir and os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)

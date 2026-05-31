@@ -32,7 +32,7 @@ func main() returns void {
 <EmbeddedPlayground initialCode={`class Container<T> {
     T value
     
-    common func new(T val) returns Container<T> {
+    common func from(T val) returns Container<T> {
         Container<T> c = Container<T>.new()
         c.value = val
         return c
@@ -44,8 +44,8 @@ func main() returns void {
 }
 
 func main() returns void {
-    auto intContainer = Container<int>.new(42)
-    auto strContainer = Container<string>.new("Hello")
+    auto intContainer = Container<int>.from(42)
+    auto strContainer = Container<string>.from("Hello")
     
     print("Int: " + intContainer.get().to_string())
     print("String: " + strContainer.get())
@@ -55,12 +55,6 @@ func main() returns void {
 
 <EmbeddedPlayground initialCode={`class Stack<T> {
     list<T> items
-    
-    common func new() returns Stack<T> {
-        Stack<T> s = Stack<T>.new()
-        s.items = []
-        return s
-    }
     
     func push(T item) returns void {
         self.items.push_back(item)
