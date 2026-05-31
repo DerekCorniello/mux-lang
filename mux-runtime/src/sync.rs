@@ -102,81 +102,6 @@ mod sync_backend {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-mod sync_backend {
-    pub type MuxMutex = ();
-    pub type MuxRwLock = ();
-    pub type MuxCondVar = ();
-
-    pub fn init_mutex() -> Result<*mut MuxMutex, String> {
-        Ok(Box::into_raw(Box::new(())))
-    }
-
-    pub fn destroy_mutex(ptr: *mut MuxMutex) {
-        if !ptr.is_null() {
-            unsafe {
-                drop(Box::from_raw(ptr));
-            }
-        }
-    }
-
-    pub fn lock_mutex(_ptr: *mut MuxMutex) -> i32 {
-        0
-    }
-
-    pub fn unlock_mutex(_ptr: *mut MuxMutex) -> i32 {
-        0
-    }
-
-    pub fn init_rwlock() -> Result<*mut MuxRwLock, String> {
-        Ok(Box::into_raw(Box::new(())))
-    }
-
-    pub fn destroy_rwlock(ptr: *mut MuxRwLock) {
-        if !ptr.is_null() {
-            unsafe {
-                drop(Box::from_raw(ptr));
-            }
-        }
-    }
-
-    pub fn rwlock_read_lock(_ptr: *mut MuxRwLock) -> i32 {
-        0
-    }
-
-    pub fn rwlock_write_lock(_ptr: *mut MuxRwLock) -> i32 {
-        0
-    }
-
-    pub fn rwlock_unlock(_ptr: *mut MuxRwLock) -> i32 {
-        0
-    }
-
-    pub fn init_condvar() -> Result<*mut MuxCondVar, String> {
-        Ok(Box::into_raw(Box::new(())))
-    }
-
-    pub fn destroy_condvar(ptr: *mut MuxCondVar) {
-        if !ptr.is_null() {
-            unsafe {
-                drop(Box::from_raw(ptr));
-            }
-        }
-    }
-
-    pub fn condvar_wait(_cond_ptr: *mut MuxCondVar, _mutex_ptr: *mut MuxMutex) -> i32 {
-        0
-    }
-
-    pub fn condvar_signal(_ptr: *mut MuxCondVar) -> i32 {
-        0
-    }
-
-    pub fn condvar_broadcast(_ptr: *mut MuxCondVar) -> i32 {
-        0
-    }
-}
-
 #[cfg(windows)]
 mod sync_backend {
     use lazy_static::lazy_static;
@@ -459,7 +384,6 @@ pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut Value {
         return err_string("sync.spawn received null function value");
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     {
         let closure_addr = closure as usize;
         let handle = thread::Builder::new().spawn(move || {
@@ -504,11 +428,6 @@ pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut Value {
         let value = unsafe { (*obj_ptr).clone() };
         mux_rc_dec(obj_ptr);
         mux_rc_alloc(Value::Result(Ok(Box::new(value))))
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        err_string("sync.spawn is not supported on this platform")
     }
 }
 
@@ -848,6 +767,5 @@ pub extern "C" fn mux_sync_sleep(ms: i64) {
     if ms <= 0 {
         return;
     }
-    #[cfg(not(target_arch = "wasm32"))]
     thread::sleep(Duration::from_millis(ms as u64));
 }

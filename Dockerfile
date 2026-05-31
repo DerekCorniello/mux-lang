@@ -1,19 +1,20 @@
 # Stage 1: Build the Mux compiler (Rust + LLVM 17 + clang)
 FROM rust:1.93.1-bookworm AS builder
 
+# Install LLVM 17 via GPG-verified apt repository (avoids running unsigned llvm.sh)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    lsb-release \
-    gnupg \
-    software-properties-common \
-    && wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh \
-    && chmod +x /tmp/llvm.sh \
-    && /tmp/llvm.sh 17 \
+        wget \
+        ca-certificates \
+        gnupg \
+        lsb-release \
+    && wget -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         clang-17 \
         libpolly-17-dev \
         llvm-17-dev \
-    && rm -rf /var/lib/apt/lists/* /tmp/llvm.sh
+    && rm -rf /var/lib/apt/lists/*
 
 ENV LLVM_SYS_170_PREFIX=/usr/lib/llvm-17 \
     CC=clang-17
@@ -34,20 +35,20 @@ RUN cargo build -p mux-lang --release && \
 # Stage 2: Runtime image (minimal Debian with clang + Python)
 FROM debian:bookworm-slim
 
+# Install LLVM 17 via GPG-verified apt repository
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    lsb-release \
-    gnupg \
-    software-properties-common \
-    ca-certificates \
-    && wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh \
-    && chmod +x /tmp/llvm.sh \
-    && /tmp/llvm.sh 17 \
+        wget \
+        ca-certificates \
+        gnupg \
+        lsb-release \
+    && wget -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         clang-17 \
         python3 \
         python3-pip \
-    && rm -rf /var/lib/apt/lists/* /tmp/llvm.sh
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the mux binary and runtime library
 COPY --from=builder /usr/local/bin/mux /usr/local/bin/mux

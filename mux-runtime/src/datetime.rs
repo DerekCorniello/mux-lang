@@ -136,15 +136,8 @@ pub extern "C" fn mux_datetime_sleep(seconds: i64) -> *mut Value {
     if seconds < 0 {
         return dt_err("Sleep duration cannot be negative".to_string());
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        thread::sleep(Duration::from_secs(seconds as u64));
-        dt_ok(Value::Unit)
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        dt_err("sleep is not supported on this platform".to_string())
-    }
+    thread::sleep(Duration::from_secs(seconds as u64));
+    dt_ok(Value::Unit)
 }
 
 /// Sleep for the specified number of milliseconds.
@@ -155,13 +148,6 @@ pub extern "C" fn mux_datetime_sleep_millis(milliseconds: i64) -> *mut Value {
     if milliseconds < 0 {
         return dt_err("Sleep duration cannot be negative".to_string());
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        thread::sleep(Duration::from_millis(milliseconds as u64));
-        dt_ok(Value::Unit)
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        dt_err("sleep is not supported on this platform".to_string())
-    }
+    thread::sleep(Duration::from_millis(milliseconds as u64));
+    dt_ok(Value::Unit)
 }
