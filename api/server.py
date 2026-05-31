@@ -235,7 +235,7 @@ def compile_code():
         stderr_thread.join(timeout=1)
 
         if timed_out:
-            return jsonify({"error": f"Execution timed out after {COMPILE_TIMEOUT}s"})
+            return jsonify({"error": f"Execution timed out after {COMPILE_TIMEOUT}s"}), 504
 
         if output_too_large:
             return jsonify({"error": f"Program output exceeds {MAX_OUTPUT_SIZE // 1024}KB limit"}), 413
@@ -264,4 +264,4 @@ def compile_code():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", 8080)))

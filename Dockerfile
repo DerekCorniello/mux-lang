@@ -20,6 +20,8 @@ ENV LLVM_SYS_170_PREFIX=/usr/lib/llvm-17 \
     CC=clang-17
 
 WORKDIR /build
+COPY Cargo.lock Cargo.toml ./
+COPY mux-compiler/Cargo.toml mux-runtime/Cargo.toml ./
 COPY . .
 
 # Build the runtime library first (produces .a and .so)
@@ -69,11 +71,13 @@ ENV MUX_RUNTIME_LIB=/usr/local/lib/mux/libmux_runtime.a \
 # Create a symlink so 'clang' resolves
 RUN ln -sf /usr/bin/clang-17 /usr/local/bin/clang
 
-# Install Python dependencies with uv
-COPY api/ /app/api/
+# Install Python dependencies with uv (hash-pinned, binary-only)
+COPY api/requirements.lock /app/api/requirements.lock
+COPY api/requirements.txt /app/api/requirements.txt
+COPY api/server.py /app/api/server.py
 RUN pip3 install --no-cache-dir --break-system-packages uv && \
     uv venv /opt/venv && \
-    VIRTUAL_ENV=/opt/venv PATH="/opt/venv/bin:$PATH" uv pip install --no-cache -r /app/api/requirements.txt
+    VIRTUAL_ENV=/opt/venv PATH="/opt/venv/bin:$PATH" uv pip install --no-cache --only-binary :all: --require-hashes -r /app/api/requirements.lock
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH="/app"

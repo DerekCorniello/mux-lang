@@ -30,6 +30,7 @@ function EditorFallback() {
 const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, onChange, onRun }) => {
   const [theme, setTheme] = useState(getTheme);
   const [height, setHeight] = useState('200px');
+  const observerRef = useRef<MutationObserver | null>(null);
 
   const handleEditorMount = useCallback((editor: any, monaco: any) => {
     const updateHeight = () => {
@@ -50,6 +51,10 @@ const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, on
       },
     });
 
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+    }
+
     const observer = new MutationObserver(() => {
       setTheme(getTheme());
     });
@@ -61,6 +66,7 @@ const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, on
       attributes: true,
       attributeFilter: ['data-theme'],
     });
+    observerRef.current = observer;
   }, [onRun]);
 
   return (

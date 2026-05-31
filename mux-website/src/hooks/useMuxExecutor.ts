@@ -66,7 +66,6 @@ const useMuxExecutor = () => {
 
   return {
     executeCode,
-    wasmLoaded: false,
     loading,
     error,
   };

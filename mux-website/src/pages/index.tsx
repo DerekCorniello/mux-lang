@@ -106,10 +106,14 @@ function HomepageHeader() {
     setPlatform(detectPlatform());
   }, []);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(installCommands[platform]);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(installCommands[platform]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable or permission denied
+    }
   };
 
   return (
