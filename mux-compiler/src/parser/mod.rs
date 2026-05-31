@@ -7,9 +7,10 @@ mod error;
 pub use error::{ParserError, ParserResult};
 
 use crate::ast::{
-    AstNode, BinaryOp, EnumVariant, ExpressionKind, ExpressionNode, Field, FunctionNode,
-    ImportSpec, LiteralNode, MatchArm, Param, PatternNode, Precedence, PrimitiveType, SpanExt,
-    Spanned, StatementKind, StatementNode, TraitBound, TraitRef, TypeKind, TypeNode, UnaryOp,
+    AstNode, BinaryOp, EnumVariant, EnumVariantField, ExpressionKind, ExpressionNode, Field,
+    FunctionNode, ImportSpec, LiteralNode, MatchArm, Param, PatternNode, Precedence, PrimitiveType,
+    SpanExt, Spanned, StatementKind, StatementNode, TraitBound, TraitRef, TypeKind, TypeNode,
+    UnaryOp,
 };
 use crate::lexer::{Span, Token, TokenType};
 
@@ -719,7 +720,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum_variant_data(&mut self) -> ParserResult<Option<Vec<(String, TypeNode)>>> {
+    fn parse_enum_variant_data(&mut self) -> ParserResult<Option<Vec<EnumVariantField>>> {
         if !self.matches(&[TokenType::OpenParen]) {
             return Ok(None);
         }
@@ -729,9 +730,9 @@ impl<'a> Parser<'a> {
                 let field_type = self.parse_type()?;
                 let field_name = if let TokenType::Id(name) = self.peek().token_type.clone() {
                     self.advance();
-                    name
+                    Some(name)
                 } else {
-                    String::new()
+                    None
                 };
                 fields.push((field_name, field_type));
                 if !self.matches(&[TokenType::Comma]) {

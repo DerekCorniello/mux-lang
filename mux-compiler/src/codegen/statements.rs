@@ -12,8 +12,8 @@ use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
 
 use crate::ast::{
-    ExpressionKind, ExpressionNode, LiteralNode, PatternNode, PrimitiveType, StatementKind,
-    StatementNode, TypeKind,
+    EnumVariantField, ExpressionKind, ExpressionNode, LiteralNode, PatternNode, PrimitiveType,
+    StatementKind, StatementNode, TypeKind,
 };
 use crate::semantics::{Type, Type as ResolvedType};
 
@@ -1430,7 +1430,7 @@ impl<'a> CodeGenerator<'a> {
         &self,
         enum_name: &str,
         variant_name: &str,
-    ) -> Result<Vec<(String, crate::ast::TypeNode)>, String> {
+    ) -> Result<Vec<EnumVariantField>, String> {
         let variant_fields = self
             .enum_variant_fields
             .get(enum_name)
@@ -1445,7 +1445,7 @@ impl<'a> CodeGenerator<'a> {
         &self,
         enum_name: &str,
         variant_name: &str,
-        field_types: &[(String, crate::ast::TypeNode)],
+        field_types: &[EnumVariantField],
         index: usize,
     ) -> Result<BasicTypeEnum<'a>, String> {
         if index >= field_types.len() {
@@ -1464,7 +1464,7 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         enum_name: &str,
         variant_name: &str,
-        field_types: &[(String, crate::ast::TypeNode)],
+        field_types: &[EnumVariantField],
         index: usize,
     ) -> Result<Type, String> {
         if index >= field_types.len() {

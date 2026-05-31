@@ -3,7 +3,9 @@
 //! This module handles generating LLVM types for classes, interfaces, and enums.
 
 use super::CodeGenerator;
-use crate::ast::{AstNode, EnumVariant, Field, PrimitiveType, TypeKind, TypeNode};
+use crate::ast::{
+    AstNode, EnumVariant, EnumVariantField, Field, PrimitiveType, TypeKind, TypeNode,
+};
 use crate::semantics::{MethodSig, Type};
 use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
@@ -192,7 +194,7 @@ impl<'a> CodeGenerator<'a> {
         let mut max_fields = 0;
         for variant in variants {
             variant_names.push(variant.name.clone());
-            let field_types: Vec<(String, TypeNode)> = variant.data.clone().unwrap_or_default();
+            let field_types: Vec<EnumVariantField> = variant.data.clone().unwrap_or_default();
             max_fields = max_fields.max(field_types.len());
             variant_fields.insert(variant.name.clone(), field_types);
         }

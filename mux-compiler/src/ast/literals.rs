@@ -76,10 +76,12 @@ pub struct TraitRef {
     pub type_args: Vec<TypeNode>,
 }
 
+pub type EnumVariantField = (Option<String>, TypeNode);
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariant {
     pub name: String,
-    pub data: Option<Vec<(String, TypeNode)>>,
+    pub data: Option<Vec<EnumVariantField>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
