@@ -74,6 +74,8 @@ func main() returns void {
 When an assertion fails, the program panics with a descriptive message:
 
 ```mux
+import std.assert
+
 assert.assert_eq(1, 2)  // Panics: "Assertion failed: expected 2, got 1"
 assert.assert_true(false)  // Panics: "Assertion failed: expected true, got false"
 assert.assert_none(some(42))  // Panics: "Assertion failed: expected none, got some(42)"

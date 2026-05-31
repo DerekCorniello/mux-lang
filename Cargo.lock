@@ -591,12 +591,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gc"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3edaac0f5832202ebc99520cb77c932248010c4645d20be1dc62d6579f5b3752"
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1083,7 +1077,6 @@ version = "0.3.0"
 dependencies = [
  "chrono",
  "csv",
- "gc",
  "httparse",
  "lazy_static",
  "libc",

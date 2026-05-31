@@ -19,10 +19,34 @@ const docsSidebar: NonNullable<SidebarsConfig['docsSidebar']> = [
   {
     type: 'category',
     label: 'Getting Started',
-    collapsed: false,
+    collapsed: true,
     items: [
       'getting-started/why-mux',
       'getting-started/quick-start',
+    ],
+  },
+  {
+    type: 'category',
+    label: 'Tour of Mux',
+    collapsed: true,
+    items: [
+      'tour/tour',
+      'tour/hello-world',
+      'tour/variables',
+      'tour/basic-types',
+      'tour/functions',
+      'tour/control-flow',
+      'tour/lists',
+      'tour/maps',
+      'tour/sets',
+      'tour/classes',
+      'tour/enums',
+      'tour/generics',
+      'tour/error-handling',
+      'tour/interfaces',
+      'tour/references',
+      'tour/modules',
+      'tour/next-steps',
     ],
   },
   {
@@ -33,7 +57,7 @@ const docsSidebar: NonNullable<SidebarsConfig['docsSidebar']> = [
   {
     type: 'category',
     label: 'Language Reference',
-    collapsed: false,
+    collapsed: true,
     items: [
       'reference/overview',
       'reference/lexical-structure',
@@ -46,7 +70,7 @@ const docsSidebar: NonNullable<SidebarsConfig['docsSidebar']> = [
   {
     type: 'category',
     label: 'Language Guide',
-    collapsed: false,
+    collapsed: true,
     items: [
       'language-guide/overview',
       'language-guide/types',
@@ -66,7 +90,7 @@ const docsSidebar: NonNullable<SidebarsConfig['docsSidebar']> = [
   {
     type: 'category',
     label: 'Standard Library',
-    collapsed: false,
+    collapsed: true,
     items: [
       'stdlib/index',
       'stdlib/math',

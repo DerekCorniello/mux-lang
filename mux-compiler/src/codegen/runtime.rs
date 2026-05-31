@@ -111,6 +111,12 @@ impl<'a> CodeGenerator<'a> {
         module.add_function("mux_string_concat", fn_type, None);
 
         module.add_function(
+            "mux_string_length",
+            i64_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_string_contains",
             context
                 .bool_type()

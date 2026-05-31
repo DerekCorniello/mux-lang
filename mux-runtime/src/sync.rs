@@ -384,49 +384,51 @@ pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut Value {
         return err_string("sync.spawn received null function value");
     }
 
-    let closure_addr = closure as usize;
-    let handle = thread::Builder::new().spawn(move || {
-        let closure_ptr = closure_addr as *mut ClosureRepr;
-        if closure_ptr.is_null() {
-            return;
+    {
+        let closure_addr = closure as usize;
+        let handle = thread::Builder::new().spawn(move || {
+            let closure_ptr = closure_addr as *mut ClosureRepr;
+            if closure_ptr.is_null() {
+                return;
+            }
+            let closure_ref = unsafe { &*closure_ptr };
+            if closure_ref.captures_ptr.is_null() {
+                let func: extern "C" fn() =
+                    unsafe { std::mem::transmute(closure_ref.function_ptr) };
+                func();
+            } else {
+                let func: extern "C" fn(*mut c_void) =
+                    unsafe { std::mem::transmute(closure_ref.function_ptr) };
+                func(closure_ref.captures_ptr);
+            }
+        });
+
+        let join_handle = match handle {
+            Ok(h) => h,
+            Err(e) => return err_string(format!("Failed to spawn thread: {}", e)),
+        };
+
+        let id = NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed);
+        let mut threads = THREADS
+            .lock()
+            .expect("THREADS mutex lock should not be poisoned");
+        threads.insert(
+            id,
+            ThreadEntry {
+                handle: Some(join_handle),
+            },
+        );
+        drop(threads);
+
+        let obj_ptr = alloc_object(*THREAD_TYPE_ID);
+        let data_ptr = unsafe { get_object_ptr(obj_ptr) };
+        if !data_ptr.is_null() {
+            unsafe { *(data_ptr as *mut i64) = id };
         }
-        let closure_ref = unsafe { &*closure_ptr };
-        // Dispatch based on captures: null captures_ptr means no captures
-        if closure_ref.captures_ptr.is_null() {
-            let func: extern "C" fn() = unsafe { std::mem::transmute(closure_ref.function_ptr) };
-            func();
-        } else {
-            let func: extern "C" fn(*mut c_void) =
-                unsafe { std::mem::transmute(closure_ref.function_ptr) };
-            func(closure_ref.captures_ptr);
-        }
-    });
-
-    let join_handle = match handle {
-        Ok(h) => h,
-        Err(e) => return err_string(format!("Failed to spawn thread: {}", e)),
-    };
-
-    let id = NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed);
-    let mut threads = THREADS
-        .lock()
-        .expect("THREADS mutex lock should not be poisoned");
-    threads.insert(
-        id,
-        ThreadEntry {
-            handle: Some(join_handle),
-        },
-    );
-    drop(threads);
-
-    let obj_ptr = alloc_object(*THREAD_TYPE_ID);
-    let data_ptr = unsafe { get_object_ptr(obj_ptr) };
-    if !data_ptr.is_null() {
-        unsafe { *(data_ptr as *mut i64) = id };
+        let value = unsafe { (*obj_ptr).clone() };
+        mux_rc_dec(obj_ptr);
+        mux_rc_alloc(Value::Result(Ok(Box::new(value))))
     }
-    let value = unsafe { (*obj_ptr).clone() };
-    mux_rc_dec(obj_ptr);
-    mux_rc_alloc(Value::Result(Ok(Box::new(value))))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

@@ -1,14 +1,34 @@
 import type {ReactNode} from 'react';
-import {useState} from 'react';
+import {useState, useEffect} from 'react';
 import clsx from 'clsx';
 import Link from '@docusaurus/Link';
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import CodeBlock from '@theme/CodeBlock';
 import {CopyIcon, CheckIcon} from '@site/src/components/CodeIcons';
 
 import styles from './index.module.css';
+
+type Platform = 'unix' | 'windows';
+
+const installCommands: Record<Platform, string> = {
+  unix: 'curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh',
+  windows: 'iwr -useb https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.ps1 | iex',
+};
+
+const platformLabels: Record<Platform, string> = {
+  unix: 'MacOS / Linux',
+  windows: 'Windows',
+};
+
+function detectPlatform(): Platform {
+  if (typeof navigator === 'undefined') return 'unix';
+  const platform = navigator.platform?.toLowerCase() || '';
+  const userAgent = navigator.userAgent?.toLowerCase() || '';
+
+  if (platform.includes('win') || userAgent.includes('win')) return 'windows';
+  return 'unix';
+}
 
 // Feature icons as simple SVG components
 const features = [
@@ -80,14 +100,20 @@ const features = [
 
 function HomepageHeader() {
   const [copied, setCopied] = useState(false);
-  const {siteConfig} = useDocusaurusContext();
-  const customFields = siteConfig.customFields as {version?: string};
-  const version = customFields.version ?? '0.0.0';
+  const [platform, setPlatform] = useState<Platform>('unix');
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText('curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  useEffect(() => {
+    setPlatform(detectPlatform());
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(installCommands[platform]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable or permission denied
+    }
   };
 
   return (
@@ -106,29 +132,66 @@ function HomepageHeader() {
             into one powerful language. Write fast, safe, and maintainable code
             without the complexity.
           </p>
-          
+
           {/* Install command bar */}
           <div className={styles.installBar}>
-            <code className={styles.installCommand}>
-              curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh
-            </code>
-            <button 
-              className={styles.copyButton}
-              onClick={handleCopy}
-              title={copied ? "Copied!" : "Copy to clipboard"}
-              type="button"
-            >
-              {copied ? <CheckIcon /> : <CopyIcon />}
-            </button>
+            <div className={styles.installToggle}>
+              {platform === 'unix' ? (
+                <button
+                  className={clsx(styles.toggleOption, styles.toggleOptionActive)}
+                  onClick={() => setPlatform('unix')}
+                  type="button"
+                >
+                  MacOS / Linux
+                </button>
+              ) : (
+                <button
+                  className={styles.toggleOption}
+                  onClick={() => setPlatform('unix')}
+                  type="button"
+                >
+                  MacOS / Linux
+                </button>
+              )}
+              {platform === 'windows' ? (
+                <button
+                  className={clsx(styles.toggleOption, styles.toggleOptionActive)}
+                  onClick={() => setPlatform('windows')}
+                  type="button"
+                >
+                  Windows
+                </button>
+              ) : (
+                <button
+                  className={styles.toggleOption}
+                  onClick={() => setPlatform('windows')}
+                  type="button"
+                >
+                  Windows
+                </button>
+              )}
+            </div>
+            <div className={styles.installCommandRow}>
+              <code className={styles.installCommand}>
+                {installCommands[platform]}
+              </code>
+              <button
+                className={styles.copyButton}
+                onClick={handleCopy}
+                title={copied ? "Copied!" : "Copy to clipboard"}
+                type="button"
+              >
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </button>
+            </div>
           </div>
-          
+
           <p className={styles.installNote}>
-            Quick install for Linux & macOS. 
             <Link to="/docs/getting-started/quick-start" className={styles.installLink}>
-              Other options →
+              Other options
             </Link>
           </p>
-          
+
           <div className={styles.heroButtons}>
             <Link
               className={clsx('button', 'button--primary', 'button--lg', styles.ctaButton)}
@@ -140,12 +203,11 @@ function HomepageHeader() {
               to="https://github.com/DerekCorniello/mux-lang">
               View on GitHub
             </Link>
-          </div>
-          
-          <div className={styles.badges}>
-            <span className={styles.badge}>{`v${version}`}</span>
-            <span className={styles.badge}>MIT Licensed</span>
-            <span className={styles.badge}>Open Source</span>
+                      <Link
+              className={clsx('button', 'button--secondary', 'button--lg', styles.secondaryButton)}
+              to="/playground">
+              Try in Playground
+            </Link>
           </div>
         </div>
       </div>
@@ -247,7 +309,7 @@ function QuickStartSection() {
           </div>
           
           <div className={styles.codeBlockWrapper}>
-            <CodeBlock title="error-handling.mux" className={styles.featuredCode}>
+            <CodeBlock title="error-handling.mux" className={`language-mux ${styles.featuredCode}`}>
 {`func divide(int a, int b) returns result<int, string> {
     if b == 0 {
         return err("division by zero")
@@ -256,9 +318,9 @@ function QuickStartSection() {
 }
 
 func main() returns void {
-    auto result = divide(10, 2)
-    
-    match result {
+    auto res = divide(10, 2)
+
+    match res {
         ok(value) {
             print("Result: " + value.to_string())
         }
@@ -310,27 +372,27 @@ function CodeExamplesSection() {
         <p className={styles.sectionSubtitle}>
           Real code that showcases Mux's powerful features
         </p>
-        
+
         <div className={styles.examplesGrid}>
-          <div className={styles.exampleCard}>
+          <div className={styles.exampleSection}>
             <Heading as="h3">Generics & Collections</Heading>
-            <CodeBlock title="stack.mux" className={styles.exampleCode}>
+            <CodeBlock title="stack.mux" className={`language-mux ${styles.exampleCode}`}>
 {`class Stack<T> {
     list<T> items
-    
+
     func push(T item) returns void {
         self.items.push_back(item)
     }
-    
+
     func pop() returns optional<T> {
         if self.items.is_empty() {
             return none
         }
         return self.items.pop_back()
     }
-    
+
     func peek() returns optional<T> {
-        return self.items.get(self.items.length() - 1)
+        return self.items.get(self.items.size() - 1)
     }
 }
 
@@ -342,15 +404,11 @@ match stack.pop() {
 }`}
             </CodeBlock>
           </div>
-          
-          <div className={styles.exampleCard}>
+
+          <div className={styles.exampleSection}>
             <Heading as="h3">Pattern Matching</Heading>
-            <CodeBlock title="enums.mux" className={styles.exampleCode}>
-{`enum Shape {
-    Circle(float radius)
-    Rectangle(float width, float height)
-    Square(float size)
-}
+            <CodeBlock title="enums.mux" className={`language-mux ${styles.exampleCode}`}>
+{`enum Shape { Circle(float), Rectangle(float, float), Square(float) }
 
 func area(Shape shape) returns float {
     match shape {
@@ -360,13 +418,9 @@ func area(Shape shape) returns float {
     }
 }
 
-auto shapes = [
-    Circle.new(5.0),
-    Rectangle.new(4.0, 6.0)
-]
-
-for shape in shapes {
-    print(area(shape).to_string())
+func main() returns void {
+    print(area(Shape.Circle(5.0)).to_string())
+    print(area(Shape.Rectangle(4.0, 6.0)).to_string())
 }`}
             </CodeBlock>
           </div>
@@ -397,6 +451,11 @@ function CTASection() {
               to="/docs/language-guide/overview">
               Explore the Language
             </Link>
+            <Link
+              className={clsx('button', 'button--secondary', 'button--lg')}
+              to="/docs/examples">
+              Browse Examples
+            </Link>
           </div>
           <div className={styles.ctaLinks}>
             <Link to="https://github.com/DerekCorniello/mux-lang">Star on GitHub</Link>
@@ -418,7 +477,6 @@ export default function Home(): ReactNode {
       description="Mux is a statically-typed, reference-counted programming language combining Python's readability, Go's simplicity, and Rust's type safety">
       <HomepageHeader />
       <main>
-        <InstallationSection />
         <QuickStartSection />
         <FeaturesSection />
         <CodeExamplesSection />

@@ -1,101 +1,52 @@
-import React, {isValidElement, useState, type ReactNode} from 'react';
+import React, { isValidElement, useState, type ReactNode, useEffect } from 'react';
 import useIsBrowser from '@docusaurus/useIsBrowser';
-import ElementContent from '@theme/CodeBlock/Content/Element';
-import StringContent from '@theme/CodeBlock/Content/String';
-import type {Props} from '@theme/CodeBlock';
-import {CopyIcon, CheckIcon} from '@site/src/components/CodeIcons';
-import {usePrismTheme, useThemeConfig} from '@docusaurus/theme-common';
-import {Highlight} from 'prism-react-renderer';
-import Line from '@theme/CodeBlock/Line';
+import type { Props } from '@theme/CodeBlock';
+import { CopyIcon, CheckIcon } from '@site/src/components/CodeIcons';
+import { getHighlighter, resolveShikiLanguage } from '@site/src/shiki/highlighter';
+import MuxTerminal from '@site/src/components/MuxTerminal';
 
-/**
- * Best attempt to make the children a plain string so it is copyable. If there
- * are react elements, we will not be able to copy the content, and it will
- * return `children` as-is; otherwise, it concatenates the string children
- * together.
- */
+function parseLanguage(className: string | undefined): string | undefined {
+  if (!className) return undefined;
+  const match = className.split(' ').find((str) => str.startsWith('language-'));
+  return match?.replace(/language-/, '');
+}
+
 function maybeStringifyChildren(children: ReactNode): ReactNode {
   if (React.Children.toArray(children).some((el) => isValidElement(el))) {
     return children;
   }
-  // The children is now guaranteed to be one/more plain strings
   return Array.isArray(children) ? children.join('') : (children as string);
 }
 
-// Terminal-styled code content without Docusaurus Layout/Buttons
-interface TerminalCodeContentProps {
-  readonly code: string;
-  readonly language: string;
-  readonly className?: string;
-  readonly lineNumbersStart?: number;
-}
-
-function TerminalCodeContent({
-  code,
-  language,
-  className,
-  lineNumbersStart,
-}: Readonly<TerminalCodeContentProps>): ReactNode {
-  const prismTheme = usePrismTheme();
-  
-  return (
-    <Highlight theme={prismTheme} code={code} language={language}>
-      {({className: highlightClassName, style, tokens, getLineProps, getTokenProps}) => (
-        <pre
-          className={className}
-          style={style}
-        >
-          <code
-            style={{
-              counterReset:
-                lineNumbersStart === undefined
-                  ? undefined
-                  : `line-count ${lineNumbersStart - 1}`,
-            }}
-          >
-            {tokens.map((line, i) => (
-              <Line
-                key={`${i}-${line.map(t => t.content).join('')}`}
-                line={line}
-                getLineProps={getLineProps}
-                getTokenProps={getTokenProps}
-                classNames={undefined}
-                showLineNumbers={lineNumbersStart !== undefined}
-              />
-            ))}
-          </code>
-        </pre>
-      )}
-    </Highlight>
-  );
-}
-
-// Extract title from metastring (e.g., 'title="filename.mux"' or 'showLineNumbers')
-function getLineNumbersStart(showLineNumbers: boolean | number | undefined): number | undefined {
-  if (showLineNumbers === true) {
-    return 1;
+function getCodeString(rawChildren: ReactNode): string {
+  let text = '';
+  if (typeof rawChildren === 'string') {
+    text = rawChildren;
+  } else if (Array.isArray(rawChildren)) {
+    text = rawChildren
+      .filter((child): child is string => typeof child === 'string')
+      .join('');
   }
-  if (typeof showLineNumbers === 'number') {
-    return showLineNumbers;
-  }
-  return undefined;
+  return text.trimEnd();
 }
 
-function parseMetastring(metastring: string | undefined): { title?: string; showLineNumbers?: boolean | number } {
+function parseMetastring(
+  metastring: string | undefined,
+): {
+  title?: string;
+  showLineNumbers?: boolean | number;
+} {
   if (!metastring) return {};
-  
+
   const result: { title?: string; showLineNumbers?: boolean | number } = {};
-  
-  // Extract title="..." or title='...'
+
   const titleRegex = /title=["']([^"']+)["']/;
   const titleMatch = titleRegex.exec(metastring);
   if (titleMatch) {
     result.title = titleMatch[1];
   }
-  
-  // Check for showLineNumbers
+
   if (metastring.includes('showLineNumbers')) {
-    // Check if it has a specific number: showLineNumbers=5
     const lineNumRegex = /showLineNumbers=(\d+)/;
     const lineNumMatch = lineNumRegex.exec(metastring);
     if (lineNumMatch) {
@@ -104,8 +55,18 @@ function parseMetastring(metastring: string | undefined): { title?: string; show
       result.showLineNumbers = true;
     }
   }
-  
+
   return result;
+}
+
+function getThemeFromBody(): 'github-dark' | 'github-light' {
+  if (typeof document !== 'undefined') {
+    return document.body.classList.contains('theme-dark') ||
+           document.documentElement.dataset.theme === 'dark'
+      ? 'github-dark'
+      : 'github-light';
+  }
+  return 'github-light';
 }
 
 export default function CodeBlock({
@@ -118,67 +79,121 @@ export default function CodeBlock({
   ...props
 }: Props): ReactNode {
   const [copied, setCopied] = useState(false);
-  const {prism} = useThemeConfig();
-  
-  // Parse metastring to extract title and other metadata
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+  const [isDark, setIsDark] = useState<boolean | null>(null);
+  const isBrowser = useIsBrowser();
+
   const parsedMeta = parseMetastring(metastring);
   const title = titleProp || parsedMeta.title;
-  const showLineNumbers = showLineNumbersProp ?? parsedMeta.showLineNumbers;
-  
+  const terminalTitle = typeof title === 'string' ? title : 'snippet.mux';
+
+  const children = maybeStringifyChildren(rawChildren);
+
+  const detectedLang = language || parseLanguage(className);
+  const isMuxCode = detectedLang === 'mux' || detectedLang === 'source.mux';
+
   const handleCopy = () => {
-    let textToCopy = '';
-    if (typeof rawChildren === 'string') {
-      textToCopy = rawChildren;
-    } else if (Array.isArray(rawChildren)) {
-      textToCopy = rawChildren
-        .filter((child): child is string => typeof child === 'string')
-        .join('');
-    }
-    navigator.clipboard.writeText(textToCopy.trimEnd());
+    const textToCopy = getCodeString(rawChildren);
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // The Prism theme on SSR is always the default theme but the site theme can
-  // be in a different mode. React hydration doesn't update DOM styles that come
-  // from SSR. Hence force a re-render after mounting to apply the current
-  // relevant styles.
-  const isBrowser = useIsBrowser();
-  const children = maybeStringifyChildren(rawChildren);
-  const CodeBlockComp =
-    typeof children === 'string' ? StringContent : ElementContent;
-  
-  // Only apply terminal styling to multi-line code blocks (not inline code)
+  useEffect(() => {
+    if (isBrowser) {
+      const initialTheme = getThemeFromBody();
+      setIsDark(initialTheme === 'github-dark');
+
+      const observer = new MutationObserver(() => {
+        const newTheme = getThemeFromBody();
+        setIsDark(newTheme === 'github-dark');
+      });
+
+      observer.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme'],
+      });
+
+      return () => observer.disconnect();
+    }
+  }, [isBrowser]);
+
+  useEffect(() => {
+    if (
+      !isMuxCode &&
+      isBrowser &&
+      isDark !== null &&
+      typeof children === 'string' &&
+      children.includes('\n')
+    ) {
+      const trimmedCode = children.trimEnd();
+      const theme = isDark ? 'github-dark' : 'github-light';
+
+      const doHighlight = async () => {
+        try {
+          const effectiveLang = resolveShikiLanguage(detectedLang || 'mux');
+          if (!effectiveLang) {
+            setHighlighted(null);
+            return;
+          }
+
+          const highlighter = await getHighlighter();
+          const html = highlighter.codeToHtml(trimmedCode, {
+            lang: effectiveLang,
+            theme,
+          });
+          setHighlighted(html);
+        } catch (err) {
+          console.error('Highlighting error:', err);
+          setHighlighted(null);
+        }
+      };
+
+      doHighlight();
+    }
+  }, [children, language, className, isDark, isBrowser]);
+
+  if (typeof children === 'string' && isMuxCode) {
+    return <MuxTerminal initialCode={children.trimEnd()} title={terminalTitle} />;
+  }
+
   if (typeof children === 'string' && children.includes('\n')) {
-    // Calculate line numbers start
-    const lineNumbersStart = getLineNumbersStart(showLineNumbers);
-    
-    // Trim trailing newlines to prevent extra space at bottom
-    const trimmedCode = children.trimEnd();
-    
     return (
-      <div className={`terminal-code ${className || ''}`} data-filename={title || ''}>
-        <button 
-          className="terminal-copy-button"
-          onClick={handleCopy}
-          title={copied ? "Copied!" : "Copy to clipboard"}
-          type="button"
-        >
-          {copied ? <CheckIcon /> : <CopyIcon />}
-        </button>
-        <TerminalCodeContent 
-          code={trimmedCode}
-          language={language || prism.defaultLanguage || 'text'}
-          lineNumbersStart={lineNumbersStart}
-        />
+      <div
+        className={`terminal-code ${className || ''}`}
+        data-filename={title || ''}
+      >
+        <div className="terminal-buttons">
+          <button
+            className="terminal-copy-button"
+            onClick={handleCopy}
+            title={copied ? 'Copied!' : 'Copy to clipboard'}
+            type="button"
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </button>
+        </div>
+        {highlighted ? (
+          <div
+            className="shiki-wrapper"
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        ) : (
+          <pre className="shiki-pre">
+            <code>{children.trimEnd()}</code>
+          </pre>
+        )}
       </div>
     );
   }
-  
-  // For single-line code, use original Docusaurus behavior
+
   return (
-    <CodeBlockComp key={String(isBrowser)} {...props} className={className}>
-      {children as string}
-    </CodeBlockComp>
+    <code {...props} className={className}>
+      {children}
+    </code>
   );
 }
