@@ -53,7 +53,7 @@ function assertContainsAll(haystack, needles, label) {
 
 const matrix = readJson('shared/syntax-matrix.json');
 // Use only trusted system PATH entries for security
-const safePath = ['/usr/bin', '/usr/local/bin', '/bin'].filter(fs.existsSync).join(path.delimiter);
+const safePath = ['/usr/bin', '/usr/local/bin', '/bin'].filter(p => fs.existsSync(p)).join(path.delimiter);
 const execOptions = { stdio: 'inherit', env: { ...process.env, PATH: safePath } };
 execFileSync(process.execPath, [path.join(root, 'scripts', 'generate-syntax.js')], execOptions);
 execFileSync('tree-sitter', ['generate', 'grammar.js'], { ...execOptions, cwd: path.join(root, 'tree-sitter-mux') });

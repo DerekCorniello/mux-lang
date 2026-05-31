@@ -71,6 +71,7 @@ if __name__ == "__main__":
     server = ThreadingHTTPServer(("0.0.0.0", 8443), Handler)
     if certfile and keyfile:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(certfile, keyfile)
         server.socket = context.wrap_socket(server.socket, server_side=True)
     server.serve_forever()
