@@ -3216,7 +3216,7 @@ impl SemanticAnalyzer {
                 .clone()
                 .unwrap_or_default()
                 .into_iter()
-                .map(|t| self.resolve_type(&t).unwrap_or(Type::Void))
+                .map(|(_, t)| self.resolve_type(&t).unwrap_or(Type::Void))
                 .collect();
             let return_type = Type::Named(name.to_string(), vec![]);
             methods.insert(

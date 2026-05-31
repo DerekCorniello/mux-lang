@@ -365,4 +365,12 @@ pub extern "C" fn mux_value_not_equal(a: *const Value, b: *const Value) -> i32 {
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_box_enum(ptr: *mut u8, size: usize) -> *mut Value {
+    let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
+    let boxed: Box<[u8]> = slice.to_vec().into_boxed_slice();
+    mux_rc_alloc(Value::Opaque(boxed))
+}
+
 // Proper Value cleanup function

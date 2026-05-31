@@ -68,22 +68,20 @@ impl<'a> CodeGenerator<'a> {
             let variant_name = &variant.name;
             let full_name = format!("{}!{}", name, variant_name);
 
-            // params: variant.data
-            let data_types = if let Some(ref d) = variant.data {
-                d
-            } else {
-                &vec![]
-            };
+            // params: variant.data (extract types, discard field names for codegen)
+            let field_count = variant.data.as_ref().map(|d| d.len()).unwrap_or(0);
             let mut param_types = vec![];
-            for type_node in data_types {
-                let llvm_type = self.llvm_type_from_mux_type(type_node)?;
-                param_types.push(llvm_type.into());
+            if let Some(ref d) = variant.data {
+                for (_, t) in d {
+                    let llvm_type = self.llvm_type_from_mux_type(t)?;
+                    param_types.push(llvm_type.into());
+                }
             }
 
             // return type: enum struct
-            let enum_type = self.type_map.get(name).ok_or("Enum type not found")?;
-            let struct_type = enum_type.into_struct_type();
-            let fn_type = enum_type.fn_type(&param_types, false);
+            let enum_type_basic = self.type_map.get(name).ok_or("Enum type not found")?;
+            let struct_type = enum_type_basic.into_struct_type();
+            let fn_type = enum_type_basic.fn_type(&param_types, false);
             let function = self.module.add_function(&full_name, fn_type, None);
 
             // generate the body
@@ -107,7 +105,7 @@ impl<'a> CodeGenerator<'a> {
             self.builder
                 .build_store(tag_ptr, tag_val)
                 .map_err(|e| e.to_string())?;
-            for (i, _) in data_types.iter().enumerate() {
+            for i in 0..field_count {
                 let arg = function
                     .get_nth_param(i as u32)
                     .expect("function parameter should exist at expected index");

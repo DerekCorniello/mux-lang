@@ -39,7 +39,7 @@ pub struct CodeGenerator<'a> {
     vtable_map: HashMap<String, PointerValue<'a>>,
     vtable_type_map: HashMap<String, inkwell::types::StructType<'a>>,
     enum_variants: HashMap<String, Vec<String>>,
-    enum_variant_fields: HashMap<String, HashMap<String, Vec<TypeNode>>>,
+    enum_variant_fields: HashMap<String, HashMap<String, Vec<(String, TypeNode)>>>,
     field_map: HashMap<String, HashMap<String, usize>>,
     field_types_map: HashMap<String, Vec<BasicTypeEnum<'a>>>,
     classes: HashMap<String, Vec<Field>>,

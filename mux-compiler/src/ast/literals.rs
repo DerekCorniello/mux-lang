@@ -79,7 +79,7 @@ pub struct TraitRef {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariant {
     pub name: String,
-    pub data: Option<Vec<TypeNode>>,
+    pub data: Option<Vec<(String, TypeNode)>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
