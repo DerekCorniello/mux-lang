@@ -55,12 +55,12 @@ COPY --from=builder /usr/local/lib/mux/libmux_runtime.a /usr/local/lib/mux/libmu
 COPY --from=builder /usr/local/lib/mux/libmux_runtime.so /usr/local/lib/mux/libmux_runtime.so
 
 # Copy LLVM shared libraries needed by the mux binary
-COPY --from=builder /usr/lib/llvm-17/lib/libLLVM-17.so /usr/lib/llvm-17/lib/libLLVM-17.so
-COPY --from=builder /usr/lib/llvm-17/lib/libLLVM-17.so.1 /usr/lib/llvm-17/lib/libLLVM-17.so.1
-COPY --from=builder /usr/lib/llvm-17/lib/libclang-cpp.so /usr/lib/llvm-17/lib/libclang-cpp.so
-COPY --from=builder /usr/lib/llvm-17/lib/libclang-cpp.so.17 /usr/lib/llvm-17/lib/libclang-cpp.so.17
-COPY --from=builder /usr/lib/llvm-17/lib/libPolly.so /usr/lib/llvm-17/lib/libPolly.so
-COPY --from=builder /usr/lib/llvm-17/lib/libPolly.so.17 /usr/lib/llvm-17/lib/libPolly.so.17
+COPY --from=builder /usr/lib/llvm-17/lib/libLLVM-*.so* /usr/lib/llvm-17/lib/
+COPY --from=builder /usr/lib/llvm-17/lib/libLTO.so* /usr/lib/llvm-17/lib/
+COPY --from=builder /usr/lib/llvm-17/lib/libRemarks.so* /usr/lib/llvm-17/lib/
+COPY --from=builder /usr/lib/llvm-17/lib/libclang*.so* /usr/lib/llvm-17/lib/
+COPY --from=builder /usr/lib/llvm-17/lib/LLVM*.so /usr/lib/llvm-17/lib/
+COPY --from=builder /usr/lib/llvm-17/lib/liblldb*.so* /usr/lib/llvm-17/lib/
 
 ENV MUX_RUNTIME_LIB=/usr/local/lib/mux/libmux_runtime.a \
     LD_LIBRARY_PATH=/usr/lib/llvm-17/lib
@@ -68,9 +68,14 @@ ENV MUX_RUNTIME_LIB=/usr/local/lib/mux/libmux_runtime.a \
 # Create a symlink so 'clang' resolves
 RUN ln -sf /usr/bin/clang-17 /usr/local/bin/clang
 
-# Install Python dependencies
+# Install Python dependencies with uv
 COPY api/ /app/api/
-RUN pip3 install --no-cache-dir -r /app/api/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages uv && \
+    uv venv /opt/venv && \
+    VIRTUAL_ENV=/opt/venv PATH="/opt/venv/bin:$PATH" uv pip install --no-cache -r /app/api/requirements.txt
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app"
 
 # Run as non-root in production
 RUN useradd --create-home --uid 10001 appuser
