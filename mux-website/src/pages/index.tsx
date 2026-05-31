@@ -408,7 +408,11 @@ match stack.pop() {
           <div className={styles.exampleSection}>
             <Heading as="h3">Pattern Matching</Heading>
             <CodeBlock title="enums.mux" className={`language-mux ${styles.exampleCode}`}>
-{`enum Shape { Circle(float), Rectangle(float, float), Square(float) }
+{`enum Shape {
+    Circle(float radius),
+    Rectangle(float width, float height),
+    Square(float size)
+}
 
 func area(Shape shape) returns float {
     match shape {
@@ -419,8 +423,14 @@ func area(Shape shape) returns float {
 }
 
 func main() returns void {
-    print(area(Shape.Circle(5.0)).to_string())
-    print(area(Shape.Rectangle(4.0, 6.0)).to_string())
+    auto shapes = [
+        Circle.new(5.0),
+        Rectangle.new(4.0, 6.0),
+        Square.new(3.0)
+    ]
+    for Shape s in shapes {
+        print(area(s).to_string())
+    }
 }`}
             </CodeBlock>
           </div>

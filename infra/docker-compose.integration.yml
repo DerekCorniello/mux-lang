@@ -35,12 +35,12 @@ services:
     volumes:
       - ../:/app:ro
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)\""]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8443/healthz', timeout=2)\""]
       interval: 5s
       timeout: 5s
       retries: 12
     ports:
-      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:18080:8443"
 
   tcp-echo:
     image: python:3.12.4-alpine
@@ -106,7 +106,7 @@ services:
       HOME: /workspace/.docker-home
       MUX_RUNTIME_SRC: /workspace/mux-runtime
       MUX_RUN_SERVICE_TESTS: "1"
-      MUX_TEST_HTTP_URL: http://http-echo:8080
+      MUX_TEST_HTTP_URL: http://http-echo:8443
       MUX_TEST_POSTGRES_URL: postgres://mux:mux@postgres:5432/mux_test
       MUX_TEST_TCP_ADDR: tcp-echo:10000
       MUX_TEST_UDP_ADDR: udp-echo:11000

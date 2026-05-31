@@ -1,0 +1,10 @@
+enum Shape { Circ(float radius), Rect(float width, float height) }
+
+func main() returns void {
+    auto shapes = [Shape.Circ(5.0), Shape.Rect(4.0, 6.0)]
+    print("list with " + shapes.size().to_string() + " elements")
+    auto s = Shape.Circ(3.0)
+    auto shapes2 = [s, Shape.Rect(1.0, 2.0)]
+    print("second list with " + shapes2.size().to_string() + " elements")
+    print("done")
+}

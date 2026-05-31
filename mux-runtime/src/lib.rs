@@ -100,6 +100,7 @@ pub enum Value {
     Optional(Option<Box<Value>>),
     Result(Result<Box<Value>, Box<Value>>),
     Object(ObjectRef),
+    Opaque(Box<[u8]>),
 }
 
 impl PartialEq for Value {
@@ -119,6 +120,7 @@ impl PartialEq for Value {
             (Value::Object(a), Value::Object(b)) => {
                 a.ptr() == b.ptr() && a.type_id() == b.type_id()
             }
+            (Value::Opaque(a), Value::Opaque(b)) => a == b,
             _ => false,
         }
     }
@@ -154,6 +156,7 @@ impl hash::Hash for Value {
                 (obj.ptr() as usize).hash(state);
                 obj.type_id().hash(state);
             }
+            Value::Opaque(bytes) => bytes.hash(state),
         }
     }
 }
@@ -166,7 +169,7 @@ impl PartialOrd for Value {
 
 impl Value {
     pub fn type_tag(&self) -> i32 {
-        const TAG_BY_ORDER: [i32; 12] = [11, 0, 1, 2, 3, 4, 5, 6, 10, 7, 8, 9];
+        const TAG_BY_ORDER: [i32; 13] = [11, 0, 1, 2, 3, 4, 5, 6, 10, 7, 8, 9, 12];
         TAG_BY_ORDER[self.variant_order() as usize]
     }
 
@@ -184,6 +187,7 @@ impl Value {
             Value::Optional(_) => 9,
             Value::Result(_) => 10,
             Value::Object(_) => 11,
+            Value::Opaque(_) => 12,
         }
     }
 }
@@ -205,6 +209,7 @@ impl Ord for Value {
             (Value::Object(a), Value::Object(b)) => {
                 (a.type_id(), a.ptr() as usize).cmp(&(b.type_id(), b.ptr() as usize))
             }
+            (Value::Opaque(a), Value::Opaque(b)) => a.cmp(b),
             _ => self.variant_order().cmp(&other.variant_order()),
         }
     }
@@ -255,6 +260,9 @@ impl fmt::Display for Value {
             },
             Value::Object(obj) => {
                 write!(f, "<Object at {:p} type_id={}>", obj.ptr(), obj.type_id())
+            }
+            Value::Opaque(bytes) => {
+                write!(f, "<Opaque {} bytes>", bytes.len())
             }
         }
     }

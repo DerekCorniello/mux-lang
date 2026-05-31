@@ -228,6 +228,12 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_box_enum",
+            i8_ptr.fn_type(&[i8_ptr.into(), i64_type.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_set_to_string",
             i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,
@@ -1225,6 +1231,24 @@ impl<'a> CodeGenerator<'a> {
             // assume string or already boxed Value (from Map/Set/List literals)
             // map/Set/List literals already return *mut Value pointers, so just return as-is
             val.into_pointer_value()
+        } else if val.is_struct_value() {
+            // user-defined enum values (structs): box into Value::Opaque
+            let struct_val = val.into_struct_value();
+            let struct_type = struct_val.get_type();
+            let temp_ptr = self
+                .builder
+                .build_alloca(struct_type, "temp_enum_box")
+                .expect("alloca should succeed");
+            self.builder
+                .build_store(temp_ptr, struct_val)
+                .expect("store should succeed");
+            let size = struct_type
+                .size_of()
+                .expect("struct type should have a size");
+            let call = self
+                .generate_runtime_call("mux_box_enum", &[temp_ptr.into(), size.into()])
+                .expect("mux_box_enum should always return a value");
+            call.into_pointer_value()
         } else {
             panic!("Unexpected value type in box_value")
         }

@@ -52,8 +52,11 @@ function assertContainsAll(haystack, needles, label) {
 }
 
 const matrix = readJson('shared/syntax-matrix.json');
-execFileSync('node', [path.join(root, 'scripts', 'generate-syntax.js')], { stdio: 'inherit' });
-execFileSync('tree-sitter', ['generate', 'grammar.js'], { cwd: path.join(root, 'tree-sitter-mux'), stdio: 'inherit' });
+// Use only trusted system PATH entries for security
+const safePath = ['/usr/bin', '/usr/local/bin', '/bin'].filter(p => fs.existsSync(p)).join(path.delimiter);
+const execOptions = { stdio: 'inherit', env: { ...process.env, PATH: safePath } };
+execFileSync(process.execPath, [path.join(root, 'scripts', 'generate-syntax.js')], execOptions);
+execFileSync('tree-sitter', ['generate', 'grammar.js'], { ...execOptions, cwd: path.join(root, 'tree-sitter-mux') });
 const generatedSyntax = require(path.join(root, 'tree-sitter-mux/generated/syntax.js'));
 const textmateCanonical = readJson('textmate-mux/source.mux.json');
 const textmatePackage = readJson('textmate-mux/vscode-language-mux/source.mux.json');

@@ -7,9 +7,10 @@ mod error;
 pub use error::{ParserError, ParserResult};
 
 use crate::ast::{
-    AstNode, BinaryOp, EnumVariant, ExpressionKind, ExpressionNode, Field, FunctionNode,
-    ImportSpec, LiteralNode, MatchArm, Param, PatternNode, Precedence, PrimitiveType, SpanExt,
-    Spanned, StatementKind, StatementNode, TraitBound, TraitRef, TypeKind, TypeNode, UnaryOp,
+    AstNode, BinaryOp, EnumVariant, EnumVariantField, ExpressionKind, ExpressionNode, Field,
+    FunctionNode, ImportSpec, LiteralNode, MatchArm, Param, PatternNode, Precedence, PrimitiveType,
+    SpanExt, Spanned, StatementKind, StatementNode, TraitBound, TraitRef, TypeKind, TypeNode,
+    UnaryOp,
 };
 use crate::lexer::{Span, Token, TokenType};
 
@@ -433,8 +434,15 @@ impl<'a> Parser<'a> {
     ) -> ParserResult<()> {
         match self.peek().token_type {
             TokenType::Func => {
+                let name_span = self.peek_ahead(1).map(|t| t.span);
                 let func_node = self.function_declaration(false)?;
                 if let AstNode::Function(func) = func_node {
+                    if func.name == "new" {
+                        return Err(ParserError::new(
+                            "'new' is reserved for class constructors and cannot be defined as a class method",
+                            name_span.unwrap_or(func.span),
+                        ));
+                    }
                     methods.push(func);
                 } else {
                     return Err(ParserError::new("Expected function in class", start_span));
@@ -442,8 +450,15 @@ impl<'a> Parser<'a> {
             }
             TokenType::Common => {
                 self.consume();
+                let name_span = self.peek_ahead(1).map(|t| t.span);
                 let func_node = self.function_declaration(true)?;
                 if let AstNode::Function(func) = func_node {
+                    if func.name == "new" {
+                        return Err(ParserError::new(
+                            "'new' is reserved for class constructors and cannot be defined as a class method",
+                            name_span.unwrap_or(func.span),
+                        ));
+                    }
                     methods.push(func);
                 } else {
                     return Err(ParserError::new("Expected function in class", start_span));
@@ -705,7 +720,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum_variant_data(&mut self) -> ParserResult<Option<Vec<TypeNode>>> {
+    fn parse_enum_variant_data(&mut self) -> ParserResult<Option<Vec<EnumVariantField>>> {
         if !self.matches(&[TokenType::OpenParen]) {
             return Ok(None);
         }
@@ -713,10 +728,13 @@ impl<'a> Parser<'a> {
         if !self.check(TokenType::CloseParen) {
             loop {
                 let field_type = self.parse_type()?;
-                if let TokenType::Id(_) = self.peek().token_type {
+                let field_name = if let TokenType::Id(name) = self.peek().token_type.clone() {
                     self.advance();
-                }
-                fields.push(field_type);
+                    Some(name)
+                } else {
+                    None
+                };
+                fields.push((field_name, field_type));
                 if !self.matches(&[TokenType::Comma]) {
                     break;
                 }

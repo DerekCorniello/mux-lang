@@ -17,7 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpolly-17-dev \
         llvm-17-dev \
     && rustup component add clippy rustfmt \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1000 mux \
+    && useradd --uid 1000 --gid mux --shell /bin/bash --create-home mux
+
+USER mux
 
 ENV LLVM_SYS_170_PREFIX=/usr/lib/llvm-17 \
     LLVM_CONFIG_PATH=/usr/bin/llvm-config-17 \

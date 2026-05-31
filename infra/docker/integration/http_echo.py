@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import json
+import os
+import ssl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -64,5 +66,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("0.0.0.0", 8080), Handler)
+    certfile = os.environ.get("SSL_CERT_FILE")
+    keyfile = os.environ.get("SSL_KEY_FILE")
+    server = ThreadingHTTPServer(("0.0.0.0", 8443), Handler)
+    if certfile and keyfile:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(certfile, keyfile)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
     server.serve_forever()
