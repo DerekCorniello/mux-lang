@@ -11,13 +11,13 @@
             "enabled": true
         },
         "github": {
-            "type": "local",
-            "command": [
-                "bash",
-                "-c",
-                "set -a; source ./.env; set +a; exec npx -y @modelcontextprotocol/server-github"
-            ],
-            "enabled": true
+            "type": "remote",
+            "url": "https://api.githubcopilot.com/mcp/",
+            "enabled": true,
+            "oauth": false,
+            "headers": {
+                "Authorization": "Bearer YOUR_GITHUB_PAT"
+            }
         }
     }
 }
