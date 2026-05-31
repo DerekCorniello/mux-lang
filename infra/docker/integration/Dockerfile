@@ -1,7 +1,6 @@
 FROM rust:1.93.1-bookworm
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         gnupg \
         lsb-release \
@@ -10,16 +9,15 @@ RUN apt-get update \
         python3 \
         software-properties-common \
         wget \
-    && wget --max-redirect=0 -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh \
-    && echo "14a4eda1349f23acf9dc0b564ed44b21bce3bd1703c78b5f7488870d7c6fe68f  /tmp/llvm.sh" | sha256sum -c - \
-    && chmod +x /tmp/llvm.sh \
-    && /tmp/llvm.sh 17 \
+    && wget -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         clang-17 \
         libpolly-17-dev \
         llvm-17-dev \
     && rustup component add clippy rustfmt \
-    && rm -rf /var/lib/apt/lists/* /tmp/llvm.sh
+    && rm -rf /var/lib/apt/lists/*
 
 ENV LLVM_SYS_170_PREFIX=/usr/lib/llvm-17 \
     LLVM_CONFIG_PATH=/usr/bin/llvm-config-17 \

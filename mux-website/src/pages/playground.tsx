@@ -10,7 +10,7 @@ const PlaygroundPage: React.FC = () => {
   const [initialCode, setInitialCode] = useState(DEFAULT_PLAYGROUND_CODE);
 
   useEffect(() => {
-    if (typeof globalThis.window === 'undefined') {
+    if (globalThis.window === undefined) {
       return;
     }
 

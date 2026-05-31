@@ -55,7 +55,7 @@ export const language: Monaco.languages.IMonarchLanguage = {
     '+=', '-=', '*=', '/=', '%=',
     '&', '..',
   ],
-  symbols: /[=><!~?:&|+\-*/^%-]+/,
+  symbols: /[=><!~?:&|+*/^%-]+/,
   escapes: /\\(?:[nrt0\\'"])/,
   tokenizer: {
     root: [
@@ -68,7 +68,7 @@ export const language: Monaco.languages.IMonarchLanguage = {
         },
       }],
       { include: '@whitespace' },
-      [/[{}()[\]\]]/, '@brackets'],
+      [/[{}()[\]]/, '@brackets'],
       [/@symbols/, {
         cases: {
           '@operators': 'operator',

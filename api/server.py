@@ -246,10 +246,10 @@ def _compile_with_cleanup(code):
 @limiter.limit("20 per minute")
 def compile_code():
     data = request.get_json(silent=True)
-    code = _validate_compile_request(data)
-    if not isinstance(code, str):
-        return code
-    return _compile_with_cleanup(code)
+    result = _validate_compile_request(data)
+    if not isinstance(result, str):
+        return result
+    return _compile_with_cleanup(result)
 
 
 if __name__ == "__main__":
