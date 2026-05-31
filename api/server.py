@@ -145,20 +145,20 @@ def _format_result(stdout, stderr, returncode, timed_out, output_too_large):
 
 def _validate_compile_request(data):
     if not isinstance(data, dict):
-        return jsonify({"error": "Request body must be a JSON object"}), 400
+        return None, (jsonify({"error": "Request body must be a JSON object"}), 400)
 
     if "code" not in data:
-        return jsonify({"error": "Missing 'code' in request body"}), 400
+        return None, (jsonify({"error": "Missing 'code' in request body"}), 400)
 
-    code = data["code"]
-    if not isinstance(code, str):
-        return jsonify({"error": "'code' must be a string"}), 400
+    raw_code = data["code"]
+    if not isinstance(raw_code, str):
+        return None, (jsonify({"error": "'code' must be a string"}), 400)
 
-    code_size = len(code.encode("utf-8", errors="replace"))
+    code_size = len(raw_code.encode("utf-8", errors="replace"))
     if code_size > MAX_CODE_SIZE:
-        return jsonify({"error": f"Source code exceeds {MAX_CODE_SIZE // 1024}KB limit"}), 413
+        return None, (jsonify({"error": f"Source code exceeds {MAX_CODE_SIZE // 1024}KB limit"}), 413)
 
-    return code
+    return raw_code, None
 
 
 def _execute_compiler(code):
@@ -246,10 +246,10 @@ def _compile_with_cleanup(code):
 @limiter.limit("20 per minute")
 def compile_code():
     data = request.get_json(silent=True)
-    result = _validate_compile_request(data)
-    if not isinstance(result, str):
-        return result
-    return _compile_with_cleanup(result)
+    validated_code, error_response = _validate_compile_request(data)
+    if error_response:
+        return error_response
+    return _compile_with_cleanup(validated_code)
 
 
 if __name__ == "__main__":

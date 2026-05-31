@@ -9,3 +9,4 @@ mux-website/node_modules
 mux-website/build
 mux-compiler/target
 mux-runtime/target
+.env

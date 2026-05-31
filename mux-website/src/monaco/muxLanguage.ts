@@ -25,7 +25,7 @@ export const conf: Monaco.languages.LanguageConfiguration = {
     { open: "'", close: "'" },
   ],
   indentationRules: {
-    increaseIndentPattern: /^\s*(func|class|interface|enum|if|else|for|while|match)\b.*\{[^}]*$/,
+    increaseIndentPattern: /^\s*(func|class|interface|enum|if|else|for|while|match)\b[^{}]*\{[^}]*$/,
     decreaseIndentPattern: /^\s*\}.*$/,
   },
 };
@@ -84,12 +84,12 @@ export const language: Monaco.languages.IMonarchLanguage = {
     whitespace: [
       [/[ \t\r\n]+/, 'white'],
       [/\/\*/, 'comment', '@comment'],
-      [/\/\/.*$/, 'comment'],
+      [/\/\/.*/, 'comment'],
     ],
     comment: [
       [/[^/*]+/, 'comment'],
       [/\/\*/, 'comment', '@push'],
-      ['\\*/', 'comment', '@pop'],
+      [/\*\//, 'comment', '@pop'],
       [/[/*]/, 'comment'],
     ],
     string_double: [

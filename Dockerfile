@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gnupg \
         lsb-release \
         wget \
-    && wget -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
-    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
+    && wget --max-redirect=0 -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         clang-17 \
@@ -25,10 +25,10 @@ COPY mux-compiler/Cargo.toml mux-runtime/Cargo.toml ./
 COPY . .
 
 # Build the runtime library first (produces .a and .so)
-RUN cargo build -p mux-runtime --release
+RUN cargo build -p mux-runtime --release --locked
 
 # Build the compiler (needs runtime lib from previous step at build time)
-RUN cargo build -p mux-lang --release && \
+RUN cargo build -p mux-lang --release --locked && \
     mkdir -p /usr/local/lib/mux && \
     cp target/release/mux /usr/local/bin/mux && \
     cp target/release/libmux_runtime.a /usr/local/lib/mux/ && \
@@ -43,8 +43,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gnupg \
         lsb-release \
         wget \
-    && wget -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
-    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
+    && wget --max-redirect=0 -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         clang-17 \
@@ -75,7 +75,8 @@ RUN ln -sf /usr/bin/clang-17 /usr/local/bin/clang
 COPY api/requirements.lock /app/api/requirements.lock
 COPY api/requirements.txt /app/api/requirements.txt
 COPY api/server.py /app/api/server.py
-RUN pip3 install --no-cache-dir --break-system-packages --only-binary :all: uv && \
+RUN pip3 install --no-cache-dir --break-system-packages --only-binary :all: --require-hashes \
+        'uv==0.6.5 --hash=sha256:15dae245979add192c4845947da1a9141f95c19403d1c0d75019182e6882e7d4' && \
     uv venv /opt/venv && \
     VIRTUAL_ENV=/opt/venv PATH="/opt/venv/bin:$PATH" \
         uv pip install --no-cache --only-binary :all: --require-hashes \

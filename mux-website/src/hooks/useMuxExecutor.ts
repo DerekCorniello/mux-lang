@@ -29,7 +29,7 @@ const useMuxExecutor = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const { siteConfig } = useDocusaurusContext();
-  const customFields = siteConfig.customFields as Record<string, unknown> | undefined;
+  const customFields = siteConfig.customFields;
   const apiUrl =
     typeof customFields?.apiUrl === 'string'
       ? customFields.apiUrl
