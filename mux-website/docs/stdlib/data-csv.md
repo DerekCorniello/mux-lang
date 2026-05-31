@@ -14,13 +14,13 @@ The resulting `Csv` value is a first-class type in the stdlib (see `csv.stringif
 Example:
 
 ```mux
-import std.csv
+import std.data.csv
 
 func main() returns void {
-    const data = "name,age\nAlice,30"
+    string data = "name,age\nAlice,30"
     match csv.parse_with_headers(data) {
         ok(table) {
-            match table.stringify(none) {  // uses Csv.stringify()
+            match table.stringify() {  // uses Csv.stringify()
                 ok(text) { print(text) }
                 err(e) { print("csv stringify failed: " + e) }
             }

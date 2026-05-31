@@ -120,12 +120,12 @@ func main() returns void {
         ok(sock) {
             match sock.local_addr() {
                 ok(local) {
-                    const data = [116, 101, 115, 116]
+                    auto data = [116, 101, 115, 116]
                     match sock.send_to(data, local) { ok(_) {} err(e) { assert.assert(false, e) } }
                     match sock.recv_from(16) {
                         ok(pair) {
-                            assert.assert(pair.right == local)
-                            assert.assert(pair.left[0] == data[0])
+                            assert.assert(pair.right == local, "address mismatch")
+                            assert.assert(pair.left[0] == data[0], "data mismatch")
                         }
                         err(e) { assert.assert(false, e) }
                     }

@@ -181,7 +181,7 @@ for int n in numbers {
 ```mux
 // range(start, end) - exclusive end
 for int i in range(0, 5) {
-    print(i)  // 0, 1, 2, 3, 4
+    print(i.to_string())  // 0, 1, 2, 3, 4
 }
 
 // Negative step not supported
@@ -199,7 +199,7 @@ for int i in range(0, 5) {
 ```mux
 auto count = 5
 while count > 0 {
-    print(count)
+    print(count.to_string())
     count = count - 1
 }
 // count is 0 here
@@ -228,7 +228,7 @@ for int i in range(0, 100) {
     if i == 10 {
         break  // Exit loop when i reaches 10
     }
-    print(i)
+    print(i.to_string())
 }
 // Execution continues here
 ```
@@ -245,7 +245,7 @@ for int i in range(0, 10) {
     if i % 2 == 0 {
         continue  // Skip even numbers
     }
-    print(i)  // Prints odd numbers: 1, 3, 5, 7, 9
+    print(i.to_string())  // Prints odd numbers: 1, 3, 5, 7, 9
 }
 ```
 

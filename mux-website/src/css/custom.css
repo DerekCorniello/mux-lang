@@ -329,40 +329,6 @@ pre code {
   height: 12px;
 }
 
-/* Try it button in terminal header */
-.terminal-code .terminal-try-button {
-  padding: 0 8px;
-  height: 20px;
-  background: var(--ifm-color-primary);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.9;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.terminal-code .terminal-try-button:hover {
-  background: var(--ifm-color-primary-dark);
-  opacity: 1;
-}
-
-[data-theme='dark'] .terminal-code .terminal-try-button {
-  background: var(--ifm-color-primary-light);
-  color: #1e1e1e;
-}
-
-[data-theme='dark'] .terminal-code .terminal-try-button:hover {
-  background: var(--ifm-color-primary);
-  color: white;
-}
-
 /* Hide Docusaurus copy button inside terminal blocks */
 .terminal-code .buttonGroup {
   display: none !important;
@@ -1030,55 +996,6 @@ hr {
   font-size: 0.92rem;
 }
 
-.playground-actions {
-  display: flex;
-  gap: 0.625rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.playground-button {
-  padding: 0.55rem 1rem;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-weight: 600;
-  font-size: 0.86rem;
-  line-height: 1;
-}
-
-.playground-button {
-  background-color: var(--ifm-color-primary);
-  color: #fff;
-}
-
-.playground-button:hover:not(:disabled) {
-  background-color: var(--ifm-color-primary-dark);
-}
-
-.playground-button.secondary {
-  background-color: transparent;
-  color: var(--ifm-color-emphasis-700);
-  border: 1px solid var(--ifm-color-emphasis-300);
-}
-
-.playground-button.secondary:hover:not(:disabled) {
-  background-color: var(--ifm-color-emphasis-100);
-}
-
-.playground-button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.playground-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1rem;
-  min-height: 62vh;
-}
-
 .playground-root-terminal {
   margin-top: 0.25rem;
 }
@@ -1113,24 +1030,12 @@ hr {
   flex-shrink: 0;
 }
 
-.playground-editor,
 .playground-output {
   border: 1px solid var(--terminal-border);
   border-radius: 10px;
   background: var(--terminal-bg);
   color: var(--terminal-code-color);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset;
-}
-
-.playground-editor {
-  width: 100%;
-  min-height: 62vh;
-  resize: vertical;
-  padding: 1rem;
-  font-family: var(--ifm-font-family-monospace);
-  font-size: 0.88rem;
-  line-height: 1.55;
-  border-left: 4px solid var(--ifm-color-primary);
 }
 
 .mux-terminal-editor {
@@ -1140,12 +1045,6 @@ hr {
   border-left: none;
   background: transparent;
   box-shadow: none;
-}
-
-.playground-editor:focus {
-  outline: none;
-  border-color: var(--ifm-color-primary-lightest);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
 }
 
 .playground-output {
@@ -1218,18 +1117,6 @@ hr {
   .playground-header {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .playground-actions {
-    justify-content: flex-start;
-  }
-
-  .playground-main {
-    grid-template-columns: 1fr;
-  }
-
-  .playground-editor {
-    min-height: 340px;
   }
 }
 

@@ -19,7 +19,12 @@ func main() returns void {
     match json.parse("{\"user\": \"mux\"}") {
         ok(j) {
             match json.to_map(j) {
-                ok(map) { print("user=" + map["user"].stringify(none).unwrap()) }
+                ok(map) {
+                    match map["user"].stringify(none) {
+                        ok(s) { print("user=" + s) }
+                        err(e) { print("stringify error: " + e) }
+                    }
+                }
                 err(e) { print("not object: " + e) }
             }
         }
