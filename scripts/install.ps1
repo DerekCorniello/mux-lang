@@ -5,11 +5,11 @@ $InstallDir = if ($env:MUX_INSTALL_DIR) { $env:MUX_INSTALL_DIR } else { Join-Pat
 $LibDir = if ($env:MUX_LIB_DIR) { $env:MUX_LIB_DIR } else { Join-Path (Split-Path -Parent $InstallDir) "lib" }
 $BaseUrl = if ($env:MUX_RELEASE_BASE_URL) { $env:MUX_RELEASE_BASE_URL } else { "https://github.com/$Repo/releases/latest/download" }
 
-if (!(Test-Path $InstallDir)) {
+if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
 
-if (!(Test-Path $LibDir)) {
+if (-not (Test-Path $LibDir)) {
     New-Item -ItemType Directory -Path $LibDir -Force | Out-Null
 }
 
@@ -40,7 +40,7 @@ try {
     $bundleRoot = Join-Path $tmpDir "mux-$target"
     $muxExe = Join-Path $bundleRoot "bin/mux.exe"
 
-    if (!(Test-Path $muxExe)) {
+    if (-not (Test-Path $muxExe)) {
         throw "Could not find mux.exe in archive"
     }
 

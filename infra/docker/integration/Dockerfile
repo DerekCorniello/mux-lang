@@ -19,6 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rustup component add clippy rustfmt \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user for security
+RUN groupadd --gid 1000 mux && useradd --uid 1000 --gid mux --shell /bin/bash --create-home mux
+USER mux
+
 ENV LLVM_SYS_170_PREFIX=/usr/lib/llvm-17 \
     LLVM_CONFIG_PATH=/usr/bin/llvm-config-17 \
     LLVM_SYS_170_STRICT_VERSIONING=1 \

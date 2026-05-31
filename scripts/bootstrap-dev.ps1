@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
     Write-Host "Chocolatey is required on Windows to run this bootstrap script."
     Write-Host "Install from https://chocolatey.org/install and rerun this script."
     exit 1
