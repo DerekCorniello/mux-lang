@@ -139,7 +139,7 @@ const config: Config = {
   } satisfies Preset.ThemeConfig,
   customFields: {
     version: siteVersion,
-    apiUrl: process.env.MUX_API_URL ?? 'http://localhost:8080',
+    apiUrl: process.env.MUX_API_URL ?? 'https://mux-lang-api.fly.dev',
   },
 };
 

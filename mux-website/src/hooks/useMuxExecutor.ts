@@ -33,7 +33,7 @@ const useMuxExecutor = () => {
   const apiUrl =
     typeof customFields?.apiUrl === 'string'
       ? customFields.apiUrl
-      : 'http://localhost:8080';
+      : 'https://mux-lang-api.fly.dev';
 
   const executeCode = useCallback(async (source: string): Promise<ExecuteResponse> => {
     setLoading(true);
