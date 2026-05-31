@@ -26,6 +26,7 @@ RUN cargo build -p mux-runtime --release
 
 # Build the compiler (needs runtime lib from previous step at build time)
 RUN cargo build -p mux-lang --release && \
+    mkdir -p /usr/local/lib/mux && \
     cp target/release/mux /usr/local/bin/mux && \
     cp target/release/libmux_runtime.a /usr/local/lib/mux/ && \
     cp target/release/libmux_runtime.so /usr/local/lib/mux/
