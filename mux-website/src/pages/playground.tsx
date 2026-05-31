@@ -1,6 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Layout from '@theme/Layout';
-import { useEffect, useState } from 'react';
 import MuxTerminal from '../components/MuxTerminal';
 
 const DEFAULT_PLAYGROUND_CODE = `func main() returns void {
@@ -11,11 +10,11 @@ const PlaygroundPage: React.FC = () => {
   const [initialCode, setInitialCode] = useState(DEFAULT_PLAYGROUND_CODE);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (typeof globalThis.window === 'undefined') {
       return;
     }
 
-    const codeFromQuery = new URLSearchParams(window.location.search).get('code');
+    const codeFromQuery = new URLSearchParams(globalThis.window.location.search).get('code');
     if (codeFromQuery) {
       setInitialCode(codeFromQuery);
     }

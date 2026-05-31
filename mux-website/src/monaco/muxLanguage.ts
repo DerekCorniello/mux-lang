@@ -55,7 +55,7 @@ export const language: Monaco.languages.IMonarchLanguage = {
     '+=', '-=', '*=', '/=', '%=',
     '&', '..',
   ],
-  symbols: /[=><!~?:&|+\-*\/\^%]+/,
+  symbols: /[=><!~?:&|+\-*/^%-]+/,
   escapes: /\\(?:[nrt0\\'"])/,
   tokenizer: {
     root: [
@@ -68,7 +68,7 @@ export const language: Monaco.languages.IMonarchLanguage = {
         },
       }],
       { include: '@whitespace' },
-      [/[{}()\[\]]/, '@brackets'],
+      [/[{}()[\]\]]/, '@brackets'],
       [/@symbols/, {
         cases: {
           '@operators': 'operator',
@@ -76,8 +76,8 @@ export const language: Monaco.languages.IMonarchLanguage = {
         },
       }],
       [/\d[\d_]*/, 'number.integer'],
-      [/\d\.\d*([eE][\-+]?\d+)?/, 'number.float'],
-      [/\.\d+([eE][\-+]?\d+)?/, 'number.float'],
+      [/\d\.\d*([eE][-+]?\d+)?/, 'number.float'],
+      [/\.\d+([eE][-+]?\d+)?/, 'number.float'],
       [/"/, 'string', '@string_double'],
       [/'/, 'string', '@string_single'],
     ],
@@ -87,10 +87,10 @@ export const language: Monaco.languages.IMonarchLanguage = {
       [/\/\/.*$/, 'comment'],
     ],
     comment: [
-      [/[^\/*]+/, 'comment'],
+      [/[^/*]+/, 'comment'],
       [/\/\*/, 'comment', '@push'],
       ['\\*/', 'comment', '@pop'],
-      [/[\/*]/, 'comment'],
+      [/[/*]/, 'comment'],
     ],
     string_double: [
       [/[^\\"]+/, 'string'],

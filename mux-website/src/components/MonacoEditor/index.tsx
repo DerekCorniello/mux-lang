@@ -12,7 +12,7 @@ interface MonacoEditorComponentProps {
 function getTheme(): 'vs-dark' | 'vs' {
   if (typeof document !== 'undefined') {
     return document.body.classList.contains('theme-dark') ||
-           document.documentElement.getAttribute('data-theme') === 'dark'
+           document.documentElement.dataset.theme === 'dark'
       ? 'vs-dark'
       : 'vs';
   }

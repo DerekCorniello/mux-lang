@@ -47,8 +47,7 @@ export async function getHighlighter(): Promise<Highlighter> {
     return highlighterInstance;
   }
 
-  if (!highlighterPromise) {
-    highlighterPromise = (async () => {
+  highlighterPromise ??= (async () => {
       const highlighter = await createHighlighter({
         themes: ['github-light', 'github-dark'],
         langs: [],
@@ -62,7 +61,6 @@ export async function getHighlighter(): Promise<Highlighter> {
       highlighterInstance = highlighter;
       return highlighter;
     })();
-  }
 
   return highlighterPromise;
 }

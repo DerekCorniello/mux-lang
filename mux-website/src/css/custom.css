@@ -512,6 +512,7 @@ a:hover {
   font-size: 0.9rem;
   transition: all 0.2s ease;
   padding-left: 1rem !important;
+  position: relative;
 }
 
 /* Sidebar depth indicators (vertical lines) */
@@ -565,10 +566,6 @@ a:hover {
 .menu__link:hover {
   background-color: transparent;
   text-decoration: none;
-}
-
-.menu__link {
-  position: relative;
 }
 
 /* Color mode toggle - custom styling with just light/dark buttons */
@@ -1036,6 +1033,9 @@ hr {
   background: var(--terminal-bg);
   color: var(--terminal-code-color);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .mux-terminal-editor {
@@ -1045,12 +1045,6 @@ hr {
   border-left: none;
   background: transparent;
   box-shadow: none;
-}
-
-.playground-output {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
 .playground-output-header {
