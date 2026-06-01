@@ -7,7 +7,9 @@ const root = path.resolve(__dirname, '..');
 const matrix = JSON.parse(fs.readFileSync(path.join(root, 'shared/syntax-matrix.json'), 'utf8'));
 
 function writeText(relPath, text) {
-  fs.writeFileSync(path.join(root, relPath), text.endsWith('\n') ? text : `${text}\n`);
+  const absPath = path.join(root, relPath);
+  fs.mkdirSync(path.dirname(absPath), { recursive: true });
+  fs.writeFileSync(absPath, text.endsWith('\n') ? text : `${text}\n`);
 }
 
 function escapeRegex(value) {
