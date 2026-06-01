@@ -26,6 +26,7 @@ module.exports = grammar({
     [$.primary_expression, $.member_object, $.type_path],
     [$.member_object, $.type_path],
     [$.member_object, $.reference_type],
+    [$.type_arg, $.type_path],
     [$.postfix_expression, $.member_object],
     [$.postfix_expression, $.call_target],
   ],

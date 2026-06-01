@@ -73,3 +73,5 @@
 
 ((identifier) @variable.builtin
  (#eq? @variable.builtin "self"))
+
+((identifier) @variable.other)

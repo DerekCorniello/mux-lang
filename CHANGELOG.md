@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Class constructor rules clarified and enforced**: `new` is reserved for compiler-generated class constructors and cannot be user-defined in class bodies.
 - **Class creation guidance updated**: Documentation now consistently describes class initialization as `ClassName.new()` followed by field assignment, or via named factory methods such as `from(...)` and `with_<feature>(...)`.
 - **Version metadata updated**: All configuration files (Cargo.toml, package.json, tree-sitter.json, README badge, PR template, VERSION) bumped from 0.3.0 to 0.3.1.
+- **Grammar and parser adjustments**: Updated language grammar to reflect constructor rules, ensuring accurate syntax highlighting and parser diagnostics.
 
 ### Fixed
 - **Parser diagnostic quality**: Defining `func new(...)` in a class now reports one targeted parser error instead of cascading with a secondary `Expected expression, found '}'` error.
