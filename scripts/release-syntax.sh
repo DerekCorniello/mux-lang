@@ -22,6 +22,7 @@ pushd mux-syntax-highlighting >/dev/null
 node scripts/generate-syntax.js
 popd >/dev/null
 pushd mux-syntax-highlighting/tree-sitter-mux >/dev/null
+tree-sitter generate grammar.js
 tree-sitter build
 sha256sum mux.so > mux.so.sha256
 popd >/dev/null
