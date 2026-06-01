@@ -75,8 +75,10 @@ RUN ln -sf /usr/bin/clang-17 /usr/local/bin/clang
 COPY api/requirements.lock /app/api/requirements.lock
 COPY api/requirements.txt /app/api/requirements.txt
 COPY api/server.py /app/api/server.py
-RUN pip3 install --no-cache-dir --break-system-packages --only-binary :all: --require-hashes \
-        'uv==0.6.5 --hash=sha256:15dae245979add192c4845947da1a9141f95c19403d1c0d75019182e6882e7d4' && \
+RUN echo 'uv==0.6.5 --hash=sha256:15dae245979add192c4845947da1a9141f95c19403d1c0d75019182e6882e7d4' > /tmp/uv-req.txt && \
+    pip3 install --no-cache-dir --break-system-packages --only-binary :all: --require-hashes \
+        -r /tmp/uv-req.txt && \
+    rm /tmp/uv-req.txt && \
     uv venv /opt/venv && \
     VIRTUAL_ENV=/opt/venv PATH="/opt/venv/bin:$PATH" \
         uv pip install --no-cache --only-binary :all: --require-hashes \
