@@ -82,7 +82,7 @@ class Stack<T> {
     
     func pop() returns optional<T> {
         if self.items.is_empty() {
-            return none.new()
+            return none
         }
         return self.items.pop_back()
     }
@@ -295,9 +295,9 @@ enum result<T, E> {
 }
 
 // Usage
-auto maybeInt = some.new(42)              // optional<int>
-auto success = ok.new(100)                 // result<int, E>
-auto failure = err.new("error message")    // result<T, string>
+auto maybeInt = some(42)                   // optional<int>
+auto success = ok(100)                     // result<int, E>
+auto failure = err("error message")       // result<T, string>
 ```
 
 See [Enums](./enums.md) and [Error Handling](./error-handling.md) for more details.

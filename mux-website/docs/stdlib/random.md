@@ -189,11 +189,11 @@ func main() returns void {
 
 ## Implementation Details
 
-The random module uses the standard C library's `rand()` function with the following characteristics:
+The random module uses a custom Linear Congruential Generator (LCG) with the following characteristics:
 
-- **Thread safety**: Uses atomic operations for initialization state
+- **Thread safety**: Uses a `Mutex`-protected state with `Once`-based initialization
 - **Auto-initialization**: Seeds automatically with current time if not explicitly seeded
 - **Range distribution**: Uses modulo arithmetic for `next_range`, which may have slight bias for very large ranges
-- **Float precision**: Produces values with approximately 15 bits of precision
+- **Float precision**: Produces values with approximately 31 bits of precision
 
 For cryptographic applications or high-precision simulations, consider using a specialized library.

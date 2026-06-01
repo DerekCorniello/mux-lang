@@ -33,8 +33,9 @@ Classes use the `.new()` method pattern:
 // Basic instantiation
 auto circle = Circle.new()
 
-// With constructor arguments (if constructor is defined)
-auto circle2 = Circle.new(5.0)
+// Initialize fields after allocation
+auto circle2 = Circle.new()
+circle2.radius = 5.0
 
 // Accessing fields and methods
 circle.radius = 10.0
@@ -44,7 +45,7 @@ print("Area: " + area.to_string())
 
 **Design Note:** Mux uses explicit `.new()` rather than direct constructor calls to distinguish class instantiation from function calls and enum variant construction. The `.new()` method will *always* instantiate a new object with all default "zero" values for fields, and then you can set fields afterward. This is a simple and consistent pattern for object creation.
 
-The "Mux" style for a constructors is to use a `common` (see [below](./classes.md#static-methods-with-common)) method that creates and initializes the object, rather than defining a special constructor syntax. This allows for more flexible object creation patterns while keeping the core class definition simple.
+The Mux style for constructors is to use a `common` factory method (see [below](./classes.md#static-methods-with-common)) that creates and initializes the object. Name factories by behavior (`from(...)`, `from_<source>(...)`, `with_<feature>(...)`) rather than `new`.
 
 ## Interfaces (Traits)
 
@@ -229,7 +230,7 @@ class Pair<T, U> {
     U second
     
     func swap() returns Pair<U, T> {
-        return Pair<U, T>.new(self.second, self.first)
+        return Pair<U, T>.from(self.second, self.first)
     }
     
     common func from(T a, U b) returns Pair<T, U> {

@@ -195,7 +195,7 @@ Short pages with ONE focused example each. The example can contain multiple elem
 11. **Classes** (`/tour/classes`)
     - Class declaration
     - Methods
-    - new() constructor
+    - Built-in .new() plus factory methods (from/with_*)
 
 12. **Enums** (`/tour/enums`)
     - Enum declaration

@@ -100,7 +100,7 @@ import shapes.circle as circle
 import utils.logger as log
 
 func main() returns void {
-    auto c = circle.new(5.0)
+    auto c = circle.from_radius(5.0)
     log.info("Created circle")
 }
 ```

@@ -130,8 +130,10 @@ func main() returns void {
 class Counter {
     int value
 
-    func new(int start) returns void {
-        self.value = start
+    common func from_start(int start) returns Counter {
+        auto c = Counter.new()
+        c.value = start
+        return c
     }
 
     func increment() returns void {
@@ -144,7 +146,7 @@ class Counter {
 }
 
 func main() returns void {
-    auto c = Counter.new(0)
+    auto c = Counter.from_start(0)
     c.increment()
     c.increment()
     print("Count: " + c.get_value().to_string())
@@ -161,8 +163,10 @@ func identity<T>(T value) returns T {
 class Box<T> {
     T item
 
-    func new(T item) returns void {
-        self.item = item
+    common func from_item(T item) returns Box<T> {
+        auto b = Box<T>.new()
+        b.item = item
+        return b
     }
 
     func get() returns T {
@@ -171,8 +175,8 @@ class Box<T> {
 }
 
 func main() returns void {
-    auto intBox = Box<int>.new(42)
-    auto strBox = Box<string>.new("Mux")
+    auto intBox = Box<int>.from_item(42)
+    auto strBox = Box<string>.from_item("Mux")
 
     print("Int: " + intBox.get().to_string())
     print("String: " + strBox.get())
@@ -257,8 +261,10 @@ enum result<T, E> {
 class Stack<T> {
     list<T> items
 
-    func new() returns void {
-        self.items = []
+    common func from_list(list<T> source) returns Stack<T> {
+        auto s = Stack<T>.new()
+        s.items = source
+        return s
     }
 
     func push(T item) returns void {
@@ -275,10 +281,7 @@ class Stack<T> {
 }
 
 func main() returns void {
-    auto stack = Stack<int>.new()
-    stack.push(1)
-    stack.push(2)
-    stack.push(3)
+    auto stack = Stack<int>.from_list([1, 2, 3])
 
     print("Stack size: " + stack.size().to_string())
 

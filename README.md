@@ -6,7 +6,7 @@
 
 **The Programming Language For Everyone**
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg?style=flat-square)](https://github.com/DerekCorniello/mux-lang/releases)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg?style=flat-square)](https://github.com/DerekCorniello/mux-lang/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/mux-lang.svg?style=flat-square)](https://crates.io/crates/mux-lang)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg?style=flat-square)](https://mux-lang.dev)
@@ -174,7 +174,7 @@ Profiling is done with external tools so it stays decoupled from the compiler an
 
 ⚠️ **Alpha Stage**: Mux is actively being developed. Expect breaking changes and incomplete features as we work toward a stable release.
 
-- **Current Version:** 0.3.0
+- **Current Version:** 0.3.1
 
 ## Versioning
 
@@ -582,8 +582,13 @@ class Point is Equatable {
     }
 }
 
-auto p1 = Point.new(1, 2)
-auto p2 = Point.new(1, 2)
+auto p1 = Point.new()
+p1.x = 1
+p1.y = 2
+
+auto p2 = Point.new()
+p2.x = 1
+p2.y = 2
 auto same = p1 == p2  // true
 ```
 
@@ -1148,8 +1153,8 @@ enum Shape {
 }
 
 // Usage with inference
-auto myShape = Circle.new(5.0)  // type inferred as Shape
-list<Shape> shapes = [Circle.new(1.0), Rectangle.new(2.0, 3.0)]
+auto myShape = Circle(5.0)  // type inferred as Shape
+list<Shape> shapes = [Circle(1.0), Rectangle(2.0, 3.0)]
 
 // Pattern matching with unused enum data
 match (shape) {
@@ -1219,7 +1224,8 @@ class Stack<T> {
 }
 
 // Usage with inference
-auto circle = Circle.new(5.0)  // type inferred as Circle
+auto circle = Circle.new()     // type inferred as Circle
+circle.radius = 5.0
 list<Drawable> shapes = [circle]
 Stack<int> intStack = Stack<int>.new()  // explicit generic instantiation with .new()
 ```
@@ -1275,12 +1281,13 @@ stack.push(42)                             // Instance method
 
 ### 10.4 Class Instantiation
 
-Classes are instantiated using the `.new()` method pattern:
+Classes are instantiated using the built-in `.new()` method pattern:
 
 ```mux
 // Basic instantiation
-auto circle = Circle.new()           // No constructor arguments
-auto circle2 = Circle.new(5.0)       // With constructor arguments
+auto circle = Circle.new()
+auto circle2 = Circle.new()
+circle2.radius = 5.0
 
 // Generic class instantiation
 auto int_stack = Stack<int>.new()
@@ -1349,6 +1356,8 @@ pub fn alloc_object(type_id: TypeId) -> *mut Value {
 - **Shared ownership**: Multiple references to same object
 
 **Design Note:** Mux uses explicit `.new()` rather than direct constructor calls to distinguish class instantiation from function calls and enum variant construction.
+
+**Important:** `new` is reserved for the compiler-generated constructor. User-defined methods must not be named `new`; use named factories like `from(...)` or `with_<feature>(...)`.
 
 ### 10.4.1 Technical Design: Interface Dispatch (Static)
 
@@ -1428,7 +1437,10 @@ auto data = {
 }  // inferred as map<string, list<int> | map<string, string | int>>
 
 // Generic collections
-list<Pair<int, string>> pairs = [Pair.new(1, "one"), Pair.new(2, "two")]
+list<Pair<int, string>> pairs = [
+    Pair<int, string>.from(1, "one"),
+    Pair<int, string>.from(2, "two")
+]
 list<Container<int>> containers = list<Container<int>>()
 ```
 
@@ -1833,7 +1845,7 @@ import shapes.circle as circle
 // Usage with inference
 float pi = math.PI         // type inferred from math module
 float root = math.sqrt(9.0)
-auto c = circle.new(5.0)  // type inferred from constructor
+auto c = circle.from_radius(5.0)  // type inferred from factory
 
 // Import with unused alias for completeness
 import utils.logger as _  // imported but not directly used in this scope
@@ -2005,7 +2017,11 @@ func map<T, U>(list<T> items, func(T) returns U transform) returns list<U> {
 }
 
 func main() returns void {
-    auto shapes = [Circle.new(2.0), Circle.new(3.5)]  // inferred as list<Circle>
+    auto shape1 = Circle.new()
+    shape1.r = 2.0
+    auto shape2 = Circle.new()
+    shape2.r = 3.5
+    auto shapes = [shape1, shape2]  // inferred as list<Circle>
     
     for shape in shapes {
         float area = shape.area()  // inferred as float

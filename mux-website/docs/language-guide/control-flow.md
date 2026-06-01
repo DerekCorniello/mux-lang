@@ -273,7 +273,7 @@ enum Shape {
     Square(float size)
 }
 
-auto myShape = Circle.new(5.0)
+auto myShape = Circle(5.0)
 
 match myShape {
     Circle(r) {

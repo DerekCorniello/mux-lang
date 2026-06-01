@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "mux-lang"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "clap",
  "inkwell",
@@ -1073,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "mux-runtime"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "csv",

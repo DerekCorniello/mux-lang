@@ -74,7 +74,7 @@ The element type is inferred from the contents:
 auto nums = [1, 2, 3]           // list<int>
 auto strs = ["a", "b"]          // list<string>
 auto floats = [1.0, 2.0]        // list<float>
-auto objects = [Circle.new(1)]  // list<Circle>
+auto objects = [Circle.from_radius(1)]  // list<Circle>
 ```
 
 Empty lists require explicit type annotation:
@@ -157,12 +157,14 @@ auto inferred = some(42)  // Type inferred from context
 class Circle {
     float radius
 
-    func new(float r) returns void {
-        self.radius = r
+    common func from_radius(float r) returns Circle {
+        auto c = Circle.new()
+        c.radius = r
+        return c
     }
 }
 
-auto c = Circle.new(5.0)
+auto c = Circle.from_radius(5.0)
 ```
 
 ### Generic Classes

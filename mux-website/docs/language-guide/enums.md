@@ -21,21 +21,21 @@ enum Shape {
 **Key Points:**
 - Each variant is a case of the enum
 - Variants can carry associated data (or none)
-- Variants are constructed using `.new()` syntax
+- Variants are constructed with variant calls like `Circle(5.0)`
 
 ## Creating Enum Instances
 
 ```mux title="creating_enums.mux"
 // Variant without data
-auto status = Pending.new()
+auto status = Pending
 
 // Variants with data
-auto circle = Circle.new(5.0)
-auto rect = Rectangle.new(10.0, 20.0)
-auto square = Square.new(7.5)
+auto circle = Circle(5.0)
+auto rect = Rectangle(10.0, 20.0)
+auto square = Square(7.5)
 
 // Type inference
-auto myShape = Circle.new(5.0)  // type inferred as Shape
+auto myShape = Circle(5.0)  // type inferred as Shape
 ```
 
 ## Pattern Matching with Enums
@@ -49,7 +49,7 @@ enum Shape {
     Square(float size)
 }
 
-auto myShape = Circle.new(5.0)
+auto myShape = Circle(5.0)
 
 match myShape {
     Circle(r) {
@@ -95,7 +95,7 @@ enum MaybeValue<T> {
     none
 }
 
-auto value = some.new(42)
+auto value = some(42)
 
 match value {
     some(v) if v > 10 {
@@ -129,12 +129,12 @@ enum result<T, E> {
 }
 
 // Usage
-auto maybeInt = some.new(42)         // Option<int>
-auto maybeStr = some.new("hello")    // Option<string>
-auto nothing = none.new()             // Option<T> (generic)
+auto maybeInt = some(42)              // Option<int>
+auto maybeStr = some("hello")        // Option<string>
+auto nothing = none                   // Option<T> (generic)
 
-auto success = ok.new(100)            // result<int, E>
-auto failure = err.new("error msg")   // result<T, string>
+auto success = ok(100)                // result<int, E>
+auto failure = err("error msg")      // result<T, string>
 ```
 
 ## Common Enum Patterns
@@ -150,10 +150,10 @@ enum optional<T> {
 func findFirst(list<int> items, int target) returns optional<int> {
     for i in range(0, items.size()) {
         if items[i] == target {
-            return some.new(i)
+            return some(i)
         }
     }
-    return none.new()
+    return none
 }
 
 auto result = findFirst([10, 20, 30], 20)
@@ -178,9 +178,9 @@ enum result<T, E> {
 
 func divide(int a, int b) returns result<int, string> {
     if b == 0 {
-        return err.new("division by zero")
+        return err("division by zero")
     }
-    return ok.new(a / b)
+    return ok(a / b)
 }
 
 auto result = divide(10, 2)
@@ -240,7 +240,7 @@ enum Event {
     UserLeft(string username)
 }
 
-auto event = MessageReceived.new(Text.new("Hello!"))
+auto event = MessageReceived(Text("Hello!"))
 
 match event {
     MessageReceived(msg) {
@@ -276,9 +276,9 @@ enum Shape {
 
 // List of shapes
 list<Shape> shapes = [
-    Circle.new(1.0),
-    Rectangle.new(2.0, 3.0),
-    Square.new(4.0)
+    Circle(1.0),
+    Rectangle(2.0, 3.0),
+    Square(4.0)
 ]
 
 for Shape shape in shapes {

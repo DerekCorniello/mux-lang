@@ -46,7 +46,9 @@ class Circle is Drawable {
     func draw() returns void { ... }
     common func from_radius(float r) returns Circle { ... }
 }
-auto c = Circle.new(5.0)
+auto c = Circle.new()
+c.r = 5.0
+auto c2 = Circle.from_radius(7.5)
 ```
 
 ### Pattern Matching

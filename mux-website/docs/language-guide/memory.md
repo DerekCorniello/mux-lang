@@ -38,7 +38,8 @@ match maybeCircle {
 Cannot manually free memory or create dangling pointers:
 
 ```mux title="no_manual_memory.mux"
-auto circle = Circle.new(5.0)
+auto circle = Circle.new()
+circle.radius = 5.0
 // No way to call free/delete
 // Memory automatically freed when circle goes out of scope
 ```
@@ -61,7 +62,8 @@ Every heap-allocated value has a reference count that tracks how many references
 
 ```mux title="reference_counting.mux"
 // Create object (refcount = 1)
-auto circle1 = Circle.new(5.0)
+auto circle1 = Circle.new()
+circle1.radius = 5.0
 
 // Create another reference (refcount = 2)
 auto circle2 = circle1
@@ -252,7 +254,8 @@ y = 100        // x is still 42
 Objects are passed by reference (shared):
 
 ```mux title="reference_semantics.mux"
-auto circle1 = Circle.new(5.0)
+auto circle1 = Circle.new()
+circle1.radius = 5.0
 auto circle2 = circle1    // Same object, not a copy
 
 circle2.radius = 10.0

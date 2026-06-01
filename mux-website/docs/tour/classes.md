@@ -18,9 +18,9 @@ Classes encapsulate data and behavior into single units.
 <EmbeddedPlayground initialCode={`class Counter {
     int value
     
-    common func new() returns Counter {
+    common func from_start(int start) returns Counter {
         Counter c = Counter.new()
-        c.value = 0
+        c.value = start
         return c
     }
     
@@ -34,7 +34,7 @@ Classes encapsulate data and behavior into single units.
 }
 
 func main() returns void {
-    auto counter = Counter.new()
+    auto counter = Counter.from_start(0)
     counter.increment()
     counter.increment()
     print("Count: " + counter.getValue().to_string())

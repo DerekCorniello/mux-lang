@@ -22,7 +22,7 @@ Interfaces define contracts that classes must implement.
 class Circle is Drawable {
     float radius
     
-    common func new(float r) returns Circle {
+    common func from_radius(float r) returns Circle {
         Circle c = Circle.new()
         c.radius = r
         return c
@@ -34,7 +34,7 @@ class Circle is Drawable {
 }
 
 func main() returns void {
-    Circle c = Circle.new(5.0)
+    Circle c = Circle.from_radius(5.0)
     c.draw()
 }`} />
 
@@ -48,7 +48,7 @@ func main() returns void {
 class Person is Named {
     string name
     
-    common func new(string n) returns Person {
+    common func from_name(string n) returns Person {
         Person p = Person.new()
         p.name = n
         return p
@@ -60,7 +60,7 @@ class Person is Named {
 }
 
 func main() returns void {
-    Person p = Person.new("Alice")
+    Person p = Person.from_name("Alice")
     print("Name: " + p.getName())
 }`} />
 

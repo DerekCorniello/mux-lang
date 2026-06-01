@@ -296,9 +296,9 @@ Collections work seamlessly with generics:
 ```mux title="generic_collections.mux"
 func first<T>(list<T> items) returns optional<T> {
     if items.is_empty() {
-        return none.new()
+        return none
     }
-    return some.new(items[0])
+    return some(items[0])
 }
 
 func lookup<K, V>(map<K, V> data, K key) returns optional<V> {

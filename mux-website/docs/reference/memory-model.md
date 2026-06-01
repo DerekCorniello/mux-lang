@@ -150,7 +150,8 @@ Cleanup order:
 ### Reference vs Value
 
 ```mux
-auto original = Circle.new(5.0)
+auto original = Circle.new()
+original.radius = 5.0
 auto copy = original      // Both point to same object
 copy.radius = 10          // original.radius is also 10!
 

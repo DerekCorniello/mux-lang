@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-05-31
+
+### Changed
+- **Class constructor rules clarified and enforced**: `new` is reserved for compiler-generated class constructors and cannot be user-defined in class bodies.
+- **Class creation guidance updated**: Documentation now consistently describes class initialization as `ClassName.new()` followed by field assignment, or via named factory methods such as `from(...)` and `with_<feature>(...)`.
+- **Version metadata updated**: All configuration files (Cargo.toml, package.json, tree-sitter.json, README badge, PR template, VERSION) bumped from 0.3.0 to 0.3.1.
+
+### Fixed
+- **Parser diagnostic quality**: Defining `func new(...)` in a class now reports one targeted parser error instead of cascading with a secondary `Expected expression, found '}'` error.
+- **Documentation and examples accuracy**: Updated docs and examples that previously defined `new` or called class `.new(...)` with arguments so they match current language behavior.
+- **Stale runtime library cache**: Cleared cached `libmux_runtime.a` that was missing newer symbols, preventing linker errors for enum-related runtime functions.
+
 ## [0.3.0] - 2026-05-07
 
 ### Added

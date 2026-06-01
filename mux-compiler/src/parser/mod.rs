@@ -438,10 +438,11 @@ impl<'a> Parser<'a> {
                 let func_node = self.function_declaration(false)?;
                 if let AstNode::Function(func) = func_node {
                     if func.name == "new" {
-                        return Err(ParserError::new(
+                        self.errors.push(ParserError::new(
                             "'new' is reserved for class constructors and cannot be defined as a class method",
                             name_span.unwrap_or(func.span),
                         ));
+                        return Ok(());
                     }
                     methods.push(func);
                 } else {
@@ -454,10 +455,11 @@ impl<'a> Parser<'a> {
                 let func_node = self.function_declaration(true)?;
                 if let AstNode::Function(func) = func_node {
                     if func.name == "new" {
-                        return Err(ParserError::new(
+                        self.errors.push(ParserError::new(
                             "'new' is reserved for class constructors and cannot be defined as a class method",
                             name_span.unwrap_or(func.span),
                         ));
+                        return Ok(());
                     }
                     methods.push(func);
                 } else {

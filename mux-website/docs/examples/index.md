@@ -220,10 +220,10 @@ Classes encapsulate data and behavior. They can implement interfaces and contain
 ```mux title="classes.mux"
 class Counter {
     int value
-    
-    common func new() returns Counter {
+
+    common func from_start(int start) returns Counter {
         Counter c = Counter.new()
-        c.value = 0
+        c.value = start
         return c
     }
     
@@ -236,7 +236,7 @@ class Counter {
     }
 }
 
-auto counter = Counter.new()
+auto counter = Counter.from_start(0)
 counter.increment()
 counter.increment()
 print("Count: " + counter.get_value().to_string())
@@ -249,10 +249,10 @@ Generics allow you to write flexible, reusable code that works with any type whi
 ```mux title="generic_stack.mux"
 class Stack<T> {
     list<T> items
-    
-    common func new() returns Stack<T> {
+
+    common func from_list(list<T> source) returns Stack<T> {
         Stack<T> s = Stack<T>.new()
-        s.items = []
+        s.items = source
         return s
     }
     
@@ -266,7 +266,7 @@ class Stack<T> {
     }
 }
 
-auto int_stack = Stack<int>.new()
+auto int_stack = Stack<int>.from_list([])
 int_stack.push(42)
 int_stack.push(99)
 
