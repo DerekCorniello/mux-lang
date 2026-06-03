@@ -31,9 +31,8 @@ impl fmt::Display for Set {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_set_value(set: *mut Set) -> *mut Value {
-    let set = unsafe { &*set };
-    let value = Value::Set(set.0.clone());
-    mux_rc_alloc(value)
+    let owned = unsafe { Box::from_raw(set) };
+    mux_rc_alloc(Value::Set(owned.0))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

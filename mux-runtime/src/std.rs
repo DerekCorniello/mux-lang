@@ -97,8 +97,8 @@ pub extern "C" fn mux_value_add(a: *mut Value, b: *mut Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_value(list: *mut List) -> *mut Value {
-    let list_ref = unsafe { &*list };
-    mux_rc_alloc(Value::List(list_ref.0.clone()))
+    let owned = unsafe { Box::from_raw(list) };
+    mux_rc_alloc(Value::List(owned.0))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
