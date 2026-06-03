@@ -15,10 +15,19 @@ pub struct ObjectType {
     pub name: String,
     pub size: usize,
     pub destructor: Option<fn(*mut c_void)>,
+    /// Called by `copy_object` to perform a deep copy: `copy(src, dst)`.
+    /// If None, `copy_object` falls back to a shallow byte copy, which is
+    /// only correct for plain-old-data types with no heap-allocated fields.
+    pub copy: Option<fn(*mut c_void, *mut c_void)>,
 }
 
 impl ObjectType {
-    pub fn new(name: String, size: usize, destructor: Option<fn(*mut c_void)>) -> Self {
+    pub fn new(
+        name: String,
+        size: usize,
+        destructor: Option<fn(*mut c_void)>,
+        copy: Option<fn(*mut c_void, *mut c_void)>,
+    ) -> Self {
         let id = {
             let mut next_id = NEXT_TYPE_ID.lock().expect("mutex lock should not fail");
             let id = *next_id;
@@ -31,6 +40,7 @@ impl ObjectType {
             name,
             size,
             destructor,
+            copy,
         }
     }
 }
@@ -40,7 +50,16 @@ pub fn register_object_type(
     size: usize,
     destructor: Option<fn(*mut c_void)>,
 ) -> TypeId {
-    let obj_type = ObjectType::new(name.to_string(), size, destructor);
+    register_object_type_with_copy(name, size, destructor, None)
+}
+
+pub fn register_object_type_with_copy(
+    name: &str,
+    size: usize,
+    destructor: Option<fn(*mut c_void)>,
+    copy: Option<fn(*mut c_void, *mut c_void)>,
+) -> TypeId {
+    let obj_type = ObjectType::new(name.to_string(), size, destructor, copy);
     let id = obj_type.id;
     TYPE_REGISTRY
         .lock()
@@ -133,23 +152,29 @@ pub unsafe fn get_object_type_id(obj: *const Value) -> TypeId {
 /// # Safety
 /// The `src` pointer must be valid and point to a `Value::Object`.
 /// Returns a new object that is a copy of the source.
+///
+/// If the type has a registered copy callback it is used for a deep copy;
+/// otherwise the raw bytes are copied (correct only for POD types).
 pub unsafe fn copy_object(src: *const Value) -> *mut Value {
     if src.is_null() {
         return std::ptr::null_mut();
     }
 
     let type_id = unsafe { get_object_type_id(src) };
-    let size = {
+    let (size, copy_fn) = {
         let registry = TYPE_REGISTRY.lock().expect("mutex lock should not fail");
         let obj_type = registry.get(&type_id).expect("Invalid type ID");
-        obj_type.size
+        (obj_type.size, obj_type.copy)
     };
     let dest = alloc_object(type_id);
 
     unsafe {
         let src_ptr = get_object_ptr(src);
         let dest_ptr = get_object_ptr(dest);
-        std::ptr::copy_nonoverlapping(src_ptr as *const u8, dest_ptr as *mut u8, size);
+        match copy_fn {
+            Some(copy) => copy(src_ptr, dest_ptr),
+            None => std::ptr::copy_nonoverlapping(src_ptr as *const u8, dest_ptr as *mut u8, size),
+        }
     }
 
     dest
@@ -162,6 +187,23 @@ pub extern "C" fn mux_register_object_type(name: *const c_char, size: usize) -> 
     let c_str = unsafe { CStr::from_ptr(name) };
     let name_str = c_str.to_string_lossy().into_owned();
     register_object_type(&name_str, size, None)
+}
+
+/// Register a deep-copy callback for an object type.
+///
+/// `copy_fn(src, dst)` must copy all heap-allocated fields from `src` into the
+/// already-allocated `dst` buffer of the same size.  Without this, `mux_copy_object`
+/// falls back to a shallow byte copy which causes double-frees for types with
+/// pointer fields.
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_register_object_copy(
+    type_id: TypeId,
+    copy_fn: extern "C" fn(*mut c_void, *mut c_void),
+) {
+    let mut registry = TYPE_REGISTRY.lock().expect("mutex lock should not fail");
+    if let Some(obj_type) = registry.get_mut(&type_id) {
+        obj_type.copy = Some(copy_fn as fn(*mut c_void, *mut c_void));
+    }
 }
 
 #[unsafe(no_mangle)]

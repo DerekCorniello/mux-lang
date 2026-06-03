@@ -385,21 +385,20 @@ pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut Value {
     }
 
     {
-        let closure_addr = closure as usize;
+        // Read ClosureRepr fields before spawning so the thread does not hold a
+        // raw pointer into memory that the caller may free after this call returns.
+        let (function_addr, captures_addr) = unsafe {
+            let r = &*(closure as *const ClosureRepr);
+            (r.function_ptr as usize, r.captures_ptr as usize)
+        };
         let handle = thread::Builder::new().spawn(move || {
-            let closure_ptr = closure_addr as *mut ClosureRepr;
-            if closure_ptr.is_null() {
-                return;
-            }
-            let closure_ref = unsafe { &*closure_ptr };
-            if closure_ref.captures_ptr.is_null() {
-                let func: extern "C" fn() =
-                    unsafe { std::mem::transmute(closure_ref.function_ptr) };
+            if captures_addr == 0 {
+                let func: extern "C" fn() = unsafe { std::mem::transmute(function_addr) };
                 func();
             } else {
                 let func: extern "C" fn(*mut c_void) =
-                    unsafe { std::mem::transmute(closure_ref.function_ptr) };
-                func(closure_ref.captures_ptr);
+                    unsafe { std::mem::transmute(function_addr) };
+                func(captures_addr as *mut c_void);
             }
         });
 
