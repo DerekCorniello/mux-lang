@@ -4,7 +4,10 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 fn err_result(message: &str) -> *mut Value {
-    let msg = CString::new(message).expect("error messages should not contain interior null bytes");
+    let msg = match CString::new(message) {
+        Ok(c) => c,
+        Err(_) => return std::ptr::null_mut(),
+    };
     unsafe { crate::result::mux_result_err_str(msg.as_ptr()) }
 }
 
@@ -200,16 +203,14 @@ fn build_csv_string(headers: &[String], rows: &[Vec<String>], include_headers: b
         let mut wtr = csv::Writer::from_writer(&mut output);
 
         if include_headers && !headers.is_empty() {
-            wtr.write_record(headers)
-                .expect("in-memory write to Vec should not fail");
+            let _ = wtr.write_record(headers);
         }
 
         for row in rows {
-            wtr.write_record(row)
-                .expect("in-memory write to Vec should not fail");
+            let _ = wtr.write_record(row);
         }
 
-        wtr.flush().expect("in-memory flush to Vec should not fail");
+        let _ = wtr.flush();
     }
     String::from_utf8(output).unwrap_or_else(|_| "invalid UTF-8 in CSV output".to_string())
 }

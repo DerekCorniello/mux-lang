@@ -55,20 +55,23 @@ impl fmt::Display for Int {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_int_to_string(i: i64) -> *mut c_char {
     let s = format!("{}", Int(i));
-    // Safe: format! produces valid UTF-8 without null bytes
-    CString::new(s)
-        .expect("format output should be valid UTF-8")
-        .into_raw()
+    match CString::new(s) {
+        Ok(c) => c.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 /// # Safety
 /// v must be a valid pointer to a Value::Int.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_int_from_value(v: *mut crate::Value) -> i64 {
+    if v.is_null() {
+        return 0;
+    }
     if let crate::Value::Int(i) = unsafe { &*v } {
         *i
     } else {
-        panic!("Expected Int value");
+        0
     }
 }
 

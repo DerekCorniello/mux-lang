@@ -216,6 +216,24 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_free_list",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_free_set",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_free_map",
+            void_type.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_get_object_ptr",
             i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,
@@ -1542,6 +1560,70 @@ impl<'a> CodeGenerator<'a> {
             .try_as_basic_value()
             .left()
             .ok_or_else(|| "mux_value_from_string returned no value".to_string())
+    }
+
+    pub(super) fn copy_object_or_error(
+        &mut self,
+        ptr: PointerValue<'a>,
+    ) -> Result<PointerValue<'a>, String> {
+        let copy_func = self
+            .runtime_function("mux_copy_object")
+            .ok_or("mux_copy_object not found")?;
+        let copied = self
+            .builder
+            .build_call(copy_func, &[ptr.into()], "copy_obj")
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("mux_copy_object returned no value")?
+            .into_pointer_value();
+
+        let is_null = self
+            .builder
+            .build_is_null(copied, "copy_is_null")
+            .map_err(|e| e.to_string())?;
+
+        let current_function = self
+            .builder
+            .get_insert_block()
+            .ok_or("No current basic block")?
+            .get_parent()
+            .ok_or("No current function")?;
+
+        let error_bb = self
+            .context
+            .append_basic_block(current_function, "copy_error");
+        let continue_bb = self
+            .context
+            .append_basic_block(current_function, "copy_continue");
+
+        self.builder
+            .build_conditional_branch(is_null, error_bb, continue_bb)
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(error_bb);
+        let error_msg = self
+            .builder
+            .build_global_string_ptr("Cannot copy object of this type", "copy_error_msg")
+            .map_err(|e| e.to_string())?;
+        let error_str = self
+            .generate_runtime_call(
+                "mux_new_string_from_cstr",
+                &[error_msg.as_pointer_value().into()],
+            )
+            .expect("mux_new_string_from_cstr should always return a value");
+        self.generate_runtime_call("mux_print", &[error_str.into()]);
+        self.generate_runtime_call("mux_flush_stdout", &[]);
+        self.generate_runtime_call(
+            "exit",
+            &[self.context.i32_type().const_int(1, false).into()],
+        );
+        self.builder
+            .build_unreachable()
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(continue_bb);
+        Ok(copied)
     }
 
     pub(super) fn extract_list_from_value(

@@ -421,6 +421,16 @@ impl<'a> CodeGenerator<'a> {
                     .ok_or("Call returned no value")?
                     .into_pointer_value();
 
+                let free_list_fn = self
+                    .runtime_function("mux_free_list")
+                    .ok_or("mux_free_list not found")?;
+                self.builder
+                    .build_call(free_list_fn, &[left_list.into()], "free_list")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_call(free_list_fn, &[right_list.into()], "free_list")
+                    .map_err(|e| e.to_string())?;
+
                 let list_value_fn = self
                     .runtime_function("mux_list_value")
                     .ok_or("mux_list_value not found")?;
@@ -450,6 +460,16 @@ impl<'a> CodeGenerator<'a> {
                     .ok_or("Call returned no value")?
                     .into_pointer_value();
 
+                let free_map_fn = self
+                    .runtime_function("mux_free_map")
+                    .ok_or("mux_free_map not found")?;
+                self.builder
+                    .build_call(free_map_fn, &[left_map.into()], "free_map")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_call(free_map_fn, &[right_map.into()], "free_map")
+                    .map_err(|e| e.to_string())?;
+
                 let map_value_fn = self
                     .runtime_function("mux_map_value")
                     .ok_or("mux_map_value not found")?;
@@ -478,6 +498,16 @@ impl<'a> CodeGenerator<'a> {
                     .left()
                     .ok_or("Call returned no value")?
                     .into_pointer_value();
+
+                let free_set_fn = self
+                    .runtime_function("mux_free_set")
+                    .ok_or("mux_free_set not found")?;
+                self.builder
+                    .build_call(free_set_fn, &[left_set.into()], "free_set")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_call(free_set_fn, &[right_set.into()], "free_set")
+                    .map_err(|e| e.to_string())?;
 
                 let set_value_fn = self
                     .runtime_function("mux_set_value")
@@ -808,6 +838,12 @@ impl<'a> CodeGenerator<'a> {
                 let result = self
                     .generate_runtime_call("mux_list_contains", &[raw_list.into(), item_ptr.into()])
                     .ok_or("mux_list_contains returned no value")?;
+                let free_fn = self
+                    .runtime_function("mux_free_list")
+                    .ok_or("mux_free_list not found")?;
+                self.builder
+                    .build_call(free_fn, &[raw_list.into()], "free_list")
+                    .map_err(|e| e.to_string())?;
                 Ok(result)
             }
             Type::Set(_) | Type::EmptySet => {
@@ -816,6 +852,12 @@ impl<'a> CodeGenerator<'a> {
                 let result = self
                     .generate_runtime_call("mux_set_contains", &[raw_set.into(), item_ptr.into()])
                     .ok_or("mux_set_contains returned no value")?;
+                let free_fn = self
+                    .runtime_function("mux_free_set")
+                    .ok_or("mux_free_set not found")?;
+                self.builder
+                    .build_call(free_fn, &[raw_set.into()], "free_set")
+                    .map_err(|e| e.to_string())?;
                 Ok(result)
             }
             Type::Primitive(PrimitiveType::Str) => {

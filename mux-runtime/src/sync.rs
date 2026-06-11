@@ -205,8 +205,7 @@ mod sync_backend {
 
         match mode {
             Some(true) => unsafe { ReleaseSRWLockExclusive(ptr) },
-            Some(false) => unsafe { ReleaseSRWLockShared(ptr) },
-            None => panic!("rwlock_unlock called without tracked hold mode: {:?}", key),
+            Some(false) | None => unsafe { ReleaseSRWLockShared(ptr) },
         }
         0
     }
@@ -308,7 +307,7 @@ fn destroy_mutex_object(ptr: *mut c_void) {
     }
     let id = unsafe { *(ptr as *mut i64) };
     let mutex_ptr = {
-        let mut mutexes = MUTEXES.lock().expect("MUTEXES lock should not be poisoned");
+        let mut mutexes = MUTEXES.lock().unwrap_or_else(|e| e.into_inner());
         mutexes
             .remove(&id)
             .map(|p| p as *mut sync_backend::MuxMutex)
@@ -324,7 +323,7 @@ fn destroy_rwlock_object(ptr: *mut c_void) {
     }
     let id = unsafe { *(ptr as *mut i64) };
     let rwlock_ptr = {
-        let mut rwlocks = RWLOCKS.lock().expect("RWLOCKS lock should not be poisoned");
+        let mut rwlocks = RWLOCKS.lock().unwrap_or_else(|e| e.into_inner());
         rwlocks
             .remove(&id)
             .map(|p| p as *mut sync_backend::MuxRwLock)
@@ -340,9 +339,7 @@ fn destroy_condvar_object(ptr: *mut c_void) {
     }
     let id = unsafe { *(ptr as *mut i64) };
     let condvar_ptr = {
-        let mut condvars = CONDVARS
-            .lock()
-            .expect("CONDVARS lock should not be poisoned");
+        let mut condvars = CONDVARS.lock().unwrap_or_else(|e| e.into_inner());
         condvars
             .remove(&id)
             .map(|p| p as *mut sync_backend::MuxCondVar)
@@ -358,7 +355,7 @@ fn destroy_thread_object(ptr: *mut c_void) {
     }
     let id = unsafe { *(ptr as *mut i64) };
     let _entry = {
-        let mut threads = THREADS.lock().expect("THREADS lock should not be poisoned");
+        let mut threads = THREADS.lock().unwrap_or_else(|e| e.into_inner());
         threads.remove(&id)
     };
 }
@@ -408,9 +405,7 @@ pub extern "C" fn mux_sync_spawn(closure: *mut c_void) -> *mut Value {
         };
 
         let id = NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed);
-        let mut threads = THREADS
-            .lock()
-            .expect("THREADS mutex lock should not be poisoned");
+        let mut threads = THREADS.lock().unwrap_or_else(|e| e.into_inner());
         threads.insert(
             id,
             ThreadEntry {
@@ -439,9 +434,7 @@ pub extern "C" fn mux_thread_join(thread_handle: *mut Value) -> *mut Value {
     };
 
     let join_handle = {
-        let mut threads = THREADS
-            .lock()
-            .expect("THREADS mutex lock should not be poisoned");
+        let mut threads = THREADS.lock().unwrap_or_else(|e| e.into_inner());
         match threads.remove(&id) {
             Some(entry) => entry.handle,
             None => return err_string(format!("Thread handle {} not found", id)),
@@ -466,9 +459,7 @@ pub extern "C" fn mux_thread_detach(thread_handle: *mut Value) -> *mut Value {
         Err(e) => return e,
     };
 
-    let mut threads = THREADS
-        .lock()
-        .expect("THREADS mutex lock should not be poisoned");
+    let mut threads = THREADS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(entry) = threads.remove(&id) else {
         return err_string(format!("Thread handle {} not found", id));
     };
@@ -495,7 +486,7 @@ pub extern "C" fn mux_mutex_new() -> *mut Value {
     match init_pthread_mutex() {
         Ok(ptr) => {
             let id = NEXT_MUTEX_ID.fetch_add(1, Ordering::Relaxed);
-            let mut mutexes = MUTEXES.lock().expect("MUTEXES lock should not be poisoned");
+            let mut mutexes = MUTEXES.lock().unwrap_or_else(|e| e.into_inner());
             mutexes.insert(id, ptr as usize);
 
             let obj_ptr = alloc_object(*MUTEX_TYPE_ID);
@@ -505,9 +496,9 @@ pub extern "C" fn mux_mutex_new() -> *mut Value {
             }
             let value = unsafe { (*obj_ptr).clone() };
             mux_rc_dec(obj_ptr);
-            Box::into_raw(Box::new(value))
+            mux_rc_alloc(value)
         }
-        Err(e) => panic!("Failed to initialize Mutex: {}", e),
+        Err(e) => err_string(format!("Failed to initialize Mutex: {}", e)),
     }
 }
 
@@ -516,7 +507,7 @@ pub extern "C" fn mux_rwlock_new() -> *mut Value {
     match init_pthread_rwlock() {
         Ok(ptr) => {
             let id = NEXT_RWLOCK_ID.fetch_add(1, Ordering::Relaxed);
-            let mut rwlocks = RWLOCKS.lock().expect("RWLOCKS lock should not be poisoned");
+            let mut rwlocks = RWLOCKS.lock().unwrap_or_else(|e| e.into_inner());
             rwlocks.insert(id, ptr as usize);
 
             let obj_ptr = alloc_object(*RWLOCK_TYPE_ID);
@@ -526,9 +517,9 @@ pub extern "C" fn mux_rwlock_new() -> *mut Value {
             }
             let value = unsafe { (*obj_ptr).clone() };
             mux_rc_dec(obj_ptr);
-            Box::into_raw(Box::new(value))
+            mux_rc_alloc(value)
         }
-        Err(e) => panic!("Failed to initialize RwLock: {}", e),
+        Err(e) => err_string(format!("Failed to initialize RwLock: {}", e)),
     }
 }
 
@@ -537,9 +528,7 @@ pub extern "C" fn mux_condvar_new() -> *mut Value {
     match init_pthread_condvar() {
         Ok(ptr) => {
             let id = NEXT_CONDVAR_ID.fetch_add(1, Ordering::Relaxed);
-            let mut condvars = CONDVARS
-                .lock()
-                .expect("CONDVARS lock should not be poisoned");
+            let mut condvars = CONDVARS.lock().unwrap_or_else(|e| e.into_inner());
             condvars.insert(id, ptr as usize);
 
             let obj_ptr = alloc_object(*CONDVAR_TYPE_ID);
@@ -549,9 +538,9 @@ pub extern "C" fn mux_condvar_new() -> *mut Value {
             }
             let value = unsafe { (*obj_ptr).clone() };
             mux_rc_dec(obj_ptr);
-            Box::into_raw(Box::new(value))
+            mux_rc_alloc(value)
         }
-        Err(e) => panic!("Failed to initialize CondVar: {}", e),
+        Err(e) => err_string(format!("Failed to initialize CondVar: {}", e)),
     }
 }
 
@@ -563,7 +552,7 @@ pub extern "C" fn mux_mutex_lock(mutex_handle: *mut Value) -> *mut Value {
         Err(e) => return e,
     };
     let mutex_ptr = {
-        let mutexes = MUTEXES.lock().expect("MUTEXES lock should not be poisoned");
+        let mutexes = MUTEXES.lock().unwrap_or_else(|e| e.into_inner());
         match mutexes.get(&id) {
             Some(ptr) => *ptr as *mut sync_backend::MuxMutex,
             None => return err_string(format!("Mutex handle {} not found", id)),
@@ -585,7 +574,7 @@ pub extern "C" fn mux_mutex_unlock(mutex_handle: *mut Value) -> *mut Value {
         Err(e) => return e,
     };
     let mutex_ptr = {
-        let mutexes = MUTEXES.lock().expect("MUTEXES lock should not be poisoned");
+        let mutexes = MUTEXES.lock().unwrap_or_else(|e| e.into_inner());
         match mutexes.get(&id) {
             Some(ptr) => *ptr as *mut sync_backend::MuxMutex,
             None => return err_string(format!("Mutex handle {} not found", id)),
@@ -607,7 +596,7 @@ pub extern "C" fn mux_rwlock_read_lock(rwlock_handle: *mut Value) -> *mut Value 
         Err(e) => return e,
     };
     let rwlock_ptr = {
-        let rwlocks = RWLOCKS.lock().expect("RWLOCKS lock should not be poisoned");
+        let rwlocks = RWLOCKS.lock().unwrap_or_else(|e| e.into_inner());
         match rwlocks.get(&id) {
             Some(ptr) => *ptr as *mut sync_backend::MuxRwLock,
             None => return err_string(format!("RwLock handle {} not found", id)),
@@ -632,7 +621,7 @@ pub extern "C" fn mux_rwlock_write_lock(rwlock_handle: *mut Value) -> *mut Value
         Err(e) => return e,
     };
     let rwlock_ptr = {
-        let rwlocks = RWLOCKS.lock().expect("RWLOCKS lock should not be poisoned");
+        let rwlocks = RWLOCKS.lock().unwrap_or_else(|e| e.into_inner());
         match rwlocks.get(&id) {
             Some(ptr) => *ptr as *mut sync_backend::MuxRwLock,
             None => return err_string(format!("RwLock handle {} not found", id)),
@@ -657,7 +646,7 @@ pub extern "C" fn mux_rwlock_unlock(rwlock_handle: *mut Value) -> *mut Value {
         Err(e) => return e,
     };
     let rwlock_ptr = {
-        let rwlocks = RWLOCKS.lock().expect("RWLOCKS lock should not be poisoned");
+        let rwlocks = RWLOCKS.lock().unwrap_or_else(|e| e.into_inner());
         match rwlocks.get(&id) {
             Some(ptr) => *ptr as *mut sync_backend::MuxRwLock,
             None => return err_string(format!("RwLock handle {} not found", id)),
@@ -687,16 +676,14 @@ pub extern "C" fn mux_condvar_wait(
     };
 
     let cond_ptr = {
-        let condvars = CONDVARS
-            .lock()
-            .expect("CONDVARS lock should not be poisoned");
+        let condvars = CONDVARS.lock().unwrap_or_else(|e| e.into_inner());
         match condvars.get(&cond_id) {
             Some(ptr) => *ptr as *mut sync_backend::MuxCondVar,
             None => return err_string(format!("CondVar handle {} not found", cond_id)),
         }
     };
     let mutex_ptr = {
-        let mutexes = MUTEXES.lock().expect("MUTEXES lock should not be poisoned");
+        let mutexes = MUTEXES.lock().unwrap_or_else(|e| e.into_inner());
         match mutexes.get(&mutex_id) {
             Some(ptr) => *ptr as *mut sync_backend::MuxMutex,
             None => return err_string(format!("Mutex handle {} not found", mutex_id)),
@@ -718,9 +705,7 @@ pub extern "C" fn mux_condvar_signal(condvar_handle: *mut Value) -> *mut Value {
         Err(e) => return e,
     };
     let cond_ptr = {
-        let condvars = CONDVARS
-            .lock()
-            .expect("CONDVARS lock should not be poisoned");
+        let condvars = CONDVARS.lock().unwrap_or_else(|e| e.into_inner());
         match condvars.get(&id) {
             Some(ptr) => *ptr as *mut sync_backend::MuxCondVar,
             None => return err_string(format!("CondVar handle {} not found", id)),
@@ -742,9 +727,7 @@ pub extern "C" fn mux_condvar_broadcast(condvar_handle: *mut Value) -> *mut Valu
         Err(e) => return e,
     };
     let cond_ptr = {
-        let condvars = CONDVARS
-            .lock()
-            .expect("CONDVARS lock should not be poisoned");
+        let condvars = CONDVARS.lock().unwrap_or_else(|e| e.into_inner());
         match condvars.get(&id) {
             Some(ptr) => *ptr as *mut sync_backend::MuxCondVar,
             None => return err_string(format!("CondVar handle {} not found", id)),

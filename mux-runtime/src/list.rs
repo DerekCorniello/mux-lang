@@ -277,9 +277,10 @@ pub extern "C" fn mux_list_insert(list: *mut List, index: i64, val: *mut Value) 
 pub extern "C" fn mux_list_to_string(list: *const List) -> *mut std::ffi::c_char {
     let list = unsafe { &*list };
     let s = list.to_string();
-    // Safe: to_string produces valid UTF-8 without null bytes
-    let c_str = CString::new(s).expect("to_string should produce valid UTF-8");
-    c_str.into_raw()
+    match CString::new(s) {
+        Ok(c) => c.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

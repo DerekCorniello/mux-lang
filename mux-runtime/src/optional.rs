@@ -118,9 +118,10 @@ pub extern "C" fn mux_optional_none() -> *mut Value {
 pub extern "C" fn mux_optional_to_string(val: *const Value) -> *mut std::ffi::c_char {
     use std::ffi::CString;
     if val.is_null() {
-        return CString::new("null".to_string())
-            .expect("'null' string should be valid UTF-8")
-            .into_raw();
+        return match CString::new("null".to_string()) {
+            Ok(c) => c.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        };
     }
     unsafe {
         let s = match &*val {
@@ -128,9 +129,10 @@ pub extern "C" fn mux_optional_to_string(val: *const Value) -> *mut std::ffi::c_
             Value::Optional(None) => "None".to_string(),
             other => other.to_string(),
         };
-        CString::new(s)
-            .expect("to_string should produce valid UTF-8")
-            .into_raw()
+        match CString::new(s) {
+            Ok(c) => c.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        }
     }
 }
 

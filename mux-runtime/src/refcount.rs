@@ -41,7 +41,7 @@ impl RefHeader {
 
 /// Calculate the memory layout for RefHeader + Value
 #[inline]
-fn layout_for_value() -> Layout {
+fn layout_for_value() -> Option<Layout> {
     let header_size = std::mem::size_of::<RefHeader>();
     let value_size = std::mem::size_of::<Value>();
     let value_align = std::mem::align_of::<Value>();
@@ -54,8 +54,7 @@ fn layout_for_value() -> Layout {
     let header_padded = (header_size + value_align - 1) & !(value_align - 1);
     let total_size = header_padded + value_size;
 
-    Layout::from_size_align(total_size, total_align)
-        .expect("Failed to create layout for ref-counted Value")
+    Layout::from_size_align(total_size, total_align).ok()
 }
 
 #[inline]
@@ -76,12 +75,14 @@ fn value_offset() -> usize {
 #[allow(improper_ctypes_definitions)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_rc_alloc(value: Value) -> *mut Value {
-    let layout = layout_for_value();
+    let Some(layout) = layout_for_value() else {
+        return std::ptr::null_mut();
+    };
 
     unsafe {
         let ptr = alloc(layout);
         if ptr.is_null() {
-            panic!("Failed to allocate ref-counted Value: out of memory");
+            return std::ptr::null_mut();
         }
 
         let header = ptr as *mut RefHeader;
@@ -152,7 +153,9 @@ pub extern "C" fn mux_rc_dec(val: *mut Value) -> bool {
             std::ptr::drop_in_place(val);
 
             let alloc_ptr = get_alloc_base(val);
-            dealloc(alloc_ptr, layout_for_value());
+            if let Some(layout) = layout_for_value() {
+                dealloc(alloc_ptr, layout);
+            }
 
             true
         } else {

@@ -27,10 +27,10 @@ impl fmt::Display for Bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_bool_to_string(b: i32) -> *mut c_char {
     let s = format!("{}", Bool(b != 0));
-    // Safe: format! produces valid UTF-8 without null bytes
-    CString::new(s)
-        .expect("format output should be valid UTF-8")
-        .into_raw()
+    match CString::new(s) {
+        Ok(c) => c.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 /// # Safety
@@ -52,10 +52,13 @@ pub unsafe extern "C" fn mux_bool_from_value(v: *mut Value) -> i32 {
 /// v must be a valid pointer to a Value::Bool.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_bool_to_int(v: *mut Value) -> *mut Value {
+    if v.is_null() {
+        return std::ptr::null_mut();
+    }
     if let Value::Bool(b) = unsafe { &*v } {
         mux_rc_alloc(Value::Int(Bool(*b).to_int()))
     } else {
-        panic!("Expected Bool value");
+        std::ptr::null_mut()
     }
 }
 
@@ -63,11 +66,14 @@ pub unsafe extern "C" fn mux_bool_to_int(v: *mut Value) -> *mut Value {
 /// v must be a valid pointer to a Value::Bool.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_bool_to_float(v: *mut Value) -> *mut Value {
+    if v.is_null() {
+        return std::ptr::null_mut();
+    }
     if let Value::Bool(b) = unsafe { &*v } {
         mux_rc_alloc(Value::Float(ordered_float::OrderedFloat(
             Bool(*b).to_int() as f64
         )))
     } else {
-        panic!("Expected Bool value");
+        std::ptr::null_mut()
     }
 }

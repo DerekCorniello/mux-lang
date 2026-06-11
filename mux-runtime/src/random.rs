@@ -1,10 +1,14 @@
-use std::sync::{Mutex, Once};
+use std::sync::{Mutex, MutexGuard, Once};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const RAND_MAX: i64 = 2147483647;
 
 static INIT: Once = Once::new();
 static STATE: Mutex<u64> = Mutex::new(0);
+
+fn lock_state() -> MutexGuard<'static, u64> {
+    STATE.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 fn lcg_next(state: u64) -> u64 {
     state
@@ -15,9 +19,7 @@ fn lcg_next(state: u64) -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_rand_init(seed: i64) {
     INIT.call_once(|| {
-        *STATE
-            .lock()
-            .expect("STATE mutex lock should not be poisoned") = seed as u64;
+        *lock_state() = seed as u64;
     });
 }
 
@@ -28,13 +30,9 @@ pub extern "C" fn mux_rand_int() -> i64 {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        *STATE
-            .lock()
-            .expect("STATE mutex lock should not be poisoned") = seed;
+        *lock_state() = seed;
     });
-    let mut state = STATE
-        .lock()
-        .expect("STATE mutex lock should not be poisoned");
+    let mut state = lock_state();
     *state = lcg_next(*state);
     ((*state >> 33) as i64) & RAND_MAX
 }

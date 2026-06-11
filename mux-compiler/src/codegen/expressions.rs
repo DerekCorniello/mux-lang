@@ -180,6 +180,12 @@ impl<'a> CodeGenerator<'a> {
         let _ = self
             .builder
             .build_call(free_opt, &[map_get.into()], "free_csv_optional");
+        let free_map = self
+            .runtime_function("mux_free_map")
+            .ok_or("mux_free_map not found")?;
+        let _ = self
+            .builder
+            .build_call(free_map, &[raw_map.into()], "free_csv_map");
         Ok(value)
     }
 
@@ -1312,17 +1318,7 @@ impl<'a> CodeGenerator<'a> {
             if needs_copy {
                 let arg_value = self.generate_expression(arg)?;
                 let ptr = arg_value.into_pointer_value();
-                let copy_func = self
-                    .runtime_function("mux_copy_object")
-                    .ok_or("mux_copy_object not found")?;
-                let copied_ptr = self
-                    .builder
-                    .build_call(copy_func, &[ptr.into()], "copy_arg")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_copy_object should return a value")
-                    .into_pointer_value();
+                let copied_ptr = self.copy_object_or_error(ptr)?;
                 call_args.push(copied_ptr.into());
             } else {
                 call_args.push(self.generate_expression(arg)?.into());
@@ -2965,15 +2961,7 @@ impl<'a> CodeGenerator<'a> {
             let arg_val = if needs_copy {
                 let original_val = self.generate_expression(arg)?;
                 let ptr = original_val.into_pointer_value();
-                let copy_func = self
-                    .runtime_function("mux_copy_object")
-                    .ok_or("mux_copy_object not found")?;
-                self.builder
-                    .build_call(copy_func, &[ptr.into()], "copy_arg")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_copy_object should return a value")
+                self.copy_object_or_error(ptr)?.into()
             } else {
                 self.generate_expression(arg)?
             };
@@ -3113,6 +3101,14 @@ impl<'a> CodeGenerator<'a> {
                 // continue block: extract the value based on its actual type
                 self.builder.position_at_end(continue_bb);
 
+                // Free the raw list pointer obtained from mux_value_get_list
+                let free_list = self
+                    .runtime_function("mux_free_list")
+                    .ok_or("mux_free_list not found")?;
+                self.builder
+                    .build_call(free_list, &[raw_list_ptr.into()], "free_list")
+                    .map_err(|e| e.to_string())?;
+
                 // Use extract_value_from_ptr to properly extract based on type
                 let (extracted_val, _) =
                     self.extract_value_from_ptr(result_ptr, element_type, "list_element")?;
@@ -3218,6 +3214,18 @@ impl<'a> CodeGenerator<'a> {
 
                 // continue block: extract the value from the Optional
                 self.builder.position_at_end(continue_bb);
+
+                // Free the raw map pointer obtained from mux_value_get_map
+                let free_map = self
+                    .runtime_function("mux_free_map")
+                    .ok_or("mux_free_map not found")?;
+                let raw_map_val = raw_map
+                    .try_as_basic_value()
+                    .left()
+                    .expect("mux_value_get_map should return a basic value");
+                self.builder
+                    .build_call(free_map, &[raw_map_val.into()], "free_map")
+                    .map_err(|e| e.to_string())?;
 
                 // Get the value from Optional using mux_optional_get_value
                 let value_result = self
@@ -4088,7 +4096,8 @@ impl<'a> CodeGenerator<'a> {
                         self.normalize_list_index(first_index_val, raw_base_list)?;
 
                     // Get base[i1] (this is a copy)
-                    self.builder
+                    let result = self
+                        .builder
                         .build_call(
                             self.runtime_function("mux_list_get_value")
                                 .expect("mux_list_get_value must be declared in runtime"),
@@ -4098,7 +4107,17 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?
                         .try_as_basic_value()
                         .left()
-                        .expect("mux_list_get_value should return a basic value")
+                        .expect("mux_list_get_value should return a basic value");
+
+                    // Free the raw list pointer obtained from mux_value_get_list
+                    let free_list = self
+                        .runtime_function("mux_free_list")
+                        .ok_or("mux_free_list not found")?;
+                    self.builder
+                        .build_call(free_list, &[raw_base_list.into()], "free_list")
+                        .map_err(|e| e.to_string())?;
+
+                    result
                 }
                 crate::semantics::Type::Map(_, _) => {
                     // Extract raw Map from base
@@ -4193,6 +4212,15 @@ impl<'a> CodeGenerator<'a> {
 
                     // Continue block - extract value from Optional
                     self.builder.position_at_end(continue_bb);
+
+                    // Free the raw map pointer obtained from mux_value_get_map
+                    let free_map_fn = self
+                        .runtime_function("mux_free_map")
+                        .ok_or("mux_free_map not found")?;
+                    self.builder
+                        .build_call(free_map_fn, &[raw_base_map.into()], "free_map")
+                        .map_err(|e| e.to_string())?;
+
                     self.builder
                         .build_call(
                             self.runtime_function("mux_optional_get_value")
@@ -4463,6 +4491,14 @@ impl<'a> CodeGenerator<'a> {
                     // Continue block
                     self.builder.position_at_end(continue_bb);
 
+                    // Free the raw list pointer obtained from mux_value_get_list
+                    let free_list_fn = self
+                        .runtime_function("mux_free_list")
+                        .ok_or("mux_free_list not found")?;
+                    self.builder
+                        .build_call(free_list_fn, &[raw_list.into()], "free_list")
+                        .map_err(|e| e.to_string())?;
+
                     next
                 }
                 crate::semantics::Type::Map(_, _) => {
@@ -4557,6 +4593,15 @@ impl<'a> CodeGenerator<'a> {
 
                     // Continue block - extract value from Optional
                     self.builder.position_at_end(continue_bb);
+
+                    // Free the raw map pointer obtained from mux_value_get_map
+                    let free_map_fn = self
+                        .runtime_function("mux_free_map")
+                        .ok_or("mux_free_map not found")?;
+                    self.builder
+                        .build_call(free_map_fn, &[raw_map.into()], "free_map")
+                        .map_err(|e| e.to_string())?;
+
                     self.builder
                         .build_call(
                             self.runtime_function("mux_optional_get_value")

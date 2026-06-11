@@ -15,9 +15,8 @@ pub extern "C" fn mux_new_tuple(left: *mut Value, right: *mut Value) -> *mut Tup
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_tuple_value(tuple: *mut Tuple) -> *mut Value {
-    let tuple = unsafe { &*tuple };
-    let value = Value::Tuple(Box::new(tuple.clone()));
-    mux_rc_alloc(value)
+    let owned = unsafe { Box::from_raw(tuple) };
+    mux_rc_alloc(Value::Tuple(owned))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -36,8 +35,10 @@ pub extern "C" fn mux_tuple_eq(a: *mut Tuple, b: *mut Tuple) -> bool {
 pub extern "C" fn mux_tuple_to_string(tuple: *const Tuple) -> *mut c_char {
     let tuple = unsafe { &*tuple };
     let s = tuple.to_string();
-    let c_str = CString::new(s).expect("to_string should produce valid UTF-8");
-    c_str.into_raw()
+    match CString::new(s) {
+        Ok(c) => c.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
