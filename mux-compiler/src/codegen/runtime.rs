@@ -204,6 +204,18 @@ impl<'a> CodeGenerator<'a> {
         );
 
         module.add_function(
+            "mux_register_object_copy",
+            void_type.fn_type(&[i32_type.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_register_object_destructor",
+            void_type.fn_type(&[i32_type.into(), i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
             "mux_alloc_object",
             i8_ptr.fn_type(&[i32_type.into()], false),
             None,
@@ -241,6 +253,12 @@ impl<'a> CodeGenerator<'a> {
 
         module.add_function(
             "mux_copy_object",
+            i8_ptr.fn_type(&[i8_ptr.into()], false),
+            None,
+        );
+
+        module.add_function(
+            "mux_value_deep_clone",
             i8_ptr.fn_type(&[i8_ptr.into()], false),
             None,
         );

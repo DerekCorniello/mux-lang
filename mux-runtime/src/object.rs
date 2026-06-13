@@ -14,10 +14,10 @@ pub struct ObjectType {
     pub id: TypeId,
     pub name: String,
     pub size: usize,
-    pub destructor: Option<fn(*mut c_void)>,
+    pub destructor: Option<extern "C" fn(*mut c_void)>,
     /// Called by `copy_object` to perform a deep copy: `copy(src, dst)`.
-    /// If None, `copy_object` falls back to a shallow byte copy, which is
-    /// only correct for plain-old-data types with no heap-allocated fields.
+    /// If None, `copy_object` returns null and the caller must handle the
+    /// "type does not support copying" case.
     pub copy: Option<extern "C" fn(*mut c_void, *mut c_void)>,
 }
 
@@ -25,7 +25,7 @@ impl ObjectType {
     pub fn new(
         name: String,
         size: usize,
-        destructor: Option<fn(*mut c_void)>,
+        destructor: Option<extern "C" fn(*mut c_void)>,
         copy: Option<extern "C" fn(*mut c_void, *mut c_void)>,
     ) -> Self {
         let id = {
@@ -48,7 +48,7 @@ impl ObjectType {
 pub fn register_object_type(
     name: &str,
     size: usize,
-    destructor: Option<fn(*mut c_void)>,
+    destructor: Option<extern "C" fn(*mut c_void)>,
 ) -> TypeId {
     register_object_type_with_copy(name, size, destructor, None)
 }
@@ -56,7 +56,7 @@ pub fn register_object_type(
 pub fn register_object_type_with_copy(
     name: &str,
     size: usize,
-    destructor: Option<fn(*mut c_void)>,
+    destructor: Option<extern "C" fn(*mut c_void)>,
     copy: Option<extern "C" fn(*mut c_void, *mut c_void)>,
 ) -> TypeId {
     let obj_type = ObjectType::new(name.to_string(), size, destructor, copy);
@@ -200,8 +200,8 @@ pub extern "C" fn mux_register_object_type(name: *const c_char, size: usize) -> 
 ///
 /// `copy_fn(src, dst)` must copy all heap-allocated fields from `src` into the
 /// already-allocated `dst` buffer of the same size.  Without this, `mux_copy_object`
-/// falls back to a shallow byte copy which causes double-frees for types with
-/// pointer fields.
+/// returns null and the caller must handle the "type does not support copying"
+/// case.
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_register_object_copy(
     type_id: TypeId,
@@ -210,6 +210,23 @@ pub extern "C" fn mux_register_object_copy(
     let mut registry = TYPE_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(obj_type) = registry.get_mut(&type_id) {
         obj_type.copy = Some(copy_fn);
+    }
+}
+
+/// Register a destructor for an object type.
+///
+/// `destructor(ptr)` is called when the object's storage is being released
+/// so the type can release any heap-allocated fields it owns.  It is invoked
+/// from `Drop` for the underlying `ObjectData`.  Registering is idempotent;
+/// the most recent registration wins.
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_register_object_destructor(
+    type_id: TypeId,
+    destructor: extern "C" fn(*mut c_void),
+) {
+    let mut registry = TYPE_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(obj_type) = registry.get_mut(&type_id) {
+        obj_type.destructor = Some(destructor);
     }
 }
 

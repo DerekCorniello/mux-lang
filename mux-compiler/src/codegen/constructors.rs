@@ -185,6 +185,34 @@ impl<'a> CodeGenerator<'a> {
             .expect("type_id call should return a basic value")
             .into_int_value();
 
+        // Register the per-class copy and destructor callbacks so the
+        // runtime can deep-copy and release instances safely.
+        if let (Some(copy_fn), Some(destructor_fn)) = (
+            self.class_copy_fns.get(name).copied(),
+            self.class_destructor_fns.get(name).copied(),
+        ) {
+            let register_copy = self
+                .runtime_function("mux_register_object_copy")
+                .ok_or("mux_register_object_copy not found")?;
+            self.builder
+                .build_call(
+                    register_copy,
+                    &[type_id_val.into(), copy_fn.into()],
+                    "register_copy",
+                )
+                .map_err(|e| e.to_string())?;
+            let register_destructor = self
+                .runtime_function("mux_register_object_destructor")
+                .ok_or("mux_register_object_destructor not found")?;
+            self.builder
+                .build_call(
+                    register_destructor,
+                    &[type_id_val.into(), destructor_fn.into()],
+                    "register_destructor",
+                )
+                .map_err(|e| e.to_string())?;
+        }
+
         // allocate the object
         let alloc_func = self
             .runtime_function("mux_alloc_object")
@@ -657,6 +685,34 @@ impl<'a> CodeGenerator<'a> {
             .left()
             .expect("mux_type_register should return a basic value")
             .into_int_value();
+
+        // Register the per-class copy and destructor callbacks so the
+        // runtime can deep-copy and release instances safely.
+        if let (Some(copy_fn), Some(destructor_fn)) = (
+            self.class_copy_fns.get(class_name).copied(),
+            self.class_destructor_fns.get(class_name).copied(),
+        ) {
+            let register_copy = self
+                .runtime_function("mux_register_object_copy")
+                .ok_or("mux_register_object_copy not found")?;
+            self.builder
+                .build_call(
+                    register_copy,
+                    &[type_id_val.into(), copy_fn.into()],
+                    "register_copy",
+                )
+                .map_err(|e| e.to_string())?;
+            let register_destructor = self
+                .runtime_function("mux_register_object_destructor")
+                .ok_or("mux_register_object_destructor not found")?;
+            self.builder
+                .build_call(
+                    register_destructor,
+                    &[type_id_val.into(), destructor_fn.into()],
+                    "register_destructor",
+                )
+                .map_err(|e| e.to_string())?;
+        }
 
         // allocate the object using runtime
         let alloc_func = self

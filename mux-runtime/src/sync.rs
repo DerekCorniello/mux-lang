@@ -280,17 +280,26 @@ lazy_static! {
     static ref RWLOCKS: Mutex<HashMap<i64, usize>> = Mutex::new(HashMap::new());
     static ref NEXT_CONDVAR_ID: AtomicI64 = AtomicI64::new(1);
     static ref CONDVARS: Mutex<HashMap<i64, usize>> = Mutex::new(HashMap::new());
-    static ref MUTEX_TYPE_ID: TypeId =
-        register_object_type("Mutex", 8, Some(destroy_mutex_object as fn(*mut c_void)));
-    static ref RWLOCK_TYPE_ID: TypeId =
-        register_object_type("RwLock", 8, Some(destroy_rwlock_object as fn(*mut c_void)));
+    static ref MUTEX_TYPE_ID: TypeId = register_object_type(
+        "Mutex",
+        8,
+        Some(destroy_mutex_object as extern "C" fn(*mut c_void))
+    );
+    static ref RWLOCK_TYPE_ID: TypeId = register_object_type(
+        "RwLock",
+        8,
+        Some(destroy_rwlock_object as extern "C" fn(*mut c_void))
+    );
     static ref CONDVAR_TYPE_ID: TypeId = register_object_type(
         "CondVar",
         8,
-        Some(destroy_condvar_object as fn(*mut c_void))
+        Some(destroy_condvar_object as extern "C" fn(*mut c_void))
     );
-    static ref THREAD_TYPE_ID: TypeId =
-        register_object_type("Thread", 8, Some(destroy_thread_object as fn(*mut c_void)));
+    static ref THREAD_TYPE_ID: TypeId = register_object_type(
+        "Thread",
+        8,
+        Some(destroy_thread_object as extern "C" fn(*mut c_void))
+    );
 }
 
 fn ok_unit() -> *mut Value {
@@ -301,7 +310,7 @@ fn err_string(message: impl Into<String>) -> *mut Value {
     mux_rc_alloc(Value::Result(Err(Box::new(Value::String(message.into())))))
 }
 
-fn destroy_mutex_object(ptr: *mut c_void) {
+extern "C" fn destroy_mutex_object(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
@@ -317,7 +326,7 @@ fn destroy_mutex_object(ptr: *mut c_void) {
     }
 }
 
-fn destroy_rwlock_object(ptr: *mut c_void) {
+extern "C" fn destroy_rwlock_object(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
@@ -333,7 +342,7 @@ fn destroy_rwlock_object(ptr: *mut c_void) {
     }
 }
 
-fn destroy_condvar_object(ptr: *mut c_void) {
+extern "C" fn destroy_condvar_object(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
@@ -349,7 +358,7 @@ fn destroy_condvar_object(ptr: *mut c_void) {
     }
 }
 
-fn destroy_thread_object(ptr: *mut c_void) {
+extern "C" fn destroy_thread_object(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }

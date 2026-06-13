@@ -48,6 +48,10 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
         .unwrap_or_else(|e| panic!("Failed to execute compile command for {}: {}", path_str, e));
 
     let compile_stderr = String::from_utf8_lossy(&compile_output.stderr).to_string();
+    // Print compile stderr for debugging (including DEBUG lines from the compiler)
+    if !compile_stderr.is_empty() {
+        print!("COMPILE_STDERR: {}", compile_stderr);
+    }
 
     // Check if binary was created (indicates successful compilation)
     if !exec_path.exists() {
@@ -57,6 +61,26 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
 
     // Execute the compiled binary
     println!("Executing: {}", exec_path.display());
+
+    // Debug: print ldd output and check rpath
+    let ldd_out = Command::new("ldd")
+        .arg(&exec_path)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+    println!("LDD for {}:\n{}", exec_path.display(), ldd_out);
+    let readelf_out = Command::new("readelf")
+        .args(["-d", &exec_path.to_string_lossy()])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+    for line in readelf_out
+        .lines()
+        .filter(|l| l.contains("PATH") || l.contains("NEEDED"))
+    {
+        println!("READELF: {}", line);
+    }
+
     let mut exec_cmd = Command::new(&exec_path);
     exec_cmd.current_dir(abs_dir);
 

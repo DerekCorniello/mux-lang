@@ -26,18 +26,30 @@ lazy_static! {
     static ref TCP_STREAM_TYPE_ID: TypeId = register_object_type(
         "TcpStream",
         std::mem::size_of::<i64>(),
-        Some(|ptr| drop_socket_handle(&TCP_STREAMS, ptr)),
+        Some(drop_tcp_stream as extern "C" fn(*mut c_void)),
     );
     static ref TCP_LISTENER_TYPE_ID: TypeId = register_object_type(
         "TcpListener",
         std::mem::size_of::<i64>(),
-        Some(|ptr| drop_socket_handle(&TCP_LISTENERS, ptr)),
+        Some(drop_tcp_listener as extern "C" fn(*mut c_void)),
     );
     static ref UDP_SOCKET_TYPE_ID: TypeId = register_object_type(
         "UdpSocket",
         std::mem::size_of::<i64>(),
-        Some(|ptr| drop_socket_handle(&UDP_SOCKETS, ptr)),
+        Some(drop_udp_socket as extern "C" fn(*mut c_void)),
     );
+}
+
+extern "C" fn drop_tcp_stream(ptr: *mut c_void) {
+    drop_socket_handle(&TCP_STREAMS, ptr);
+}
+
+extern "C" fn drop_tcp_listener(ptr: *mut c_void) {
+    drop_socket_handle(&TCP_LISTENERS, ptr);
+}
+
+extern "C" fn drop_udp_socket(ptr: *mut c_void) {
+    drop_socket_handle(&UDP_SOCKETS, ptr);
 }
 
 fn lock_map<'a, T>(

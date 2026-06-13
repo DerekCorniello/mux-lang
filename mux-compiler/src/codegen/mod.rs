@@ -40,6 +40,8 @@ pub struct CodeGenerator<'a> {
     type_map: HashMap<String, BasicTypeEnum<'a>>,
     vtable_map: HashMap<String, PointerValue<'a>>,
     vtable_type_map: HashMap<String, inkwell::types::StructType<'a>>,
+    class_copy_fns: HashMap<String, PointerValue<'a>>,
+    class_destructor_fns: HashMap<String, PointerValue<'a>>,
     enum_variants: HashMap<String, Vec<String>>,
     enum_variant_fields: EnumVariantFieldMap,
     field_map: HashMap<String, HashMap<String, usize>>,
@@ -195,6 +197,12 @@ impl<'a> CodeGenerator<'a> {
                         .get(name)
                         .map(|sym| sym.interfaces.clone())
                         .unwrap_or_default();
+                    // Generate the copy and destructor functions first so
+                    // the constructor body can register them as runtime
+                    // callbacks. The function definitions are emitted at
+                    // module level, so the order only affects the lookup
+                    // in `class_copy_fns` / `class_destructor_fns`.
+                    self.generate_class_copy_and_destructor(name, fields)?;
                     self.generate_class_constructors(name, fields, &interfaces)?;
                 }
                 _ => {}
@@ -442,6 +450,8 @@ impl<'a> CodeGenerator<'a> {
             type_map,
             vtable_map: HashMap::new(),
             vtable_type_map: HashMap::new(),
+            class_copy_fns: HashMap::new(),
+            class_destructor_fns: HashMap::new(),
             enum_variants,
             enum_variant_fields: HashMap::new(),
             field_map: HashMap::new(),
