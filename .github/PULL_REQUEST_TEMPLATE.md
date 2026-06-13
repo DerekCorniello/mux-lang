@@ -24,7 +24,7 @@ Please describe the tests that you ran to verify your changes. Provide instructi
 **Test Configuration**:
 * OS: [e.g., iOS, Linux]
 * Version of Rust: [e.g., 1.54.0]
-* Version of Mux: [e.g., 0.3.1]
+* Version of Mux: [e.g., 0.3.2]
 * Any other relevant details
 
 # Checklist:
