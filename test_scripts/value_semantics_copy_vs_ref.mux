@@ -8,6 +8,7 @@ class Outer {
 
 func mutate_value(Outer o) returns void {
     o.inner.x = 99
+    print("inside - o.inner.x = " + o.inner.x.to_string())
 }
 
 func mutate_ref(&Outer o) returns void {
@@ -27,7 +28,7 @@ func main() returns void {
     print(o.inner.x.to_string())
 
     mutate_value(o)
-    print(o.inner.x.to_string())
+    print("outside mutate_value - o.inner.x = " + o.inner.x.to_string())
 
     mutate_ref(&o)
     print(o.inner.x.to_string())

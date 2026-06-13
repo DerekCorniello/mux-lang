@@ -22,11 +22,12 @@ impl Drop for ObjectData {
     fn drop(&mut self) {
         if !self.ptr.is_null() && self.size > 0 {
             crate::object::call_object_destructor(self.type_id, self.ptr);
-            let layout =
+            if let Ok(layout) =
                 ::std::alloc::Layout::from_size_align(self.size, ::std::mem::align_of::<u8>())
-                    .expect("Invalid layout for object");
-            unsafe {
-                ::std::alloc::dealloc(self.ptr as *mut u8, layout);
+            {
+                unsafe {
+                    ::std::alloc::dealloc(self.ptr as *mut u8, layout);
+                }
             }
         }
     }

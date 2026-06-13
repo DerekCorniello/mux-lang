@@ -14,13 +14,22 @@ pub struct ObjectType {
     pub id: TypeId,
     pub name: String,
     pub size: usize,
-    pub destructor: Option<fn(*mut c_void)>,
+    pub destructor: Option<extern "C" fn(*mut c_void)>,
+    /// Called by `copy_object` to perform a deep copy: `copy(src, dst)`.
+    /// If None, `copy_object` returns null and the caller must handle the
+    /// "type does not support copying" case.
+    pub copy: Option<extern "C" fn(*mut c_void, *mut c_void)>,
 }
 
 impl ObjectType {
-    pub fn new(name: String, size: usize, destructor: Option<fn(*mut c_void)>) -> Self {
+    pub fn new(
+        name: String,
+        size: usize,
+        destructor: Option<extern "C" fn(*mut c_void)>,
+        copy: Option<extern "C" fn(*mut c_void, *mut c_void)>,
+    ) -> Self {
         let id = {
-            let mut next_id = NEXT_TYPE_ID.lock().expect("mutex lock should not fail");
+            let mut next_id = NEXT_TYPE_ID.lock().unwrap_or_else(|e| e.into_inner());
             let id = *next_id;
             *next_id += 1;
             id
@@ -31,6 +40,7 @@ impl ObjectType {
             name,
             size,
             destructor,
+            copy,
         }
     }
 }
@@ -38,13 +48,22 @@ impl ObjectType {
 pub fn register_object_type(
     name: &str,
     size: usize,
-    destructor: Option<fn(*mut c_void)>,
+    destructor: Option<extern "C" fn(*mut c_void)>,
 ) -> TypeId {
-    let obj_type = ObjectType::new(name.to_string(), size, destructor);
+    register_object_type_with_copy(name, size, destructor, None)
+}
+
+pub fn register_object_type_with_copy(
+    name: &str,
+    size: usize,
+    destructor: Option<extern "C" fn(*mut c_void)>,
+    copy: Option<extern "C" fn(*mut c_void, *mut c_void)>,
+) -> TypeId {
+    let obj_type = ObjectType::new(name.to_string(), size, destructor, copy);
     let id = obj_type.id;
     TYPE_REGISTRY
         .lock()
-        .expect("mutex lock should not fail")
+        .unwrap_or_else(|e| e.into_inner())
         .insert(id, obj_type);
     id
 }
@@ -54,7 +73,7 @@ pub fn call_object_destructor(type_id: TypeId, ptr: *mut c_void) {
         return;
     }
     let destructor = {
-        let registry = TYPE_REGISTRY.lock().expect("mutex lock should not fail");
+        let registry = TYPE_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
         registry
             .get(&type_id)
             .and_then(|obj_type| obj_type.destructor)
@@ -65,17 +84,20 @@ pub fn call_object_destructor(type_id: TypeId, ptr: *mut c_void) {
 }
 
 pub fn alloc_object(type_id: TypeId) -> *mut Value {
-    let registry = TYPE_REGISTRY.lock().expect("mutex lock should not fail");
-    let obj_type = registry.get(&type_id).expect("Invalid type ID");
+    let registry = TYPE_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(obj_type) = registry.get(&type_id) else {
+        return std::ptr::null_mut();
+    };
     let size = obj_type.size;
 
     // Allocate memory for the object
-    let layout = std::alloc::Layout::from_size_align(size, std::mem::align_of::<u8>())
-        .expect("memory layout should be valid");
+    let Ok(layout) = std::alloc::Layout::from_size_align(size, std::mem::align_of::<u8>()) else {
+        return std::ptr::null_mut();
+    };
     let ptr = unsafe { std::alloc::alloc(layout) };
 
     if ptr.is_null() {
-        panic!("Failed to allocate object");
+        return std::ptr::null_mut();
     }
 
     // Create ObjectRef with size for proper cleanup
@@ -132,24 +154,34 @@ pub unsafe fn get_object_type_id(obj: *const Value) -> TypeId {
 
 /// # Safety
 /// The `src` pointer must be valid and point to a `Value::Object`.
-/// Returns a new object that is a copy of the source.
+/// Returns a new object that is a copy of the source, or null if the type
+/// does not support copying (no copy callback registered).
 pub unsafe fn copy_object(src: *const Value) -> *mut Value {
     if src.is_null() {
         return std::ptr::null_mut();
     }
 
     let type_id = unsafe { get_object_type_id(src) };
-    let size = {
-        let registry = TYPE_REGISTRY.lock().expect("mutex lock should not fail");
-        let obj_type = registry.get(&type_id).expect("Invalid type ID");
-        obj_type.size
+    let copy_fn = {
+        let registry = TYPE_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(obj_type) = registry.get(&type_id) else {
+            return std::ptr::null_mut();
+        };
+        obj_type.copy
     };
+    let Some(copy_fn) = copy_fn else {
+        return std::ptr::null_mut();
+    };
+
     let dest = alloc_object(type_id);
+    if dest.is_null() {
+        return std::ptr::null_mut();
+    }
 
     unsafe {
         let src_ptr = get_object_ptr(src);
         let dest_ptr = get_object_ptr(dest);
-        std::ptr::copy_nonoverlapping(src_ptr as *const u8, dest_ptr as *mut u8, size);
+        copy_fn(src_ptr, dest_ptr);
     }
 
     dest
@@ -162,6 +194,40 @@ pub extern "C" fn mux_register_object_type(name: *const c_char, size: usize) -> 
     let c_str = unsafe { CStr::from_ptr(name) };
     let name_str = c_str.to_string_lossy().into_owned();
     register_object_type(&name_str, size, None)
+}
+
+/// Register a deep-copy callback for an object type.
+///
+/// `copy_fn(src, dst)` must copy all heap-allocated fields from `src` into the
+/// already-allocated `dst` buffer of the same size.  Without this, `mux_copy_object`
+/// returns null and the caller must handle the "type does not support copying"
+/// case.
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_register_object_copy(
+    type_id: TypeId,
+    copy_fn: extern "C" fn(*mut c_void, *mut c_void),
+) {
+    let mut registry = TYPE_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(obj_type) = registry.get_mut(&type_id) {
+        obj_type.copy = Some(copy_fn);
+    }
+}
+
+/// Register a destructor for an object type.
+///
+/// `destructor(ptr)` is called when the object's storage is being released
+/// so the type can release any heap-allocated fields it owns.  It is invoked
+/// from `Drop` for the underlying `ObjectData`.  Registering is idempotent;
+/// the most recent registration wins.
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_register_object_destructor(
+    type_id: TypeId,
+    destructor: extern "C" fn(*mut c_void),
+) {
+    let mut registry = TYPE_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(obj_type) = registry.get_mut(&type_id) {
+        obj_type.destructor = Some(destructor);
+    }
 }
 
 #[unsafe(no_mangle)]

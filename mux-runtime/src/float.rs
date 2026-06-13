@@ -67,31 +67,38 @@ pub extern "C" fn mux_float_to_string(f: f64) -> *mut c_char {
     } else {
         format!("{}", f)
     };
-    // Safe: format! produces valid UTF-8 without null bytes
-    let c_str = CString::new(s).expect("format output should be valid UTF-8");
-    c_str.into_raw()
-}
-
-/// # Safety
-/// v must be a valid pointer to a Value::Float.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mux_float_from_value(v: *mut Value) -> f64 {
-    if let Value::Float(f) = unsafe { &*v } {
-        f.into_inner()
-    } else {
-        panic!("Expected Float value");
+    match CString::new(s) {
+        Ok(c) => c.into_raw(),
+        Err(_) => std::ptr::null_mut(),
     }
 }
 
 /// # Safety
 /// v must be a valid pointer to a Value::Float.
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_float_from_value(v: *mut Value) -> f64 {
+    if v.is_null() {
+        return 0.0;
+    }
+    if let Value::Float(f) = unsafe { &*v } {
+        f.into_inner()
+    } else {
+        0.0
+    }
+}
+
+/// # Safety
+/// v must be a valid pointer to a Value::Int.
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_int_to_float(v: *mut Value) -> *mut Value {
+    if v.is_null() {
+        return std::ptr::null_mut();
+    }
     if let Value::Int(i) = unsafe { &*v } {
         let f = *i as f64;
         mux_rc_alloc(Value::Float(ordered_float::OrderedFloat(f)))
     } else {
-        panic!("Expected Int value");
+        std::ptr::null_mut()
     }
 }
 
@@ -99,10 +106,13 @@ pub unsafe extern "C" fn mux_int_to_float(v: *mut Value) -> *mut Value {
 /// v must be a valid pointer to a Value::Float.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mux_float_to_int(v: *mut Value) -> *mut Value {
+    if v.is_null() {
+        return std::ptr::null_mut();
+    }
     if let Value::Float(f) = unsafe { &*v } {
         mux_rc_alloc(Value::Int(f.into_inner() as i64))
     } else {
-        panic!("Expected Float value");
+        std::ptr::null_mut()
     }
 }
 

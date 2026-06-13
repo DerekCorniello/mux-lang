@@ -22,6 +22,87 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::Value;
 
+/// Deep-clone a Value: returns a new heap allocation whose payload is a
+/// recursively cloned copy of the source. The returned pointer has
+/// refcount = 1 and must eventually be released with `mux_rc_dec`.
+///
+/// For primitives (Int, Float, Bool, Unit) the new box wraps a copy
+/// of the value. For owned aggregates (String, List, Map, Set, Tuple,
+/// Optional, Result, Opaque) the inner data is recursively cloned. For
+/// `Value::Object` the call dispatches to `mux_copy_object` so that class
+/// fields participate in the copy via the registered copy callback, and
+/// the refcounted box returned by that call is forwarded to the caller
+/// unchanged (no re-wrap).
+///
+/// # Safety
+/// `val` must be a valid pointer returned by `mux_rc_alloc` (or null).
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mux_value_deep_clone(val: *const Value) -> *mut Value {
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
+    if let Value::Object(_) = unsafe { &*val } {
+        // copy_object already returns a refcounted *mut Value wrapping the
+        // new object; forward it directly so we do not double-wrap.
+        return unsafe { crate::object::copy_object(val as *mut Value) };
+    }
+    let cloned = unsafe { deep_clone_value(&*val) };
+    mux_rc_alloc(cloned)
+}
+
+#[allow(clippy::mutable_key_type)]
+fn deep_clone_value(val: &Value) -> Value {
+    match val {
+        Value::Unit | Value::Int(_) | Value::Bool(_) | Value::Float(_) => val.clone(),
+        Value::String(s) => Value::String(s.clone()),
+        Value::List(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(deep_clone_value(item));
+            }
+            Value::List(out)
+        }
+        Value::Map(entries) => {
+            let mut out = std::collections::BTreeMap::new();
+            for (k, v) in entries {
+                out.insert(deep_clone_value(k), deep_clone_value(v));
+            }
+            Value::Map(out)
+        }
+        Value::Set(items) => {
+            let mut out = std::collections::BTreeSet::new();
+            for item in items {
+                out.insert(deep_clone_value(item));
+            }
+            Value::Set(out)
+        }
+        Value::Tuple(t) => Value::Tuple(Box::new(crate::Tuple(
+            deep_clone_value(&t.0),
+            deep_clone_value(&t.1),
+        ))),
+        Value::Optional(opt) => match opt {
+            Some(inner) => Value::Optional(Some(Box::new(deep_clone_value(inner)))),
+            None => Value::Optional(None),
+        },
+        Value::Result(res) => match res {
+            Ok(inner) => Value::Result(Ok(Box::new(deep_clone_value(inner)))),
+            Err(inner) => Value::Result(Err(Box::new(deep_clone_value(inner)))),
+        },
+        Value::Object(obj) => unsafe {
+            let temp = Value::Object(obj.clone());
+            let copied_ptr = crate::object::copy_object(&temp as *const Value);
+            if copied_ptr.is_null() {
+                return Value::Object(obj.clone());
+            }
+            let result = (*copied_ptr).clone();
+            crate::object::free_object(copied_ptr);
+            result
+        },
+        Value::Opaque(bytes) => Value::Opaque(bytes.clone()),
+    }
+}
+
 /// Header prepended to every reference-counted Value allocation.
 /// Uses atomic operations for thread-safety.
 #[repr(C)]
@@ -41,7 +122,7 @@ impl RefHeader {
 
 /// Calculate the memory layout for RefHeader + Value
 #[inline]
-fn layout_for_value() -> Layout {
+fn layout_for_value() -> Option<Layout> {
     let header_size = std::mem::size_of::<RefHeader>();
     let value_size = std::mem::size_of::<Value>();
     let value_align = std::mem::align_of::<Value>();
@@ -54,8 +135,7 @@ fn layout_for_value() -> Layout {
     let header_padded = (header_size + value_align - 1) & !(value_align - 1);
     let total_size = header_padded + value_size;
 
-    Layout::from_size_align(total_size, total_align)
-        .expect("Failed to create layout for ref-counted Value")
+    Layout::from_size_align(total_size, total_align).ok()
 }
 
 #[inline]
@@ -76,12 +156,14 @@ fn value_offset() -> usize {
 #[allow(improper_ctypes_definitions)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_rc_alloc(value: Value) -> *mut Value {
-    let layout = layout_for_value();
+    let Some(layout) = layout_for_value() else {
+        return std::ptr::null_mut();
+    };
 
     unsafe {
         let ptr = alloc(layout);
         if ptr.is_null() {
-            panic!("Failed to allocate ref-counted Value: out of memory");
+            return std::ptr::null_mut();
         }
 
         let header = ptr as *mut RefHeader;
@@ -152,7 +234,9 @@ pub extern "C" fn mux_rc_dec(val: *mut Value) -> bool {
             std::ptr::drop_in_place(val);
 
             let alloc_ptr = get_alloc_base(val);
-            dealloc(alloc_ptr, layout_for_value());
+            if let Some(layout) = layout_for_value() {
+                dealloc(alloc_ptr, layout);
+            }
 
             true
         } else {
@@ -200,6 +284,7 @@ pub extern "C" fn mux_rc_clone(val: *mut Value) -> *mut Value {
 mod tests {
     use super::*;
     use crate::Value;
+    use std::ffi::c_void;
 
     #[test]
     fn test_alloc_and_free() {
@@ -313,5 +398,106 @@ mod tests {
         assert_eq!(mux_rc_count(val), 1);
 
         assert!(mux_rc_dec(val)); // Should clean up everything recursively
+    }
+
+    #[test]
+    fn test_deep_clone_primitives() {
+        let v = mux_rc_alloc(Value::Int(42));
+        let cloned = unsafe { mux_value_deep_clone(v) };
+        assert!(!cloned.is_null());
+        assert_eq!(mux_rc_count(cloned), 1);
+        unsafe {
+            assert!(matches!(&*cloned, Value::Int(42)));
+        }
+        assert!(mux_rc_dec(cloned));
+        assert!(mux_rc_dec(v));
+    }
+
+    #[test]
+    fn test_deep_clone_list_is_isolated() {
+        let original = mux_rc_alloc(Value::List(vec![
+            Value::Int(1),
+            Value::String("hello".to_string()),
+        ]));
+        let cloned = unsafe { mux_value_deep_clone(original) };
+        assert!(!cloned.is_null());
+        assert_eq!(mux_rc_count(cloned), 1);
+        assert_eq!(mux_rc_count(original), 1);
+
+        // Both halves must free cleanly without double-frees.
+        assert!(mux_rc_dec(cloned));
+        assert!(mux_rc_dec(original));
+    }
+
+    #[test]
+    fn test_deep_clone_nested_list() {
+        let inner = Value::List(vec![Value::Int(1), Value::Int(2)]);
+        let outer = mux_rc_alloc(Value::List(vec![inner.clone(), Value::Int(99)]));
+        let cloned = unsafe { mux_value_deep_clone(outer) };
+        assert!(!cloned.is_null());
+
+        // Verify the cloned tree shape matches.
+        unsafe {
+            if let Value::List(items) = &*cloned {
+                assert_eq!(items.len(), 2);
+                if let Value::List(inner_items) = &items[0] {
+                    assert_eq!(inner_items.len(), 2);
+                } else {
+                    panic!("Expected inner list");
+                }
+                if let Value::Int(99) = items[1] {
+                    // ok
+                } else {
+                    panic!("Expected int at index 1");
+                }
+            } else {
+                panic!("Expected outer list");
+            }
+        }
+        assert!(mux_rc_dec(cloned));
+        assert!(mux_rc_dec(outer));
+    }
+
+    #[test]
+    fn test_deep_clone_object_uses_copy_callback() {
+        // Register a class type and a copy callback that swaps a sentinel
+        // field.  This verifies that the deep-clone of a `Value::Object`
+        // dispatches to `mux_copy_object` rather than sharing the Rc.
+        let type_id = crate::object::register_object_type_with_copy(
+            "DeepCloneProbe",
+            std::mem::size_of::<u64>(),
+            None,
+            Some(probe_copy as extern "C" fn(*mut c_void, *mut c_void)),
+        );
+        let original = crate::object::alloc_object(type_id);
+        assert!(!original.is_null());
+
+        // Write sentinel into the original.
+        unsafe {
+            let data = crate::object::get_object_ptr(original) as *mut u64;
+            *data = 0xAABB;
+        }
+
+        // Deep-clone should call the copy callback and produce a fresh
+        // object with the same data, not share the original.
+        let cloned = unsafe { mux_value_deep_clone(original) };
+        assert!(!cloned.is_null());
+        assert_ne!(cloned, original);
+        unsafe {
+            let data = crate::object::get_object_ptr(cloned) as *const u64;
+            assert_eq!(*data, 0xAABB);
+        }
+
+        // Both boxes must free cleanly.
+        assert!(mux_rc_dec(cloned));
+        assert!(mux_rc_dec(original));
+    }
+
+    extern "C" fn probe_copy(src: *mut c_void, dst: *mut c_void) {
+        unsafe {
+            let s = src as *const u64;
+            let d = dst as *mut u64;
+            *d = *s;
+        }
     }
 }

@@ -41,9 +41,8 @@ impl fmt::Display for Map {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_map_value(map: *mut Map) -> *mut Value {
-    let map = unsafe { &*map };
-    let value = Value::Map(map.0.clone());
-    mux_rc_alloc(value)
+    let owned = unsafe { Box::from_raw(map) };
+    mux_rc_alloc(Value::Map(owned.0))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -143,9 +142,10 @@ pub unsafe extern "C" fn mux_map_is_empty(map: *const Map) -> bool {
 pub extern "C" fn mux_map_to_string(map: *const Map) -> *mut c_char {
     let map = unsafe { &*map };
     let s = map.to_string();
-    // Safe: to_string produces valid UTF-8 without null bytes
-    let c_str = CString::new(s).expect("to_string should produce valid UTF-8");
-    c_str.into_raw()
+    match CString::new(s) {
+        Ok(c) => c.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

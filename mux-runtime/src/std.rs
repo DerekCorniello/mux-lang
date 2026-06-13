@@ -97,8 +97,8 @@ pub extern "C" fn mux_value_add(a: *mut Value, b: *mut Value) -> *mut Value {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
 pub extern "C" fn mux_list_value(list: *mut List) -> *mut Value {
-    let list_ref = unsafe { &*list };
-    mux_rc_alloc(Value::List(list_ref.0.clone()))
+    let owned = unsafe { Box::from_raw(list) };
+    mux_rc_alloc(Value::List(owned.0))
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -148,9 +148,10 @@ pub extern "C" fn mux_value_get_set(val: *mut Value) -> *mut Set {
 pub extern "C" fn mux_value_to_string(val: *mut Value) -> *mut c_char {
     let value = unsafe { &*val };
     let s = value.to_string();
-    // Safe: to_string produces valid UTF-8 without null bytes
-    let c_str = CString::new(s).expect("to_string should produce valid UTF-8");
-    c_str.into_raw()
+    match CString::new(s) {
+        Ok(c) => c.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -201,12 +202,14 @@ pub extern "C" fn mux_value_list_slice(val: *const Value, start: i64, end: i64) 
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn mux_value_to_list(val: *mut Value) -> *mut crate::list::List {
-    // Clone the value instead of taking ownership
+    if val.is_null() {
+        return std::ptr::null_mut();
+    }
     let val = unsafe { (*val).clone() };
     if let Value::List(vec) = val {
         Box::into_raw(Box::new(crate::list::List(vec)))
     } else {
-        panic!("Expected List value");
+        std::ptr::null_mut()
     }
 }
 

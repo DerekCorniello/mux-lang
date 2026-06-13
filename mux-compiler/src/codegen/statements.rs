@@ -556,24 +556,6 @@ impl<'a> CodeGenerator<'a> {
         Ok(false)
     }
 
-    fn return_int_value(&mut self, value: BasicValueEnum<'a>) -> Result<(), String> {
-        let raw_int = self.get_raw_int_value(value)?;
-        self.generate_all_scopes_cleanup()?;
-        self.builder
-            .build_return(Some(&raw_int))
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    fn return_float_value(&mut self, value: BasicValueEnum<'a>) -> Result<(), String> {
-        let raw_float = self.get_raw_float_value(value)?;
-        self.generate_all_scopes_cleanup()?;
-        self.builder
-            .build_return(Some(&raw_float))
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
     fn return_bool_int_value(
         &mut self,
         int_val: inkwell::values::IntValue<'a>,
@@ -666,8 +648,22 @@ impl<'a> CodeGenerator<'a> {
         value: BasicValueEnum<'a>,
     ) -> Result<(), String> {
         match return_type {
-            ResolvedType::Primitive(PrimitiveType::Int) => self.return_int_value(value),
-            ResolvedType::Primitive(PrimitiveType::Float) => self.return_float_value(value),
+            ResolvedType::Primitive(PrimitiveType::Int) => {
+                let raw = self.get_raw_int_value(value)?;
+                self.generate_all_scopes_cleanup()?;
+                self.builder
+                    .build_return(Some(&raw))
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            ResolvedType::Primitive(PrimitiveType::Float) => {
+                let raw = self.get_raw_float_value(value)?;
+                self.generate_all_scopes_cleanup()?;
+                self.builder
+                    .build_return(Some(&raw))
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            }
             ResolvedType::Primitive(PrimitiveType::Bool) => self.return_bool_value(value),
             ResolvedType::List(_) => self.return_list_value(value),
             _ => self.return_boxed_complex_value(value),
@@ -1666,18 +1662,20 @@ impl<'a> CodeGenerator<'a> {
         expr_type: &Type,
     ) -> Result<inkwell::values::IntValue<'a>, String> {
         match expr_type {
-            Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
-                let left_int = self.get_raw_int_value(left)?;
-                let right_int = self.get_raw_int_value(right)?;
+            Type::Primitive(PrimitiveType::Int)
+            | Type::Primitive(PrimitiveType::Char)
+            | Type::Primitive(PrimitiveType::Bool) => {
+                let get_raw = |s: &mut Self, v| {
+                    if matches!(expr_type, Type::Primitive(PrimitiveType::Bool)) {
+                        s.get_raw_bool_value(v)
+                    } else {
+                        s.get_raw_int_value(v)
+                    }
+                };
+                let left_raw = get_raw(self, left)?;
+                let right_raw = get_raw(self, right)?;
                 self.builder
-                    .build_int_compare(inkwell::IntPredicate::EQ, left_int, right_int, "eq")
-                    .map_err(|e| e.to_string())
-            }
-            Type::Primitive(PrimitiveType::Bool) => {
-                let left_bool = self.get_raw_bool_value(left)?;
-                let right_bool = self.get_raw_bool_value(right)?;
-                self.builder
-                    .build_int_compare(inkwell::IntPredicate::EQ, left_bool, right_bool, "eq")
+                    .build_int_compare(inkwell::IntPredicate::EQ, left_raw, right_raw, "eq")
                     .map_err(|e| e.to_string())
             }
             Type::Primitive(PrimitiveType::Float) => {

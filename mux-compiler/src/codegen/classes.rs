@@ -103,6 +103,174 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
+    /// Generate per-class deep-copy and destructor functions and store
+    /// their function pointers in `class_copy_fns` / `class_destructor_fns`
+    /// so the constructor body can register them with the runtime.
+    ///
+    /// The copy function:
+    ///   1. Copies the class data bytes from `src` to `dst`.
+    ///   2. For each user field, replaces the destination pointer with a
+    ///      refcount-isolated clone produced by `mux_value_deep_clone`.
+    ///
+    /// The destructor function calls `mux_rc_dec` on every user field so
+    /// the runtime releases each boxed `Value` when the class is freed.
+    pub(super) fn generate_class_copy_and_destructor(
+        &mut self,
+        name: &str,
+        fields: &[Field],
+    ) -> Result<(), String> {
+        let void_type = self.context.void_type();
+        let i8_ptr = self.context.ptr_type(AddressSpace::default());
+        let fn_type = void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false);
+        let copy_fn = self.module.add_function(
+            &format!("{}.copy", name),
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        let destructor_type = void_type.fn_type(&[i8_ptr.into()], false);
+        let destructor_fn = self.module.add_function(
+            &format!("{}.destructor", name),
+            destructor_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        self.class_copy_fns.insert(
+            name.to_string(),
+            copy_fn.as_global_value().as_pointer_value(),
+        );
+        self.class_destructor_fns.insert(
+            name.to_string(),
+            destructor_fn.as_global_value().as_pointer_value(),
+        );
+
+        let class_type = *self
+            .type_map
+            .get(name)
+            .ok_or_else(|| format!("Class {} not in type map", name))?;
+        let class_size = class_type
+            .size_of()
+            .ok_or_else(|| format!("Cannot get size of class {}", name))?;
+
+        // Build the copy function body.
+        let copy_entry = self.context.append_basic_block(copy_fn, "entry");
+        self.builder.position_at_end(copy_entry);
+        let src_ptr = copy_fn.get_nth_param(0).unwrap().into_pointer_value();
+        let dst_ptr = copy_fn.get_nth_param(1).unwrap().into_pointer_value();
+        self.generate_class_copy_body(name, fields, class_type, src_ptr, dst_ptr, class_size)?;
+        self.builder.build_return(None).map_err(|e| e.to_string())?;
+
+        // Build the destructor function body.
+        let destr_entry = self.context.append_basic_block(destructor_fn, "entry");
+        self.builder.position_at_end(destr_entry);
+        let obj_ptr = destructor_fn.get_nth_param(0).unwrap().into_pointer_value();
+        self.generate_class_destructor_body(name, fields, class_type, obj_ptr)?;
+        self.builder.build_return(None).map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    fn generate_class_copy_body(
+        &mut self,
+        name: &str,
+        fields: &[Field],
+        class_type: BasicTypeEnum<'a>,
+        src_ptr: inkwell::values::PointerValue<'a>,
+        dst_ptr: inkwell::values::PointerValue<'a>,
+        class_size: inkwell::values::IntValue<'a>,
+    ) -> Result<(), String> {
+        // Step 1: bulk-copy the class data (vtable + raw field bytes).
+        let dst_typed = self
+            .builder
+            .build_pointer_cast(
+                dst_ptr,
+                self.context.ptr_type(AddressSpace::default()),
+                "dst_typed",
+            )
+            .map_err(|e| e.to_string())?;
+        let src_typed = self
+            .builder
+            .build_pointer_cast(
+                src_ptr,
+                self.context.ptr_type(AddressSpace::default()),
+                "src_typed",
+            )
+            .map_err(|e| e.to_string())?;
+        self.builder
+            .build_memcpy(dst_typed, 1, src_typed, 1, class_size)
+            .map_err(|e| e.to_string())?;
+
+        // Step 2: for each user field, deep-clone the boxed value.
+        let deep_clone = self
+            .runtime_function("mux_value_deep_clone")
+            .ok_or("mux_value_deep_clone not found")?;
+        let i8_ptr_type = self.context.ptr_type(AddressSpace::default());
+        for field in fields.iter() {
+            let field_index = self
+                .field_map
+                .get(name)
+                .and_then(|m| m.get(&field.name))
+                .copied()
+                .ok_or_else(|| format!("Field {} not in field_map for {}", field.name, name))?;
+            let field_ptr = self
+                .builder
+                .build_struct_gep(class_type, dst_typed, field_index as u32, &field.name)
+                .map_err(|e| e.to_string())?;
+            let field_val = self
+                .builder
+                .build_load(i8_ptr_type, field_ptr, &field.name)
+                .map_err(|e| e.to_string())?;
+            let cloned = self
+                .builder
+                .build_call(deep_clone, &[field_val.into()], &field.name)
+                .map_err(|e| e.to_string())?
+                .try_as_basic_value()
+                .left()
+                .ok_or_else(|| {
+                    format!("mux_value_deep_clone returned no value for {}", field.name)
+                })?;
+            self.builder
+                .build_store(field_ptr, cloned)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn generate_class_destructor_body(
+        &mut self,
+        name: &str,
+        fields: &[Field],
+        class_type: BasicTypeEnum<'a>,
+        obj_ptr: inkwell::values::PointerValue<'a>,
+    ) -> Result<(), String> {
+        let rc_dec = self
+            .runtime_function("mux_rc_dec")
+            .ok_or("mux_rc_dec not found")?;
+        let i8_ptr_type = self.context.ptr_type(AddressSpace::default());
+        let obj_typed = self
+            .builder
+            .build_pointer_cast(obj_ptr, i8_ptr_type, "obj_typed")
+            .map_err(|e| e.to_string())?;
+        for field in fields.iter() {
+            let field_index = self
+                .field_map
+                .get(name)
+                .and_then(|m| m.get(&field.name))
+                .copied()
+                .ok_or_else(|| format!("Field {} not in field_map for {}", field.name, name))?;
+            let field_ptr = self
+                .builder
+                .build_struct_gep(class_type, obj_typed, field_index as u32, &field.name)
+                .map_err(|e| e.to_string())?;
+            let field_val = self
+                .builder
+                .build_load(i8_ptr_type, field_ptr, &field.name)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_call(rc_dec, &[field_val.into()], &field.name)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
     pub(super) fn generate_class_vtables(
         &mut self,
         class_name: &str,

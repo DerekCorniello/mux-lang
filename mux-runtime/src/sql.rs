@@ -35,17 +35,17 @@ lazy_static! {
     static ref SQL_CONNECTION_TYPE_ID: TypeId = register_object_type(
         "Connection",
         std::mem::size_of::<i64>(),
-        Some(drop_connection_handle),
+        Some(drop_connection_handle as extern "C" fn(*mut c_void)),
     );
     static ref SQL_TRANSACTION_TYPE_ID: TypeId = register_object_type(
         "Transaction",
         std::mem::size_of::<i64>(),
-        Some(drop_transaction_handle),
+        Some(drop_transaction_handle as extern "C" fn(*mut c_void)),
     );
     static ref SQL_RESULTSET_TYPE_ID: TypeId = register_object_type(
         "ResultSet",
         std::mem::size_of::<i64>(),
-        Some(drop_resultset_handle),
+        Some(drop_resultset_handle as extern "C" fn(*mut c_void)),
     );
 }
 
@@ -220,7 +220,7 @@ fn remove_resultset(handle: i64) {
     });
 }
 
-fn drop_connection_handle(ptr: *mut c_void) {
+extern "C" fn drop_connection_handle(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
@@ -234,7 +234,7 @@ fn connection_still_alive(handle: i64) -> bool {
     SQL_CONNECTIONS.with(|connections| connections.borrow().contains_key(&handle))
 }
 
-fn drop_transaction_handle(ptr: *mut c_void) {
+extern "C" fn drop_transaction_handle(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
@@ -263,7 +263,7 @@ fn drop_transaction_handle(ptr: *mut c_void) {
     }
 }
 
-fn drop_resultset_handle(ptr: *mut c_void) {
+extern "C" fn drop_resultset_handle(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
