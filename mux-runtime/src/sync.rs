@@ -205,7 +205,12 @@ mod sync_backend {
 
         match mode {
             Some(true) => unsafe { ReleaseSRWLockExclusive(ptr) },
-            Some(false) | None => unsafe { ReleaseSRWLockShared(ptr) },
+            Some(false) => unsafe { ReleaseSRWLockShared(ptr) },
+            None => {
+                // No tracked hold mode for this thread; releasing a lock that
+                // was never acquired is UB on Windows SRW locks.
+                return -1;
+            }
         }
         0
     }

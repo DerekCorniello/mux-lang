@@ -7,7 +7,7 @@ use crate::ast::{EnumVariant, ExpressionNode, Field, PrimitiveType, TypeKind};
 use crate::semantics::{GenericContext, MethodSig, Type};
 use inkwell::AddressSpace;
 use inkwell::types::BasicType;
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, IntValue, PointerValue};
 use std::collections::HashMap;
 
 impl<'a> CodeGenerator<'a> {
@@ -133,6 +133,91 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
+    fn register_class_type(
+        &mut self,
+        name: &str,
+        type_name_global: PointerValue<'a>,
+        type_size: IntValue<'a>,
+    ) -> Result<IntValue<'a>, String> {
+        let register_func = self
+            .runtime_function("mux_register_object_type")
+            .ok_or("mux_register_object_type not found")?;
+        let type_id = self
+            .builder
+            .build_call(
+                register_func,
+                &[type_name_global.into(), type_size.into()],
+                "type_id",
+            )
+            .map_err(|e| e.to_string())?;
+        let type_id_val = type_id
+            .try_as_basic_value()
+            .left()
+            .ok_or("type_id call should return a basic value")?
+            .into_int_value();
+
+        if let (Some(copy_fn), Some(destructor_fn)) = (
+            self.class_copy_fns.get(name).copied(),
+            self.class_destructor_fns.get(name).copied(),
+        ) {
+            let register_copy = self
+                .runtime_function("mux_register_object_copy")
+                .ok_or("mux_register_object_copy not found")?;
+            self.builder
+                .build_call(
+                    register_copy,
+                    &[type_id_val.into(), copy_fn.into()],
+                    "register_copy",
+                )
+                .map_err(|e| e.to_string())?;
+            let register_destructor = self
+                .runtime_function("mux_register_object_destructor")
+                .ok_or("mux_register_object_destructor not found")?;
+            self.builder
+                .build_call(
+                    register_destructor,
+                    &[type_id_val.into(), destructor_fn.into()],
+                    "register_destructor",
+                )
+                .map_err(|e| e.to_string())?;
+        }
+
+        Ok(type_id_val)
+    }
+
+    fn allocate_class_object(
+        &mut self,
+        type_id_val: IntValue<'a>,
+    ) -> Result<(PointerValue<'a>, PointerValue<'a>), String> {
+        let alloc_func = self
+            .runtime_function("mux_alloc_object")
+            .ok_or("mux_alloc_object not found")?;
+        let obj_ptr = self
+            .builder
+            .build_call(alloc_func, &[type_id_val.into()], "obj_ptr")
+            .map_err(|e| e.to_string())?;
+        let obj_value_ptr = obj_ptr
+            .try_as_basic_value()
+            .left()
+            .ok_or("alloc_object call should return a pointer value")?
+            .into_pointer_value();
+
+        let get_ptr_func = self
+            .runtime_function("mux_get_object_ptr")
+            .ok_or("mux_get_object_ptr not found")?;
+        let data_ptr = self
+            .builder
+            .build_call(get_ptr_func, &[obj_value_ptr.into()], "data_ptr")
+            .map_err(|e| e.to_string())?;
+        let struct_ptr = data_ptr
+            .try_as_basic_value()
+            .left()
+            .ok_or("mux_get_object_ptr should return a basic value")?
+            .into_pointer_value();
+
+        Ok((obj_value_ptr, struct_ptr))
+    }
+
     pub(super) fn generate_class_constructors(
         &mut self,
         name: &str,
@@ -168,82 +253,14 @@ impl<'a> CodeGenerator<'a> {
             .ok_or("Class type not found")?
             .size_of()
             .ok_or("Cannot get type size")?;
-        let register_func = self
-            .runtime_function("mux_register_object_type")
-            .ok_or("mux_register_object_type not found")?;
-        let type_id = self
-            .builder
-            .build_call(
-                register_func,
-                &[type_name_global.as_pointer_value().into(), type_size.into()],
-                "type_id",
-            )
-            .map_err(|e| e.to_string())?;
-        let type_id_val = type_id
-            .try_as_basic_value()
-            .left()
-            .expect("type_id call should return a basic value")
-            .into_int_value();
+        let type_id_val =
+            self.register_class_type(name, type_name_global.as_pointer_value(), type_size)?;
 
-        // Register the per-class copy and destructor callbacks so the
-        // runtime can deep-copy and release instances safely.
-        if let (Some(copy_fn), Some(destructor_fn)) = (
-            self.class_copy_fns.get(name).copied(),
-            self.class_destructor_fns.get(name).copied(),
-        ) {
-            let register_copy = self
-                .runtime_function("mux_register_object_copy")
-                .ok_or("mux_register_object_copy not found")?;
-            self.builder
-                .build_call(
-                    register_copy,
-                    &[type_id_val.into(), copy_fn.into()],
-                    "register_copy",
-                )
-                .map_err(|e| e.to_string())?;
-            let register_destructor = self
-                .runtime_function("mux_register_object_destructor")
-                .ok_or("mux_register_object_destructor not found")?;
-            self.builder
-                .build_call(
-                    register_destructor,
-                    &[type_id_val.into(), destructor_fn.into()],
-                    "register_destructor",
-                )
-                .map_err(|e| e.to_string())?;
-        }
-
-        // allocate the object
-        let alloc_func = self
-            .runtime_function("mux_alloc_object")
-            .ok_or("mux_alloc_object not found")?;
-        let obj_ptr = self
-            .builder
-            .build_call(alloc_func, &[type_id_val.into()], "obj_ptr")
-            .map_err(|e| e.to_string())?;
-        let obj_value_ptr = obj_ptr
-            .try_as_basic_value()
-            .left()
-            .expect("alloc_object call should return a pointer value")
-            .into_pointer_value();
-
-        // get the object data pointer
-        let get_ptr_func = self
-            .runtime_function("mux_get_object_ptr")
-            .ok_or("mux_get_object_ptr not found")?;
-        let data_ptr = self
-            .builder
-            .build_call(get_ptr_func, &[obj_value_ptr.into()], "data_ptr")
-            .map_err(|e| e.to_string())?;
-        let struct_ptr = data_ptr
-            .try_as_basic_value()
-            .left()
-            .expect("mux_get_object_ptr should return a basic value")
-            .into_pointer_value();
+        let (obj_value_ptr, struct_ptr) = self.allocate_class_object(type_id_val)?;
 
         // cast to class struct pointer
         let class_type = self.type_map.get(name).ok_or("Class type not found")?;
-        let class_type_clone = *class_type; // clone to avoid borrow issues
+        let class_type_clone = *class_type;
         let struct_ptr_typed = self
             .builder
             .build_pointer_cast(
@@ -669,78 +686,10 @@ impl<'a> CodeGenerator<'a> {
             global.set_linkage(inkwell::module::Linkage::External);
         }
         let type_size = class_type.size_of().ok_or("Cannot get type size")?;
-        let register_func = self
-            .runtime_function("mux_register_object_type")
-            .ok_or("mux_register_object_type not found")?;
-        let type_id = self
-            .builder
-            .build_call(
-                register_func,
-                &[type_name_global.as_pointer_value().into(), type_size.into()],
-                "type_id",
-            )
-            .map_err(|e| e.to_string())?;
-        let type_id_val = type_id
-            .try_as_basic_value()
-            .left()
-            .expect("mux_type_register should return a basic value")
-            .into_int_value();
+        let type_id_val =
+            self.register_class_type(class_name, type_name_global.as_pointer_value(), type_size)?;
 
-        // Register the per-class copy and destructor callbacks so the
-        // runtime can deep-copy and release instances safely.
-        if let (Some(copy_fn), Some(destructor_fn)) = (
-            self.class_copy_fns.get(class_name).copied(),
-            self.class_destructor_fns.get(class_name).copied(),
-        ) {
-            let register_copy = self
-                .runtime_function("mux_register_object_copy")
-                .ok_or("mux_register_object_copy not found")?;
-            self.builder
-                .build_call(
-                    register_copy,
-                    &[type_id_val.into(), copy_fn.into()],
-                    "register_copy",
-                )
-                .map_err(|e| e.to_string())?;
-            let register_destructor = self
-                .runtime_function("mux_register_object_destructor")
-                .ok_or("mux_register_object_destructor not found")?;
-            self.builder
-                .build_call(
-                    register_destructor,
-                    &[type_id_val.into(), destructor_fn.into()],
-                    "register_destructor",
-                )
-                .map_err(|e| e.to_string())?;
-        }
-
-        // allocate the object using runtime
-        let alloc_func = self
-            .runtime_function("mux_alloc_object")
-            .ok_or("mux_alloc_object not found")?;
-        let obj_ptr = self
-            .builder
-            .build_call(alloc_func, &[type_id_val.into()], "obj_ptr")
-            .map_err(|e| e.to_string())?;
-        let obj_value_ptr = obj_ptr
-            .try_as_basic_value()
-            .left()
-            .expect("mux_alloc_object should return a basic value")
-            .into_pointer_value();
-
-        // get the object data pointer for field initialization
-        let get_ptr_func = self
-            .runtime_function("mux_get_object_ptr")
-            .ok_or("mux_get_object_ptr not found")?;
-        let data_ptr = self
-            .builder
-            .build_call(get_ptr_func, &[obj_value_ptr.into()], "data_ptr")
-            .map_err(|e| e.to_string())?;
-        let struct_ptr = data_ptr
-            .try_as_basic_value()
-            .left()
-            .expect("mux_get_object_ptr should return a basic value")
-            .into_pointer_value();
+        let (obj_value_ptr, struct_ptr) = self.allocate_class_object(type_id_val)?;
 
         // initialize fields based on their types
         if let Some(fields) = self.classes.get(class_name) {

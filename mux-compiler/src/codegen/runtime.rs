@@ -1629,7 +1629,7 @@ impl<'a> CodeGenerator<'a> {
                 "mux_new_string_from_cstr",
                 &[error_msg.as_pointer_value().into()],
             )
-            .expect("mux_new_string_from_cstr should always return a value");
+            .ok_or("mux_new_string_from_cstr should always return a value")?;
         self.generate_runtime_call("mux_print", &[error_str.into()]);
         self.generate_runtime_call("mux_flush_stdout", &[]);
         self.generate_runtime_call(

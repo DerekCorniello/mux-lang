@@ -89,11 +89,16 @@ fn deep_clone_value(val: &Value) -> Value {
             Ok(inner) => Value::Result(Ok(Box::new(deep_clone_value(inner)))),
             Err(inner) => Value::Result(Err(Box::new(deep_clone_value(inner)))),
         },
-        Value::Object(_) => {
-            // Unreachable: callers handle Value::Object via the dedicated
-            // branch in mux_value_deep_clone, which avoids a double-wrap.
-            unreachable!("Value::Object must be handled by mux_value_deep_clone")
-        }
+        Value::Object(obj) => unsafe {
+            let temp = Value::Object(obj.clone());
+            let copied_ptr = crate::object::copy_object(&temp as *const Value);
+            if copied_ptr.is_null() {
+                return Value::Object(obj.clone());
+            }
+            let result = (*copied_ptr).clone();
+            crate::object::free_object(copied_ptr);
+            result
+        },
         Value::Opaque(bytes) => Value::Opaque(bytes.clone()),
     }
 }

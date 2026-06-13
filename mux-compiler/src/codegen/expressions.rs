@@ -3222,7 +3222,7 @@ impl<'a> CodeGenerator<'a> {
                 let raw_map_val = raw_map
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_value_get_map should return a basic value");
+                    .ok_or("mux_value_get_map should return a basic value")?;
                 self.builder
                     .build_call(free_map, &[raw_map_val.into()], "free_map")
                     .map_err(|e| e.to_string())?;

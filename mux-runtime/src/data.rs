@@ -203,14 +203,17 @@ fn build_csv_string(headers: &[String], rows: &[Vec<String>], include_headers: b
         let mut wtr = csv::Writer::from_writer(&mut output);
 
         if include_headers && !headers.is_empty() {
-            let _ = wtr.write_record(headers);
+            wtr.write_record(headers)
+                .unwrap_or_else(|e| eprintln!("CSV header write error: {e}"));
         }
 
         for row in rows {
-            let _ = wtr.write_record(row);
+            wtr.write_record(row)
+                .unwrap_or_else(|e| eprintln!("CSV row write error: {e}"));
         }
 
-        let _ = wtr.flush();
+        wtr.flush()
+            .unwrap_or_else(|e| eprintln!("CSV flush error: {e}"));
     }
     String::from_utf8(output).unwrap_or_else(|_| "invalid UTF-8 in CSV output".to_string())
 }
