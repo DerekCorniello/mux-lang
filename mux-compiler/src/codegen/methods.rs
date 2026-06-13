@@ -13,6 +13,28 @@ use crate::semantics::Type;
 
 use super::CodeGenerator;
 
+fn gen_one_expr<'a>(
+    s: &mut CodeGenerator<'a>,
+    args: &[ExpressionNode],
+) -> Result<BasicValueEnum<'a>, String> {
+    if args.len() != 1 {
+        return Err("method takes exactly 1 argument".to_string());
+    }
+    s.generate_expression(&args[0])
+}
+
+fn gen_two_expr<'a>(
+    s: &mut CodeGenerator<'a>,
+    args: &[ExpressionNode],
+) -> Result<(BasicValueEnum<'a>, BasicValueEnum<'a>), String> {
+    if args.len() != 2 {
+        return Err("method takes exactly 2 arguments".to_string());
+    }
+    let a = s.generate_expression(&args[0])?;
+    let b = s.generate_expression(&args[1])?;
+    Ok((a, b))
+}
+
 impl<'a> CodeGenerator<'a> {
     fn call_cstr_to_mux_string(
         &self,
@@ -128,6 +150,22 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
+    fn with_extracted<F>(
+        &mut self,
+        obj_value: BasicValueEnum<'a>,
+        get_func: &str,
+        free_func: &str,
+        f: F,
+    ) -> Result<BasicValueEnum<'a>, String>
+    where
+        F: FnOnce(&mut Self, BasicValueEnum<'a>) -> Result<BasicValueEnum<'a>, String>,
+    {
+        let raw = self.extract_raw_pointer(obj_value, get_func, "extract")?;
+        let result = f(self, raw)?;
+        self.free_raw_pointer(raw, free_func)?;
+        Ok(result)
+    }
+
     fn with_extracted_list<F>(
         &mut self,
         obj_value: BasicValueEnum<'a>,
@@ -136,10 +174,7 @@ impl<'a> CodeGenerator<'a> {
     where
         F: FnOnce(&mut Self, BasicValueEnum<'a>) -> Result<BasicValueEnum<'a>, String>,
     {
-        let raw = self.extract_raw_pointer(obj_value, "mux_value_get_list", "extract_list")?;
-        let result = f(self, raw)?;
-        self.free_raw_pointer(raw, "mux_free_list")?;
-        Ok(result)
+        self.with_extracted(obj_value, "mux_value_get_list", "mux_free_list", f)
     }
 
     fn with_extracted_map<F>(
@@ -150,10 +185,7 @@ impl<'a> CodeGenerator<'a> {
     where
         F: FnOnce(&mut Self, BasicValueEnum<'a>) -> Result<BasicValueEnum<'a>, String>,
     {
-        let raw = self.extract_raw_pointer(obj_value, "mux_value_get_map", "extract_map")?;
-        let result = f(self, raw)?;
-        self.free_raw_pointer(raw, "mux_free_map")?;
-        Ok(result)
+        self.with_extracted(obj_value, "mux_value_get_map", "mux_free_map", f)
     }
 
     fn with_extracted_set<F>(
@@ -164,10 +196,7 @@ impl<'a> CodeGenerator<'a> {
     where
         F: FnOnce(&mut Self, BasicValueEnum<'a>) -> Result<BasicValueEnum<'a>, String>,
     {
-        let raw = self.extract_raw_pointer(obj_value, "mux_value_get_set", "extract_set")?;
-        let result = f(self, raw)?;
-        self.free_raw_pointer(raw, "mux_free_set")?;
-        Ok(result)
+        self.with_extracted(obj_value, "mux_value_get_set", "mux_free_set", f)
     }
 
     fn call_string_conversion_func(
@@ -446,39 +475,15 @@ impl<'a> CodeGenerator<'a> {
             return Ok(None);
         };
 
-        // helper to validate one-arg methods and produce expression
-        fn gen_one<'a>(
-            s: &mut CodeGenerator<'a>,
-            args: &[ExpressionNode],
-        ) -> Result<BasicValueEnum<'a>, String> {
-            if args.len() != 1 {
-                return Err("method takes exactly 1 argument".to_string());
-            }
-            s.generate_expression(&args[0])
-        }
-
-        // helper to validate two-arg methods
-        fn gen_two<'a>(
-            s: &mut CodeGenerator<'a>,
-            args: &[ExpressionNode],
-        ) -> Result<(BasicValueEnum<'a>, BasicValueEnum<'a>), String> {
-            if args.len() != 2 {
-                return Err("method takes exactly 2 arguments".to_string());
-            }
-            let a = s.generate_expression(&args[0])?;
-            let b = s.generate_expression(&args[1])?;
-            Ok((a, b))
-        }
-
         match type_name.as_str() {
             "TcpStream" => match method_name {
                 "read" => {
-                    let size = gen_one(self, args)?;
+                    let size = gen_one_expr(self, args)?;
                     let call = self.build_net_call("mux_net_tcp_read", &[obj_value, size])?;
                     Ok(Some(call))
                 }
                 "write" => {
-                    let data = gen_one(self, args)?;
+                    let data = gen_one_expr(self, args)?;
                     let call = self.build_net_call("mux_net_tcp_write", &[obj_value, data])?;
                     Ok(Some(call))
                 }
@@ -488,7 +493,7 @@ impl<'a> CodeGenerator<'a> {
                     Ok(Some(call))
                 }
                 "set_nonblocking" => {
-                    let bool_val = gen_one(self, args)?;
+                    let bool_val = gen_one_expr(self, args)?;
                     let converted = self.bool_to_i32(bool_val)?;
                     let call = self
                         .build_net_call("mux_net_tcp_set_nonblocking", &[obj_value, converted])?;
@@ -518,7 +523,7 @@ impl<'a> CodeGenerator<'a> {
                     Ok(Some(call))
                 }
                 "set_nonblocking" => {
-                    let bool_val = gen_one(self, args)?;
+                    let bool_val = gen_one_expr(self, args)?;
                     let converted = self.bool_to_i32(bool_val)?;
                     let call = self.build_net_call(
                         "mux_net_tcp_listener_set_nonblocking",
@@ -536,13 +541,13 @@ impl<'a> CodeGenerator<'a> {
             },
             "UdpSocket" => match method_name {
                 "send_to" => {
-                    let (data, addr) = gen_two(self, args)?;
+                    let (data, addr) = gen_two_expr(self, args)?;
                     let call =
                         self.build_net_call("mux_net_udp_send_to", &[obj_value, data, addr])?;
                     Ok(Some(call))
                 }
                 "recv_from" => {
-                    let size = gen_one(self, args)?;
+                    let size = gen_one_expr(self, args)?;
                     let call = self.build_net_call("mux_net_udp_recv_from", &[obj_value, size])?;
                     Ok(Some(call))
                 }
@@ -552,7 +557,7 @@ impl<'a> CodeGenerator<'a> {
                     Ok(Some(call))
                 }
                 "set_nonblocking" => {
-                    let bool_val = gen_one(self, args)?;
+                    let bool_val = gen_one_expr(self, args)?;
                     let converted = self.bool_to_i32(bool_val)?;
                     let call = self
                         .build_net_call("mux_net_udp_set_nonblocking", &[obj_value, converted])?;
@@ -666,28 +671,6 @@ impl<'a> CodeGenerator<'a> {
             return Ok(None);
         };
 
-        fn gen_one<'a>(
-            s: &mut CodeGenerator<'a>,
-            args: &[ExpressionNode],
-        ) -> Result<BasicValueEnum<'a>, String> {
-            if args.len() != 1 {
-                return Err("method takes exactly 1 argument".to_string());
-            }
-            s.generate_expression(&args[0])
-        }
-
-        fn gen_two<'a>(
-            s: &mut CodeGenerator<'a>,
-            args: &[ExpressionNode],
-        ) -> Result<(BasicValueEnum<'a>, BasicValueEnum<'a>), String> {
-            if args.len() != 2 {
-                return Err("method takes exactly 2 arguments".to_string());
-            }
-            let a = s.generate_expression(&args[0])?;
-            let b = s.generate_expression(&args[1])?;
-            Ok((a, b))
-        }
-
         match type_name.as_str() {
             "Connection" => match method_name {
                 "close" => {
@@ -696,12 +679,12 @@ impl<'a> CodeGenerator<'a> {
                         .map(Some)
                 }
                 "execute" => {
-                    let sql = gen_one(self, args)?;
+                    let sql = gen_one_expr(self, args)?;
                     self.build_net_call("mux_sql_connection_execute", &[obj_value, sql])
                         .map(Some)
                 }
                 "execute_params" => {
-                    let (sql, params) = gen_two(self, args)?;
+                    let (sql, params) = gen_two_expr(self, args)?;
                     self.build_net_call(
                         "mux_sql_connection_execute_params",
                         &[obj_value, sql, params],
@@ -709,12 +692,12 @@ impl<'a> CodeGenerator<'a> {
                     .map(Some)
                 }
                 "query" => {
-                    let sql = gen_one(self, args)?;
+                    let sql = gen_one_expr(self, args)?;
                     self.build_net_call("mux_sql_connection_query", &[obj_value, sql])
                         .map(Some)
                 }
                 "query_params" => {
-                    let (sql, params) = gen_two(self, args)?;
+                    let (sql, params) = gen_two_expr(self, args)?;
                     self.build_net_call(
                         "mux_sql_connection_query_params",
                         &[obj_value, sql, params],
@@ -740,12 +723,12 @@ impl<'a> CodeGenerator<'a> {
                         .map(Some)
                 }
                 "execute" => {
-                    let sql = gen_one(self, args)?;
+                    let sql = gen_one_expr(self, args)?;
                     self.build_net_call("mux_sql_transaction_execute", &[obj_value, sql])
                         .map(Some)
                 }
                 "execute_params" => {
-                    let (sql, params) = gen_two(self, args)?;
+                    let (sql, params) = gen_two_expr(self, args)?;
                     self.build_net_call(
                         "mux_sql_transaction_execute_params",
                         &[obj_value, sql, params],
@@ -753,12 +736,12 @@ impl<'a> CodeGenerator<'a> {
                     .map(Some)
                 }
                 "query" => {
-                    let sql = gen_one(self, args)?;
+                    let sql = gen_one_expr(self, args)?;
                     self.build_net_call("mux_sql_transaction_query", &[obj_value, sql])
                         .map(Some)
                 }
                 "query_params" => {
-                    let (sql, params) = gen_two(self, args)?;
+                    let (sql, params) = gen_two_expr(self, args)?;
                     self.build_net_call(
                         "mux_sql_transaction_query_params",
                         &[obj_value, sql, params],
