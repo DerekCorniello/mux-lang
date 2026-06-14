@@ -3713,35 +3713,56 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         match &expr.kind {
             ExpressionKind::SetOrMapLiteral(elements) if elements.is_empty() => {
-                let resolved = match expected_type {
-                    Type::Map(_, _) => Type::EmptyMap,
-                    Type::Set(_) => Type::EmptySet,
-                    _ => return Ok(()),
-                };
-                self.expression_type_overrides.insert(expr.span, resolved);
+                self.resolve_empty_set_or_map(expected_type, expr.span);
             }
             ExpressionKind::MapLiteral { entries, .. } => {
-                if let Type::Map(_, value_type) = expected_type {
-                    for (_, value_expr) in entries {
-                        self.resolve_empty_collection_types(value_type, value_expr)?;
-                    }
-                }
+                self.resolve_map_literal_children(expected_type, entries)?;
             }
             ExpressionKind::SetOrMapLiteral(elements) => {
-                if let Type::Set(elem_type) = expected_type {
-                    for element in elements {
-                        self.resolve_empty_collection_types(elem_type, element)?;
-                    }
-                }
+                self.resolve_typed_collection_elements(expected_type, elements)?;
             }
             ExpressionKind::ListLiteral(elements) => {
-                if let Type::List(elem_type) = expected_type {
-                    for element in elements {
-                        self.resolve_empty_collection_types(elem_type, element)?;
-                    }
-                }
+                self.resolve_typed_collection_elements(expected_type, elements)?;
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn resolve_empty_set_or_map(&mut self, expected_type: &Type, span: Span) {
+        let resolved = match expected_type {
+            Type::Map(_, _) => Type::EmptyMap,
+            Type::Set(_) => Type::EmptySet,
+            _ => return,
+        };
+        self.expression_type_overrides.insert(span, resolved);
+    }
+
+    fn resolve_map_literal_children(
+        &mut self,
+        expected_type: &Type,
+        entries: &[(ExpressionNode, ExpressionNode)],
+    ) -> Result<(), SemanticError> {
+        if let Type::Map(_, value_type) = expected_type {
+            for (_, value_expr) in entries {
+                self.resolve_empty_collection_types(value_type, value_expr)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve_typed_collection_elements(
+        &mut self,
+        expected_type: &Type,
+        elements: &[ExpressionNode],
+    ) -> Result<(), SemanticError> {
+        let elem_type = match expected_type {
+            Type::Set(elem) => elem,
+            Type::List(elem) => elem,
+            _ => return Ok(()),
+        };
+        for element in elements {
+            self.resolve_empty_collection_types(elem_type, element)?;
         }
         Ok(())
     }
