@@ -46,7 +46,7 @@ const useMuxExecutor = () => {
       });
 
       const data = await readExecuteResponse(res);
-      if (res.ok && !data.output && !data.error) {
+      if (res.ok && data.output === undefined && !data.error) {
         const msg = 'Server returned an unexpected response';
         setError(msg);
         return { error: msg };

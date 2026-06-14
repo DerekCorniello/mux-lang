@@ -310,8 +310,8 @@ function QuickStartSection() {
           
           <div className={styles.codeBlockWrapper}>
             <CodeBlock title="error-handling.mux" className={`language-mux ${styles.featuredCode}`}>
-{`func divide(int a, int b) returns result<int, string> {
-    if b == 0 {
+{`func divide(float a, float b) returns result<float, string> {
+    if b == 0.to_float() {
         return err("division by zero")
     }
     return ok(a / b)
@@ -424,9 +424,9 @@ func area(Shape shape) returns float {
 
 func main() returns void {
     auto shapes = [
-        Circle.new(5.0),
-        Rectangle.new(4.0, 6.0),
-        Square.new(3.0)
+        Shape.Circle(5.0),
+        Shape.Rectangle(4.0, 6.0),
+        Shape.Square(3.0)
     ]
     for Shape s in shapes {
         print(area(s).to_string())

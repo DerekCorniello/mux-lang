@@ -19,7 +19,6 @@ auto names = ["Alice", "Bob"]      // inferred as list<string>
 
 // Empty list requires explicit type
 list<int> empty = []
-auto empty2 = list<int>()
 
 // Nested lists
 list<list<int>> matrix = [[1, 2], [3, 4]]
@@ -105,7 +104,6 @@ auto ages = {"Alice": 30, "Bob": 25}  // map<string, int>
 
 // Empty map requires explicit type
 map<string, int> empty = {}
-auto empty2 = map<string, int>()
 
 // Nested maps
 map<string, map<string, int>> data = {
@@ -180,7 +178,6 @@ auto words = {"hello", "world"}   // set<string>
 
 // Empty set requires explicit type
 set<int> empty = {}
-auto empty2 = set<int>()
 ```
 
 ### Set Methods
@@ -320,11 +317,6 @@ auto aliceScore = lookup<string, int>(scores, "Alice")
 auto nums = [1, 2, 3]
 auto scores = {"Alice": 90, "Bob": 85}
 auto tags = {"urgent", "important"}
-
-// Constructor syntax (required for empty collections with auto)
-auto empty_list = list<int>()
-auto empty_map = map<string, int>()
-auto empty_set = set<string>()
 
 // Explicit type with literal (empty collections)
 list<int> nums = []

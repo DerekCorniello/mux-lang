@@ -390,11 +390,11 @@ print("10 >= 10: " + (10 >= 10).to_string())
 Functions can accept references to modify the original value or avoid copying large data.
 
 ```mux title="references.mux"
-func increment(int ref n) returns void {
+func increment(&int n) returns void {
     n = n + 1
 }
 
-func swap(int ref a, int ref b) returns void {
+func swap(&int a, &int b) returns void {
     int temp = a
     a = b
     b = temp

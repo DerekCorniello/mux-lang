@@ -101,7 +101,7 @@ cfg.current_retry = 1  // OK - mutable field
 ```mux title="explicit_types.mux"
 // Empty collections need explicit types
 list<int> empty = []           // explicit type needed
-auto empty = list<int>()       // or explicit constructor
+auto nonempty = [1, 2, 3]      // or explicit values
 
 // Uninitialized variables
 result<int, string> pending    // explicit type needed
