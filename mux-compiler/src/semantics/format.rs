@@ -21,7 +21,7 @@ pub fn format_type(t: &Type) -> String {
         Type::EmptyList => "[?]".to_string(),
         Type::EmptyMap => "{:}".to_string(),
         Type::EmptySet => "{?}".to_string(),
-        Type::EmptySetOrMap => "{?}".to_string(),
+        Type::EmptySetOrMap => "{?|:?}".to_string(),
         Type::Function {
             params,
             returns,

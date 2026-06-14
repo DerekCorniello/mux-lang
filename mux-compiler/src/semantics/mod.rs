@@ -1395,6 +1395,8 @@ impl SemanticAnalyzer {
         let right_type = self.get_expression_type(right)?;
 
         if *op == crate::ast::BinaryOp::Assign {
+            self.resolve_empty_collection_types(&left_type, right)?;
+            let right_type = self.get_expression_type(right)?;
             self.validate_assignment_target(left, &right_type, expr_span)?;
             return Ok(right_type);
         }
@@ -3666,7 +3668,10 @@ impl SemanticAnalyzer {
     fn type_contains_empty_set_or_map(ty: &Type) -> bool {
         match ty {
             Type::EmptySetOrMap => true,
-            Type::Map(_, value_type) => Self::type_contains_empty_set_or_map(value_type),
+            Type::Map(key_type, value_type) => {
+                Self::type_contains_empty_set_or_map(key_type)
+                    || Self::type_contains_empty_set_or_map(value_type)
+            }
             Type::Set(elem_type) => Self::type_contains_empty_set_or_map(elem_type),
             Type::List(elem_type) => Self::type_contains_empty_set_or_map(elem_type),
             Type::Optional(inner) => Self::type_contains_empty_set_or_map(inner),
@@ -3729,6 +3734,13 @@ impl SemanticAnalyzer {
                     }
                 }
             }
+            ExpressionKind::ListLiteral(elements) => {
+                if let Type::List(elem_type) = expected_type {
+                    for element in elements {
+                        self.resolve_empty_collection_types(elem_type, element)?;
+                    }
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -3743,6 +3755,7 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         let declared_type = self.resolve_type(type_node)?;
         self.analyze_expression(expr)?;
+        self.resolve_empty_collection_types(&declared_type, expr)?;
         let expr_type = self.get_expression_type(expr)?;
         self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
         self.symbol_table.add_symbol(
