@@ -49,6 +49,7 @@ pub struct SemanticAnalyzer {
     pub lambda_captures: std::collections::HashMap<Span, Vec<(String, Type)>>, // Track captured variables for each lambda
     pub current_return_type: Option<Type>, // Track current function/lambda return type
     pub current_class_type_params: Option<Vec<(String, GenericBounds)>>, // Track class-level type params with bounds for method analysis
+    expression_type_overrides: std::collections::HashMap<Span, Type>, // Override resolved types for expressions (e.g., {} resolved to EmptyMap in map context)
 }
 
 impl Default for SemanticAnalyzer {
@@ -80,6 +81,7 @@ impl SemanticAnalyzer {
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
             current_class_type_params: None,
+            expression_type_overrides: std::collections::HashMap::new(),
         }
     }
 
@@ -221,6 +223,7 @@ impl SemanticAnalyzer {
             lambda_captures: std::collections::HashMap::new(),
             current_return_type: None,
             current_class_type_params: None,
+            expression_type_overrides: std::collections::HashMap::new(),
         }
     }
 
@@ -672,6 +675,9 @@ impl SemanticAnalyzer {
     }
 
     pub fn get_expression_type(&mut self, expr: &ExpressionNode) -> Result<Type, SemanticError> {
+        if let Some(override_type) = self.expression_type_overrides.get(&expr.span) {
+            return Ok(override_type.clone());
+        }
         match &expr.kind {
             ExpressionKind::Literal(_) => self.infer_literal_type(expr),
             ExpressionKind::None => Ok(Type::Optional(Box::new(Type::Never))),
@@ -709,7 +715,7 @@ impl SemanticAnalyzer {
                 return_type,
                 body,
             } => self.resolve_lambda_type(params, return_type, body, expr.span),
-            ExpressionKind::SetLiteral(elements) => self.resolve_set_literal_type(elements),
+            ExpressionKind::SetOrMapLiteral(elements) => self.resolve_set_literal_type(elements),
             ExpressionKind::TupleLiteral(elements) => {
                 self.resolve_tuple_literal_type(elements, expr.span)
             }
@@ -977,7 +983,7 @@ impl SemanticAnalyzer {
         elements: &[ExpressionNode],
     ) -> Result<Type, SemanticError> {
         if elements.is_empty() {
-            return Ok(Type::EmptySet);
+            return Ok(Type::EmptySetOrMap);
         }
         let elem_type = self.get_expression_type(&elements[0])?;
         Ok(Type::Set(Box::new(elem_type)))
@@ -3623,11 +3629,15 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         self.analyze_expression(expr)?;
         let expr_type = self.get_expression_type(expr)?;
-        if matches!(expr_type, Type::EmptyList | Type::EmptyMap | Type::EmptySet) {
+        if matches!(
+            expr_type,
+            Type::EmptyList | Type::EmptyMap | Type::EmptySet | Type::EmptySetOrMap
+        ) {
             let collection_type = match expr_type {
                 Type::EmptyList => "list",
                 Type::EmptyMap => "map",
                 Type::EmptySet => "set",
+                Type::EmptySetOrMap => "set or map",
                 _ => unreachable!(),
             };
             return Err(SemanticError::with_help(
@@ -3639,11 +3649,37 @@ impl SemanticAnalyzer {
                 ),
             ));
         }
+        if Self::type_contains_empty_set_or_map(&expr_type) {
+            return Err(SemanticError::with_help(
+                "Cannot infer type for expression containing empty set/map literal".to_string(),
+                expr.span,
+                "Use explicit type annotations for all empty collection literals.",
+            ));
+        }
         self.symbol_table.add_symbol(
             name,
             Self::make_symbol(SymbolKind::Variable, span, Some(expr_type)),
         )?;
         Ok(())
+    }
+
+    fn type_contains_empty_set_or_map(ty: &Type) -> bool {
+        match ty {
+            Type::EmptySetOrMap => true,
+            Type::Map(_, value_type) => Self::type_contains_empty_set_or_map(value_type),
+            Type::Set(elem_type) => Self::type_contains_empty_set_or_map(elem_type),
+            Type::List(elem_type) => Self::type_contains_empty_set_or_map(elem_type),
+            Type::Optional(inner) => Self::type_contains_empty_set_or_map(inner),
+            Type::Result(ok, err) => {
+                Self::type_contains_empty_set_or_map(ok)
+                    || Self::type_contains_empty_set_or_map(err)
+            }
+            Type::Tuple(left, right) => {
+                Self::type_contains_empty_set_or_map(left)
+                    || Self::type_contains_empty_set_or_map(right)
+            }
+            _ => false,
+        }
     }
 
     fn analyze_typed_decl_statement(
@@ -3655,12 +3691,46 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         let declared_type = self.resolve_type(type_node)?;
         self.analyze_expression(expr)?;
+        self.resolve_empty_collection_types(&declared_type, expr)?;
         let expr_type = self.get_expression_type(expr)?;
         self.check_type_compatibility(&declared_type, &expr_type, expr.span)?;
         self.symbol_table.add_symbol(
             name,
             Self::make_symbol(SymbolKind::Variable, span, Some(declared_type)),
         )?;
+        Ok(())
+    }
+
+    fn resolve_empty_collection_types(
+        &mut self,
+        expected_type: &Type,
+        expr: &ExpressionNode,
+    ) -> Result<(), SemanticError> {
+        match &expr.kind {
+            ExpressionKind::SetOrMapLiteral(elements) if elements.is_empty() => {
+                let resolved = match expected_type {
+                    Type::Map(_, _) => Type::EmptyMap,
+                    Type::Set(_) => Type::EmptySet,
+                    _ => return Ok(()),
+                };
+                self.expression_type_overrides.insert(expr.span, resolved);
+            }
+            ExpressionKind::MapLiteral { entries, .. } => {
+                if let Type::Map(_, value_type) = expected_type {
+                    for (_, value_expr) in entries {
+                        self.resolve_empty_collection_types(value_type, value_expr)?;
+                    }
+                }
+            }
+            ExpressionKind::SetOrMapLiteral(elements) => {
+                if let Type::Set(elem_type) = expected_type {
+                    for element in elements {
+                        self.resolve_empty_collection_types(elem_type, element)?;
+                    }
+                }
+            }
+            _ => {}
+        }
         Ok(())
     }
 
@@ -4586,7 +4656,7 @@ impl SemanticAnalyzer {
             ExpressionKind::MapLiteral { entries, .. } => {
                 self.analyze_map_literal_expr(expr, entries)
             }
-            ExpressionKind::SetLiteral(elements) => self.analyze_set_literal_expr(elements),
+            ExpressionKind::SetOrMapLiteral(elements) => self.analyze_set_literal_expr(elements),
             ExpressionKind::TupleLiteral(elements) => {
                 self.analyze_tuple_literal_expr(expr, elements)
             }
@@ -6603,7 +6673,7 @@ impl SemanticAnalyzer {
             ExpressionKind::MapLiteral { entries, .. } => {
                 self.handle_map_literal_expression(entries, local_vars, free_vars)?;
             }
-            ExpressionKind::SetLiteral(elements) => {
+            ExpressionKind::SetOrMapLiteral(elements) => {
                 self.handle_set_literal_expression(elements, local_vars, free_vars)?;
             }
             ExpressionKind::TupleLiteral(elements) => {

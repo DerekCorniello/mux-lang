@@ -734,7 +734,8 @@ impl<'a> CodeGenerator<'a> {
             | Type::Tuple(_, _)
             | Type::EmptyList
             | Type::EmptyMap
-            | Type::EmptySet => {
+            | Type::EmptySet
+            | Type::EmptySetOrMap => {
                 let left_ptr = self.ensure_pointer(left);
                 let right_ptr = self.ensure_pointer(right);
                 self.call_comparison_runtime(left_ptr, right_ptr, "mux_value_equal", "value_equal")
@@ -803,7 +804,8 @@ impl<'a> CodeGenerator<'a> {
             | Type::Set(_)
             | Type::EmptyList
             | Type::EmptyMap
-            | Type::EmptySet => {
+            | Type::EmptySet
+            | Type::EmptySetOrMap => {
                 let left_ptr = self.ensure_pointer(left);
                 let right_ptr = self.ensure_pointer(right);
                 self.call_comparison_runtime(
@@ -846,7 +848,7 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?;
                 Ok(result)
             }
-            Type::Set(_) | Type::EmptySet => {
+            Type::Set(_) | Type::EmptySet | Type::EmptySetOrMap => {
                 let raw_set = self.extract_set_from_value(right.into_pointer_value())?;
                 let item_ptr = self.ensure_pointer(left);
                 let result = self

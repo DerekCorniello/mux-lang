@@ -45,6 +45,7 @@ pub enum Type {
     EmptyList,
     EmptyMap,
     EmptySet,
+    EmptySetOrMap,
     Function {
         params: Vec<Type>,
         returns: Box<Type>,

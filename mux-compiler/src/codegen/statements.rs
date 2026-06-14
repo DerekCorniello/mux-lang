@@ -1732,7 +1732,8 @@ impl<'a> CodeGenerator<'a> {
             | Type::Tuple(_, _)
             | Type::EmptyList
             | Type::EmptyMap
-            | Type::EmptySet => {
+            | Type::EmptySet
+            | Type::EmptySetOrMap => {
                 let left_ptr = if left.is_pointer_value() {
                     left.into_pointer_value()
                 } else {

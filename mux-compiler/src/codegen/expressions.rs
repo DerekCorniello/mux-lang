@@ -908,10 +908,36 @@ impl<'a> CodeGenerator<'a> {
         Ok(map_value)
     }
 
-    fn generate_set_literal_expression(
+    fn generate_set_or_map_literal_expression(
         &mut self,
+        expr: &ExpressionNode,
         elements: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
+        if elements.is_empty() {
+            let resolved_type = self.resolve_expression_type_with_fallback(expr)?;
+            match resolved_type {
+                Type::Map(_, _) | Type::EmptyMap => {
+                    let map_ptr = self
+                        .generate_runtime_call("mux_new_map", &[])
+                        .expect("mux_new_map should always return a value")
+                        .into_pointer_value();
+                    let map_value = self
+                        .generate_runtime_call("mux_map_value", &[map_ptr.into()])
+                        .expect("mux_map_value should always return a value");
+                    return Ok(map_value);
+                }
+                _ => {
+                    let set_ptr = self
+                        .generate_runtime_call("mux_new_set", &[])
+                        .expect("mux_new_set should always return a value")
+                        .into_pointer_value();
+                    let set_value = self
+                        .generate_runtime_call("mux_set_value", &[set_ptr.into()])
+                        .expect("mux_set_value should always return a value");
+                    return Ok(set_value);
+                }
+            }
+        }
         let set_ptr = self
             .generate_runtime_call("mux_new_set", &[])
             .expect("mux_new_set should always return a value")
@@ -3831,7 +3857,9 @@ impl<'a> CodeGenerator<'a> {
             ExpressionKind::MapLiteral { entries, .. } => {
                 self.generate_map_literal_expression(entries)
             }
-            ExpressionKind::SetLiteral(elements) => self.generate_set_literal_expression(elements),
+            ExpressionKind::SetOrMapLiteral(elements) => {
+                self.generate_set_or_map_literal_expression(expr, elements)
+            }
             ExpressionKind::TupleLiteral(elements) => {
                 self.generate_tuple_literal_expression(elements)
             }

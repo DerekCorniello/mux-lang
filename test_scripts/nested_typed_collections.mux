@@ -1,0 +1,13 @@
+func main() returns void {
+    // Nested set in map
+    map<int, set<int>> x = {1: {}}
+    print(x.to_string())
+
+    // Nested map in map
+    map<int, map<int, int>> y = {1: {}}
+    print(y.to_string())
+
+    // map with entries inside
+    map<int, map<int, string>> z = {1: {2: "hello"}}
+    print(z.to_string())
+}
