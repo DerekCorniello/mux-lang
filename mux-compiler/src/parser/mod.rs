@@ -1647,7 +1647,7 @@ impl<'a> Parser<'a> {
                 self.check_no_postfix_increment_decrement(inner)?;
                 self.check_no_postfix_increment_decrement(index)
             }
-            ExpressionKind::ListLiteral(elems) | ExpressionKind::SetLiteral(elems) => {
+            ExpressionKind::ListLiteral(elems) | ExpressionKind::SetOrMapLiteral(elems) => {
                 self.check_no_postfix_increment_decrement_all(elems)
             }
             ExpressionKind::MapLiteral { entries, .. } => {
@@ -2120,7 +2120,7 @@ impl<'a> Parser<'a> {
         let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after collection")?;
         Ok(ExpressionNode {
-            kind: ExpressionKind::SetLiteral(vec![]),
+            kind: ExpressionKind::SetOrMapLiteral(vec![]),
             span: start_span.combine(&end_span),
         })
     }
@@ -2161,7 +2161,7 @@ impl<'a> Parser<'a> {
         let end_span =
             self.consume_token(TokenType::CloseBrace, "Expected '}' after collection")?;
         Ok(ExpressionNode {
-            kind: ExpressionKind::SetLiteral(elements),
+            kind: ExpressionKind::SetOrMapLiteral(elements),
             span: start_span.combine(&end_span),
         })
     }

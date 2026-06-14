@@ -87,10 +87,12 @@ impl Unifier {
             (Type::EmptyList, Type::EmptyList) => {}
             (Type::EmptyMap, Type::EmptyMap) => {}
             (Type::EmptySet, Type::EmptySet) => {}
+            (Type::EmptySetOrMap, Type::EmptySetOrMap) => {}
             (Type::List(_), Type::EmptyList) | (Type::EmptyList, Type::List(_)) => {}
             (Type::Map(_, _), Type::EmptyMap) | (Type::EmptyMap, Type::Map(_, _)) => {}
             (Type::Set(_), Type::EmptySet) | (Type::EmptySet, Type::Set(_)) => {}
-            (Type::Map(_, _), Type::EmptySet) | (Type::EmptySet, Type::Map(_, _)) => {}
+            (Type::Set(_), Type::EmptySetOrMap) | (Type::EmptySetOrMap, Type::Set(_)) => {}
+            (Type::Map(_, _), Type::EmptySetOrMap) | (Type::EmptySetOrMap, Type::Map(_, _)) => {}
             (Type::Never, _) => {}
             (_, Type::Never) => {}
             _ => {
