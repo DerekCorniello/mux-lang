@@ -835,20 +835,6 @@ fn main() {
         .expect("library path should be valid Unicode");
 
     let clang_cmd = find_clang_or_exit();
-    eprintln!(
-        "DEBUG: mux_bin={} lib_dir={} features={:?} exe={}",
-        std::env::current_exe().unwrap_or_default().display(),
-        lib_path_str,
-        runtime_features,
-        exe_file.to_string_lossy()
-    );
-    // Also log the environment for debugging
-    if let Ok(val) = std::env::var("CARGO_TARGET_DIR") {
-        eprintln!("DEBUG: CARGO_TARGET_DIR={}", val);
-    }
-    if let Ok(val) = std::env::var("LLVM_CONFIG_PATH") {
-        eprintln!("DEBUG: LLVM_CONFIG_PATH={}", val);
-    }
     let clang_output = Command::new(&clang_cmd)
         .args([
             &ir_file,
