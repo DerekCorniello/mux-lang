@@ -72,6 +72,13 @@ match myShape {
 Use `_` to ignore data you don't need:
 
 ```mux title="ignoring_enum_data.mux"
+enum Shape {
+    Circle(float radius),
+    Rectangle(float width, float height),
+    Square(float size)
+}
+
+auto shape = Shape.Rectangle(10.0, 20.0)
 match shape {
     Circle(_) {
         print("It's a circle")  // radius ignored

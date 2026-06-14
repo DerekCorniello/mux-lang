@@ -39,10 +39,9 @@ auto flag_str = flag.to_string() // bool -> string ("true" or "false")
 auto ch = 'A'
 auto ch_str = ch.to_string()    // char -> string
 
-// Method calls on literals require parentheses
-auto num = (3).to_string()      // Valid
-auto val = (42).to_float()      // Valid
-// auto bad = 3.to_string()     // ERROR: parsed as float 3.0
+// Method calls on literals
+auto num = 3.to_string()
+auto val = (42).to_float()
 ```
 
 ### String Parsing (Fallible Conversions)

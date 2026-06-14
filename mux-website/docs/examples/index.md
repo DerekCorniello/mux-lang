@@ -142,7 +142,10 @@ nums.push_back(60)
 print("After push: " + nums.to_string())
 
 auto last = nums.pop_back()
-print("Popped: " + last.to_string())
+match last {
+    some(v) { print("Popped value: " + v.to_string()) }
+    none { print("List was empty") }
+}
 print("List size: " + nums.size().to_string())
 ```
 

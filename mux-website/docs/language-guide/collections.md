@@ -57,6 +57,8 @@ auto second = nums[1]  // 2
 nums.push_back(4)      // [1, 2, 3, 4]
 nums.push(5)           // [5, 1, 2, 3, 4]
 
+print("list: " + nums.to_string()) // list: [5, 1, 2, 3, 4]
+
 match nums.pop_back() {
     some(last) { print(last.to_string()) }  // "5"
     none { }

@@ -75,7 +75,7 @@ tuple<int, string> pair = (1, "one")
 if x > 0 { ... } else if x < 0 { ... } else { ... }
 while condition { ... }
 for int item in list { ... }
-for (int i = 0; i < 10; i++) { ... }   // C‑style loop
+for int i in range(0, 10) { ... }   // Python‑style loop
 ```
 
 ## Standard Library Quick Reference
