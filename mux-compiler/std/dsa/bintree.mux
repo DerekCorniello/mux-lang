@@ -15,7 +15,9 @@ class BinaryTree<T is Comparable> is Collection<T> {
         if self.count == 0 || self.values.is_empty() {
             self.root = -1
         }
-    }
+    
+        return
+}
 
     func is_empty() returns bool {
         return self.count == 0
@@ -33,7 +35,9 @@ class BinaryTree<T is Comparable> is Collection<T> {
         while !self.right_children.is_empty() {
             self.right_children.pop_back()
         }
-    }
+    
+        return
+}
 
     func to_list() returns list<T> {
         self.normalize_root()
@@ -91,7 +95,9 @@ class BinaryTree<T is Comparable> is Collection<T> {
                 current = self.right_children[current]
             }
         }
-    }
+    
+        return
+}
 
     func remove(T value) returns void {
         self.normalize_root()
@@ -168,7 +174,9 @@ class BinaryTree<T is Comparable> is Collection<T> {
         }
 
         self.count = self.count - 1
-    }
+    
+        return
+}
 
     func contains(T value) returns bool {
         self.normalize_root()

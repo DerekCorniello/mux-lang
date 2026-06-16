@@ -1,6 +1,6 @@
 ---
 source: mux-compiler/tests/executable_integration.rs
-expression: output_to_snapshot
+expression: normalized
 ---
 error: Cannot iterate over type int
 --> test_scripts/error_cases/semantic_iterate_non_list.mux:2:14
@@ -8,4 +8,4 @@ error: Cannot iterate over type int
  2 | for int i in 5 {
    |              ^
    |
-= help: The 'for' loop can only iterate over list types. Use .to_list() for sets/maps, or range(start, end) for numeric ranges.
+= help: The 'for' loop can only iterate over list types. Use .to_list() for sets. For maps, use .get_keys(), .get_values(), or .get_pairs() to get a list. For numeric ranges, use range(start, end).

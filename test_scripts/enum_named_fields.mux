@@ -5,4 +5,6 @@ func main() returns void {
     auto c = Shape.Circ(5.0)
     auto r = Shape.Rect(10.0, 20.0)
     print("done")
+
+    return
 }

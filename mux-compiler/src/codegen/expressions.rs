@@ -3648,6 +3648,7 @@ impl<'a> CodeGenerator<'a> {
                 Ok(Some(float_val.into()))
             }
             "to_int" => self.generate_expression(expr).map(Some),
+            "to_char" => self.generate_expression(expr).map(Some),
             _ => Ok(None),
         }
     }
@@ -3758,6 +3759,21 @@ impl<'a> CodeGenerator<'a> {
                     .ok_or("mux_string_to_float should return a basic value")?;
                 Ok(Some(result_ptr))
             }
+            "to_char" => {
+                let value = self.generate_expression(expr)?;
+                let cstr = self.value_to_cstr(value)?;
+                let func = self
+                    .runtime_function("mux_string_to_char")
+                    .ok_or("mux_string_to_char not found")?;
+                let result_ptr = self
+                    .builder
+                    .build_call(func, &[cstr.into()], "str_to_char")
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("mux_string_to_char should return a basic value")?;
+                Ok(Some(result_ptr))
+            }
             _ => Ok(None),
         }
     }
@@ -3796,6 +3812,7 @@ impl<'a> CodeGenerator<'a> {
                     .ok_or("mux_char_to_string should return a basic value")?;
                 self.cstr_to_mux_string(cstr).map(Some)
             }
+            "to_char" => self.generate_expression(expr).map(Some),
             _ => Ok(None),
         }
     }

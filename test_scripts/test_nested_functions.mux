@@ -43,4 +43,6 @@ func main() returns void {
     print("Multiple nested: " + test_multiple().to_string())       // 16
     print("Recursive nested: " + test_recursive().to_string())     // 120
     print("All nested function tests passed!")
+
+    return
 }

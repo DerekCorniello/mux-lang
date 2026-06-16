@@ -12,7 +12,9 @@ class Box<T> {
     
     func set(T val) returns void {
         self.value = val
-    }
+    
+        return
+}
     
     func get() returns T {
         return self.value
@@ -47,7 +49,9 @@ class Container<T> {
     
     func set_item(T val) returns void {
         self.item = val
-    }
+    
+        return
+}
     
     // Generic method that pairs the class type param with a new type param
     func pair_with_string(string other) returns Pair<T, string> {
@@ -81,7 +85,9 @@ class Holder<T is Stringable> {
     
     func set(T val) returns void {
         self.value = val
-    }
+    
+        return
+}
     
     // Method combining class param (which has bounds) with another stringable
     func combine_with_string(string other) returns string {
@@ -130,7 +136,9 @@ class Builder<T> {
     
     func set_base(T val) returns void {
         self.base = val
-    }
+    
+        return
+}
     
     // Method that returns nested generic type
     func box_it() returns Box<T> {
@@ -173,7 +181,9 @@ class Wrapper<T> {
     
     func set(T val) returns void {
         self.data = val
-    }
+    
+        return
+}
     
     // Method creating pair of two different types
     func pair_int_str(int left, string right) returns Pair<int, string> {
@@ -210,7 +220,9 @@ class Chain<T> {
     
     func set(T value) returns void {
         self.val = value
-    }
+    
+        return
+}
     
     func get() returns T {
         return self.val
@@ -238,7 +250,9 @@ class Duplicator<T> {
     func set_both(T a, T b) returns void {
         self.first = a
         self.second = b
-    }
+    
+        return
+}
     
     func create_pair() returns Pair<T, T> {
         return Pair<T, T>.from(self.first, self.second)

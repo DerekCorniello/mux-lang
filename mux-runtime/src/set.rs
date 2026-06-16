@@ -114,6 +114,18 @@ pub extern "C" fn mux_set_to_string(set: *const Set) -> *mut std::ffi::c_char {
     }
 }
 
+/// Convert a set to a list containing all of its elements.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::mutable_key_type)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_set_to_list(set: *const Set) -> *mut Value {
+    if set.is_null() {
+        return mux_rc_alloc(Value::List(Vec::new()));
+    }
+    let items: Vec<Value> = unsafe { (*set).0.iter().cloned().collect() };
+    mux_rc_alloc(Value::List(items))
+}
+
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[allow(clippy::mutable_key_type)]
 #[unsafe(no_mangle)]

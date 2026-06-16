@@ -1,0 +1,14 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+✓ result<int, string> = "42".to_int(): 42
+✓ result<int, string> = "not a number".to_int() err: Invalid integer
+✓ result<float, string> = "3.14".to_float(): 3.14
+✓ result<float, string> = "abc".to_float() err: Invalid float
+✓ result<char, string> = "A".to_char(): A
+✓ result<char, string> = "ABC".to_char() err: String must be exactly one character
+✓ result<int, string> = '5'.to_int(): 5
+✓ result<int, string> = 'A'.to_int() err: Character is not a digit (0-9)
+✓ result<int, string> from function: 99
+=== All result type unification tests passed ===

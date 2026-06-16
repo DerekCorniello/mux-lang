@@ -15,7 +15,9 @@ class Stack<T> is Collection<T> {
         while !self.items.is_empty() {
             self.items.pop_back()
         }
-    }
+    
+        return
+}
 
     func to_list() returns list<T> {
         return self.items
@@ -23,7 +25,9 @@ class Stack<T> is Collection<T> {
 
     func push(T value) returns void {
         self.items.push_back(value)
-    }
+    
+        return
+}
 
     func pop() returns optional<T> {
         return self.items.pop_back()

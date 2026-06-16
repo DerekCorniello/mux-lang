@@ -487,4 +487,6 @@ func main() returns void {
     
     print("")
     print("=== ALL COMPARISON TESTS COMPLETED ===")
+
+    return
 }

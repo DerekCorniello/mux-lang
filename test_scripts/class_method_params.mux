@@ -9,14 +9,18 @@ class Calculator {
         print("Parameter amount received: " + amount.to_string())
         self.value = self.value + amount
         print("After add - value: " + self.value.to_string())
-    }
+    
+        return
+}
     
     func multiply(int factor) returns void {
         print("Before multiply - value: " + self.value.to_string())
         print("Parameter factor received: " + factor.to_string())
         self.value = self.value * factor
         print("After multiply - value: " + self.value.to_string())
-    }
+    
+        return
+}
     
     func set(int new_value) returns int {
         auto old_value = self.value
@@ -31,7 +35,9 @@ class FloatBox {
     func update(float new_val) returns void {
         print("FloatBox update parameter: " + new_val.to_string())
         self.value = new_val
-    }
+    
+        return
+}
     
     func multiply(float factor) returns float {
         print("FloatBox multiply factor: " + factor.to_string())
@@ -46,7 +52,9 @@ class StringHolder {
     func append(string suffix) returns void {
         print("Appending: " + suffix)
         self.text = self.text + suffix
-    }
+    
+        return
+}
     
     func get() returns string {
         return self.text
@@ -59,7 +67,9 @@ class BoolToggle {
     func set_state(bool new_state) returns void {
         print("Setting state to: " + new_state.to_string())
         self.state = new_state
-    }
+    
+        return
+}
 }
 
 class SimpleCounter {
@@ -74,7 +84,9 @@ class MultiParam {
         print("Setting first=" + first.to_string() + " second=" + second.to_string())
         self.a = first
         self.b = second
-    }
+    
+        return
+}
     
     func add_to_both(int amount) returns int {
         print("Adding " + amount.to_string() + " to both")
@@ -151,7 +163,9 @@ func main() returns void {
 
     func increment_by_value(SimpleCounter c) returns void {
         c.count = c.count + 100
-    }
+    
+        return
+}
 
     auto counter = SimpleCounter.new()
     counter.count = 10
@@ -169,7 +183,9 @@ func main() returns void {
     // This tests that accessing fields on &Class types works correctly
     func set_via_reference(&SimpleCounter c, int new_val) returns void {
         c.count = new_val
-    }
+    
+        return
+}
 
     auto ref_counter = SimpleCounter.new()
     ref_counter.count = 50
@@ -184,4 +200,6 @@ func main() returns void {
 
     print("")
     print("=== All tests completed ===")
+
+    return
 }

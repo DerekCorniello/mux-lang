@@ -1,0 +1,9 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+set to list: [97, 98, 99]
+list size: 3
+a
+b
+c

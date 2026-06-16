@@ -92,7 +92,8 @@ for int value in myMap.get_values() {
 }
 
 auto mySet = {'a', 'b', 'c'}
-for char c in mySet.to_list() {
+auto setAsList = mySet.to_list()
+for char c in setAsList {
     print(c.to_string())
 }
 ```

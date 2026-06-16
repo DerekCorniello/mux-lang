@@ -59,4 +59,6 @@ func main() returns void {
     }
 
     print("http smoke test passed")
+
+    return
 }

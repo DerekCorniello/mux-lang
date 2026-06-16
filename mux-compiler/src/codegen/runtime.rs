@@ -213,10 +213,12 @@ impl<'a> CodeGenerator<'a> {
             "mux_string_to_string",
             "mux_string_to_int",
             "mux_string_to_float",
+            "mux_string_to_char",
             "mux_list_to_string",
             "mux_list_value",
             "mux_map_value",
             "mux_set_value",
+            "mux_set_to_list",
             "mux_map_to_string",
         ] {
             add_i8_fn(module, i8_ptr, name, &[i8_ptr.into()]);

@@ -18,6 +18,8 @@ print("first element: " + (*first).to_string())
 // Function taking a reference
 func update(&int ref) returns void {
     *ref = *ref + 1
+
+    return
 }
 
 update(&val)
@@ -52,6 +54,8 @@ class copy_test_class {
 
 func update_copy(copy_test_class i) returns void {
     i.val = 999
+
+    return
 }
 
 auto original = copy_test_class.new()

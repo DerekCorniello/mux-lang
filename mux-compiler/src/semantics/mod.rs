@@ -2355,12 +2355,9 @@ impl SemanticAnalyzer {
     fn make_str_parse_result_method_sig(value_type: PrimitiveType) -> MethodSig {
         Self::make_instance_method_sig(
             vec![],
-            Type::Named(
-                "result".to_string(),
-                vec![
-                    Type::Primitive(value_type),
-                    Type::Primitive(PrimitiveType::Str),
-                ],
+            Type::Result(
+                Box::new(Type::Primitive(value_type)),
+                Box::new(Type::Primitive(PrimitiveType::Str)),
             ),
         )
     }
@@ -2375,6 +2372,10 @@ impl SemanticAnalyzer {
             "to_int" => Some(Self::make_instance_method_sig(
                 vec![],
                 Type::Primitive(PrimitiveType::Int),
+            )),
+            "to_char" => Some(Self::make_instance_method_sig(
+                vec![],
+                Type::Primitive(PrimitiveType::Char),
             )),
             "eq" => Some(Self::make_eq_method_sig(PrimitiveType::Int)),
             "cmp" => Some(Self::make_cmp_method_sig(PrimitiveType::Int)),
@@ -2410,6 +2411,7 @@ impl SemanticAnalyzer {
             )),
             "to_int" => Some(Self::make_str_parse_result_method_sig(PrimitiveType::Int)),
             "to_float" => Some(Self::make_str_parse_result_method_sig(PrimitiveType::Float)),
+            "to_char" => Some(Self::make_str_parse_result_method_sig(PrimitiveType::Char)),
             "eq" => Some(Self::make_eq_method_sig(PrimitiveType::Str)),
             "cmp" => Some(Self::make_cmp_method_sig(PrimitiveType::Str)),
             "hash" => Some(Self::make_hash_method_sig()),
@@ -2438,6 +2440,10 @@ impl SemanticAnalyzer {
         match method_name {
             "to_string" => Some(Self::make_to_string_method_sig()),
             "to_int" => Some(Self::make_str_parse_result_method_sig(PrimitiveType::Int)),
+            "to_char" => Some(Self::make_instance_method_sig(
+                vec![],
+                Type::Primitive(PrimitiveType::Char),
+            )),
             "eq" => Some(Self::make_eq_method_sig(PrimitiveType::Char)),
             "cmp" => Some(Self::make_cmp_method_sig(PrimitiveType::Char)),
             "hash" => Some(Self::make_hash_method_sig()),
@@ -2585,6 +2591,11 @@ impl SemanticAnalyzer {
             "to_string" => Some(MethodSig {
                 params: vec![],
                 return_type: Type::Primitive(PrimitiveType::Str),
+                is_static: false,
+            }),
+            "to_list" => Some(MethodSig {
+                params: vec![],
+                return_type: Type::List(Box::new(elem_type.clone())),
                 is_static: false,
             }),
             _ => None,
@@ -3471,17 +3482,24 @@ impl SemanticAnalyzer {
         self.current_self_type = old_self_type;
         self.current_return_type = old_return_type;
 
-        if !matches!(return_type, Type::Void)
-            && (func.body.is_empty() || !self.all_paths_return(&func.body))
-        {
-            return Err(SemanticError::with_help(
-                format!(
-                    "Function must return a value of type '{}' on all code paths",
-                    format_type(&return_type)
-                ),
-                func.span,
-                "Add a return statement at the end of every branch (if/else, match, etc.)",
-            ));
+        if func.body.is_empty() || !self.all_paths_return(&func.body) {
+            let (msg, help): (String, String) = if matches!(return_type, Type::Void) {
+                (
+                    "Function must end with an explicit 'return' statement on all code paths"
+                        .to_string(),
+                    "Add a 'return' statement at the end of every code path".to_string(),
+                )
+            } else {
+                (
+                    format!(
+                        "Function must return a value of type '{}' on all code paths",
+                        format_type(&return_type)
+                    ),
+                    "Add a return statement at the end of every branch (if/else, match, etc.)"
+                        .to_string(),
+                )
+            };
+            return Err(SemanticError::with_help(msg, func.span, help));
         }
 
         Ok(())
@@ -3825,7 +3843,7 @@ impl SemanticAnalyzer {
                 return Err(SemanticError::with_help(
                     format!("Cannot iterate over type {}", format_type(&iter_type)),
                     iter.span,
-                    "The 'for' loop can only iterate over list types. Use .to_list() for sets/maps, or range(start, end) for numeric ranges.",
+                    "The 'for' loop can only iterate over list types. Use .to_list() for sets. For maps, use .get_keys(), .get_values(), or .get_pairs() to get a list. For numeric ranges, use range(start, end).",
                 ));
             }
         };
@@ -4724,6 +4742,13 @@ impl SemanticAnalyzer {
             exists_like = self.check_stdlib_imports_for_class(name);
         }
         if !exists_like {
+            if let Some(help) = collection_new_hint(name) {
+                return Err(SemanticError::with_help(
+                    format!("Undefined variable '{}'", name),
+                    expr.span,
+                    help,
+                ));
+            }
             return Err(self.undefined_symbol_error("variable", name, expr.span));
         }
         Ok(())
@@ -5208,9 +5233,7 @@ impl SemanticAnalyzer {
 
         self.analyze_block(body, None)?;
 
-        if !matches!(self.current_return_type, Some(Type::Void)) {
-            self.check_lambda_return_paths(expr, body, &lambda_return_type)?;
-        }
+        self.check_lambda_return_paths(expr, body, &lambda_return_type)?;
 
         self.current_return_type = prev_return_type;
         let captures = self.find_free_variables_in_block(body, &local_vars)?;
@@ -5227,14 +5250,24 @@ impl SemanticAnalyzer {
         lambda_return_type: &Type,
     ) -> Result<(), SemanticError> {
         if body.is_empty() || !self.all_paths_return(body) {
-            return Err(SemanticError::with_help(
-                format!(
-                    "Lambda must return a value of type '{}' on all code paths",
-                    format_type(lambda_return_type)
-                ),
-                expr.span,
-                "Add a return statement at the end of every branch in the lambda body",
-            ));
+            let (msg, help) = if matches!(lambda_return_type, Type::Void) {
+                (
+                    "Lambda must end with an explicit 'return' statement on all code paths"
+                        .to_string(),
+                    "Add a 'return' statement at the end of every code path in the lambda body"
+                        .to_string(),
+                )
+            } else {
+                (
+                    format!(
+                        "Lambda must return a value of type '{}' on all code paths",
+                        format_type(lambda_return_type)
+                    ),
+                    "Add a return statement at the end of every branch in the lambda body"
+                        .to_string(),
+                )
+            };
+            return Err(SemanticError::with_help(msg, expr.span, help));
         }
         if let Some(last_stmt) = body.last()
             && let StatementKind::Return(Some(ret_expr)) = &last_stmt.kind
@@ -5253,6 +5286,13 @@ impl SemanticAnalyzer {
     ) -> Result<(), SemanticError> {
         if name == "tuple" {
             return self.check_tuple_type_args(expr, type_args);
+        }
+        if let Some(help) = collection_new_hint(name) {
+            return Err(SemanticError::with_help(
+                format!("Undefined type '{}'", name),
+                expr.span,
+                help,
+            ));
         }
         if let Some((module_name, type_name)) = name.split_once('.') {
             let module_symbols = self
@@ -6997,3 +7037,27 @@ fn infer_bound_type_arg(
 use crate::semantics::symbol_table::{
     calculate_similarity_threshold, edit_distance as levenshtein_distance,
 };
+
+/// Suggest a fix for `<name>.new()`-style usage on built-in collection-like types.
+/// Returns a help message if `name` is a built-in container type that has no
+/// `.new()` constructor and should be created with a literal instead.
+fn collection_new_hint(name: &str) -> Option<&'static str> {
+    match name {
+        "list" => Some(
+            "List has no '.new()' constructor. Use '[]' for an empty list or '[1, 2, 3]' for elements. For example: list<int> = []",
+        ),
+        "map" => Some(
+            "Map has no '.new()' constructor. Use '{}' for an empty map or '{\"key\": \"value\"}' for entries. For example: map<string, int> = {}",
+        ),
+        "set" => Some(
+            "Set has no '.new()' constructor. Use '{}' for an empty set or '{1, 2, 3}' for elements. For example: set<int> = {}",
+        ),
+        "optional" => Some(
+            "Optional has no '.new()' constructor. Use 'none' for an empty value or 'some(value)' for a value. For example: optional<int> = none",
+        ),
+        "result" => Some(
+            "Result has no '.new()' constructor. Use 'ok(value)' or 'err(message)' to construct one. For example: result<int, string> = ok(42)",
+        ),
+        _ => None,
+    }
+}

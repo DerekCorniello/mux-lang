@@ -26,6 +26,8 @@ print("=== Testing Global Variable Modification ===")
 // Test 2: Global modification from function
 func increment_counter() returns void {
     global_counter = global_counter + 1
+
+    return
 }
 
 increment_counter()
@@ -73,10 +75,14 @@ int shared_accumulator = 0
 
 func add_ten() returns void {
     shared_accumulator = shared_accumulator + 10
+
+    return
 }
 
 func add_five() returns void {
     shared_accumulator = shared_accumulator + 5
+
+    return
 }
 
 func get_accumulator() returns int {
@@ -113,6 +119,8 @@ func test_nested_scopes() returns void {
         nested_test_var = nested_test_var + 1
         counter = counter + 1
     }
+
+    return
 }
 
 test_nested_scopes()
@@ -128,6 +136,8 @@ print("=== Testing Global Boolean Operations ===")
 // Test 6: Boolean globals
 func toggle_flag() returns void {
     global_flag = !global_flag
+
+    return
 }
 
 if global_flag == true {
@@ -160,6 +170,8 @@ func complex_math() returns void {
     math_global = math_global * 2
     math_global = math_global + 5
     math_global = math_global - 3
+
+    return
 }
 
 complex_math()

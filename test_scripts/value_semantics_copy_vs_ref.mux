@@ -9,10 +9,14 @@ class Outer {
 func mutate_value(Outer o) returns void {
     o.inner.x = 99
     print("inside - o.inner.x = " + o.inner.x.to_string())
+
+    return
 }
 
 func mutate_ref(&Outer o) returns void {
     o.inner.x = 77
+
+    return
 }
 
 func main() returns void {

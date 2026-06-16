@@ -1,0 +1,11 @@
+---
+source: mux-compiler/tests/executable_integration.rs
+expression: normalized
+---
+string 'A' to char: A
+multi to char error: String must be exactly one character
+empty to char error: String must be exactly one character
+65 to char: A
+66 to char: B
+Z to char: Z
+x to char: x
