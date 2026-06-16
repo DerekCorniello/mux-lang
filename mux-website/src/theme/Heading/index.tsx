@@ -32,12 +32,15 @@ export default function Heading({as: As, id, ...props}: Readonly<Props>): ReactN
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    const origin = globalThis.location.origin;
-    const pathname = globalThis.location.pathname;
+    const origin = window.location.origin;
+    const pathname = window.location.pathname;
     const url = `${origin}${pathname}#${id}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      // Clipboard write failed (e.g., non-HTTPS context)
+    });
   };
 
   return (

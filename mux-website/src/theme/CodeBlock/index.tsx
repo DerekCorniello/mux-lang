@@ -74,14 +74,18 @@ export default function CodeBlock({
   title: titleProp,
   className,
   language,
-  showLineNumbers: showLineNumbersProp,
+  showLineNumbers: _showLineNumbersProp,
   metastring,
   ...props
 }: Props): ReactNode {
   const [copied, setCopied] = useState(false);
   const [highlighted, setHighlighted] = useState<string | null>(null);
-  const [isDark, setIsDark] = useState<boolean | null>(null);
   const isBrowser = useIsBrowser();
+
+  // Determine initial dark mode; stays null until mounted
+  const [isDark, setIsDark] = useState<boolean | null>(() =>
+    isBrowser ? getThemeFromBody() === 'github-dark' : null,
+  );
 
   const parsedMeta = parseMetastring(metastring);
   const title = titleProp || parsedMeta.title;
@@ -94,16 +98,16 @@ export default function CodeBlock({
 
   const handleCopy = () => {
     const textToCopy = getCodeString(rawChildren);
-    navigator.clipboard.writeText(textToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      // Clipboard write failed (e.g., non-HTTPS context)
+    });
   };
 
   useEffect(() => {
     if (isBrowser) {
-      const initialTheme = getThemeFromBody();
-      setIsDark(initialTheme === 'github-dark');
-
       const observer = new MutationObserver(() => {
         const newTheme = getThemeFromBody();
         setIsDark(newTheme === 'github-dark');
@@ -155,7 +159,7 @@ export default function CodeBlock({
 
       doHighlight();
     }
-  }, [children, language, className, isDark, isBrowser]);
+  }, [children, language, className, isDark, isBrowser, detectedLang, isMuxCode]);
 
   if (typeof children === 'string' && isMuxCode) {
     return <MuxTerminal initialCode={children.trimEnd()} title={terminalTitle} />;

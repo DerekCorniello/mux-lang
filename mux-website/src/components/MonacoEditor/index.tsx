@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import MonacoEditor from '@monaco-editor/react';
+import MonacoEditor, { type OnMount } from '@monaco-editor/react';
 import BrowserOnly from '@docusaurus/BrowserOnly';
 import { registerMuxLanguage } from '@site/src/monaco/muxLanguage';
 
@@ -37,7 +37,7 @@ const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, on
     onRunRef.current = onRun;
   }, [onRun]);
 
-  const handleEditorMount = useCallback((editor: any, monaco: any) => {
+  const handleEditorMount: OnMount = useCallback((editor, monaco) => {
     const updateHeight = () => {
       const lineCount = editor.getModel()?.getLineCount() || 10;
       const newHeight = Math.max(150, Math.min(lineCount * 21 + 24, 400));

@@ -1,25 +1,35 @@
-import React, {type ComponentProps, type ReactNode} from 'react';
+import React, {type ReactNode} from 'react';
 import clsx from 'clsx';
 import {ThemeClassNames, usePrismTheme} from '@docusaurus/theme-common';
 import {getPrismCssVariables} from '@docusaurus/theme-common/internal';
 import styles from './styles.module.css';
 
-export default function CodeBlockContainer<T extends 'div' | 'pre'>({
+interface CodeBlockContainerProps {
+  as: 'div' | 'pre';
+  children: ReactNode;
+  className?: string;
+  tabIndex?: number;
+}
+
+export default function CodeBlockContainer({
   as: As,
-  ...props
-}: {as: T} & ComponentProps<T>): ReactNode {
+  children,
+  className,
+  tabIndex,
+}: CodeBlockContainerProps): ReactNode {
   const prismTheme = usePrismTheme();
   const prismCssVariables = getPrismCssVariables(prismTheme);
   return (
     <As
-      // Polymorphic components are hard to type, without `oneOf` generics
-      {...(props as any)}
       style={prismCssVariables}
       className={clsx(
-        props.className,
+        className,
         styles.codeBlockContainer,
         ThemeClassNames.common.codeBlock,
       )}
-    />
+      tabIndex={tabIndex}
+    >
+      {children}
+    </As>
   );
 }

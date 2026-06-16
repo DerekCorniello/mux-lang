@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import Layout from '@theme/Layout';
 import MuxTerminal from '../components/MuxTerminal';
 
@@ -6,19 +6,14 @@ const DEFAULT_PLAYGROUND_CODE = `func main() returns void {
     print("Hello from Mux Playground")
 }`;
 
+function getCodeFromQuery(): string {
+  if (typeof window === 'undefined') return DEFAULT_PLAYGROUND_CODE;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('code') || DEFAULT_PLAYGROUND_CODE;
+}
+
 const PlaygroundPage: React.FC = () => {
-  const [initialCode, setInitialCode] = useState(DEFAULT_PLAYGROUND_CODE);
-
-  useEffect(() => {
-    if (globalThis.window === undefined) {
-      return;
-    }
-
-    const codeFromQuery = new URLSearchParams(globalThis.window.location.search).get('code');
-    if (codeFromQuery) {
-      setInitialCode(codeFromQuery);
-    }
-  }, []);
+  const [initialCode] = useState(getCodeFromQuery);
 
   return (
     <Layout>

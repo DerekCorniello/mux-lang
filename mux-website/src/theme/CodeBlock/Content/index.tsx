@@ -15,13 +15,11 @@ function getLineKey(line: PrismToken[], index: number): string {
   return `${index}-${content}`;
 }
 
-// TODO Docusaurus v4: remove useless forwardRef
 const Pre = React.forwardRef<HTMLPreElement, ComponentProps<'pre'>>(
   (props, ref) => {
     return (
       <pre
         ref={ref}
-        /* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */
         tabIndex={0}
         {...props}
         className={clsx(props.className, styles.codeBlock, 'thin-scrollbar')}

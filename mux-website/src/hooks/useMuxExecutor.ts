@@ -55,8 +55,8 @@ const useMuxExecutor = () => {
         setError(data.error || 'Request failed');
       }
       return data;
-    } catch (err: any) {
-      const msg = err.message || 'Unknown error';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(msg);
       return { error: msg };
     } finally {
