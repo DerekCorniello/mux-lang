@@ -3509,53 +3509,48 @@ impl<'a> CodeGenerator<'a> {
                 let value = self.generate_expression(expr)?;
                 self.value_to_runtime_string(value).map(Some)
             }
-            "to_int" => {
-                let value = self.generate_expression(expr)?;
-                let cstr = self.value_to_cstr(value)?;
-                let func = self
-                    .runtime_function("mux_string_to_int")
-                    .ok_or("mux_string_to_int not found")?;
-                let result_ptr = self
-                    .builder
-                    .build_call(func, &[cstr.into()], "str_to_int")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .ok_or("mux_string_to_int should return a basic value")?;
-                Ok(Some(result_ptr))
-            }
-            "to_float" => {
-                let value = self.generate_expression(expr)?;
-                let cstr = self.value_to_cstr(value)?;
-                let func = self
-                    .runtime_function("mux_string_to_float")
-                    .ok_or("mux_string_to_float not found")?;
-                let result_ptr = self
-                    .builder
-                    .build_call(func, &[cstr.into()], "str_to_float")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .ok_or("mux_string_to_float should return a basic value")?;
-                Ok(Some(result_ptr))
-            }
-            "to_char" => {
-                let value = self.generate_expression(expr)?;
-                let cstr = self.value_to_cstr(value)?;
-                let func = self
-                    .runtime_function("mux_string_to_char")
-                    .ok_or("mux_string_to_char not found")?;
-                let result_ptr = self
-                    .builder
-                    .build_call(func, &[cstr.into()], "str_to_char")
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .ok_or("mux_string_to_char should return a basic value")?;
-                Ok(Some(result_ptr))
-            }
+            "to_int" => self.generate_string_conversion_field_method(
+                expr,
+                "mux_string_to_int",
+                "str_to_int",
+            ),
+            "to_float" => self.generate_string_conversion_field_method(
+                expr,
+                "mux_string_to_float",
+                "str_to_float",
+            ),
+            "to_char" => self.generate_string_conversion_field_method(
+                expr,
+                "mux_string_to_char",
+                "str_to_char",
+            ),
             _ => Ok(None),
         }
+    }
+
+    /// Codegen for the `string.to_X()` field-method family (`to_int`,
+    /// `to_float`, `to_char`). Generates the expression, converts the
+    /// value to a C string, calls the runtime conversion function, and
+    /// returns the boxed result.
+    fn generate_string_conversion_field_method(
+        &mut self,
+        expr: &ExpressionNode,
+        func_name: &str,
+        call_name: &str,
+    ) -> Result<Option<BasicValueEnum<'a>>, String> {
+        let value = self.generate_expression(expr)?;
+        let cstr = self.value_to_cstr(value)?;
+        let func = self
+            .runtime_function(func_name)
+            .ok_or(format!("{} not found", func_name))?;
+        let result_ptr = self
+            .builder
+            .build_call(func, &[cstr.into()], call_name)
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or(format!("{} should return a basic value", func_name))?;
+        Ok(Some(result_ptr))
     }
 
     fn generate_char_field_method(
@@ -3754,36 +3749,10 @@ impl<'a> CodeGenerator<'a> {
             .left()
             .expect("mux_list_get_value should return a basic value");
 
-        let next_ptr = next.into_pointer_value();
-        let is_null = self
-            .builder
-            .build_is_null(next_ptr, &format!("{}_is_null", block_prefix))
-            .map_err(|e| e.to_string())?;
+        // Bounds check: delegate to the shared null-pointer helper.
+        self.check_non_null_pointer(next.into_pointer_value(), error_message, block_prefix)?;
 
-        let current_function = self
-            .builder
-            .get_insert_block()
-            .expect("Builder should have an insertion block")
-            .get_parent()
-            .ok_or("No current function")?;
-
-        let error_bb = self
-            .context
-            .append_basic_block(current_function, &format!("{}_error", block_prefix));
-        let continue_bb = self
-            .context
-            .append_basic_block(current_function, &format!("{}_continue", block_prefix));
-
-        self.builder
-            .build_conditional_branch(is_null, error_bb, continue_bb)
-            .map_err(|e| e.to_string())?;
-
-        // Error block: print and exit
-        self.builder.position_at_end(error_bb);
-        self.emit_runtime_fatal(error_message, &format!("{}_error", block_prefix))?;
-
-        // Continue block: free the raw list
-        self.builder.position_at_end(continue_bb);
+        // Free the raw list.
         let free_list_fn = self
             .runtime_function("mux_free_list")
             .ok_or("mux_free_list not found")?;
