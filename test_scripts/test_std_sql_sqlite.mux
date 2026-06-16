@@ -144,4 +144,6 @@ func main() returns void {
     }
 
     print("sql sqlite smoke test passed")
+
+    return
 }

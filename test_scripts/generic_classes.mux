@@ -17,7 +17,9 @@ class Box<T is Stringable> {
     
     func set(T new_value) returns void {
         self.value = new_value
-    }
+    
+        return
+}
     
     func to_string() returns string {
         return "Box with: " + self.value.to_string()
@@ -30,7 +32,9 @@ class Container<T is Stringable & Printable> {
 
     func set(T val) returns void {
         self.value = val
-    }
+    
+        return
+}
 
     func show_string() returns string {
         return self.value.to_string()
@@ -45,11 +49,15 @@ class Pair<K is Stringable, V is Stringable> {
 
     func set_key(K k) returns void {
         self.key = k
-    }
+    
+        return
+}
 
     func set_value(V v) returns void {
         self.value = v
-    }
+    
+        return
+}
 
     func to_string() returns string {
         return self.key.to_string() + " : " + self.value.to_string()

@@ -25,6 +25,8 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
         while !self.vertices.is_empty() {
             self.vertices.pop_back()
         }
+    
+        return
     }
 
     func to_list() returns list<T> {
@@ -38,6 +40,8 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
             self.adjacency.put(value, empty)
             self.vertices.push_back(value)
         }
+    
+        return
     }
 
     func add_edge(T from, T to) returns void {
@@ -46,6 +50,8 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
         list<T> neighbors = self.adjacency[from]
         neighbors.push_back(to)
         self.adjacency.put(from, neighbors)
+    
+        return
     }
 
     func neighbors(T value) returns list<T> {
@@ -89,4 +95,4 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
         return order
     }
 
-}
+    }

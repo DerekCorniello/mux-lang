@@ -44,4 +44,6 @@ func main() returns void {
     }
 
     print("external udp integration test passed")
+
+    return
 }

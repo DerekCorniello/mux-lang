@@ -13,4 +13,6 @@ func main() returns void {
             print("tcp connect failed as expected: " + e)
         }
     }
+
+    return
 }

@@ -1,8 +1,8 @@
 ---
 source: mux-compiler/tests/executable_integration.rs
-expression: output_to_snapshot
+expression: normalized
 ---
-error: Map keys must be a hashable type, found '[?]'
+error: Map keys must be a hashable type, found 'list<?>'
 --> test_scripts/error_cases/parser_invalid_map_key.mux:2:11
    |
  2 | auto m = {[]: 1}

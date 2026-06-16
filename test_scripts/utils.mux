@@ -1,6 +1,8 @@
 // Utility module for testing imports and name mangling
 func init() returns void {
     print("Utils initialized")
+
+    return
 }
 
 func add(int a, int b) returns int {

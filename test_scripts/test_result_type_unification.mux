@@ -1,0 +1,72 @@
+// Regression test for issue: method signatures using Type::Named("result", ...)
+// did not unify with Type::Result from type annotations, causing:
+//   "Type mismatch: expected result<T, E>, got result<T, E>"
+// when assigning a method-returned result to an explicitly-typed variable.
+//
+// Affected methods: string.to_int, string.to_float, string.to_char,
+// char.to_int (all return result<T, string>).
+
+// string.to_int() with explicit type annotation
+result<int, string> parsed_int = "42".to_int()
+match parsed_int {
+    ok(v) { print("✓ result<int, string> = \"42\".to_int(): " + v.to_string()) }
+    err(e) { print("✗ unexpected error: " + e) }
+}
+
+result<int, string> bad_int = "not a number".to_int()
+match bad_int {
+    ok(_) { print("✗ unexpected success") }
+    err(e) { print("✓ result<int, string> = \"not a number\".to_int() err: " + e) }
+}
+
+// string.to_float() with explicit type annotation
+result<float, string> parsed_float = "3.14".to_float()
+match parsed_float {
+    ok(v) { print("✓ result<float, string> = \"3.14\".to_float(): " + v.to_string()) }
+    err(e) { print("✗ unexpected error: " + e) }
+}
+
+result<float, string> bad_float = "abc".to_float()
+match bad_float {
+    ok(_) { print("✗ unexpected success") }
+    err(e) { print("✓ result<float, string> = \"abc\".to_float() err: " + e) }
+}
+
+// string.to_char() with explicit type annotation
+result<char, string> parsed_char = "A".to_char()
+match parsed_char {
+    ok(v) { print("✓ result<char, string> = \"A\".to_char(): " + v.to_string()) }
+    err(e) { print("✗ unexpected error: " + e) }
+}
+
+result<char, string> bad_char = "ABC".to_char()
+match bad_char {
+    ok(_) { print("✗ unexpected success") }
+    err(e) { print("✓ result<char, string> = \"ABC\".to_char() err: " + e) }
+}
+
+// char.to_int() with explicit type annotation
+result<int, string> digit = '5'.to_int()
+match digit {
+    ok(v) { print("✓ result<int, string> = '5'.to_int(): " + v.to_string()) }
+    err(e) { print("✗ unexpected error: " + e) }
+}
+
+result<int, string> non_digit = 'A'.to_int()
+match non_digit {
+    ok(_) { print("✗ unexpected success") }
+    err(e) { print("✓ result<int, string> = 'A'.to_int() err: " + e) }
+}
+
+// Functions returning result<T, string> assigned to explicitly-typed variables
+func parseInt(string s) returns result<int, string> {
+    return s.to_int()
+}
+
+result<int, string> from_func = parseInt("99")
+match from_func {
+    ok(v) { print("✓ result<int, string> from function: " + v.to_string()) }
+    err(e) { print("✗ unexpected error: " + e) }
+}
+
+print("=== All result type unification tests passed ===")

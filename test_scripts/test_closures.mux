@@ -33,7 +33,9 @@ func main() returns void {
     int counter = 0
     auto increment = func() returns void {
         counter = counter + 1
-    }
+    
+        return
+}
     increment()
     increment()
     increment()
@@ -76,4 +78,6 @@ func main() returns void {
     print("Non-capturing: " + double_it(7).to_string())  // 14
 
     print("All closure tests passed!")
+
+    return
 }

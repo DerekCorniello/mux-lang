@@ -1,0 +1,10 @@
+// Test to_list() on set
+auto mySet = {'a', 'b', 'c'}
+auto asList = mySet.to_list()
+print("set to list: " + asList.to_string())
+print("list size: " + asList.size().to_string())
+
+// Use asList directly
+for int i in range(0, asList.size()) {
+    print(asList[i].to_string())
+}

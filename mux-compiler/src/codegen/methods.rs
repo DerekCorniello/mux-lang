@@ -863,6 +863,7 @@ impl<'a> CodeGenerator<'a> {
                     Ok(float_val.into())
                 }
                 "to_int" => Ok(obj_value),
+                "to_char" => Ok(obj_value),
                 _ => Err(format!("Method {} not implemented for int", method_name)),
             },
             PrimitiveType::Float => match method_name {
@@ -887,6 +888,7 @@ impl<'a> CodeGenerator<'a> {
                 "message" => Ok(obj_value),
                 "to_int" => self.call_string_conversion_func(obj_value, "mux_string_to_int"),
                 "to_float" => self.call_string_conversion_func(obj_value, "mux_string_to_float"),
+                "to_char" => self.call_string_conversion_func(obj_value, "mux_string_to_char"),
                 "length" => self.call_runtime_function("mux_string_length", &[obj_value]),
                 _ => Err(format!("Method {} not implemented for string", method_name)),
             },
@@ -927,6 +929,7 @@ impl<'a> CodeGenerator<'a> {
             PrimitiveType::Char => match method_name {
                 "to_string" => self.call_runtime_to_string(obj_value, "mux_char_to_string"),
                 "to_int" => self.call_runtime_function("mux_char_to_int", &[obj_value]),
+                "to_char" => Ok(obj_value),
                 _ => Err(format!("Method {} not implemented for char", method_name)),
             },
             _ => Err(format!(
@@ -1262,6 +1265,12 @@ impl<'a> CodeGenerator<'a> {
                 self.ensure_no_args("is_empty", args)?;
                 self.with_extracted_set(obj_value, |me, extract_set| {
                     me.call_runtime_function("mux_set_is_empty", &[extract_set])
+                })
+            }
+            "to_list" => {
+                self.ensure_no_args("to_list", args)?;
+                self.with_extracted_set(obj_value, |me, extract_set| {
+                    me.call_runtime_function("mux_set_to_list", &[extract_set])
                 })
             }
             _ => Err(format!("Method {} not implemented for sets", method_name)),

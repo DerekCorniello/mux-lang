@@ -44,4 +44,6 @@ func main() returns void {
     }
 
     print("external tcp integration test passed")
+
+    return
 }

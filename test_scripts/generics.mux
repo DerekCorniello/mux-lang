@@ -8,6 +8,8 @@ func max<T is Comparable>(T a, T b) returns T {
 
 func hello<T is Stringable>(T s) returns void {
     print("hello " + s.to_string())
+
+    return
 }
 
 func name<T is Stringable>(T s) returns string {
@@ -16,7 +18,9 @@ func name<T is Stringable>(T s) returns string {
 
 class Stack<T> {
     list<T> items
-    func push(T item) returns void { self.items.push_back(item) }
+    func push(T item) returns void { self.items.push_back(item) 
+        return
+}
     func pop() returns optional<T> {
         if self.items.is_empty() { return none }
         return self.items.pop_back()

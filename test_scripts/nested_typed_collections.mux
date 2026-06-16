@@ -10,4 +10,6 @@ func main() returns void {
     // map with entries inside
     map<int, map<int, string>> z = {1: {2: "hello"}}
     print(z.to_string())
+
+    return
 }

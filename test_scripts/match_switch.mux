@@ -8,6 +8,8 @@ func test_int_match() returns void {
         42 { print("forty-two") }
         _ { print("other") }
     }
+
+    return
 }
 
 // Test 2: Match on string literals
@@ -18,6 +20,8 @@ func test_string_match() returns void {
         "bye" { print("farewell") }
         _ { print("unknown") }
     }
+
+    return
 }
 
 // Test 3: Match on bool literals
@@ -28,6 +32,8 @@ func test_bool_match() returns void {
         false { print("no") }
         _ { print("unreachable") }
     }
+
+    return
 }
 
 // Test 4: Match with variable binding
@@ -38,6 +44,8 @@ func test_binding_match() returns void {
         other { print("got: " + other.to_string()) }
         _ { print("should never be here") }
     }
+
+    return
 }
 
 // Test 5: Match on char
@@ -48,6 +56,8 @@ func test_char_match() returns void {
         'b' { print("bravo") }
         _ { print("other char") }
     }
+
+    return
 }
 
 // Test 6: Match with constants
@@ -60,6 +70,8 @@ func test_const_match() returns void {
         MODERATOR { print("moderator") }
         _ { print("user") }
     }
+
+    return
 }
 
 // Test 7: Match on list literals (structural matching)
@@ -73,6 +85,8 @@ func test_list_match() returns void {
         [first, ..rest] { print("has elements") }
         _ { print("this is a weird list") }
     }
+
+    return
 }
 
 // Test 8: Match with guards
@@ -83,6 +97,8 @@ func test_guard_match() returns void {
         n if n < 20 { print("between 10 and 20") }
         _ { print("20 or more") }
     }
+
+    return
 }
 
 // Test 9: Match with string variable binding
@@ -93,6 +109,8 @@ func test_string_binding() returns void {
         n { print("Hello, " + n) }
         _ { print("shouldnt be here") }
     }
+
+    return
 }
 
 // Run all tests

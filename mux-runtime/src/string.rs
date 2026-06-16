@@ -201,6 +201,22 @@ pub extern "C" fn mux_string_not_equal(a: *const c_char, b: *const c_char) -> i3
     }
 }
 
+/// Convert a string to a single character.
+/// Returns Result<char, str>. Fails if the string is not exactly one Unicode character.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn mux_string_to_char(s: *const c_char) -> *mut Value {
+    let c_str = unsafe { CStr::from_ptr(s) };
+    let rust_str = c_str.to_string_lossy();
+    let mut chars = rust_str.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) => mux_rc_alloc(Value::Result(Ok(Box::new(Value::Int(c as i64))))),
+        _ => mux_rc_alloc(Value::Result(Err(Box::new(Value::String(
+            "String must be exactly one character".to_string(),
+        ))))),
+    }
+}
+
 /// Convert a character to its integer value
 /// Only works for digit characters '0'-'9'
 /// Returns Result<int, str>

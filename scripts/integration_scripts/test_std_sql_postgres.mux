@@ -120,4 +120,6 @@ func main() returns void {
     }
 
     print("postgres integration test passed")
+
+    return
 }

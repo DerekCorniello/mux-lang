@@ -18,7 +18,9 @@ class Box<T> {
     
     func set(T val) returns void {
         self.value = val
-    }
+    
+        return
+}
 }
 
 class Stack<T> {
@@ -26,7 +28,9 @@ class Stack<T> {
     
     func push(T item) returns void {
         self.items.push_back(item)
-    }
+    
+        return
+}
     
     func pop() returns optional<T> {
         if self.items.is_empty() {

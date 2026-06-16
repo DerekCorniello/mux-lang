@@ -10,7 +10,9 @@ class Circle is Drawable {
     float radius = 5.0
     func draw() returns void { 
         print("Circle radius=" + self.radius.to_string()) 
-    }
+    
+        return
+}
 }
 
 print("=== Test 1: User's Original Example ===")

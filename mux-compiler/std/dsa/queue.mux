@@ -17,6 +17,8 @@ class Queue<T> is Collection<T> {
             self.items.pop_back()
         }
         self.head = 0
+    
+        return
     }
 
     func to_list() returns list<T> {
@@ -31,6 +33,8 @@ class Queue<T> is Collection<T> {
 
     func enqueue(T value) returns void {
         self.items.push_back(value)
+    
+        return
     }
 
     func dequeue() returns optional<T> {
@@ -64,5 +68,7 @@ class Queue<T> is Collection<T> {
         }
         self.items = next
         self.head = 0
+    
+        return
     }
-}
+    }

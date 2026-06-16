@@ -1,0 +1,36 @@
+// Test to_char conversion methods
+
+// string.to_char() - returns result<char, string>
+result<char, string> single = "A".to_char()
+match single {
+    ok(c) { print("string 'A' to char: " + c.to_string()) }
+    err(e) { print("error: " + e) }
+}
+
+result<char, string> multi = "ABC".to_char()
+match multi {
+    ok(c) { print("multi to char: " + c.to_string()) }
+    err(e) { print("multi to char error: " + e) }
+}
+
+result<char, string> empty = "".to_char()
+match empty {
+    ok(c) { print("empty to char: " + c.to_string()) }
+    err(e) { print("empty to char error: " + e) }
+}
+
+// int.to_char() - returns char
+auto a_code = 65
+auto a_char = a_code.to_char()
+print("65 to char: " + a_char.to_string())
+
+auto b_code = 66
+print("66 to char: " + b_code.to_char().to_string())
+
+// char.to_char() - identity
+auto existing = 'Z'
+print("Z to char: " + existing.to_char().to_string())
+
+// char literal 'a' to_char identity
+auto x = 'x'
+print("x to char: " + x.to_char().to_string())

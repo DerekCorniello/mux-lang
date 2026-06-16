@@ -343,6 +343,7 @@ auto good4 = (true).to_int() + (false).to_int()  // OK: 1
 | `int` | `.to_string()` | `string` | Converts to string representation |
 | `int` | `.to_float()` | `float` | Converts to floating-point |
 | `int` | `.to_int()` | `int` | Identity function |
+| `int` | `.to_char()` | `char` | Converts Unicode code point to char |
 | `float` | `.to_string()` | `string` | Converts to string representation |
 | `float` | `.to_int()` | `int` | Truncates decimal part |
 | `float` | `.to_float()` | `float` | Identity function |
@@ -351,9 +352,11 @@ auto good4 = (true).to_int() + (false).to_int()  // OK: 1
 | `bool` | `.to_float()` | `float` | Returns 1.0 or 0.0 |
 | `char` | `.to_string()` | `string` | Converts char to string |
 | `char` | `.to_int()` | `result<int, string>` | Digit value for '0'-'9' only |
+| `char` | `.to_char()` | `char` | Identity function |
 | `string` | `.to_string()` | `str` | Identity function |
 | `string` | `.to_int()` | `result<int, string>` | Parses string as integer |
 | `string` | `.to_float()` | `result<float, string>` | Parses string as float |
+| `string` | `.to_char()` | `result<char, string>` | Parses string as single char |
 
 ### 3.2.5 Technical Design: Uniform Value Representation
 

@@ -12,6 +12,8 @@ func test_basic_primitives() returns void {
     print("  Created empty tuple: (0, \"\")")
     print("  empty.left = " + empty.left.to_string() + " (should be 0)")
     print("  empty.right = " + empty.right.to_string() + " (should be empty)")
+
+    return
 }
 
 // Test 2: Float, bool, char
@@ -28,6 +30,8 @@ func test_float_bool_char() returns void {
     auto t_char = ('a', 'z')
     print("  Created char tuple")
     print("  t_char.left = " + t_char.left.to_string() + " (should be a)")
+
+    return
 }
 
 // Test 3: Nested tuples
@@ -48,6 +52,8 @@ func test_nested_tuples() returns void {
     print( "  mixed_nested.left.left.right = " + mixed_nested.left.left.right.to_string() + " (should be a)")
     print( "  mixed_nested.left.right.right = " + mixed_nested.left.right.right.to_string() + " (should be z)")
     print( "  mixed_nested.right.left.left = " + mixed_nested.right.left.left.to_string() + " (should be 3.5)")
+
+    return
 }
 
 // Test 4: to_string
@@ -56,6 +62,8 @@ func test_to_string() returns void {
     auto t = (1, "two")
     auto s = t.to_string()
     print("  t.to_string() = " + s + " (should be (1, two))")
+
+    return
 }
 
 // Test 5: Custom class
@@ -75,6 +83,8 @@ func test_custom_class() returns void {
     print("  Created tuple from fields")
     print("  pt.left = " + pt.left.to_string() + " (should be 1.0)")
     print("  pt.right = " + pt.right.to_string() + " (should be 2.0)")
+
+    return
 }
 
 // Test 6: Collections with tuples
@@ -94,6 +104,8 @@ func test_collections() returns void {
     print("  Created tuple with list and tuple")
     print( "  tuple_with_list.left[2] = " + tuple_with_list.left[2].to_string() + " (should be 3)")
     print( "  tuple_with_list.right.left = " + tuple_with_list.right.left.to_string() + " (should be x)")
+
+    return
 }
 
 // Main entry point
@@ -120,4 +132,6 @@ func main() returns void {
     print("")
 
     print("All tuple tests completed!")
+
+    return
 }

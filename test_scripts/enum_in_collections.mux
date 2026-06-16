@@ -7,4 +7,6 @@ func main() returns void {
     auto shapes2 = [s, Shape.Rect(1.0, 2.0)]
     print("second list with " + shapes2.size().to_string() + " elements")
     print("done")
+
+    return
 }
