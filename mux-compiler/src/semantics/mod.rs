@@ -3506,6 +3506,17 @@ impl SemanticAnalyzer {
     }
 
     #[allow(clippy::only_used_in_recursion)]
+    /// Returns true if the given expression is a statically-known infinite loop
+    /// condition, currently the literal `true`. This lets `while true { ... }`
+    /// be recognized as always returning when its body always returns.
+    fn is_infinite_loop_condition(cond: &ExpressionNode) -> bool {
+        matches!(
+            &cond.kind,
+            ExpressionKind::Literal(LiteralNode::Boolean(true))
+        )
+    }
+
+    #[allow(clippy::only_used_in_recursion)]
     fn all_paths_return(&self, stmts: &[StatementNode]) -> bool {
         for stmt in stmts {
             match &stmt.kind {
@@ -3527,10 +3538,12 @@ impl SemanticAnalyzer {
                         return true;
                     }
                 }
-                StatementKind::While { .. }
-                | StatementKind::For { .. }
-                | StatementKind::Break
-                | StatementKind::Continue => {}
+                StatementKind::While { cond, body: _ } => {
+                    if Self::is_infinite_loop_condition(cond) {
+                        return true;
+                    }
+                }
+                StatementKind::For { .. } | StatementKind::Break | StatementKind::Continue => {}
                 StatementKind::Match { arms, .. } => {
                     if arms.iter().all(|arm| self.all_paths_return(&arm.body)) {
                         return true;
@@ -4742,7 +4755,13 @@ impl SemanticAnalyzer {
             exists_like = self.check_stdlib_imports_for_class(name);
         }
         if !exists_like {
-            if let Some(help) = collection_new_hint(name) {
+            // Only suggest the collection constructor when no similar symbol
+            // exists. If a similar symbol does exist, the standard "did you
+            // mean?" diagnostic from undefined_symbol_error is more helpful
+            // for catching typos like a variable named `listing` vs `list`.
+            if self.symbol_table.find_similar(name).is_none()
+                && let Some(help) = collection_new_hint(name)
+            {
                 return Err(SemanticError::with_help(
                     format!("Undefined variable '{}'", name),
                     expr.span,
@@ -5287,7 +5306,12 @@ impl SemanticAnalyzer {
         if name == "tuple" {
             return self.check_tuple_type_args(expr, type_args);
         }
-        if let Some(help) = collection_new_hint(name) {
+        // Only suggest the collection constructor when no similar symbol
+        // exists. A typo like `lisp<int>.new()` should surface the
+        // "did you mean 'list'?" suggestion instead.
+        if self.symbol_table.find_similar(name).is_none()
+            && let Some(help) = collection_new_hint(name)
+        {
             return Err(SemanticError::with_help(
                 format!("Undefined type '{}'", name),
                 expr.span,
@@ -7044,19 +7068,19 @@ use crate::semantics::symbol_table::{
 fn collection_new_hint(name: &str) -> Option<&'static str> {
     match name {
         "list" => Some(
-            "List has no '.new()' constructor. Use '[]' for an empty list or '[1, 2, 3]' for elements. For example: list<int> = []",
+            "List has no '.new()' constructor. Use '[]' for an empty list or '[1, 2, 3]' for elements. For example: list<int> my_list = []",
         ),
         "map" => Some(
-            "Map has no '.new()' constructor. Use '{}' for an empty map or '{\"key\": \"value\"}' for entries. For example: map<string, int> = {}",
+            "Map has no '.new()' constructor. Use '{}' for an empty map or '{\"key\": \"value\"}' for entries. For example: map<string, int> my_map = {}",
         ),
         "set" => Some(
-            "Set has no '.new()' constructor. Use '{}' for an empty set or '{1, 2, 3}' for elements. For example: set<int> = {}",
+            "Set has no '.new()' constructor. Use '{}' for an empty set or '{1, 2, 3}' for elements. For example: set<int> my_set = {}",
         ),
         "optional" => Some(
-            "Optional has no '.new()' constructor. Use 'none' for an empty value or 'some(value)' for a value. For example: optional<int> = none",
+            "Optional has no '.new()' constructor. Use 'none' for an empty value or 'some(value)' for a value. For example: optional<int> my_opt = none",
         ),
         "result" => Some(
-            "Result has no '.new()' constructor. Use 'ok(value)' or 'err(message)' to construct one. For example: result<int, string> = ok(42)",
+            "Result has no '.new()' constructor. Use 'ok(value)' or 'err(message)' to construct one. For example: result<int, string> my_res = ok(42)",
         ),
         _ => None,
     }

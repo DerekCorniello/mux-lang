@@ -78,4 +78,6 @@ func main() returns void {
     }
 
     print("external http integration test passed")
+
+    return
 }

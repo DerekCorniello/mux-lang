@@ -17,7 +17,7 @@ class Heap<T is Comparable> is Collection<T> {
         }
     
         return
-}
+    }
 
     func to_list() returns list<T> {
         return self.items
@@ -28,7 +28,7 @@ class Heap<T is Comparable> is Collection<T> {
         self.sift_up(self.items.size() - 1)
     
         return
-}
+    }
 
     func peek() returns optional<T> {
         return self.items.get(0)
@@ -71,7 +71,7 @@ class Heap<T is Comparable> is Collection<T> {
         }
     
         return
-}
+    }
 
     func sift_down(int index) returns void {
         int i = index
@@ -97,9 +97,7 @@ class Heap<T is Comparable> is Collection<T> {
             self.swap(i, smallest)
             i = smallest
         }
-    
-        return
-}
+    }
 
     func swap(int i, int j) returns void {
         auto tmp = self.items[i]
@@ -107,5 +105,5 @@ class Heap<T is Comparable> is Collection<T> {
         self.items[j] = tmp
     
         return
-}
-}
+    }
+    }

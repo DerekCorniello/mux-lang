@@ -27,7 +27,7 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
         }
     
         return
-}
+    }
 
     func to_list() returns list<T> {
         // Deterministic contract: returns vertices in insertion order.
@@ -42,7 +42,7 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
         }
     
         return
-}
+    }
 
     func add_edge(T from, T to) returns void {
         self.add_vertex(from)
@@ -52,7 +52,7 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
         self.adjacency.put(from, neighbors)
     
         return
-}
+    }
 
     func neighbors(T value) returns list<T> {
         if self.adjacency.contains(value) {
@@ -95,4 +95,4 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
         return order
     }
 
-}
+    }

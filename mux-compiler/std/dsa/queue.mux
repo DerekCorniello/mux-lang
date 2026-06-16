@@ -19,7 +19,7 @@ class Queue<T> is Collection<T> {
         self.head = 0
     
         return
-}
+    }
 
     func to_list() returns list<T> {
         list<T> out = []
@@ -35,7 +35,7 @@ class Queue<T> is Collection<T> {
         self.items.push_back(value)
     
         return
-}
+    }
 
     func dequeue() returns optional<T> {
         if self.head >= self.items.size() {
@@ -70,5 +70,5 @@ class Queue<T> is Collection<T> {
         self.head = 0
     
         return
-}
-}
+    }
+    }

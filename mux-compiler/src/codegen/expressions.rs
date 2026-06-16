@@ -3829,6 +3829,191 @@ impl<'a> CodeGenerator<'a> {
             .ok_or("mux_value_to_string should return a basic value".to_string())
     }
 
+    /// Emit a "print error message and exit(1); unreachable" terminator.
+    /// The current block is consumed and a new unreachable block follows.
+    fn emit_runtime_fatal(&mut self, message: &str, block_name: &str) -> Result<(), String> {
+        let _current_function = self
+            .builder
+            .get_insert_block()
+            .expect("Builder should have an insertion block")
+            .get_parent()
+            .ok_or("No current function")?;
+
+        let error_msg = self
+            .builder
+            .build_global_string_ptr(message, &format!("{}_msg", block_name))
+            .map_err(|e| e.to_string())?;
+        let error_str = self
+            .generate_runtime_call(
+                "mux_new_string_from_cstr",
+                &[error_msg.as_pointer_value().into()],
+            )
+            .expect("mux_new_string_from_cstr should always return a value");
+        self.generate_runtime_call("mux_print", &[error_str.into()]);
+        self.generate_runtime_call(
+            "exit",
+            &[self.context.i32_type().const_int(1, false).into()],
+        );
+        self.builder
+            .build_unreachable()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Look up `key` in the raw `map` and return the unwrapped value, freeing
+    /// the raw map pointer. If the key is missing, emits a fatal error block
+    /// and branches to a new "continue" block where the caller can continue.
+    ///
+    /// Returns the unwrapped value (`BasicValueEnum`).
+    fn map_get_or_panic(
+        &mut self,
+        map: PointerValue<'a>,
+        key: BasicValueEnum<'a>,
+        error_message: &str,
+        block_prefix: &str,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let boxed_key = self.box_value(key);
+
+        let optional_ptr = self
+            .builder
+            .build_call(
+                self.runtime_function("mux_map_get")
+                    .expect("mux_map_get must be declared in runtime"),
+                &[map.into(), boxed_key.into()],
+                &format!("{}_get", block_prefix),
+            )
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .expect("mux_map_get should return a basic value")
+            .into_pointer_value();
+
+        let is_some = self
+            .builder
+            .build_call(
+                self.runtime_function("mux_optional_is_some")
+                    .expect("mux_optional_is_some must be declared in runtime"),
+                &[optional_ptr.into()],
+                &format!("{}_has_key", block_prefix),
+            )
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .expect("mux_optional_is_some should return a basic value")
+            .into_int_value();
+
+        let current_function = self
+            .builder
+            .get_insert_block()
+            .expect("Builder should have an insertion block")
+            .get_parent()
+            .ok_or("No current function")?;
+
+        let error_bb = self
+            .context
+            .append_basic_block(current_function, &format!("{}_error", block_prefix));
+        let continue_bb = self
+            .context
+            .append_basic_block(current_function, &format!("{}_continue", block_prefix));
+
+        self.builder
+            .build_conditional_branch(is_some, continue_bb, error_bb)
+            .map_err(|e| e.to_string())?;
+
+        // Error block: print and exit
+        self.builder.position_at_end(error_bb);
+        self.emit_runtime_fatal(error_message, &format!("{}_error", block_prefix))?;
+
+        // Continue block: free the raw map, then unwrap the optional
+        self.builder.position_at_end(continue_bb);
+        let free_map_fn = self
+            .runtime_function("mux_free_map")
+            .ok_or("mux_free_map not found")?;
+        self.builder
+            .build_call(free_map_fn, &[map.into()], "free_map")
+            .map_err(|e| e.to_string())?;
+
+        self.builder
+            .build_call(
+                self.runtime_function("mux_optional_get_value")
+                    .expect("mux_optional_get_value must be declared in runtime"),
+                &[optional_ptr.into()],
+                &format!("{}_unwrap", block_prefix),
+            )
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or("mux_optional_get_value should return a basic value".to_string())
+    }
+
+    /// Look up `index` in the raw `list` (after negative-index normalization)
+    /// and return the value, freeing the raw list pointer. If the index is
+    /// out of bounds, emits a fatal error block and branches to a new
+    /// "continue" block.
+    ///
+    /// Returns the unwrapped value (`BasicValueEnum`).
+    fn list_get_or_panic(
+        &mut self,
+        list: PointerValue<'a>,
+        index: BasicValueEnum<'a>,
+        error_message: &str,
+        block_prefix: &str,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        let normalized_index = self.normalize_list_index(index, list)?;
+
+        let next = self
+            .builder
+            .build_call(
+                self.runtime_function("mux_list_get_value")
+                    .expect("mux_list_get_value must be declared in runtime"),
+                &[list.into(), normalized_index.into()],
+                &format!("{}_get", block_prefix),
+            )
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .expect("mux_list_get_value should return a basic value");
+
+        let next_ptr = next.into_pointer_value();
+        let is_null = self
+            .builder
+            .build_is_null(next_ptr, &format!("{}_is_null", block_prefix))
+            .map_err(|e| e.to_string())?;
+
+        let current_function = self
+            .builder
+            .get_insert_block()
+            .expect("Builder should have an insertion block")
+            .get_parent()
+            .ok_or("No current function")?;
+
+        let error_bb = self
+            .context
+            .append_basic_block(current_function, &format!("{}_error", block_prefix));
+        let continue_bb = self
+            .context
+            .append_basic_block(current_function, &format!("{}_continue", block_prefix));
+
+        self.builder
+            .build_conditional_branch(is_null, error_bb, continue_bb)
+            .map_err(|e| e.to_string())?;
+
+        // Error block: print and exit
+        self.builder.position_at_end(error_bb);
+        self.emit_runtime_fatal(error_message, &format!("{}_error", block_prefix))?;
+
+        // Continue block: free the raw list
+        self.builder.position_at_end(continue_bb);
+        let free_list_fn = self
+            .runtime_function("mux_free_list")
+            .ok_or("mux_free_list not found")?;
+        self.builder
+            .build_call(free_list_fn, &[list.into()], "free_list")
+            .map_err(|e| e.to_string())?;
+
+        Ok(next)
+    }
+
     fn cstr_to_mux_string(
         &mut self,
         cstr: BasicValueEnum<'a>,
@@ -4136,33 +4321,12 @@ impl<'a> CodeGenerator<'a> {
                         .expect("mux_value_get_list should return a basic value")
                         .into_pointer_value();
 
-                    // Normalize the index to handle negative wraparound
-                    let normalized_index =
-                        self.normalize_list_index(first_index_val, raw_base_list)?;
-
-                    // Get base[i1] (this is a copy)
-                    let result = self
-                        .builder
-                        .build_call(
-                            self.runtime_function("mux_list_get_value")
-                                .expect("mux_list_get_value must be declared in runtime"),
-                            &[raw_base_list.into(), normalized_index.into()],
-                            "get_intermediate",
-                        )
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_list_get_value should return a basic value");
-
-                    // Free the raw list pointer obtained from mux_value_get_list
-                    let free_list = self
-                        .runtime_function("mux_free_list")
-                        .ok_or("mux_free_list not found")?;
-                    self.builder
-                        .build_call(free_list, &[raw_base_list.into()], "free_list")
-                        .map_err(|e| e.to_string())?;
-
-                    result
+                    self.list_get_or_panic(
+                        raw_base_list,
+                        first_index_val,
+                        "List index out of bounds in nested assignment",
+                        "nested_assign_list",
+                    )?
                 }
                 crate::semantics::Type::Map(_, _) => {
                     // Extract raw Map from base
@@ -4177,106 +4341,15 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?
                         .try_as_basic_value()
                         .left()
-                        .expect("mux_value_get_map should return a basic value");
-
-                    // Box the key
-                    let boxed_key = self.box_value(first_index_val);
-
-                    // Get map[key] (returns Optional)
-                    let optional_ptr = self
-                        .builder
-                        .build_call(
-                            self.runtime_function("mux_map_get")
-                                .expect("mux_map_get must be declared in runtime"),
-                            &[raw_base_map.into(), boxed_key.into()],
-                            "map_get_intermediate",
-                        )
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_map_get should return a basic value")
+                        .expect("mux_value_get_map should return a basic value")
                         .into_pointer_value();
 
-                    // Check if Optional has a value
-                    let is_some = self
-                        .builder
-                        .build_call(
-                            self.runtime_function("mux_optional_is_some")
-                                .expect("mux_optional_is_some must be declared in runtime"),
-                            &[optional_ptr.into()],
-                            "map_has_key",
-                        )
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_optional_is_some should return a basic value")
-                        .into_int_value();
-
-                    // Handle None case
-                    let current_function = self
-                        .builder
-                        .get_insert_block()
-                        .expect("Builder should have an insertion block")
-                        .get_parent()
-                        .ok_or("No current function")?;
-
-                    let error_bb = self
-                        .context
-                        .append_basic_block(current_function, "map_key_error");
-                    let continue_bb = self
-                        .context
-                        .append_basic_block(current_function, "map_key_continue");
-
-                    self.builder
-                        .build_conditional_branch(is_some, continue_bb, error_bb)
-                        .map_err(|e| e.to_string())?;
-
-                    // Error block
-                    self.builder.position_at_end(error_bb);
-                    let error_msg = self
-                        .builder
-                        .build_global_string_ptr(
-                            "Key not found in map during nested assignment",
-                            "map_key_error_msg",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    let error_str = self
-                        .generate_runtime_call(
-                            "mux_new_string_from_cstr",
-                            &[error_msg.as_pointer_value().into()],
-                        )
-                        .expect("mux_new_string_from_cstr should always return a value");
-                    self.generate_runtime_call("mux_print", &[error_str.into()]);
-                    self.generate_runtime_call(
-                        "exit",
-                        &[self.context.i32_type().const_int(1, false).into()],
-                    );
-                    self.builder
-                        .build_unreachable()
-                        .map_err(|e| e.to_string())?;
-
-                    // Continue block - extract value from Optional
-                    self.builder.position_at_end(continue_bb);
-
-                    // Free the raw map pointer obtained from mux_value_get_map
-                    let free_map_fn = self
-                        .runtime_function("mux_free_map")
-                        .ok_or("mux_free_map not found")?;
-                    self.builder
-                        .build_call(free_map_fn, &[raw_base_map.into()], "free_map")
-                        .map_err(|e| e.to_string())?;
-
-                    self.builder
-                        .build_call(
-                            self.runtime_function("mux_optional_get_value")
-                                .expect("mux_optional_get_value must be declared in runtime"),
-                            &[optional_ptr.into()],
-                            "map_get_value",
-                        )
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_optional_get_value should return a basic value")
+                    self.map_get_or_panic(
+                        raw_base_map,
+                        first_index_val,
+                        "Key not found in map during nested assignment",
+                        "nested_assign_map",
+                    )?
                 }
                 _ => {
                     return Err(format!(
@@ -4467,84 +4540,12 @@ impl<'a> CodeGenerator<'a> {
                         .expect("mux_value_get_list should return a basic value")
                         .into_pointer_value();
 
-                    // Normalize the index to handle negative wraparound
-                    let normalized_index = self.normalize_list_index(first_index_val, raw_list)?;
-
-                    // Get the next level
-                    let next = self
-                        .builder
-                        .build_call(
-                            self.runtime_function("mux_list_get_value")
-                                .expect("mux_list_get_value must be declared in runtime"),
-                            &[raw_list.into(), normalized_index.into()],
-                            "get_next_for_apply",
-                        )
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_list_get_value should return a basic value");
-
-                    // Check for null
-                    let next_ptr = next.into_pointer_value();
-                    let is_null = self
-                        .builder
-                        .build_is_null(next_ptr, "is_null_apply")
-                        .map_err(|e| e.to_string())?;
-
-                    let current_function = self
-                        .builder
-                        .get_insert_block()
-                        .expect("Builder should have an insertion block")
-                        .get_parent()
-                        .ok_or("No current function")?;
-
-                    let error_bb = self
-                        .context
-                        .append_basic_block(current_function, "apply_index_error");
-                    let continue_bb = self
-                        .context
-                        .append_basic_block(current_function, "apply_index_continue");
-
-                    self.builder
-                        .build_conditional_branch(is_null, error_bb, continue_bb)
-                        .map_err(|e| e.to_string())?;
-
-                    // Error block
-                    self.builder.position_at_end(error_bb);
-                    let error_msg = self
-                        .builder
-                        .build_global_string_ptr(
-                            "Index out of bounds in nested assignment",
-                            "apply_error_msg",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    let error_str = self
-                        .generate_runtime_call(
-                            "mux_new_string_from_cstr",
-                            &[error_msg.as_pointer_value().into()],
-                        )
-                        .expect("mux_new_string_from_cstr should always return a value");
-                    self.generate_runtime_call("mux_print", &[error_str.into()]);
-                    self.generate_runtime_call(
-                        "exit",
-                        &[self.context.i32_type().const_int(1, false).into()],
-                    );
-                    self.builder
-                        .build_unreachable()
-                        .map_err(|e| e.to_string())?;
-
-                    // Continue block
-                    self.builder.position_at_end(continue_bb);
-
-                    // Free the raw list pointer obtained from mux_value_get_list
-                    let free_list_fn = self
-                        .runtime_function("mux_free_list")
-                        .ok_or("mux_free_list not found")?;
-                    self.builder
-                        .build_call(free_list_fn, &[raw_list.into()], "free_list")
-                        .map_err(|e| e.to_string())?;
-
-                    next
+                    self.list_get_or_panic(
+                        raw_list,
+                        first_index_val,
+                        "Index out of bounds in nested assignment",
+                        "apply_list",
+                    )?
                 }
                 crate::semantics::Type::Map(_, _) => {
                     // Extract raw Map
@@ -4559,105 +4560,15 @@ impl<'a> CodeGenerator<'a> {
                         .map_err(|e| e.to_string())?
                         .try_as_basic_value()
                         .left()
-                        .expect("mux_value_get_map should return a basic value");
-
-                    // Box the key
-                    let boxed_key = self.box_value(first_index_val);
-
-                    // Get map[key] (returns Optional)
-                    let optional_ptr = self
-                        .builder
-                        .build_call(
-                            self.runtime_function("mux_map_get")
-                                .expect("mux_map_get must be declared in runtime"),
-                            &[raw_map.into(), boxed_key.into()],
-                            "apply_map_get",
-                        )
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_map_get should return a basic value")
+                        .expect("mux_value_get_map should return a basic value")
                         .into_pointer_value();
 
-                    // Check if Optional has a value
-                    let is_some = self
-                        .builder
-                        .build_call(
-                            self.runtime_function("mux_optional_is_some")
-                                .expect("mux_optional_is_some must be declared in runtime"),
-                            &[optional_ptr.into()],
-                            "apply_map_has_key",
-                        )
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_optional_is_some should return a basic value")
-                        .into_int_value();
-
-                    let current_function = self
-                        .builder
-                        .get_insert_block()
-                        .expect("Builder should have an insertion block")
-                        .get_parent()
-                        .ok_or("No current function")?;
-
-                    let error_bb = self
-                        .context
-                        .append_basic_block(current_function, "apply_map_key_error");
-                    let continue_bb = self
-                        .context
-                        .append_basic_block(current_function, "apply_map_key_continue");
-
-                    self.builder
-                        .build_conditional_branch(is_some, continue_bb, error_bb)
-                        .map_err(|e| e.to_string())?;
-
-                    // Error block
-                    self.builder.position_at_end(error_bb);
-                    let error_msg = self
-                        .builder
-                        .build_global_string_ptr(
-                            "Key not found in map during nested assignment",
-                            "apply_map_key_error_msg",
-                        )
-                        .map_err(|e| e.to_string())?;
-                    let error_str = self
-                        .generate_runtime_call(
-                            "mux_new_string_from_cstr",
-                            &[error_msg.as_pointer_value().into()],
-                        )
-                        .expect("mux_new_string_from_cstr should always return a value");
-                    self.generate_runtime_call("mux_print", &[error_str.into()]);
-                    self.generate_runtime_call(
-                        "exit",
-                        &[self.context.i32_type().const_int(1, false).into()],
-                    );
-                    self.builder
-                        .build_unreachable()
-                        .map_err(|e| e.to_string())?;
-
-                    // Continue block - extract value from Optional
-                    self.builder.position_at_end(continue_bb);
-
-                    // Free the raw map pointer obtained from mux_value_get_map
-                    let free_map_fn = self
-                        .runtime_function("mux_free_map")
-                        .ok_or("mux_free_map not found")?;
-                    self.builder
-                        .build_call(free_map_fn, &[raw_map.into()], "free_map")
-                        .map_err(|e| e.to_string())?;
-
-                    self.builder
-                        .build_call(
-                            self.runtime_function("mux_optional_get_value")
-                                .expect("mux_optional_get_value must be declared in runtime"),
-                            &[optional_ptr.into()],
-                            "apply_map_get_value",
-                        )
-                        .map_err(|e| e.to_string())?
-                        .try_as_basic_value()
-                        .left()
-                        .expect("mux_optional_get_value should return a basic value")
+                    self.map_get_or_panic(
+                        raw_map,
+                        first_index_val,
+                        "Key not found in map during nested assignment",
+                        "apply_map",
+                    )?
                 }
                 _ => {
                     return Err(format!(

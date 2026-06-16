@@ -17,7 +17,7 @@ class Stack<T> is Collection<T> {
         }
     
         return
-}
+    }
 
     func to_list() returns list<T> {
         return self.items
@@ -27,7 +27,7 @@ class Stack<T> is Collection<T> {
         self.items.push_back(value)
     
         return
-}
+    }
 
     func pop() returns optional<T> {
         return self.items.pop_back()
@@ -39,4 +39,4 @@ class Stack<T> is Collection<T> {
         }
         return self.items.get(self.items.size() - 1)
     }
-}
+    }

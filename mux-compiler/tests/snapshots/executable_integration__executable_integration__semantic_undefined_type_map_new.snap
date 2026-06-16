@@ -8,4 +8,4 @@ error: Undefined variable 'map'
  2 | auto empty_map = map.new()
    |                  ^^^
    |
-= help: Map has no '.new()' constructor. Use '{}' for an empty map or '{"key": "value"}' for entries. For example: map<string, int> = {}
+= help: Map has no '.new()' constructor. Use '{}' for an empty map or '{"key": "value"}' for entries. For example: map<string, int> my_map = {}

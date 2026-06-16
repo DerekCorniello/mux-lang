@@ -8,4 +8,4 @@ error: Undefined variable 'result'
  2 | auto empty_res = result.new()
    |                  ^^^^^^
    |
-= help: Result has no '.new()' constructor. Use 'ok(value)' or 'err(message)' to construct one. For example: result<int, string> = ok(42)
+= help: Result has no '.new()' constructor. Use 'ok(value)' or 'err(message)' to construct one. For example: result<int, string> my_res = ok(42)

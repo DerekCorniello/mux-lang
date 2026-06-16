@@ -8,4 +8,4 @@ error: Undefined variable 'optional'
  2 | auto empty_opt = optional.new()
    |                  ^^^^^^^^
    |
-= help: Optional has no '.new()' constructor. Use 'none' for an empty value or 'some(value)' for a value. For example: optional<int> = none
+= help: Optional has no '.new()' constructor. Use 'none' for an empty value or 'some(value)' for a value. For example: optional<int> my_opt = none
