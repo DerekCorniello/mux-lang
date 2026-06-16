@@ -30,12 +30,12 @@ enum Shape {
 auto status = Pending
 
 // Variants with data
-auto circle = Circle(5.0)
-auto rect = Rectangle(10.0, 20.0)
-auto square = Square(7.5)
+auto circle  = Shape.Circle(5.0)
+auto rect  = Shape.Rectangle(10.0, 20.0)
+auto square  = Shape.Square(7.5)
 
 // Type inference
-auto myShape = Circle(5.0)  // type inferred as Shape
+auto myShape  = Shape.Circle(5.0)  // type inferred as Shape
 ```
 
 ## Pattern Matching with Enums
@@ -49,7 +49,7 @@ enum Shape {
     Square(float size)
 }
 
-auto myShape = Circle(5.0)
+auto myShape  = Shape.Circle(5.0)
 
 match myShape {
     Circle(r) {
@@ -72,6 +72,13 @@ match myShape {
 Use `_` to ignore data you don't need:
 
 ```mux title="ignoring_enum_data.mux"
+enum Shape {
+    Circle(float radius),
+    Rectangle(float width, float height),
+    Square(float size)
+}
+
+auto shape = Shape.Rectangle(10.0, 20.0)
 match shape {
     Circle(_) {
         print("It's a circle")  // radius ignored
@@ -118,6 +125,7 @@ match value {
 Enums can be generic over type parameters:
 
 ```mux title="enum_generics.mux"
+/*
 enum Option<T> {
     some(T)
     none
@@ -127,6 +135,7 @@ enum result<T, E> {
     ok(T)
     err(E)
 }
+*/
 
 // Usage
 auto maybeInt = some(42)              // Option<int>
@@ -142,11 +151,6 @@ auto failure = err("error msg")      // result<T, string>
 ### optional Values
 
 ```mux title="optional_values.mux"
-enum optional<T> {
-    some(T)
-    none
-}
-
 func findFirst(list<int> items, int target) returns optional<int> {
     for i in range(0, items.size()) {
         if items[i] == target {
@@ -171,11 +175,6 @@ match result {
 ### result Types for Error Handling
 
 ```mux title="result_types.mux"
-enum result<T, E> {
-    ok(T)
-    err(E)
-}
-
 func divide(int a, int b) returns result<int, string> {
     if b == 0 {
         return err("division by zero")

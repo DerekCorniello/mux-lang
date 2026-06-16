@@ -22,11 +22,13 @@ const MuxTerminal: React.FC<MuxTerminalProps> = ({
   const [copied, setCopied] = useState(false);
   const { executeCode, loading } = useMuxExecutor();
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setCode(initialCode);
     setOutput('');
     setError(null);
   }, [initialCode]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const canRun = useMemo(() => code.trim().length > 0, [code]);
 
@@ -47,8 +49,8 @@ const MuxTerminal: React.FC<MuxTerminalProps> = ({
       } else {
         setOutput(result.output || '(no output)');
       }
-    } catch (err: any) {
-      setError(err.message || 'Unknown error');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
     }
   };
 

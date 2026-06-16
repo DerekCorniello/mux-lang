@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
-import MonacoEditor from '@monaco-editor/react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import MonacoEditor, { type OnMount } from '@monaco-editor/react';
 import BrowserOnly from '@docusaurus/BrowserOnly';
 import { registerMuxLanguage } from '@site/src/monaco/muxLanguage';
 
@@ -31,8 +31,13 @@ const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, on
   const [theme, setTheme] = useState(getTheme);
   const [height, setHeight] = useState('200px');
   const observerRef = useRef<MutationObserver | null>(null);
+  const onRunRef = useRef(onRun);
 
-  const handleEditorMount = useCallback((editor: any, monaco: any) => {
+  useEffect(() => {
+    onRunRef.current = onRun;
+  }, [onRun]);
+
+  const handleEditorMount: OnMount = useCallback((editor, monaco) => {
     const updateHeight = () => {
       const lineCount = editor.getModel()?.getLineCount() || 10;
       const newHeight = Math.max(150, Math.min(lineCount * 21 + 24, 400));
@@ -47,7 +52,7 @@ const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, on
       label: 'Run Mux',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
       run: () => {
-        onRun?.();
+        onRunRef.current?.();
       },
     });
 
@@ -67,7 +72,7 @@ const MonacoEditorComponent: React.FC<MonacoEditorComponentProps> = ({ value, on
       attributeFilter: ['data-theme'],
     });
     observerRef.current = observer;
-  }, [onRun]);
+  }, []);
 
   return (
     <BrowserOnly fallback={<EditorFallback />}>

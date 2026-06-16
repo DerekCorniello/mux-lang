@@ -10,8 +10,39 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  detect-changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      website: ${{ steps.filter.outputs.website }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'mux-compiler/**'
+              - 'mux-runtime/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'clippy.toml'
+              - 'scripts/run-checks.sh'
+              - 'scripts/dev-cargo.sh'
+              - 'scripts/build_syntax_highlighting.py'
+              - 'scripts/sync-version.sh'
+              - 'editor-support/**'
+              - 'mux-syntax-highlighting/**'
+              - 'Dockerfile'
+              - 'infra/**'
+            website:
+              - 'mux-website/**'
+
   rust_checks:
     name: Rust Checks
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     env:
       LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
@@ -48,6 +79,8 @@ jobs:
         run: ./scripts/run-checks.sh
   integration_checks:
     name: Integration Checks
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,12 +92,33 @@ jobs:
         run: ./scripts/integration-checks.sh
   sonarqube:
     name: SonarQube
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          fetch-depth: 0
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  website_checks:
+    name: Website Checks
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.website == 'true' || github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mux-website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mux-website/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build

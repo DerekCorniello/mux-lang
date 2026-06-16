@@ -13,7 +13,7 @@ export default function WordWrapButton({className}: Props): ReactNode {
 
   const canShowButton = wordWrap.isEnabled || wordWrap.isCodeScrollable;
   if (!canShowButton) {
-    return false;
+    return null;
   }
 
   const title = translate({

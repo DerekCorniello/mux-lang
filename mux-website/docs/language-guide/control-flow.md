@@ -82,18 +82,18 @@ auto myMap = {
     "c": 3
 }
 // Map iteration on keys
-for key in myMap.keys() {
+for string key in myMap.get_keys() {
     print(key)
 }
 
 // Map iteration on vals
-for value in myMap.keys() {
-    print(value)
+for int value in myMap.get_values() {
+    print(value.to_string())
 }
 
-auto mySet = {"a", "b", "c"}
-for char in mySet {
-    print(char.to_string())
+auto mySet = {'a', 'b', 'c'}
+for char c in mySet.to_list() {
+    print(c.to_string())
 }
 ```
 

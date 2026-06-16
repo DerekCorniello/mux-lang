@@ -35,9 +35,12 @@ export default function Heading({as: As, id, ...props}: Readonly<Props>): ReactN
     const origin = globalThis.location.origin;
     const pathname = globalThis.location.pathname;
     const url = `${origin}${pathname}#${id}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      // Clipboard write failed (e.g., non-HTTPS context)
+    });
   };
 
   return (

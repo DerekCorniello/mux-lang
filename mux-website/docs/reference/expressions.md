@@ -61,9 +61,9 @@ print(pair.right.to_string())
 
 ```mux
 auto nums = [1, 2, 3]           // list<int>
+list<string> names = []         // list<string>
 auto empty = []                 // ERROR: needs explicit type
-auto typed = list<int>.new()    // Empty list with type
-auto mixed = [1, "two", 3.0]    // Mixed types allowed
+auto mixed = [1, "two", 3.0]    // ERROR: Mixed types not allowed
 ```
 
 ### Type Inference for Lists
@@ -89,7 +89,8 @@ auto bad = []                   // ERROR: cannot infer type
 
 ```mux
 auto scores = {"Alice": 90, "Bob": 85}
-auto nested = {"name": "Mux", "version": 1}
+auto nested = {"name": "Mux", "version": 1} // ERROR: mixed value types
+auto nested2 = {1: "Mux", "version": "1"}    // ERROR: mixed key types
 auto complex = {"key": [1, 2, 3]}
 ```
 
@@ -203,7 +204,7 @@ p.x = 10            // Write to field
 
 ```mux
 auto result = numbers.size()     // Method call
-auto upper = "hello".to_upper()  // Method on literal
+auto upper = "3".to_int()        // Method on literal
 ```
 
 ## Array/List Access

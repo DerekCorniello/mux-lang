@@ -1,5 +1,5 @@
 import type {ReactNode} from 'react';
-import {useState, useEffect} from 'react';
+import {useState} from 'react';
 import clsx from 'clsx';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
@@ -14,11 +14,6 @@ type Platform = 'unix' | 'windows';
 const installCommands: Record<Platform, string> = {
   unix: 'curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh',
   windows: 'iwr -useb https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.ps1 | iex',
-};
-
-const platformLabels: Record<Platform, string> = {
-  unix: 'MacOS / Linux',
-  windows: 'Windows',
 };
 
 function detectPlatform(): Platform {
@@ -100,11 +95,7 @@ const features = [
 
 function HomepageHeader() {
   const [copied, setCopied] = useState(false);
-  const [platform, setPlatform] = useState<Platform>('unix');
-
-  useEffect(() => {
-    setPlatform(detectPlatform());
-  }, []);
+  const [platform, setPlatform] = useState<Platform>(() => detectPlatform());
 
   const handleCopy = async () => {
     try {
@@ -215,67 +206,6 @@ function HomepageHeader() {
   );
 }
 
-function InstallationSection() {
-  return (
-    <section className={styles.installation}>
-      <div className="container">
-        <Heading as="h2" className={styles.sectionTitle}>
-          Installation
-        </Heading>
-        <p className={styles.sectionSubtitle}>
-          Choose the method that works best for you
-        </p>
-        
-        <div className={styles.installGrid}>
-          <div className={styles.installCard}>
-            <div className={styles.installHeader}>
-              <span className={styles.installIcon}>🚀</span>
-              <Heading as="h3">Prebuilt Binaries</Heading>
-              <span className={styles.recommendedBadge}>Recommended</span>
-            </div>
-            <p>Fastest way to get started. No Rust or LLVM required.</p>
-            <CodeBlock className={styles.installCode}>
-{`# Linux & macOS
-curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh
-
-# Windows PowerShell
-iwr -useb https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.ps1 | iex`}
-            </CodeBlock>
-          </div>
-          
-          <div className={styles.installCard}>
-            <div className={styles.installHeader}>
-              <span className={styles.installIcon}>📦</span>
-              <Heading as="h3">From crates.io</Heading>
-            </div>
-            <p>For Rust developers who already have cargo installed.</p>
-            <CodeBlock className={styles.installCode}>
-{`cargo install mux-lang
-
-# Verify installation
-mux doctor`}
-            </CodeBlock>
-          </div>
-          
-          <div className={styles.installCard}>
-            <div className={styles.installHeader}>
-              <span className={styles.installIcon}>🔧</span>
-              <Heading as="h3">Build from Source</Heading>
-            </div>
-            <p>For contributors and those who want the latest features.</p>
-            <CodeBlock className={styles.installCode}>
-{`git clone https://github.com/DerekCorniello/mux-lang
-cd mux-lang
-./scripts/bootstrap-dev.sh
-./scripts/dev-cargo.sh build`}
-            </CodeBlock>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function QuickStartSection() {
   return (
     <section className={styles.quickStart}>
@@ -310,15 +240,15 @@ function QuickStartSection() {
           
           <div className={styles.codeBlockWrapper}>
             <CodeBlock title="error-handling.mux" className={`language-mux ${styles.featuredCode}`}>
-{`func divide(int a, int b) returns result<int, string> {
-    if b == 0 {
+{`func divide(float a, float b) returns result<float, string> {
+    if b == 0.to_float() {
         return err("division by zero")
     }
     return ok(a / b)
 }
 
 func main() returns void {
-    auto res = divide(10, 2)
+    auto res = divide(10.0, 2.0)
 
     match res {
         ok(value) {
@@ -424,9 +354,9 @@ func area(Shape shape) returns float {
 
 func main() returns void {
     auto shapes = [
-        Circle.new(5.0),
-        Rectangle.new(4.0, 6.0),
-        Square.new(3.0)
+        Shape.Circle(5.0),
+        Shape.Rectangle(4.0, 6.0),
+        Shape.Square(3.0)
     ]
     for Shape s in shapes {
         print(area(s).to_string())

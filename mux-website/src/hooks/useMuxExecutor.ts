@@ -46,7 +46,7 @@ const useMuxExecutor = () => {
       });
 
       const data = await readExecuteResponse(res);
-      if (res.ok && !data.output && !data.error) {
+      if (res.ok && data.output === undefined && !data.error) {
         const msg = 'Server returned an unexpected response';
         setError(msg);
         return { error: msg };
@@ -55,8 +55,8 @@ const useMuxExecutor = () => {
         setError(data.error || 'Request failed');
       }
       return data;
-    } catch (err: any) {
-      const msg = err.message || 'Unknown error';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(msg);
       return { error: msg };
     } finally {

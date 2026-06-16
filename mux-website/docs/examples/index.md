@@ -142,7 +142,10 @@ nums.push_back(60)
 print("After push: " + nums.to_string())
 
 auto last = nums.pop_back()
-print("Popped: " + last.to_string())
+match last {
+    some(v) { print("Popped value: " + v.to_string()) }
+    none { print("List was empty") }
+}
 print("List size: " + nums.size().to_string())
 ```
 
@@ -390,11 +393,11 @@ print("10 >= 10: " + (10 >= 10).to_string())
 Functions can accept references to modify the original value or avoid copying large data.
 
 ```mux title="references.mux"
-func increment(int ref n) returns void {
+func increment(&int n) returns void {
     n = n + 1
 }
 
-func swap(int ref a, int ref b) returns void {
+func swap(&int a, &int b) returns void {
     int temp = a
     a = b
     b = temp

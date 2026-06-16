@@ -363,12 +363,11 @@ Simple assignment (no compound assignment):
 |----------|-------------|---------|
 | `=` | Assignment | `x = 10` |
 
-**Note:** Mux does NOT support compound assignment operators like `+=`, `-=`, etc.
 
 ```mux title="assignment_ops.mux"
 auto x = 10
 x = x + 5     // Must write explicitly
-// x += 5     // ERROR: Not supported
+x += 5
 
 auto count = 0
 count = count + 1  // Explicit increment
