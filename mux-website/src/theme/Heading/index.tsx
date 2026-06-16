@@ -32,8 +32,8 @@ export default function Heading({as: As, id, ...props}: Readonly<Props>): ReactN
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    const origin = window.location.origin;
-    const pathname = window.location.pathname;
+    const origin = globalThis.location.origin;
+    const pathname = globalThis.location.pathname;
     const url = `${origin}${pathname}#${id}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);

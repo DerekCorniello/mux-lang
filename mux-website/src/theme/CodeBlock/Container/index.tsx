@@ -16,7 +16,7 @@ export default function CodeBlockContainer({
   children,
   className,
   tabIndex,
-}: CodeBlockContainerProps): ReactNode {
+}: Readonly<CodeBlockContainerProps>): ReactNode {
   const prismTheme = usePrismTheme();
   const prismCssVariables = getPrismCssVariables(prismTheme);
   return (

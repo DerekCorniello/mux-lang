@@ -20,7 +20,6 @@ const Pre = React.forwardRef<HTMLPreElement, ComponentProps<'pre'>>(
     return (
       <pre
         ref={ref}
-        tabIndex={0}
         {...props}
         className={clsx(props.className, styles.codeBlock, 'thin-scrollbar')}
       />

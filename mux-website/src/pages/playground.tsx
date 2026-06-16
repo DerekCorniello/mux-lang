@@ -7,8 +7,8 @@ const DEFAULT_PLAYGROUND_CODE = `func main() returns void {
 }`;
 
 function getCodeFromQuery(): string {
-  if (typeof window === 'undefined') return DEFAULT_PLAYGROUND_CODE;
-  const params = new URLSearchParams(window.location.search);
+  if (typeof globalThis.window === 'undefined') return DEFAULT_PLAYGROUND_CODE;
+  const params = new URLSearchParams(globalThis.location.search);
   return params.get('code') || DEFAULT_PLAYGROUND_CODE;
 }
 
