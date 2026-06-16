@@ -718,39 +718,13 @@ impl<'a> CodeGenerator<'a> {
                 .map_err(|e| e.to_string())?;
         }
 
-        let closure_struct_type = self
-            .context
-            .struct_type(&[ptr_type.into(), ptr_type.into()], false);
-
-        let closure_size = closure_struct_type
-            .size_of()
-            .ok_or("Failed to get closure struct size")?;
-        let closure_mem = self
-            .builder
-            .build_call(malloc_fn, &[closure_size.into()], "closure_alloc")
-            .map_err(|e| e.to_string())?
-            .try_as_basic_value()
-            .left()
-            .ok_or("malloc didn't return a value")?
-            .into_pointer_value();
-
-        let fn_ptr_field = self
-            .builder
-            .build_struct_gep(closure_struct_type, closure_mem, 0, "closure_fn_ptr")
-            .map_err(|e| e.to_string())?;
-        self.builder
-            .build_store(fn_ptr_field, function.as_global_value().as_pointer_value())
-            .map_err(|e| e.to_string())?;
-
-        let captures_field = self
-            .builder
-            .build_struct_gep(closure_struct_type, closure_mem, 1, "closure_captures")
-            .map_err(|e| e.to_string())?;
+        let (closure_mem, captures_field) =
+            self.allocate_closure(function, ptr_type, "closure_alloc")?;
         self.builder
             .build_store(captures_field, capture_mem)
             .map_err(|e| e.to_string())?;
 
-        Ok(closure_mem.into())
+        Ok(closure_mem)
     }
 
     fn create_closure_without_captures(
@@ -758,6 +732,26 @@ impl<'a> CodeGenerator<'a> {
         function: inkwell::values::FunctionValue<'a>,
         ptr_type: inkwell::types::PointerType<'a>,
     ) -> Result<BasicValueEnum<'a>, String> {
+        let (closure_mem, captures_field) =
+            self.allocate_closure(function, ptr_type, "closure_alloc")?;
+        let null_ptr = ptr_type.const_null();
+        self.builder
+            .build_store(captures_field, null_ptr)
+            .map_err(|e| e.to_string())?;
+
+        Ok(closure_mem)
+    }
+
+    /// Allocate a closure struct (fn_ptr + captures), store the function
+    /// pointer in the first field, and return the closure memory pointer
+    /// along with a pointer to the captures field so the caller can
+    /// populate it.
+    fn allocate_closure(
+        &self,
+        function: inkwell::values::FunctionValue<'a>,
+        ptr_type: inkwell::types::PointerType<'a>,
+        alloc_name: &str,
+    ) -> Result<(BasicValueEnum<'a>, inkwell::values::PointerValue<'a>), String> {
         let closure_struct_type = self
             .context
             .struct_type(&[ptr_type.into(), ptr_type.into()], false);
@@ -768,7 +762,7 @@ impl<'a> CodeGenerator<'a> {
             .ok_or("Failed to get closure struct size")?;
         let closure_mem = self
             .builder
-            .build_call(malloc_fn, &[closure_size.into()], "closure_alloc")
+            .build_call(malloc_fn, &[closure_size.into()], alloc_name)
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
             .left()
@@ -787,12 +781,8 @@ impl<'a> CodeGenerator<'a> {
             .builder
             .build_struct_gep(closure_struct_type, closure_mem, 1, "closure_captures")
             .map_err(|e| e.to_string())?;
-        let null_ptr = ptr_type.const_null();
-        self.builder
-            .build_store(captures_field, null_ptr)
-            .map_err(|e| e.to_string())?;
 
-        Ok(closure_mem.into())
+        Ok((closure_mem.into(), captures_field))
     }
 
     /// check if a method's parameters or return type reference any of the given type parameters
@@ -1177,37 +1167,11 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn ok_builtin_constructor_name(arg_type: &Type) -> Option<&'static str> {
-        match arg_type {
-            Type::Primitive(PrimitiveType::Int) => Some("mux_result_ok_int"),
-            Type::Primitive(PrimitiveType::Float) => Some("mux_result_ok_float"),
-            Type::Primitive(PrimitiveType::Bool) => Some("mux_result_ok_bool"),
-            Type::Primitive(PrimitiveType::Char) => Some("mux_result_ok_char"),
-            Type::Primitive(PrimitiveType::Str)
-            | Type::List(_)
-            | Type::Map(_, _)
-            | Type::Set(_)
-            | Type::Named(_, _)
-            | Type::Instantiated(_, _) => Some("mux_result_ok_value"),
-            _ => None,
-        }
+        boxed_value_constructor_name(arg_type, "mux_result_ok")
     }
 
     fn some_builtin_constructor_name(arg_type: &Type) -> Option<&'static str> {
-        match arg_type {
-            Type::Primitive(PrimitiveType::Int) => Some("mux_optional_some_int"),
-            Type::Primitive(PrimitiveType::Float) => Some("mux_optional_some_float"),
-            Type::Primitive(PrimitiveType::Bool) => Some("mux_optional_some_bool"),
-            Type::Primitive(PrimitiveType::Char) => Some("mux_optional_some_char"),
-            Type::Primitive(PrimitiveType::Str)
-            | Type::List(_)
-            | Type::Map(_, _)
-            | Type::Set(_)
-            | Type::Named(_, _)
-            | Type::Variable(_)
-            | Type::Generic(_)
-            | Type::Instantiated(_, _) => Some("mux_optional_some_value"),
-            _ => None,
-        }
+        boxed_value_constructor_name(arg_type, "mux_optional_some")
     }
 
     fn call_single_arg_builtin(
@@ -1671,33 +1635,20 @@ impl<'a> CodeGenerator<'a> {
         let class_name = func_name
             .split('.')
             .next()
-            .ok_or_else(|| format!("Invalid function name format: {}", func_name))?;
+            .ok_or_else(|| format!("Invalid function name format: {}", func_name))?
+            .to_string();
         let has_field = self
             .field_map
-            .get(class_name)
+            .get(&class_name)
             .and_then(|fields| fields.get(name))
             .is_some();
         if !has_field {
             return Ok(None);
         }
 
-        let Some((self_ptr, _, _)) = self
-            .variables
-            .get("self")
-            .or_else(|| self.global_variables.get("self"))
-        else {
+        let Some(self_value_ptr) = self.load_self_ptr("self_value")? else {
             return Ok(None);
         };
-
-        let self_value_ptr = self
-            .builder
-            .build_load(
-                self.context.ptr_type(AddressSpace::default()),
-                *self_ptr,
-                "self_value",
-            )
-            .map_err(|e| e.to_string())?
-            .into_pointer_value();
         let get_ptr_func = self
             .runtime_function("mux_get_object_ptr")
             .ok_or("mux_get_object_ptr not found")?;
@@ -1715,7 +1666,7 @@ impl<'a> CodeGenerator<'a> {
             .into_pointer_value();
         let class_type = self
             .type_map
-            .get(class_name)
+            .get(&class_name)
             .ok_or("Class type not found")?;
         let struct_ptr_typed = self
             .builder
@@ -1727,7 +1678,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
         let field_indices = self
             .field_map
-            .get(class_name)
+            .get(&class_name)
             .ok_or_else(|| format!("Field map not found for class {}", class_name))?;
         let field_index = field_indices
             .get(name)
@@ -1741,7 +1692,7 @@ impl<'a> CodeGenerator<'a> {
                 "field_ptr",
             )
             .map_err(|e| e.to_string())?;
-        let class_fields = self.classes.get(class_name).ok_or("Class not found")?;
+        let class_fields = self.classes.get(&class_name).ok_or("Class not found")?;
         let field = class_fields
             .iter()
             .find(|f| f.name == name)
@@ -1768,36 +1719,23 @@ impl<'a> CodeGenerator<'a> {
         let class_name = func_name
             .split('.')
             .next()
-            .expect("function name contains '.' so next() should return Some");
-        if !self.classes.contains_key(class_name) {
+            .expect("function name contains '.' so next() should return Some")
+            .to_string();
+        if !self.classes.contains_key(&class_name) {
             return Ok(None);
         }
 
         let Some(field_index) = self
             .field_map
-            .get(class_name)
+            .get(&class_name)
             .and_then(|fields| fields.get(name))
         else {
             return Ok(None);
         };
         let field_index = *field_index;
-        let Some((self_ptr, _, _)) = self
-            .variables
-            .get("self")
-            .or_else(|| self.global_variables.get("self"))
-        else {
+        let Some(self_value_ptr) = self.load_self_ptr("load_self_for_field_access")? else {
             return Ok(None);
         };
-
-        let self_value_ptr = self
-            .builder
-            .build_load(
-                self.context.ptr_type(AddressSpace::default()),
-                *self_ptr,
-                "load_self_for_field_access",
-            )
-            .map_err(|e| e.to_string())?
-            .into_pointer_value();
         let get_ptr_func = self
             .runtime_function("mux_get_object_ptr")
             .ok_or("mux_get_object_ptr not found")?;
@@ -1811,7 +1749,7 @@ impl<'a> CodeGenerator<'a> {
             .into_pointer_value();
         let struct_type = self
             .type_map
-            .get(class_name)
+            .get(&class_name)
             .ok_or_else(|| format!("Class {} not found in type map", class_name))?;
         let field_ptr = self
             .builder
@@ -1824,7 +1762,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
         let field_types = self
             .field_types_map
-            .get(class_name)
+            .get(&class_name)
             .expect("class should be in field_types_map");
         let field_type = field_types[field_index];
         let loaded = self
@@ -3039,9 +2977,8 @@ impl<'a> CodeGenerator<'a> {
 
         match &target_type {
             crate::semantics::Type::List(element_type) => {
-                // List access: use mux_list_get_value
-                // extract raw List pointer from Value
-                let raw_list = self
+                // Extract raw List pointer from Value
+                let raw_list_ptr = self
                     .builder
                     .build_call(
                         self.runtime_function("mux_value_get_list")
@@ -3049,9 +2986,7 @@ impl<'a> CodeGenerator<'a> {
                         &[target_val.into()],
                         "extract_list",
                     )
-                    .map_err(|e| e.to_string())?;
-
-                let raw_list_ptr = raw_list
+                    .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
                     .expect("mux_value_get_list should return a basic value")
@@ -3077,57 +3012,7 @@ impl<'a> CodeGenerator<'a> {
                     .expect("mux_list_get_value should return a basic value")
                     .into_pointer_value();
 
-                // check for null (out of bounds)
-                let is_null = self
-                    .builder
-                    .build_is_null(result_ptr, "is_null")
-                    .map_err(|e| e.to_string())?;
-
-                // get current function for basic blocks
-                let current_function = self
-                    .builder
-                    .get_insert_block()
-                    .expect("Builder should have an insertion block")
-                    .get_parent()
-                    .ok_or("No current function")?;
-
-                // create error block and continue block
-                let error_bb = self
-                    .context
-                    .append_basic_block(current_function, "index_error");
-                let continue_bb = self
-                    .context
-                    .append_basic_block(current_function, "index_continue");
-
-                self.builder
-                    .build_conditional_branch(is_null, error_bb, continue_bb)
-                    .map_err(|e| e.to_string())?;
-
-                // error block: print error and exit
-                self.builder.position_at_end(error_bb);
-                let error_msg = self
-                    .builder
-                    .build_global_string_ptr("List index out of bounds", "error_msg")
-                    .map_err(|e| e.to_string())?;
-                let error_str = self
-                    .generate_runtime_call(
-                        "mux_new_string_from_cstr",
-                        &[error_msg.as_pointer_value().into()],
-                    )
-                    .expect("mux_new_string_from_cstr should always return a value");
-                self.generate_runtime_call("mux_print", &[error_str.into()]);
-                self.generate_runtime_call(
-                    "exit",
-                    &[self.context.i32_type().const_int(1, false).into()],
-                );
-                self.builder
-                    .build_unreachable()
-                    .map_err(|e| e.to_string())?;
-
-                // continue block: extract the value based on its actual type
-                self.builder.position_at_end(continue_bb);
-
-                // Free the raw list pointer obtained from mux_value_get_list
+                // Free the raw list pointer before continuing
                 let free_list = self
                     .runtime_function("mux_free_list")
                     .ok_or("mux_free_list not found")?;
@@ -3135,15 +3020,17 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(free_list, &[raw_list_ptr.into()], "free_list")
                     .map_err(|e| e.to_string())?;
 
+                // Bounds-check the result pointer
+                self.check_non_null_pointer(result_ptr, "List index out of bounds", "index")?;
+
                 // Use extract_value_from_ptr to properly extract based on type
                 let (extracted_val, _) =
                     self.extract_value_from_ptr(result_ptr, element_type, "list_element")?;
                 Ok(extracted_val)
             }
             crate::semantics::Type::Map(_, value_type) => {
-                // Map access: use mux_map_get (returns Optional)
-                // extract raw Map pointer from Value
-                let raw_map = self
+                // Extract raw Map pointer from Value
+                let raw_map_ptr = self
                     .builder
                     .build_call(
                         self.runtime_function("mux_value_get_map")
@@ -3151,123 +3038,16 @@ impl<'a> CodeGenerator<'a> {
                         &[target_val.into()],
                         "extract_map",
                     )
-                    .map_err(|e| e.to_string())?;
-
-                // Box the index value for map lookup
-                let boxed_index = self.box_value(index_val);
-
-                // call mux_map_get (returns Optional)
-                let raw_result = self
-                    .builder
-                    .build_call(
-                        self.runtime_function("mux_map_get")
-                            .expect("mux_map_get must be declared in runtime"),
-                        &[
-                            raw_map
-                                .try_as_basic_value()
-                                .left()
-                                .expect("mux_value_get_map should return a basic value")
-                                .into(),
-                            boxed_index.into(),
-                        ],
-                        "map_get_result",
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                let optional_ptr = raw_result
+                    .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .left()
-                    .expect("mux_map_get should return a basic value")
+                    .expect("mux_value_get_map should return a basic value")
                     .into_pointer_value();
 
-                // Check if Optional has a value using mux_optional_is_some
-                let is_some = self
-                    .builder
-                    .build_call(
-                        self.runtime_function("mux_optional_is_some")
-                            .expect("mux_optional_is_some must be declared in runtime"),
-                        &[optional_ptr.into()],
-                        "map_has_key",
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                let is_some_val = is_some
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_optional_is_some should return a basic value")
-                    .into_int_value();
-
-                // get current function for basic blocks
-                let current_function = self
-                    .builder
-                    .get_insert_block()
-                    .expect("Builder should have an insertion block")
-                    .get_parent()
-                    .ok_or("No current function")?;
-
-                // create error block and continue block
-                let error_bb = self
-                    .context
-                    .append_basic_block(current_function, "map_key_error");
-                let continue_bb = self
-                    .context
-                    .append_basic_block(current_function, "map_key_continue");
-
-                self.builder
-                    .build_conditional_branch(is_some_val, continue_bb, error_bb)
-                    .map_err(|e| e.to_string())?;
-
-                // error block: print error with key and exit
-                self.builder.position_at_end(error_bb);
-                let error_msg = self
-                    .builder
-                    .build_global_string_ptr("Key not found in map", "map_error_msg")
-                    .map_err(|e| e.to_string())?;
-                let error_str = self
-                    .generate_runtime_call(
-                        "mux_new_string_from_cstr",
-                        &[error_msg.as_pointer_value().into()],
-                    )
-                    .expect("mux_new_string_from_cstr should always return a value");
-                self.generate_runtime_call("mux_print", &[error_str.into()]);
-                self.generate_runtime_call(
-                    "exit",
-                    &[self.context.i32_type().const_int(1, false).into()],
-                );
-                self.builder
-                    .build_unreachable()
-                    .map_err(|e| e.to_string())?;
-
-                // continue block: extract the value from the Optional
-                self.builder.position_at_end(continue_bb);
-
-                // Free the raw map pointer obtained from mux_value_get_map
-                let free_map = self
-                    .runtime_function("mux_free_map")
-                    .ok_or("mux_free_map not found")?;
-                let raw_map_val = raw_map
-                    .try_as_basic_value()
-                    .left()
-                    .ok_or("mux_value_get_map should return a basic value")?;
-                self.builder
-                    .build_call(free_map, &[raw_map_val.into()], "free_map")
-                    .map_err(|e| e.to_string())?;
-
-                // Get the value from Optional using mux_optional_get_value
-                let value_result = self
-                    .builder
-                    .build_call(
-                        self.runtime_function("mux_optional_get_value")
-                            .expect("mux_optional_get_value must be declared in runtime"),
-                        &[optional_ptr.into()],
-                        "map_value",
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                let value_ptr = value_result
-                    .try_as_basic_value()
-                    .left()
-                    .expect("mux_optional_get_value should return a basic value")
+                // map_get_or_panic handles the lookup, key-not-found error
+                // block, and Optional unwrap, then frees the raw map.
+                let value_ptr = self
+                    .map_get_or_panic(raw_map_ptr, index_val, "Key not found in map", "map")?
                     .into_pointer_value();
 
                 // Use extract_value_from_ptr to properly extract based on type
@@ -4014,6 +3794,46 @@ impl<'a> CodeGenerator<'a> {
         Ok(next)
     }
 
+    /// If `ptr` is null, emit a fatal-error block with the given message
+    /// and position the builder at a new "continue" block. Used by list
+    /// index access to check out-of-bounds after a raw `mux_list_get_value`
+    /// call.
+    fn check_non_null_pointer(
+        &mut self,
+        ptr: inkwell::values::PointerValue<'a>,
+        error_message: &str,
+        block_prefix: &str,
+    ) -> Result<(), String> {
+        let is_null = self
+            .builder
+            .build_is_null(ptr, &format!("{}_is_null", block_prefix))
+            .map_err(|e| e.to_string())?;
+
+        let current_function = self
+            .builder
+            .get_insert_block()
+            .expect("Builder should have an insertion block")
+            .get_parent()
+            .ok_or("No current function")?;
+
+        let error_bb = self
+            .context
+            .append_basic_block(current_function, &format!("{}_error", block_prefix));
+        let continue_bb = self
+            .context
+            .append_basic_block(current_function, &format!("{}_continue", block_prefix));
+
+        self.builder
+            .build_conditional_branch(is_null, error_bb, continue_bb)
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(error_bb);
+        self.emit_runtime_fatal(error_message, &format!("{}_error", block_prefix))?;
+
+        self.builder.position_at_end(continue_bb);
+        Ok(())
+    }
+
     fn cstr_to_mux_string(
         &mut self,
         cstr: BasicValueEnum<'a>,
@@ -4027,6 +3847,29 @@ impl<'a> CodeGenerator<'a> {
             .try_as_basic_value()
             .left()
             .ok_or("mux_new_string_from_cstr should return a basic value".to_string())
+    }
+
+    /// Load the current `self` pointer from the variable table (or global
+    /// table) and return it as a `PointerValue` ready to be passed to
+    /// `mux_get_object_ptr`. Returns `Ok(None)` when no `self` is in scope.
+    fn load_self_ptr(&mut self, load_name: &str) -> Result<Option<PointerValue<'a>>, String> {
+        let Some((self_ptr, _, _)) = self
+            .variables
+            .get("self")
+            .or_else(|| self.global_variables.get("self"))
+        else {
+            return Ok(None);
+        };
+        let ptr = self
+            .builder
+            .build_load(
+                self.context.ptr_type(AddressSpace::default()),
+                *self_ptr,
+                load_name,
+            )
+            .map_err(|e| e.to_string())?
+            .into_pointer_value();
+        Ok(Some(ptr))
     }
 
     fn value_to_runtime_string(
@@ -4617,4 +4460,41 @@ impl<'a> CodeGenerator<'a> {
             Ok(())
         }
     }
+}
+
+/// Map a Mux `Type` to the runtime function name used to wrap a value of
+/// that type in a `result` or `optional` (e.g. `mux_result_ok_int`,
+/// `mux_optional_some_value`). Returns `None` for types that have no
+/// specialized constructor at the runtime layer.
+fn boxed_value_constructor_name(arg_type: &Type, prefix: &str) -> Option<&'static str> {
+    let suffix = match arg_type {
+        Type::Primitive(PrimitiveType::Int) => "int",
+        Type::Primitive(PrimitiveType::Float) => "float",
+        Type::Primitive(PrimitiveType::Bool) => "bool",
+        Type::Primitive(PrimitiveType::Char) => "char",
+        Type::Primitive(PrimitiveType::Str)
+        | Type::List(_)
+        | Type::Map(_, _)
+        | Type::Set(_)
+        | Type::Named(_, _)
+        | Type::Instantiated(_, _) => "value",
+        _ => return None,
+    };
+    Some(match prefix {
+        "mux_result_ok" => match suffix {
+            "int" => "mux_result_ok_int",
+            "float" => "mux_result_ok_float",
+            "bool" => "mux_result_ok_bool",
+            "char" => "mux_result_ok_char",
+            _ => "mux_result_ok_value",
+        },
+        "mux_optional_some" => match suffix {
+            "int" => "mux_optional_some_int",
+            "float" => "mux_optional_some_float",
+            "bool" => "mux_optional_some_bool",
+            "char" => "mux_optional_some_char",
+            _ => "mux_optional_some_value",
+        },
+        _ => return None,
+    })
 }
