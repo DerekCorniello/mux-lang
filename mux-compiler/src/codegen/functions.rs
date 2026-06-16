@@ -209,54 +209,10 @@ impl<'a> CodeGenerator<'a> {
         func.name.clone()
     }
 
-    pub(super) fn declare_function(&mut self, func: &FunctionNode) -> Result<(), String> {
-        let mut param_types: Vec<BasicMetadataTypeEnum> = func
-            .params
-            .iter()
-            .map(|p| self.llvm_type_from_mux_type(&p.type_).map(|t| t.into()))
-            .collect::<Result<_, _>>()?;
-
-        let is_class_method = func.name.contains('.');
-        if is_class_method && !func.is_common {
-            param_types.insert(0, self.context.ptr_type(AddressSpace::default()).into());
-        }
-
-        let is_specialized = func.name.contains('$');
-        let is_static = func.is_common;
-        if is_specialized && !is_static {
-            let ptr_type = self.context.ptr_type(AddressSpace::default());
-            param_types = param_types
-                .into_iter()
-                .enumerate()
-                .map(|(i, param_type)| {
-                    if i == 0 && is_class_method && !func.is_common {
-                        param_type
-                    } else {
-                        ptr_type.into()
-                    }
-                })
-                .collect();
-        }
-
-        let fn_type = if matches!(
-            func.return_type.kind,
-            TypeKind::Primitive(PrimitiveType::Void)
-        ) {
-            self.context.void_type().fn_type(&param_types, false)
-        } else {
-            let return_type = self.llvm_type_from_mux_type(&func.return_type)?;
-            return_type.fn_type(&param_types, false)
-        };
-        let llvm_name = self.resolve_decl_llvm_name(func);
-
-        let function = self.module.add_function(&llvm_name, fn_type, None);
-        self.functions.insert(func.name.clone(), function);
-        self.function_nodes.insert(func.name.clone(), func.clone());
-
-        Ok(())
-    }
-
-    pub(super) fn declare_function_with_name(
+    /// Add a function declaration to the module under `llvm_name` and record
+    /// it in the function table. Centralizes the param-type, return-type, and
+    /// module-registration logic shared by the two public entry points.
+    fn add_function_declaration(
         &mut self,
         func: &FunctionNode,
         llvm_name: &str,
@@ -301,8 +257,22 @@ impl<'a> CodeGenerator<'a> {
 
         let function = self.module.add_function(llvm_name, fn_type, None);
         self.functions.insert(llvm_name.to_string(), function);
-
         Ok(())
+    }
+
+    pub(super) fn declare_function(&mut self, func: &FunctionNode) -> Result<(), String> {
+        let llvm_name = self.resolve_decl_llvm_name(func);
+        self.add_function_declaration(func, &llvm_name)?;
+        self.function_nodes.insert(func.name.clone(), func.clone());
+        Ok(())
+    }
+
+    pub(super) fn declare_function_with_name(
+        &mut self,
+        func: &FunctionNode,
+        llvm_name: &str,
+    ) -> Result<(), String> {
+        self.add_function_declaration(func, llvm_name)
     }
 
     pub(super) fn generate_module_init(

@@ -3518,41 +3518,33 @@ impl SemanticAnalyzer {
 
     #[allow(clippy::only_used_in_recursion)]
     fn all_paths_return(&self, stmts: &[StatementNode]) -> bool {
-        for stmt in stmts {
-            match &stmt.kind {
-                StatementKind::Return(_) => return true,
-                StatementKind::If {
-                    then_block,
-                    else_block,
-                    ..
-                } => {
-                    let else_returns = else_block
-                        .as_ref()
-                        .is_some_and(|b| self.all_paths_return(b));
-                    if self.all_paths_return(then_block) && else_returns {
-                        return true;
-                    }
-                }
-                StatementKind::Block(block_stmts) => {
-                    if self.all_paths_return(block_stmts) {
-                        return true;
-                    }
-                }
-                StatementKind::While { cond, body: _ } => {
-                    if Self::is_infinite_loop_condition(cond) {
-                        return true;
-                    }
-                }
-                StatementKind::For { .. } | StatementKind::Break | StatementKind::Continue => {}
-                StatementKind::Match { arms, .. } => {
-                    if arms.iter().all(|arm| self.all_paths_return(&arm.body)) {
-                        return true;
-                    }
-                }
-                _ => {}
+        stmts.iter().any(|stmt| self.statement_returns(stmt))
+    }
+
+    /// Returns true if the given statement terminates this code path with a
+    /// return. Used by `all_paths_return` to keep the recursive function
+    /// under SonarQube's cognitive complexity threshold.
+    #[allow(clippy::only_used_in_recursion)]
+    fn statement_returns(&self, stmt: &StatementNode) -> bool {
+        match &stmt.kind {
+            StatementKind::Return(_) => true,
+            StatementKind::If {
+                then_block,
+                else_block,
+                ..
+            } => {
+                let else_returns = else_block
+                    .as_ref()
+                    .is_some_and(|b| self.all_paths_return(b));
+                self.all_paths_return(then_block) && else_returns
             }
+            StatementKind::Block(block_stmts) => self.all_paths_return(block_stmts),
+            StatementKind::While { cond, body: _ } => Self::is_infinite_loop_condition(cond),
+            StatementKind::Match { arms, .. } => {
+                arms.iter().all(|arm| self.all_paths_return(&arm.body))
+            }
+            _ => false,
         }
-        false
     }
 
     fn analyze_class(
