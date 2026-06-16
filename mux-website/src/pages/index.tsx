@@ -318,7 +318,7 @@ function QuickStartSection() {
 }
 
 func main() returns void {
-    auto res = divide(10, 2)
+    auto res = divide(10.0, 2.0)
 
     match res {
         ok(value) {

@@ -45,7 +45,8 @@ const MuxTerminal: React.FC<MuxTerminalProps> = ({
       if (result.error) {
         setError(result.error);
       } else {
-        setOutput(result.output ?? '');
+        console.log(result.output || '(no output)')
+        setOutput(result.output || '(no output)');
       }
     } catch (err: any) {
       setError(err.message || 'Unknown error');
