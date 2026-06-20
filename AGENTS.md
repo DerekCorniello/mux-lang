@@ -1,5 +1,7 @@
 # Mux Compiler: AI Agent Guidelines
 
+Please also read the 10x Dev Skill that covers best practices at ~/.opencode/skills/derek-10x-dev-practices/SKILL.md if present.
+
 ## Critical Rules
 - **No hacks or workarounds** - write clean, production‑ready code. No hardcoding, no temporary solutions, no fighting the type system. If something is hard, ask for clarification, then do it the right way.
 - **No special characters** - avoid em‑dashes, emojis, or other non‑ASCII characters in code, comments, or commit messages.
@@ -38,19 +40,32 @@ cargo clippy
 ```
 
 ### Testing Approach
-When testing a feature:
+
+All of the following tools should be installed, if you find an issue running these commands, please stop and ask the user for help.
+
+Only run the following commands after you have completed your code changes and are ready to test, do not run them during development, as they can be time‑consuming.
+
+When feature complete and ready for testing a feature:
 1. Run `cargo build` to verify compilation.
 2. Run `cargo run -- test_scripts/test_file.mux` to test functionality.
    - Create test files that cover the new feature.
    - Add them to existing test files if appropriate, or remove ad‑hoc tests.
 3. Run `cargo fmt` for consistent formatting.
 4. Run `cargo clippy` to ensure no warnings/errors.
+
+> [!TIP]
+> Only use the following commands (Steps 5 and 6) for larger changes that require comprehensive testing, 
+> or if the user explicitly asks. For small edits, rely on `cargo check` and unit tests.
+
 5. Run SonarQube analysis locally to check code quality:
    ```bash
    source .env && npx --yes sonar-scanner -Dsonar.token="$SONARQUBE_TOKEN" -Dsonar.host.url="$SONARQUBE_URL"
    ```
-   Results appear at https://sonarcloud.io/dashboard?id=DerekCorniello_mux-lang
-   - To view the reports in the cloud, use the MCP server.
+   Results appear at `https://sonarcloud.io/dashboard?id=DerekCorniello_mux-lang`, please fetch them (this does not require login or auth).
+6. Run greptile cli tool for contrast against main via:
+   ```bash
+   greptile review -b main --plain
+   ```
 
 The user will run `cargo test` and insta snapshot tests separately. Do not manually edit the snapshots.
 
