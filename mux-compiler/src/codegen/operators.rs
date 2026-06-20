@@ -21,7 +21,7 @@ impl<'a> CodeGenerator<'a> {
     }
 
     /// Ensure a value is a pointer, boxing it if necessary.
-    fn ensure_pointer(&mut self, val: BasicValueEnum<'a>) -> PointerValue<'a> {
+    pub(super) fn ensure_pointer(&mut self, val: BasicValueEnum<'a>) -> PointerValue<'a> {
         if val.is_pointer_value() {
             val.into_pointer_value()
         } else {
@@ -83,7 +83,7 @@ impl<'a> CodeGenerator<'a> {
         self.i32_to_bool(result_i32)
     }
 
-    fn i32_to_bool(&self, int_val: IntValue<'a>) -> Result<BasicValueEnum<'a>, String> {
+    pub(super) fn i32_to_bool(&self, int_val: IntValue<'a>) -> Result<BasicValueEnum<'a>, String> {
         let zero = self.context.i32_type().const_zero();
         self.builder
             .build_int_compare(inkwell::IntPredicate::NE, int_val, zero, "to_bool")
