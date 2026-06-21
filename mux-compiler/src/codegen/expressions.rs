@@ -237,7 +237,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
         let cstr_ptr = call
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("mux_read_line returned no value")?
             .into_pointer_value();
         self.box_string_value(cstr_ptr)
@@ -297,7 +297,7 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?;
                 Ok(Some(
                     call.try_as_basic_value()
-                        .left()
+                        .basic()
                         .ok_or("static method call should return a basic value")?,
                 ))
             }
@@ -666,7 +666,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(malloc_fn, &[struct_size.into()], "capture_alloc")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("malloc didn't return a value")?
             .into_pointer_value();
 
@@ -688,7 +688,7 @@ impl<'a> CodeGenerator<'a> {
                 .build_call(malloc_fn, &[ptr_size], &format!("cap_{}_heap", name))
                 .map_err(|e| e.to_string())?
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .ok_or("malloc didn't return a value")?
                 .into_pointer_value();
 
@@ -765,7 +765,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(malloc_fn, &[closure_size.into()], alloc_name)
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("malloc didn't return a value")?
             .into_pointer_value();
 
@@ -835,7 +835,7 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("mux_optional_none should return a basic value");
         Ok(none_call)
     }
@@ -1094,7 +1094,7 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("mux_value_get_int should return a basic value")
             .into_int_value();
 
@@ -1188,7 +1188,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &[arg_val.into()], call_name)
             .map_err(|e| e.to_string())?;
         call.try_as_basic_value()
-            .left()
+            .basic()
             .ok_or_else(|| format!("{} should return a basic value", func_name))
     }
 
@@ -1258,7 +1258,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &[], "none_call")
             .map_err(|e| e.to_string())?;
         call.try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("optional constructor should return a basic value".to_string())
     }
 
@@ -1278,7 +1278,7 @@ impl<'a> CodeGenerator<'a> {
         &self,
         call: inkwell::values::CallSiteValue<'a>,
     ) -> BasicValueEnum<'a> {
-        match call.try_as_basic_value().left() {
+        match call.try_as_basic_value().basic() {
             Some(val) => val,
             None => self.context.i32_type().const_int(0, false).into(),
         }
@@ -1449,7 +1449,7 @@ impl<'a> CodeGenerator<'a> {
                 "call_with_captures",
             )
             .map_err(|e| e.to_string())?;
-        let result_with = call_with.try_as_basic_value().left();
+        let result_with = call_with.try_as_basic_value().basic();
         self.builder
             .build_unconditional_branch(merge_bb)
             .map_err(|e| e.to_string())?;
@@ -1468,7 +1468,7 @@ impl<'a> CodeGenerator<'a> {
                 "call_without_captures",
             )
             .map_err(|e| e.to_string())?;
-        let result_without = call_without.try_as_basic_value().left();
+        let result_without = call_without.try_as_basic_value().basic();
         self.builder
             .build_unconditional_branch(merge_bb)
             .map_err(|e| e.to_string())?;
@@ -1661,7 +1661,7 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("Invalid return from mux_get_object_ptr")?
             .into_pointer_value();
         let class_type = self
@@ -1744,7 +1744,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(get_ptr_func, &[self_value_ptr.into()], "get_data_ptr")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("mux_get_object_ptr should return a basic value")
             .into_pointer_value();
         let struct_type = self
@@ -2004,7 +2004,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(get_ptr_func, &[ptr_to_use.into()], call_name)
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("mux_get_object_ptr should return a basic value")
             .into_pointer_value();
         Ok(struct_ptr)
@@ -2046,7 +2046,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(get_ptr_func, &[self_value_ptr.into()], call_name)
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or_else(|| "mux_get_object_ptr should return a basic value".to_string())
             .map(|v| v.into_pointer_value())
     }
@@ -2559,7 +2559,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
         Ok(Some(
             call.try_as_basic_value()
-                .left()
+                .basic()
                 .expect("static method call should return a basic value"),
         ))
     }
@@ -2592,7 +2592,7 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or_else(|| format!("{} should return a value", runtime_fn))?;
         Ok(Some(created))
     }
@@ -2621,7 +2621,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
         Ok(Some(
             call.try_as_basic_value()
-                .left()
+                .basic()
                 .expect("constructor call should return a basic value"),
         ))
     }
@@ -2728,7 +2728,7 @@ impl<'a> CodeGenerator<'a> {
                 .map_err(|e| e.to_string())?;
             Ok(call
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .expect("generic method call should return a basic value"))
         })();
         self.generic_context = old_context;
@@ -2988,7 +2988,7 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .expect("mux_value_get_list should return a basic value")
                     .into_pointer_value();
 
@@ -3008,7 +3008,7 @@ impl<'a> CodeGenerator<'a> {
 
                 let result_ptr = raw_result
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .expect("mux_list_get_value should return a basic value")
                     .into_pointer_value();
 
@@ -3040,7 +3040,7 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .expect("mux_value_get_map should return a basic value")
                     .into_pointer_value();
 
@@ -3149,7 +3149,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(get_tuple_fn, &[tuple_value_ptr.into()], "get_tuple")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("mux_value_get_tuple should return a value")?
             .into_pointer_value();
         let (field_index, field_type) = match field {
@@ -3173,7 +3173,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(get_field_func, &[tuple_ptr.into()], field)
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("mux_tuple_left/right should return a value")?;
         let unboxed = self.unbox_value_for_type(field_value, &field_type)?;
         Ok(Some(unboxed))
@@ -3449,7 +3449,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(func, &[float_val.into()], "float_to_str")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_float_to_string should return a basic value")?;
                 self.cstr_to_mux_string(cstr).map(Some)
             }
@@ -3548,7 +3548,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &[cstr.into()], call_name)
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or(format!("{} should return a basic value", func_name))?;
         Ok(Some(result_ptr))
     }
@@ -3569,7 +3569,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(func, &[char_val.into()], "char_to_int")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_char_to_int should return a basic value")?;
                 Ok(Some(result_ptr))
             }
@@ -3583,7 +3583,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(func, &[char_val.into()], "char_to_cstr")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_char_to_string should return a basic value")?;
                 self.cstr_to_mux_string(cstr).map(Some)
             }
@@ -3600,7 +3600,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &[value.into()], "val_to_cstr")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("mux_value_to_string should return a basic value".to_string())
     }
 
@@ -3659,7 +3659,7 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("mux_map_get should return a basic value")
             .into_pointer_value();
 
@@ -3673,7 +3673,7 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("mux_optional_is_some should return a basic value")
             .into_int_value();
 
@@ -3717,7 +3717,7 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("mux_optional_get_value should return a basic value".to_string())
     }
 
@@ -3746,7 +3746,7 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("mux_list_get_value should return a basic value");
 
         // Bounds check: delegate to the shared null-pointer helper.
@@ -3814,7 +3814,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func_new, &[cstr.into()], "new_str")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("mux_new_string_from_cstr should return a basic value".to_string())
     }
 
@@ -3981,7 +3981,7 @@ impl<'a> CodeGenerator<'a> {
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("mux_list_length should return a basic value")
             .into_int_value();
 
@@ -4129,7 +4129,7 @@ impl<'a> CodeGenerator<'a> {
                         )
                         .map_err(|e| e.to_string())?
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .expect("mux_value_get_list should return a basic value")
                         .into_pointer_value();
 
@@ -4152,7 +4152,7 @@ impl<'a> CodeGenerator<'a> {
                         )
                         .map_err(|e| e.to_string())?
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .expect("mux_value_get_map should return a basic value")
                         .into_pointer_value();
 
@@ -4348,7 +4348,7 @@ impl<'a> CodeGenerator<'a> {
                         )
                         .map_err(|e| e.to_string())?
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .expect("mux_value_get_list should return a basic value")
                         .into_pointer_value();
 
@@ -4371,7 +4371,7 @@ impl<'a> CodeGenerator<'a> {
                         )
                         .map_err(|e| e.to_string())?
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .expect("mux_value_get_map should return a basic value")
                         .into_pointer_value();
 

@@ -35,10 +35,13 @@ fn compile_and_execute_file(test_file: &Path) -> (String, String) {
         });
     }
 
-    // Compile the file using the mux compiler (build, not run)
-    let mut compile_cmd = Command::new("cargo");
+    // Compile the file using the already-built mux binary (build, not run).
+    // Using CARGO_BIN_EXE_mux instead of `cargo run` avoids paying cargo's
+    // fingerprint/dependency-check overhead on every single test file.
+    let mux_bin = env!("CARGO_BIN_EXE_mux");
+    let mut compile_cmd = Command::new(mux_bin);
     compile_cmd
-        .args(["run", "--quiet", "--bin", "mux", "--", "build", &path_str])
+        .args(["build", &path_str])
         .current_dir("../")
         .env("RUST_BACKTRACE", "1");
 

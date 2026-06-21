@@ -76,7 +76,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &[left.into(), right.into()], label)
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("Call returned no value")?;
 
         let result_i32 = result.into_int_value();
@@ -395,7 +395,7 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("Call returned no value")?
                     .into_pointer_value();
 
@@ -417,7 +417,7 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("Call returned no value")?
                     .into_pointer_value();
 
@@ -439,7 +439,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(list_value_fn, &[result_list.into()], "list_value")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("Call returned no value")?;
 
                 Ok(result)
@@ -456,7 +456,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(merge_fn, &[left_map.into(), right_map.into()], "map_merge")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("Call returned no value")?
                     .into_pointer_value();
 
@@ -478,7 +478,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(map_value_fn, &[result_map.into()], "map_value")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("Call returned no value")?;
 
                 Ok(result)
@@ -495,7 +495,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(union_fn, &[left_set.into(), right_set.into()], "set_union")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("Call returned no value")?
                     .into_pointer_value();
 
@@ -517,7 +517,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(set_value_fn, &[result_set.into()], "set_value")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("Call returned no value")?;
 
                 Ok(result)
@@ -636,7 +636,7 @@ impl<'a> CodeGenerator<'a> {
                 .build_call(pow_fn, &[left_int.into(), right_int.into()], "pow")
                 .map_err(|e| e.to_string())?
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .ok_or("Call returned no value")?;
             Ok(result)
         } else if let (Ok(left_float), Ok(right_float)) = (
@@ -651,7 +651,7 @@ impl<'a> CodeGenerator<'a> {
                 .build_call(pow_fn, &[left_float.into(), right_float.into()], "pow")
                 .map_err(|e| e.to_string())?
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .ok_or("Call returned no value")?;
             Ok(result)
         } else {
@@ -883,7 +883,7 @@ impl<'a> CodeGenerator<'a> {
                             )
                             .map_err(|e| e.to_string())?
                             .try_as_basic_value()
-                            .left()
+                            .basic()
                             .expect("mux_string_contains_char should return a basic value");
                         Ok(result)
                     }
@@ -901,7 +901,7 @@ impl<'a> CodeGenerator<'a> {
                             )
                             .map_err(|e| e.to_string())?
                             .try_as_basic_value()
-                            .left()
+                            .basic()
                             .expect("mux_string_contains should return a basic value");
                         Ok(result)
                     }

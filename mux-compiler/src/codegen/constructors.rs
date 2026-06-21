@@ -152,7 +152,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
         let type_id_val = type_id
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("type_id call should return a basic value")?
             .into_int_value();
 
@@ -198,7 +198,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
         let obj_value_ptr = obj_ptr
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("alloc_object call should return a pointer value")?
             .into_pointer_value();
 
@@ -211,7 +211,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
         let struct_ptr = data_ptr
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("mux_get_object_ptr should return a basic value")?
             .into_pointer_value();
 
@@ -838,7 +838,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func_val, &call_args, &format!("call_{}", method_name))
             .map_err(|e| e.to_string())?;
 
-        if let Some(value) = call.try_as_basic_value().left() {
+        if let Some(value) = call.try_as_basic_value().basic() {
             Ok(value)
         } else {
             // Void-returning self-method calls can appear as expression statements.

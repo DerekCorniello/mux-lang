@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const REQUIRED_LLVM_MAJOR: u32 = 17;
+const REQUIRED_LLVM_MAJOR: u32 = 22;
 
 fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -51,30 +51,30 @@ fn main() {
     generate_embedded_std_sources(&manifest_dir);
 }
 
-/// Ensure `LLVM_SYS_170_PREFIX` is configured so `llvm-sys` links against
-/// LLVM 17 instead of a newer system LLVM. If not already set, detect
-/// `llvm-config-17` on PATH and write the prefix to `.cargo/config.toml`.
+/// Ensure `LLVM_SYS_221_PREFIX` is configured so `llvm-sys` links against
+/// LLVM 22 instead of a different system LLVM. If not already set, detect
+/// `llvm-config-22` on PATH and write the prefix to `.cargo/config.toml`.
 /// Exits with an error on first-time setup so the next build picks it up.
 fn ensure_llvm_prefix(workspace_root: &Path) {
     // Already set via environment — nothing to do.
-    if env::var("LLVM_SYS_170_PREFIX").is_ok() {
+    if env::var("LLVM_SYS_221_PREFIX").is_ok() {
         return;
     }
 
     let config_path = workspace_root.join(".cargo").join("config.toml");
     if let Ok(contents) = fs::read_to_string(&config_path)
-        && contents.contains("LLVM_SYS_170_PREFIX")
+        && contents.contains("LLVM_SYS_221_PREFIX")
     {
         return;
     }
 
-    // llvm-sys doesn't probe "llvm-config-17" (it probes "llvm-config-170"),
+    // llvm-sys doesn't probe "llvm-config-22" (it probes "llvm-config-221"),
     // so we detect it ourselves and tell llvm-sys where to look.
-    let prefix = detect_llvm17_prefix();
+    let prefix = detect_llvm22_prefix();
     let Some(prefix) = prefix else {
         println!(
             "cargo:warning=llvm-config-{} not found on PATH. \
-             If LLVM {} is installed, set LLVM_SYS_170_PREFIX to its installation root.",
+             If LLVM {} is installed, set LLVM_SYS_221_PREFIX to its installation root.",
             REQUIRED_LLVM_MAJOR, REQUIRED_LLVM_MAJOR,
         );
         return;
@@ -93,9 +93,9 @@ fn ensure_llvm_prefix(workspace_root: &Path) {
     std::process::exit(1);
 }
 
-/// Probe for `llvm-config-17` on PATH and return its installation prefix
-/// (e.g. `/usr/lib/llvm17`).
-fn detect_llvm17_prefix() -> Option<String> {
+/// Probe for `llvm-config-22` on PATH and return its installation prefix
+/// (e.g. `/usr`).
+fn detect_llvm22_prefix() -> Option<String> {
     let binary = format!("llvm-config-{}", REQUIRED_LLVM_MAJOR);
     let output = Command::new(&binary).arg("--prefix").output().ok()?;
     if !output.status.success() {
@@ -105,7 +105,7 @@ fn detect_llvm17_prefix() -> Option<String> {
     Some(stdout.trim().to_string())
 }
 
-/// Write `LLVM_SYS_170_PREFIX` into `.cargo/config.toml`, preserving existing
+/// Write `LLVM_SYS_221_PREFIX` into `.cargo/config.toml`, preserving existing
 /// content.
 fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) -> std::io::Result<()> {
     let cargo_dir = workspace_root.join(".cargo");
@@ -123,7 +123,7 @@ fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) -> std::io::
         if existing.contains("[env]") {
             let updated = existing.replacen(
                 "[env]",
-                &format!("[env]\nLLVM_SYS_170_PREFIX = \"{}\"", prefix),
+                &format!("[env]\nLLVM_SYS_221_PREFIX = \"{}\"", prefix),
                 1,
             );
             fs::write(&config_path, updated).map_err(|e| {
@@ -134,7 +134,7 @@ fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) -> std::io::
             })?;
         } else {
             let updated = format!(
-                "{}\n\n[env]\nLLVM_SYS_170_PREFIX = \"{}\"\n",
+                "{}\n\n[env]\nLLVM_SYS_221_PREFIX = \"{}\"\n",
                 existing.trim_end(),
                 prefix,
             );
@@ -147,7 +147,7 @@ fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) -> std::io::
         }
     } else {
         // File does not exist — create it.
-        let contents = format!("[env]\nLLVM_SYS_170_PREFIX = \"{}\"\n", prefix);
+        let contents = format!("[env]\nLLVM_SYS_221_PREFIX = \"{}\"\n", prefix);
         fs::write(&config_path, contents).map_err(|e| {
             std::io::Error::new(
                 e.kind(),
@@ -164,7 +164,7 @@ fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) -> std::io::
 fn detect_and_emit_llvm_version() {
     let mut candidates: Vec<String> = Vec::new();
 
-    if let Ok(prefix) = env::var("LLVM_SYS_170_PREFIX") {
+    if let Ok(prefix) = env::var("LLVM_SYS_221_PREFIX") {
         let from_prefix = PathBuf::from(&prefix).join("bin").join("llvm-config");
         if from_prefix.exists() {
             candidates.push(from_prefix.to_string_lossy().to_string());

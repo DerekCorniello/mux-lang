@@ -333,7 +333,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &call_args, "generic_func_call")
             .map_err(|e| e.to_string())?;
 
-        match call.try_as_basic_value().left() {
+        match call.try_as_basic_value().basic() {
             Some(val) => Ok(val),
             None => Ok(self.context.i32_type().const_int(0, false).into()),
         }

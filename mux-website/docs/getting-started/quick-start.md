@@ -7,7 +7,7 @@ Get up and running with Mux in just a few minutes.
 Before you begin, make sure you have the following installed:
 
 - **For prebuilt install**: no Rust or LLVM toolchain needed
-- **For source install**: Rust is required; use the bootstrap script to install LLVM 17 and clang 17
+- **For source install**: Rust is required; use the bootstrap script to install LLVM 22 and clang 22
 
 ## Installation
 
@@ -55,11 +55,11 @@ Use the built-in doctor command to check your setup:
 
 ```bash title="bash"
 mux doctor       # Validate runtime dependencies
-mux doctor --dev  # Validate LLVM 17 and clang for development
+mux doctor --dev  # Validate LLVM 22 and clang for development
 ```
 
 - `mux doctor` - For end users to verify runtime dependencies
-- `mux doctor --dev` - For contributors to verify LLVM 17 and clang
+- `mux doctor --dev` - For contributors to verify LLVM 22 and clang
 
 ### Option 2: Install from crates.io (Advanced)
 
@@ -72,7 +72,7 @@ cargo install mux-lang
 This installs the Mux compiler to your cargo bin directory.
 The runtime library is built on first use or by running `mux doctor`.
 
-**Note:** Make sure LLVM 17 and clang are installed first for source builds.
+**Note:** Make sure LLVM 22 and clang are installed first for source builds.
 
 ### Option 3: Build from Source (Contributors)
 
@@ -85,13 +85,13 @@ If you prefer to build from source, maybe to even help [contribute](https://gith
    cd mux-lang
    ```
 
-2. Run the bootstrap script to install LLVM 17 automatically:
+2. Run the bootstrap script to install LLVM 22 automatically:
 
    ```bash title="bash"
    ./scripts/bootstrap-dev.sh
    ```
 
-   This script detects your OS and installs LLVM 17, clang, and lld. It supports:
+   This script detects your OS and installs LLVM 22, clang, and lld. It supports:
    - Arch Linux (via yay)
    - Debian/Ubuntu (via apt)
    - macOS (via Homebrew)

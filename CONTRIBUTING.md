@@ -9,13 +9,13 @@ Thanks for your interest! This guide explains how to contribute to Mux.
 1. Fork the repository.
 2. Clone your fork locally.
 3. Install Rust (edition 2024 required): `rustup install stable`
-4. Run the bootstrap script to install LLVM 17 automatically:
+4. Run the bootstrap script to install LLVM 22 automatically:
 
    ```bash
    ./scripts/bootstrap-dev.sh
    ```
 
-   This script detects your OS and installs LLVM 17 and clang. It supports:
+   This script detects your OS and installs LLVM 22 and clang. It supports:
    - Arch Linux (via yay)
    - Debian/Ubuntu (via apt)
    - macOS (via Homebrew)

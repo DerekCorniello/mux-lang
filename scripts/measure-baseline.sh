@@ -22,7 +22,7 @@ names=()
 durations=()
 
 cargo_cmd=(cargo)
-if [[ -x "$repo_root/scripts/dev-cargo.sh" ]] && [[ -z "${LLVM_CONFIG_PATH:-}" ]] && [[ -z "${LLVM_SYS_170_PREFIX:-}" ]]; then
+if [[ -x "$repo_root/scripts/dev-cargo.sh" ]] && [[ -z "${LLVM_CONFIG_PATH:-}" ]] && [[ -z "${LLVM_SYS_221_PREFIX:-}" ]]; then
   cargo_cmd=("$repo_root/scripts/dev-cargo.sh")
 fi
 
