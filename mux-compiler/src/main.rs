@@ -90,11 +90,7 @@ fn find_clang_command() -> Option<String> {
 
     let linked_major = env!("MUX_LLVM_MAJOR");
     let versioned = format!("clang-{}", linked_major);
-    let candidates: &[&str] = if linked_major != "22" {
-        &[versioned.as_str(), "clang", "clang-22"]
-    } else {
-        &[versioned.as_str(), "clang"]
-    };
+    let candidates: &[&str] = &[versioned.as_str(), "clang"];
     for candidate in candidates {
         let output = match Command::new(candidate).arg("--version").output() {
             Ok(output) => output,

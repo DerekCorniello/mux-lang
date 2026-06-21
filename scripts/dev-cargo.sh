@@ -10,6 +10,12 @@ if command -v llvm-config-22 >/dev/null 2>&1; then
   llvm_config="$(command -v llvm-config-22)"
 elif command -v llvm-config >/dev/null 2>&1; then
   llvm_config="$(command -v llvm-config)"
+  llvm_major="$("$llvm_config" --version 2>/dev/null | cut -d. -f1)"
+  if [[ "$llvm_major" != "22" ]]; then
+    echo "Found llvm-config but it reports version $llvm_major, not 22."
+    echo "Run scripts/bootstrap-dev.sh to install LLVM 22."
+    exit 1
+  fi
 else
   echo "Could not find llvm-config-22. Run scripts/bootstrap-dev.sh first."
   exit 1
