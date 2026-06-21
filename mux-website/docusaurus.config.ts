@@ -1,6 +1,7 @@
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import {load as loadYaml} from 'js-yaml';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -16,6 +17,49 @@ try {
   );
 }
 
+function parseFrontMatter(fileContent: string): {
+  frontMatter: Record<string, unknown>;
+  content: string;
+} {
+  // Limit searchable content to prevent ReDoS on malformed front matter
+  const frontMatterMatch = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(
+    fileContent.slice(0, 10240),
+  );
+
+  if (!frontMatterMatch) {
+    return {
+      frontMatter: {},
+      content: fileContent.trim(),
+    };
+  }
+
+  let parsedFrontMatter: unknown;
+  try {
+    parsedFrontMatter = loadYaml(frontMatterMatch[1]);
+  } catch {
+    return {
+      frontMatter: {},
+      content: fileContent.slice(frontMatterMatch[0].length).trim(),
+    };
+  }
+
+  if (
+    !parsedFrontMatter ||
+    typeof parsedFrontMatter !== 'object' ||
+    Array.isArray(parsedFrontMatter)
+  ) {
+    return {
+      frontMatter: {},
+      content: fileContent.slice(frontMatterMatch[0].length).trim(),
+    };
+  }
+
+  return {
+    frontMatter: parsedFrontMatter as Record<string, unknown>,
+    content: fileContent.slice(frontMatterMatch[0].length).trim(),
+  };
+}
+
 const config: Config = {
   title: 'Mux',
   tagline: 'A Programming Language For The People',
@@ -23,6 +67,10 @@ const config: Config = {
 
   future: {
     v4: true,
+  },
+
+  markdown: {
+    parseFrontMatter: async ({fileContent}) => parseFrontMatter(fileContent),
   },
 
   url: 'https://mux-lang.dev/',

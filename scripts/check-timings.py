@@ -9,8 +9,19 @@ def main() -> int:
         print("usage: check-timings.py <report.json> <baseline.json>", file=sys.stderr)
         return 2
 
-    report_path = Path(sys.argv[1])
-    baseline_path = Path(sys.argv[2])
+    base_dir = Path.cwd().resolve()
+
+    report_path = Path(sys.argv[1]).resolve()
+    baseline_path = Path(sys.argv[2]).resolve()
+
+    for path, label in [(report_path, "report"), (baseline_path, "baseline")]:
+        try:
+            path.relative_to(base_dir)
+        except ValueError:
+            print(
+                f"error: {label} path is outside current directory", file=sys.stderr
+            )
+            return 2
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))

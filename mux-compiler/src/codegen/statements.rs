@@ -1654,6 +1654,32 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
+    /// Call a runtime function that returns an i32 and convert the result to an
+    /// i1 bool (non-zero = true).
+    fn call_runtime_bool(
+        &mut self,
+        left: inkwell::values::PointerValue<'a>,
+        right: inkwell::values::PointerValue<'a>,
+        func_name: &str,
+        label: &str,
+    ) -> Result<inkwell::values::IntValue<'a>, String> {
+        let func = self
+            .runtime_function(func_name)
+            .ok_or_else(|| format!("{} not found", func_name))?;
+        let result = self
+            .builder
+            .build_call(func, &[left.into(), right.into()], label)
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| format!("{} returned no value", func_name))?;
+        let int_val = match result {
+            BasicValueEnum::IntValue(v) => v,
+            _ => return Err(format!("runtime function {} must return i32", func_name)),
+        };
+        self.i32_to_bool(int_val).map(|v| v.into_int_value())
+    }
+
     /// Generate an equality comparison between two values based on their type.
     fn generate_value_equality(
         &mut self,
@@ -1662,18 +1688,16 @@ impl<'a> CodeGenerator<'a> {
         expr_type: &Type,
     ) -> Result<inkwell::values::IntValue<'a>, String> {
         match expr_type {
-            Type::Primitive(PrimitiveType::Int)
-            | Type::Primitive(PrimitiveType::Char)
-            | Type::Primitive(PrimitiveType::Bool) => {
-                let get_raw = |s: &mut Self, v| {
-                    if matches!(expr_type, Type::Primitive(PrimitiveType::Bool)) {
-                        s.get_raw_bool_value(v)
-                    } else {
-                        s.get_raw_int_value(v)
-                    }
-                };
-                let left_raw = get_raw(self, left)?;
-                let right_raw = get_raw(self, right)?;
+            Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Char) => {
+                let left_raw = self.get_raw_int_value(left)?;
+                let right_raw = self.get_raw_int_value(right)?;
+                self.builder
+                    .build_int_compare(inkwell::IntPredicate::EQ, left_raw, right_raw, "eq")
+                    .map_err(|e| e.to_string())
+            }
+            Type::Primitive(PrimitiveType::Bool) => {
+                let left_raw = self.get_raw_bool_value(left)?;
+                let right_raw = self.get_raw_bool_value(right)?;
                 self.builder
                     .build_int_compare(inkwell::IntPredicate::EQ, left_raw, right_raw, "eq")
                     .map_err(|e| e.to_string())
@@ -1691,40 +1715,11 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())
             }
             Type::Primitive(PrimitiveType::Str) => {
-                let left_ptr = if left.is_pointer_value() {
-                    left.into_pointer_value()
-                } else {
-                    self.box_value(left)
-                };
-                let right_ptr = if right.is_pointer_value() {
-                    right.into_pointer_value()
-                } else {
-                    self.box_value(right)
-                };
-
+                let left_ptr = self.ensure_pointer(left);
+                let right_ptr = self.ensure_pointer(right);
                 let left_cstr = self.extract_c_string_from_value(left_ptr)?;
                 let right_cstr = self.extract_c_string_from_value(right_ptr)?;
-
-                let equal_fn = self
-                    .runtime_function("mux_string_equal")
-                    .ok_or("mux_string_equal not found")?;
-                let result = self
-                    .builder
-                    .build_call(
-                        equal_fn,
-                        &[left_cstr.into(), right_cstr.into()],
-                        "string_equal",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .ok_or("Call returned no value")?;
-
-                let result_i32 = result.into_int_value();
-                let zero = self.context.i32_type().const_zero();
-                self.builder
-                    .build_int_compare(inkwell::IntPredicate::NE, result_i32, zero, "to_bool")
-                    .map_err(|e| e.to_string())
+                self.call_runtime_bool(left_cstr, right_cstr, "mux_string_equal", "string_equal")
             }
             Type::List(_)
             | Type::Map(_, _)
@@ -1734,37 +1729,9 @@ impl<'a> CodeGenerator<'a> {
             | Type::EmptyMap
             | Type::EmptySet
             | Type::EmptySetOrMap => {
-                let left_ptr = if left.is_pointer_value() {
-                    left.into_pointer_value()
-                } else {
-                    self.box_value(left)
-                };
-                let right_ptr = if right.is_pointer_value() {
-                    right.into_pointer_value()
-                } else {
-                    self.box_value(right)
-                };
-
-                let equal_fn = self
-                    .runtime_function("mux_value_equal")
-                    .ok_or("mux_value_equal not found")?;
-                let result = self
-                    .builder
-                    .build_call(
-                        equal_fn,
-                        &[left_ptr.into(), right_ptr.into()],
-                        "value_equal",
-                    )
-                    .map_err(|e| e.to_string())?
-                    .try_as_basic_value()
-                    .left()
-                    .ok_or("Call returned no value")?;
-
-                let result_i32 = result.into_int_value();
-                let zero = self.context.i32_type().const_zero();
-                self.builder
-                    .build_int_compare(inkwell::IntPredicate::NE, result_i32, zero, "to_bool")
-                    .map_err(|e| e.to_string())
+                let left_ptr = self.ensure_pointer(left);
+                let right_ptr = self.ensure_pointer(right);
+                self.call_runtime_bool(left_ptr, right_ptr, "mux_value_equal", "value_equal")
             }
             _ => Err(format!(
                 "Equality comparison not supported for match type: {:?}",

@@ -1,6 +1,9 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+const REQUIRED_LLVM_MAJOR: u32 = 17;
 
 fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -40,7 +43,154 @@ fn main() {
     );
     println!("cargo:rustc-env=MUX_RUNTIME_DIR={}", profile_path.display());
 
+    ensure_llvm_prefix(workspace_root);
+
+    detect_and_emit_llvm_version();
+
     generate_embedded_std_sources(&manifest_dir);
+}
+
+/// Ensure `LLVM_SYS_170_PREFIX` is configured so `llvm-sys` links against
+/// LLVM 17 instead of a newer system LLVM. If not already set, detect
+/// `llvm-config-17` on PATH and write the prefix to `.cargo/config.toml`.
+/// Exits with an error on first-time setup so the next build picks it up.
+fn ensure_llvm_prefix(workspace_root: &Path) {
+    // Already set via environment — nothing to do.
+    if env::var("LLVM_SYS_170_PREFIX").is_ok() {
+        return;
+    }
+
+    let config_path = workspace_root.join(".cargo").join("config.toml");
+    if let Ok(contents) = fs::read_to_string(&config_path)
+        && contents.contains("LLVM_SYS_170_PREFIX")
+    {
+        return;
+    }
+
+    // llvm-sys doesn't probe "llvm-config-17" (it probes "llvm-config-170"),
+    // so we detect it ourselves and tell llvm-sys where to look.
+    let prefix = detect_llvm17_prefix();
+    let Some(prefix) = prefix else {
+        println!(
+            "cargo:warning=llvm-config-{} not found on PATH. \
+             If LLVM {} is installed, set LLVM_SYS_170_PREFIX to its installation root.",
+            REQUIRED_LLVM_MAJOR, REQUIRED_LLVM_MAJOR,
+        );
+        return;
+    };
+
+    if let Err(e) = write_llvm_prefix_to_config(workspace_root, &prefix) {
+        eprintln!("error[build]: {}", e);
+        std::process::exit(1);
+    }
+    println!(
+        "cargo:warning=LLVM {} detected at {}. Configured .cargo/config.toml. \
+         Please run `cargo build` again.",
+        REQUIRED_LLVM_MAJOR, prefix,
+    );
+    // Force a rebuild so the newly written .cargo/config.toml takes effect.
+    std::process::exit(1);
+}
+
+/// Probe for `llvm-config-17` on PATH and return its installation prefix
+/// (e.g. `/usr/lib/llvm17`).
+fn detect_llvm17_prefix() -> Option<String> {
+    let binary = format!("llvm-config-{}", REQUIRED_LLVM_MAJOR);
+    let output = Command::new(&binary).arg("--prefix").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Some(stdout.trim().to_string())
+}
+
+/// Write `LLVM_SYS_170_PREFIX` into `.cargo/config.toml`, preserving existing
+/// content.
+fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) -> std::io::Result<()> {
+    let cargo_dir = workspace_root.join(".cargo");
+    let config_path = cargo_dir.join("config.toml");
+
+    fs::create_dir_all(&cargo_dir).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("failed to create {}: {}", cargo_dir.display(), e),
+        )
+    })?;
+
+    if let Ok(existing) = fs::read_to_string(&config_path) {
+        // File exists — append to [env] section or create it.
+        if existing.contains("[env]") {
+            let updated = existing.replacen(
+                "[env]",
+                &format!("[env]\nLLVM_SYS_170_PREFIX = \"{}\"", prefix),
+                1,
+            );
+            fs::write(&config_path, updated).map_err(|e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!("failed to write {}: {}", config_path.display(), e),
+                )
+            })?;
+        } else {
+            let updated = format!(
+                "{}\n\n[env]\nLLVM_SYS_170_PREFIX = \"{}\"\n",
+                existing.trim_end(),
+                prefix,
+            );
+            fs::write(&config_path, updated).map_err(|e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!("failed to write {}: {}", config_path.display(), e),
+                )
+            })?;
+        }
+    } else {
+        // File does not exist — create it.
+        let contents = format!("[env]\nLLVM_SYS_170_PREFIX = \"{}\"\n", prefix);
+        fs::write(&config_path, contents).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("failed to write {}: {}", config_path.display(), e),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Detect the LLVM version that llvm-sys will link against and emit it as
+/// `MUX_LLVM_MAJOR`. This allows the mux binary at runtime to pick a clang
+/// binary that matches the linked LLVM version, avoiding IR parse errors.
+fn detect_and_emit_llvm_version() {
+    let mut candidates: Vec<String> = Vec::new();
+
+    if let Ok(prefix) = env::var("LLVM_SYS_170_PREFIX") {
+        let from_prefix = PathBuf::from(&prefix).join("bin").join("llvm-config");
+        if from_prefix.exists() {
+            candidates.push(from_prefix.to_string_lossy().to_string());
+        }
+    }
+
+    // Prefer the versioned binary to avoid picking up a different system LLVM.
+    candidates.push(format!("llvm-config-{}", REQUIRED_LLVM_MAJOR));
+    candidates.push("llvm-config".to_string());
+
+    for candidate in &candidates {
+        let output = match Command::new(candidate).arg("--version").output() {
+            Ok(output) if output.status.success() => output,
+            _ => continue,
+        };
+
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let major = raw.split('.').next().and_then(|s| s.parse::<u32>().ok());
+
+        if let Some(major) = major {
+            println!("cargo:rustc-env=MUX_LLVM_MAJOR={}", major);
+            return;
+        }
+    }
+
+    // Fallback: assume the required version
+    println!("cargo:rustc-env=MUX_LLVM_MAJOR={}", REQUIRED_LLVM_MAJOR);
 }
 
 fn generate_embedded_std_sources(manifest_dir: &Path) {

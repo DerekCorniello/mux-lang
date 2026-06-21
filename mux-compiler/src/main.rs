@@ -88,7 +88,13 @@ fn find_clang_command() -> Option<String> {
         }
     }
 
-    let candidates = ["clang", "clang-17"];
+    let linked_major = env!("MUX_LLVM_MAJOR");
+    let versioned = format!("clang-{}", linked_major);
+    let candidates: &[&str] = if linked_major != "17" {
+        &[versioned.as_str(), "clang", "clang-17"]
+    } else {
+        &[versioned.as_str(), "clang"]
+    };
     for candidate in candidates {
         let output = match Command::new(candidate).arg("--version").output() {
             Ok(output) => output,
@@ -549,13 +555,57 @@ fn validate_llvm_for_doctor(
 
 fn report_clang_for_doctor(clang: Option<&str>) -> bool {
     if let Some(clang_cmd) = clang {
-        println!("Clang is installed: {}.", clang_cmd);
-        return true;
+        let linked_major: u32 = env!("MUX_LLVM_MAJOR")
+            .parse()
+            .unwrap_or(REQUIRED_LLVM_MAJOR);
+        let clang_ok = match extract_clang_major(clang_cmd) {
+            Some(clang_major) if clang_major == linked_major => {
+                println!(
+                    "Clang is installed: {} (matches linked LLVM {}).",
+                    clang_cmd, linked_major
+                );
+                true
+            }
+            Some(clang_major) => {
+                println!(
+                    "WARNING: {} (clang {}) does not match linked LLVM {}.",
+                    clang_cmd, clang_major, linked_major
+                );
+                println!(
+                    "  This will cause IR parse errors. Install clang-{} or set CC=clang-{}.",
+                    linked_major, linked_major
+                );
+                false
+            }
+            None => {
+                println!("Clang is installed: {}.", clang_cmd);
+                true
+            }
+        };
+        return clang_ok;
     }
 
     println!("Clang is not installed.");
     print_llvm_install_help();
     false
+}
+
+fn extract_clang_major(clang_cmd: &str) -> Option<u32> {
+    let output = Command::new(clang_cmd).arg("--version").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Output is like "clang version 17.0.6" or "Ubuntu clang version 22.1.6"
+    let version_part = stdout.lines().next()?;
+    let version_str = version_part.split_whitespace().find(|s| {
+        s.split('.')
+            .next()
+            .and_then(|v| v.parse::<u32>().ok())
+            .is_some()
+    })?;
+    let major_str = version_str.split('.').next()?;
+    major_str.parse::<u32>().ok()
 }
 
 fn ensure_runtime_for_doctor() -> bool {
