@@ -5,3 +5,8 @@ resolver = "2"
 
 [patch.crates-io]
 mux-runtime = { path = "mux-runtime" }
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

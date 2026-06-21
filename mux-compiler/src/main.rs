@@ -885,20 +885,34 @@ fn main() {
         .expect("library path should be valid Unicode");
 
     let clang_cmd = find_clang_or_exit();
-    let clang_output = Command::new(&clang_cmd)
-        .args([
-            &ir_file,
-            "-L",
-            lib_path_str,
-            &format!("-Wl,-rpath,{}", lib_path_str),
-            "-Wl,--disable-new-dtags",
-            "-lmux_runtime",
-            "-o",
-            exe_file
-                .to_str()
-                .expect("executable path should be valid Unicode"),
-        ])
-        .output();
+    let mut clang_args = vec![
+        ir_file.clone(),
+        "-L".to_string(),
+        lib_path_str.to_string(),
+        format!("-Wl,-rpath,{}", lib_path_str),
+        "-ffunction-sections".to_string(),
+        "-fdata-sections".to_string(),
+    ];
+
+    #[cfg(not(target_os = "macos"))]
+    clang_args.push("-Wl,--disable-new-dtags".to_string());
+
+    let gc_sections_flag = if cfg!(target_os = "macos") {
+        "-Wl,-dead_strip".to_string()
+    } else {
+        "-Wl,--gc-sections".to_string()
+    };
+    clang_args.push(gc_sections_flag);
+    clang_args.push("-lmux_runtime".to_string());
+    clang_args.push("-o".to_string());
+    clang_args.push(
+        exe_file
+            .to_str()
+            .expect("executable path should be valid Unicode")
+            .to_string(),
+    );
+
+    let clang_output = Command::new(&clang_cmd).args(&clang_args).output();
 
     report_clang_output_or_exit(clang_output, do_run, &file_path, &ir_file);
 

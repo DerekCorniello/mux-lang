@@ -331,6 +331,21 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
+    fn generate_class_methods_for_all_nodes(&mut self, nodes: &[AstNode]) -> Result<(), String> {
+        for node in nodes {
+            if let AstNode::Class {
+                name,
+                methods,
+                type_params,
+                ..
+            } = node
+            {
+                self.generate_class_methods_for_node(name, methods, type_params)?;
+            }
+        }
+        Ok(())
+    }
+
     fn generate_class_methods_for_node(
         &mut self,
         name: &str,
@@ -375,21 +390,6 @@ impl<'a> CodeGenerator<'a> {
             self.analyzer.clear_class_type_params();
         }
 
-        Ok(())
-    }
-
-    fn generate_class_methods_for_all_nodes(&mut self, nodes: &[AstNode]) -> Result<(), String> {
-        for node in nodes {
-            if let AstNode::Class {
-                name,
-                methods,
-                type_params,
-                ..
-            } = node
-            {
-                self.generate_class_methods_for_node(name, methods, type_params)?;
-            }
-        }
         Ok(())
     }
 
