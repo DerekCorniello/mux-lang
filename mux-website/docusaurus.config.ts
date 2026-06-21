@@ -21,8 +21,8 @@ function parseFrontMatter(fileContent: string): {
   frontMatter: Record<string, unknown>;
   content: string;
 } {
-  const frontMatterMatch = fileContent.match(
-    /^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/,
+  const frontMatterMatch = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(
+    fileContent,
   );
 
   if (!frontMatterMatch) {
@@ -32,7 +32,15 @@ function parseFrontMatter(fileContent: string): {
     };
   }
 
-  const parsedFrontMatter = loadYaml(frontMatterMatch[1]);
+  let parsedFrontMatter: unknown;
+  try {
+    parsedFrontMatter = loadYaml(frontMatterMatch[1]);
+  } catch {
+    return {
+      frontMatter: {},
+      content: fileContent.slice(frontMatterMatch[0].length).trim(),
+    };
+  }
 
   if (
     !parsedFrontMatter ||

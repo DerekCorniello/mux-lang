@@ -79,7 +79,10 @@ fn ensure_llvm_prefix(workspace_root: &Path) {
         return;
     };
 
-    write_llvm_prefix_to_config(workspace_root, &prefix);
+    if let Err(e) = write_llvm_prefix_to_config(workspace_root, &prefix) {
+        eprintln!("error[build]: {}", e);
+        std::process::exit(1);
+    }
     println!(
         "cargo:warning=LLVM {} detected at {}. Configured .cargo/config.toml. \
          Please run `cargo build` again.",
@@ -103,11 +106,16 @@ fn detect_llvm17_prefix() -> Option<String> {
 
 /// Write `LLVM_SYS_170_PREFIX` into `.cargo/config.toml`, preserving existing
 /// content.
-fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) {
+fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) -> std::io::Result<()> {
     let cargo_dir = workspace_root.join(".cargo");
     let config_path = cargo_dir.join("config.toml");
 
-    fs::create_dir_all(&cargo_dir).expect("failed to create .cargo directory");
+    fs::create_dir_all(&cargo_dir).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("failed to create {}: {}", cargo_dir.display(), e),
+        )
+    })?;
 
     if let Ok(existing) = fs::read_to_string(&config_path) {
         // File exists — append to [env] section or create it.
@@ -117,20 +125,36 @@ fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) {
                 &format!("[env]\nLLVM_SYS_170_PREFIX = \"{}\"", prefix),
                 1,
             );
-            fs::write(&config_path, updated).expect("failed to write .cargo/config.toml");
+            fs::write(&config_path, updated).map_err(|e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!("failed to write {}: {}", config_path.display(), e),
+                )
+            })?;
         } else {
             let updated = format!(
                 "{}\n\n[env]\nLLVM_SYS_170_PREFIX = \"{}\"\n",
                 existing.trim_end(),
                 prefix,
             );
-            fs::write(&config_path, updated).expect("failed to write .cargo/config.toml");
+            fs::write(&config_path, updated).map_err(|e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!("failed to write {}: {}", config_path.display(), e),
+                )
+            })?;
         }
     } else {
         // File does not exist — create it.
         let contents = format!("[env]\nLLVM_SYS_170_PREFIX = \"{}\"\n", prefix);
-        fs::write(&config_path, contents).expect("failed to write .cargo/config.toml");
+        fs::write(&config_path, contents).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("failed to write {}: {}", config_path.display(), e),
+            )
+        })?;
     }
+    Ok(())
 }
 
 /// Detect the LLVM version that llvm-sys will link against and emit it as
@@ -146,9 +170,9 @@ fn detect_and_emit_llvm_version() {
         }
     }
 
-    // Match the order llvm-sys actually uses: bare "llvm-config" first.
-    candidates.push("llvm-config".to_string());
+    // Prefer the versioned binary to avoid picking up a different system LLVM.
     candidates.push(format!("llvm-config-{}", REQUIRED_LLVM_MAJOR));
+    candidates.push("llvm-config".to_string());
 
     for candidate in &candidates {
         let output = match Command::new(candidate).arg("--version").output() {

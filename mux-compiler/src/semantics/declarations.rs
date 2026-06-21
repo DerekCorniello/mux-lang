@@ -390,9 +390,9 @@ impl SemanticAnalyzer {
 
     fn validate_field_const(
         &mut self,
-        _class_name: &str,
-        _interface_name: &str,
-        _field_name: &str,
+        class_name: &str,
+        interface_name: &str,
+        field_name: &str,
         interface_is_const: bool,
         class_is_const: bool,
         span: Span,
@@ -401,12 +401,12 @@ impl SemanticAnalyzer {
             self.errors.push(SemanticError::with_help(
                 format!(
                     "Field '{}' must be const in class '{}' to implement interface '{}'",
-                    _field_name, _class_name, _interface_name
+                    field_name, class_name, interface_name
                 ),
                 span,
                 format!(
                     "Add the 'const' modifier to field '{}' in class '{}'",
-                    _field_name, _class_name
+                    field_name, class_name
                 ),
             ));
         }
