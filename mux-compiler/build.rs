@@ -11,8 +11,9 @@ fn main() {
         .parent()
         .expect("mux-compiler should have a parent directory");
 
-    // Set up git hooks path for development
-    if env::var("CI").is_err() {
+    // Set up git hooks path only in development (when .git exists, indicating a cloned repo)
+    let is_dev_environment = workspace_root.join(".git").exists();
+    if is_dev_environment && env::var("CI").is_err() {
         let _ = set_git_hooks_dir::setup(workspace_root.join(".github/hooks"), workspace_root);
     }
 

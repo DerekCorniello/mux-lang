@@ -890,10 +890,12 @@ fn main() {
         "-L".to_string(),
         lib_path_str.to_string(),
         format!("-Wl,-rpath,{}", lib_path_str),
-        "-Wl,--disable-new-dtags".to_string(),
         "-ffunction-sections".to_string(),
         "-fdata-sections".to_string(),
     ];
+
+    #[cfg(not(target_os = "macos"))]
+    clang_args.push("-Wl,--disable-new-dtags".to_string());
 
     let gc_sections_flag = if cfg!(target_os = "macos") {
         "-Wl,-dead_strip".to_string()
