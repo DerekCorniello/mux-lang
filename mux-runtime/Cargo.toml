@@ -48,3 +48,8 @@ mysql = { version = "28", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Kernel", "Win32_System_Threading"] }
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

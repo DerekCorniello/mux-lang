@@ -130,7 +130,7 @@ impl<'a> CodeGenerator<'a> {
         methods
     }
 
-    fn declare_imported_functions(
+    fn declare_imported_functions_filtered(
         &mut self,
         imported_functions: &[(String, FunctionNode)],
     ) -> Result<(), String> {
@@ -144,7 +144,10 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
-    fn declare_main_functions(&mut self, main_module_nodes: &[AstNode]) -> Result<(), String> {
+    fn declare_main_functions_filtered(
+        &mut self,
+        main_module_nodes: &[AstNode],
+    ) -> Result<(), String> {
         for node in main_module_nodes {
             if let AstNode::Function(func) = node {
                 self.function_nodes.insert(func.name.clone(), func.clone());
@@ -162,7 +165,7 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
-    fn declare_class_methods(&mut self, nodes: &[AstNode]) -> Result<(), String> {
+    fn declare_class_methods_filtered(&mut self, nodes: &[AstNode]) -> Result<(), String> {
         for method in self.collect_class_methods_to_declare(nodes) {
             self.declare_function(&method)?;
         }
@@ -304,7 +307,7 @@ impl<'a> CodeGenerator<'a> {
             .collect()
     }
 
-    fn generate_imported_user_functions(
+    fn generate_imported_user_functions_filtered(
         &mut self,
         imported_functions: &[(String, FunctionNode)],
     ) -> Result<(), String> {
@@ -317,7 +320,7 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
-    fn generate_main_user_functions(
+    fn generate_main_user_functions_filtered(
         &mut self,
         user_functions: &[FunctionNode],
     ) -> Result<(), String> {
@@ -331,7 +334,25 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
-    fn generate_class_methods_for_node(
+    fn generate_class_methods_for_all_nodes_filtered(
+        &mut self,
+        nodes: &[AstNode],
+    ) -> Result<(), String> {
+        for node in nodes {
+            if let AstNode::Class {
+                name,
+                methods,
+                type_params,
+                ..
+            } = node
+            {
+                self.generate_class_methods_for_node_filtered(name, methods, type_params)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn generate_class_methods_for_node_filtered(
         &mut self,
         name: &str,
         methods: &[FunctionNode],
@@ -375,21 +396,6 @@ impl<'a> CodeGenerator<'a> {
             self.analyzer.clear_class_type_params();
         }
 
-        Ok(())
-    }
-
-    fn generate_class_methods_for_all_nodes(&mut self, nodes: &[AstNode]) -> Result<(), String> {
-        for node in nodes {
-            if let AstNode::Class {
-                name,
-                methods,
-                type_params,
-                ..
-            } = node
-            {
-                self.generate_class_methods_for_node(name, methods, type_params)?;
-            }
-        }
         Ok(())
     }
 
@@ -551,9 +557,9 @@ impl<'a> CodeGenerator<'a> {
 
         let imported_functions = self.collect_imported_functions();
 
-        self.declare_imported_functions(&imported_functions)?;
-        self.declare_main_functions(main_module_nodes)?;
-        self.declare_class_methods(nodes)?;
+        self.declare_imported_functions_filtered(&imported_functions)?;
+        self.declare_main_functions_filtered(main_module_nodes)?;
+        self.declare_class_methods_filtered(nodes)?;
         self.generate_vtables(nodes)?;
         self.generate_enum_and_class_constructors(nodes)?;
 
@@ -573,9 +579,9 @@ impl<'a> CodeGenerator<'a> {
         self.generate_module_init(&main_top_level_statements, &module_name)?;
         self.generate_main_function(&module_name)?;
 
-        self.generate_imported_user_functions(&imported_functions)?;
-        self.generate_main_user_functions(&user_functions)?;
-        self.generate_class_methods_for_all_nodes(nodes)?;
+        self.generate_imported_user_functions_filtered(&imported_functions)?;
+        self.generate_main_user_functions_filtered(&user_functions)?;
+        self.generate_class_methods_for_all_nodes_filtered(nodes)?;
 
         Ok(())
     }
