@@ -101,7 +101,7 @@ For Rust developers who already have cargo installed:
 cargo install mux-lang
 ```
 
-Note: LLVM 17 and clang must be installed first for source builds.
+Note: LLVM 22 and clang must be installed first for source builds.
 
 ### Option 3: Build from Source
 
@@ -110,7 +110,7 @@ For contributors and those who want the latest features:
 ```bash
 git clone https://github.com/DerekCorniello/mux-lang
 cd mux-lang
-./scripts/bootstrap-dev.sh   # Installs LLVM 17 automatically
+./scripts/bootstrap-dev.sh   # Installs LLVM 22 automatically
 ./scripts/dev-cargo.sh build
 ```
 
@@ -119,7 +119,7 @@ cd mux-lang
 ```bash
 mux --version          # Check version
 mux doctor             # Validate runtime dependencies
-mux doctor --dev       # Validate LLVM 17 and clang for development
+mux doctor --dev       # Validate LLVM 22 and clang for development
 ```
 
 ---

@@ -1,23 +1,23 @@
-# Stage 1: Build the Mux compiler (Rust + LLVM 17 + clang)
+# Stage 1: Build the Mux compiler (Rust + LLVM 22 + clang)
 FROM rust:1.93.1-bookworm AS builder
 
-# Install LLVM 17 via GPG-verified apt repository (avoids running unsigned llvm.sh)
+# Install LLVM 22 via GPG-verified apt repository (avoids running unsigned llvm.sh)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         gnupg \
         lsb-release \
         wget \
     && wget --max-redirect=0 -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
-    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-22 main" > /etc/apt/sources.list.d/llvm.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        clang-17 \
-        libpolly-17-dev \
-        llvm-17-dev \
+        clang-22 \
+        libpolly-22-dev \
+        llvm-22-dev \
     && rm -rf /var/lib/apt/lists/*
 
-ENV LLVM_SYS_170_PREFIX=/usr/lib/llvm-17 \
-    CC=clang-17
+ENV LLVM_SYS_221_PREFIX=/usr/lib/llvm-22 \
+    CC=clang-22
 
 WORKDIR /build
 COPY Cargo.lock Cargo.toml ./
@@ -37,17 +37,17 @@ RUN cargo build -p mux-lang --release --locked && \
 # Stage 2: Runtime image (minimal Debian with clang + Python)
 FROM debian:bookworm-slim
 
-# Install LLVM 17 via GPG-verified apt repository
+# Install LLVM 22 via GPG-verified apt repository
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         gnupg \
         lsb-release \
         wget \
     && wget --max-redirect=0 -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
-    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-22 main" > /etc/apt/sources.list.d/llvm.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        clang-17 \
+        clang-22 \
         python3 \
         python3-pip \
     && rm -rf /var/lib/apt/lists/*
@@ -58,18 +58,18 @@ COPY --from=builder /usr/local/lib/mux/libmux_runtime.a /usr/local/lib/mux/libmu
 COPY --from=builder /usr/local/lib/mux/libmux_runtime.so /usr/local/lib/mux/libmux_runtime.so
 
 # Copy LLVM shared libraries needed by the mux binary
-COPY --from=builder /usr/lib/llvm-17/lib/libLLVM-*.so* /usr/lib/llvm-17/lib/
-COPY --from=builder /usr/lib/llvm-17/lib/libLTO.so* /usr/lib/llvm-17/lib/
-COPY --from=builder /usr/lib/llvm-17/lib/libRemarks.so* /usr/lib/llvm-17/lib/
-COPY --from=builder /usr/lib/llvm-17/lib/libclang*.so* /usr/lib/llvm-17/lib/
-COPY --from=builder /usr/lib/llvm-17/lib/LLVM*.so /usr/lib/llvm-17/lib/
-COPY --from=builder /usr/lib/llvm-17/lib/liblldb*.so* /usr/lib/llvm-17/lib/
+COPY --from=builder /usr/lib/llvm-22/lib/libLLVM-*.so* /usr/lib/llvm-22/lib/
+COPY --from=builder /usr/lib/llvm-22/lib/libLTO.so* /usr/lib/llvm-22/lib/
+COPY --from=builder /usr/lib/llvm-22/lib/libRemarks.so* /usr/lib/llvm-22/lib/
+COPY --from=builder /usr/lib/llvm-22/lib/libclang*.so* /usr/lib/llvm-22/lib/
+COPY --from=builder /usr/lib/llvm-22/lib/LLVM*.so /usr/lib/llvm-22/lib/
+COPY --from=builder /usr/lib/llvm-22/lib/liblldb*.so* /usr/lib/llvm-22/lib/
 
 ENV MUX_RUNTIME_LIB=/usr/local/lib/mux/libmux_runtime.a \
-    LD_LIBRARY_PATH=/usr/lib/llvm-17/lib
+    LD_LIBRARY_PATH=/usr/lib/llvm-22/lib
 
 # Create a symlink so 'clang' resolves
-RUN ln -sf /usr/bin/clang-17 /usr/local/bin/clang
+RUN ln -sf /usr/bin/clang-22 /usr/local/bin/clang
 
 # Install Python dependencies with uv (hash-pinned, binary-only)
 COPY api/requirements.lock /app/api/requirements.lock

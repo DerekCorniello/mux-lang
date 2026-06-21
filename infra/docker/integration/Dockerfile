@@ -10,12 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         software-properties-common \
         wget \
     && wget --max-redirect=0 -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
-    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-17 main" > /etc/apt/sources.list.d/llvm.list \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-22 main" > /etc/apt/sources.list.d/llvm.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        clang-17 \
-        libpolly-17-dev \
-        llvm-17-dev \
+        clang-22 \
+        libpolly-22-dev \
+        llvm-22-dev \
     && rustup component add clippy rustfmt \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 mux \
@@ -23,11 +23,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 USER mux
 
-ENV LLVM_SYS_170_PREFIX=/usr/lib/llvm-17 \
-    LLVM_CONFIG_PATH=/usr/bin/llvm-config-17 \
-    LLVM_SYS_170_STRICT_VERSIONING=1 \
-    CC=clang-17 \
-    CXX=clang++-17 \
+ENV LLVM_SYS_221_PREFIX=/usr/lib/llvm-22 \
+    LLVM_CONFIG_PATH=/usr/bin/llvm-config-22 \
+    LLVM_SYS_221_STRICT_VERSIONING=1 \
+    CC=clang-22 \
+    CXX=clang++-22 \
     MUX_RUNTIME_SRC=/workspace/mux-runtime
 
 WORKDIR /workspace

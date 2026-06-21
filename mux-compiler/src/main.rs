@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 use std::rc::Rc;
 
-const REQUIRED_LLVM_MAJOR: u32 = 17;
+const REQUIRED_LLVM_MAJOR: u32 = 22;
 
 fn emit_diagnostics<E: ToDiagnostic>(files: &Files, file_id: FileId, errors: &[E]) {
     let emitter = StandardEmitter::new(ColorConfig::Auto);
@@ -72,7 +72,7 @@ enum Commands {
     Format { file: PathBuf },
     /// Check system dependencies for the Mux compiler
     Doctor {
-        /// Validate contributor toolchain requirements (LLVM 17)
+        /// Validate contributor toolchain requirements (LLVM 22)
         #[arg(long)]
         dev: bool,
     },
@@ -90,11 +90,7 @@ fn find_clang_command() -> Option<String> {
 
     let linked_major = env!("MUX_LLVM_MAJOR");
     let versioned = format!("clang-{}", linked_major);
-    let candidates: &[&str] = if linked_major != "17" {
-        &[versioned.as_str(), "clang", "clang-17"]
-    } else {
-        &[versioned.as_str(), "clang"]
-    };
+    let candidates: &[&str] = &[versioned.as_str(), "clang"];
     for candidate in candidates {
         let output = match Command::new(candidate).arg("--version").output() {
             Ok(output) => output,
@@ -110,7 +106,7 @@ fn find_clang_command() -> Option<String> {
 fn llvm_config_candidates() -> Vec<String> {
     let mut candidates = Vec::new();
 
-    if let Ok(prefix) = env::var("LLVM_SYS_170_PREFIX") {
+    if let Ok(prefix) = env::var("LLVM_SYS_221_PREFIX") {
         let from_prefix = PathBuf::from(prefix).join("bin").join("llvm-config");
         if from_prefix.exists() {
             candidates.push(from_prefix.to_string_lossy().to_string());
@@ -170,12 +166,9 @@ fn print_llvm_install_help() {
             "  Ubuntu/Debian: sudo apt-get install llvm-{0}-dev clang-{0} libpolly-{0}-dev",
             REQUIRED_LLVM_MAJOR
         );
+        println!("  Arch Linux: sudo pacman -S llvm clang lld");
         println!(
-            "  Arch Linux (AUR, requires yay): yay -S llvm{0} llvm{0}-libs clang{0} lld{0}",
-            REQUIRED_LLVM_MAJOR
-        );
-        println!(
-            "Then set: LLVM_SYS_170_PREFIX=/usr/lib/llvm-{}",
+            "Then set: LLVM_SYS_221_PREFIX=/usr/lib/llvm-{}",
             REQUIRED_LLVM_MAJOR
         );
     } else if cfg!(target_os = "macos") {
@@ -185,7 +178,7 @@ fn print_llvm_install_help() {
         );
         println!("  brew install llvm@{}", REQUIRED_LLVM_MAJOR);
         println!(
-            "Then set: LLVM_SYS_170_PREFIX=$(brew --prefix llvm@{})",
+            "Then set: LLVM_SYS_221_PREFIX=$(brew --prefix llvm@{})",
             REQUIRED_LLVM_MAJOR
         );
     } else if cfg!(target_family = "windows") {
@@ -193,8 +186,8 @@ fn print_llvm_install_help() {
             "Install LLVM {} and clang (for example via Chocolatey):",
             REQUIRED_LLVM_MAJOR
         );
-        println!("  choco install llvm --version=17.0.6");
-        println!("Then set LLVM_SYS_170_PREFIX to the LLVM install directory.");
+        println!("  choco install llvm --version=22.1.6");
+        println!("Then set LLVM_SYS_221_PREFIX to the LLVM install directory.");
     }
 }
 

@@ -7,47 +7,50 @@ else
   sudo_cmd="sudo"
 fi
 
-llvm17_ready() {
-  if ! command -v llvm-config-17 >/dev/null 2>&1; then
+llvm22_ready() {
+  local config
+  if command -v llvm-config-22 >/dev/null 2>&1; then
+    config="llvm-config-22"
+  elif command -v llvm-config >/dev/null 2>&1; then
+    config="llvm-config"
+  else
     return 1
   fi
 
   local version major
-  version="$(llvm-config-17 --version 2>/dev/null || true)"
+  version="$("$config" --version 2>/dev/null || true)"
   major="${version%%.*}"
-  [[ "$major" == "17" ]]
+  [[ "$major" == "22" ]]
 }
 
 if [[ -f /etc/arch-release ]]; then
-  if llvm17_ready; then
-    echo "LLVM 17 is already installed on Arch Linux"
+  if llvm22_ready; then
+    echo "LLVM 22 is already installed on Arch Linux"
   else
-    if ! command -v yay >/dev/null 2>&1; then
-      echo "LLVM 17 packages were not found in pacman repositories."
-      echo "Install yay, then rerun this script."
-      echo "Example: sudo pacman -S --needed base-devel git"
-      echo "Then install yay from AUR and rerun scripts/bootstrap-dev.sh"
-      exit 1
-    fi
+    echo "Installing LLVM 22 toolchain for Arch Linux via pacman"
+    $sudo_cmd pacman -S --needed llvm clang lld
 
-    echo "Installing LLVM 17 toolchain for Arch Linux via yay"
-    yay -S --needed llvm17 llvm17-libs clang17 lld17
-
-    if ! llvm17_ready; then
-      echo "LLVM 17 installation did not complete successfully."
-      echo "Expected llvm-config-17 version 17.x after install."
+    if ! llvm22_ready; then
+      echo "LLVM 22 installation did not complete successfully."
+      echo "Expected llvm-config version 22.x after install."
       exit 1
     fi
   fi
 elif [[ -f /etc/debian_version ]]; then
-  echo "Installing LLVM 17 toolchain for Debian/Ubuntu"
+  echo "Installing LLVM 22 toolchain for Debian/Ubuntu"
   $sudo_cmd apt-get update
-  $sudo_cmd apt-get install -y llvm-17 llvm-17-dev clang-17 lld-17 libpolly-17-dev
+  $sudo_cmd apt-get install -y --no-install-recommends ca-certificates gnupg lsb-release wget
+  $sudo_cmd wget --max-redirect=0 -O /usr/share/keyrings/llvm-snapshot.gpg.key \
+    https://apt.llvm.org/llvm-snapshot.gpg.key
+  echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-22 main" \
+    | $sudo_cmd tee /etc/apt/sources.list.d/llvm.list >/dev/null
+  $sudo_cmd apt-get update
+  $sudo_cmd apt-get install -y llvm-22 llvm-22-dev clang-22 lld-22 libpolly-22-dev
 elif [[ "$(uname -s)" == "Darwin" ]]; then
-  echo "Installing LLVM 17 toolchain with Homebrew"
-  brew install llvm@17
+  echo "Installing LLVM 22 toolchain with Homebrew"
+  brew install llvm@22
 else
-  echo "Unsupported OS for automatic setup. Install LLVM 17 and clang 17 manually."
+  echo "Unsupported OS for automatic setup. Install LLVM 22 and clang 22 manually."
   exit 1
 fi
 

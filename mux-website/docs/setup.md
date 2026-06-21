@@ -25,7 +25,7 @@ MUX_INSTALL_DIR=/usr/local/bin MUX_LIB_DIR=/usr/local/lib sh install.sh
 
 ### Compiler and tooling (source builds)
 
-For compiler development or source builds, you need LLVM 17 and clang. The bootstrap script installs the toolchain automatically.
+For compiler development or source builds, you need LLVM 22 and clang. The bootstrap script installs the toolchain automatically.
 
 ```bash
 git clone https://github.com/DerekCorniello/mux-lang

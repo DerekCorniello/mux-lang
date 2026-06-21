@@ -39,7 +39,7 @@ impl<'a> CodeGenerator<'a> {
             .builder
             .build_call(func, args, "call")
             .expect("build_call should always return Some");
-        call.try_as_basic_value().left()
+        call.try_as_basic_value().basic()
     }
 
     /// Declare runtime functions used by codegen.
@@ -1126,7 +1126,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &[ptr.into()], "extract")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or(error_msg)?;
         result
             .try_into()
@@ -1189,7 +1189,7 @@ impl<'a> CodeGenerator<'a> {
                 .build_call(get_bool_fn, &[ptr.into()], "get_bool")
                 .map_err(|e| e.to_string())?
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .ok_or("Call returned no value")?
                 .into_int_value();
             // Truncate i32 to i1 so callers get consistent bool type
@@ -1231,7 +1231,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(get_int_func, &[data_ptr.into()], "get_int")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_value_get_int returned no value")?;
                 Ok((val, Type::Primitive(PrimitiveType::Int)))
             }
@@ -1246,7 +1246,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(get_float_func, &[data_ptr.into()], "get_float")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_value_get_float returned no value")?;
                 Ok((val, Type::Primitive(PrimitiveType::Float)))
             }
@@ -1260,7 +1260,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(get_bool_func, &[data_ptr.into()], "get_bool")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_value_get_bool returned no value")?
                     .into_int_value();
                 let i1_val = self
@@ -1280,7 +1280,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(get_int_func, &[data_ptr.into()], "get_int")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_value_get_int returned no value")?;
                 Ok((val, Type::Primitive(PrimitiveType::Char)))
             }
@@ -1297,7 +1297,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(get_string_func, &[data_ptr.into()], "get_string")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_value_get_string returned no value")?
                     .into_pointer_value();
 
@@ -1310,7 +1310,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(new_string_func, &[c_str.into()], "new_string")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_new_string_from_cstr returned no value")?;
 
                 Ok((mux_string, Type::Primitive(PrimitiveType::Str)))
@@ -1375,7 +1375,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &[value_ptr.into()], result_name)
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or_else(|| format!("{} returned no value", func_name))
             .map(|v| v.into_pointer_value())
     }
@@ -1398,7 +1398,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &[cstr_ptr.into()], "from_string")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or_else(|| "mux_value_from_string returned no value".to_string())
     }
 
@@ -1414,7 +1414,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(copy_func, &[ptr.into()], "copy_obj")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("mux_copy_object returned no value")?
             .into_pointer_value();
 

@@ -223,7 +223,7 @@ impl<'a> CodeGenerator<'a> {
                 .build_call(deep_clone, &[field_val.into()], &field.name)
                 .map_err(|e| e.to_string())?
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .ok_or_else(|| {
                     format!("mux_value_deep_clone returned no value for {}", field.name)
                 })?;
@@ -432,7 +432,7 @@ impl<'a> CodeGenerator<'a> {
 
                 Ok(discriminant_call
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .expect("discriminant function should return a basic value")
                     .into_int_value())
             }

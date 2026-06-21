@@ -196,7 +196,7 @@ impl<'a> CodeGenerator<'a> {
                 .map_err(|e| e.to_string())?;
             let len_val = len_call
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .expect("mux_value_list_length should return a basic value")
                 .into_int_value();
             let index_type = self.context.i64_type();
@@ -268,7 +268,7 @@ impl<'a> CodeGenerator<'a> {
                 .map_err(|e| e.to_string())?;
             let value_ptr = get_call
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .expect("mux_value_list_get_value should return a basic value")
                 .into_pointer_value();
             self.builder
@@ -590,7 +590,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(get_bool_fn, &[ptr.into()], "get_bool")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("Call returned no value")?;
         self.generate_all_scopes_cleanup()?;
         let bool_val = self
@@ -1286,7 +1286,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
         let data_ptr = data_call
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("data function should return a basic value")
             .into_pointer_value();
 
@@ -1671,7 +1671,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(func, &[left.into(), right.into()], label)
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or_else(|| format!("{} returned no value", func_name))?;
         let int_val = match result {
             BasicValueEnum::IntValue(v) => v,
@@ -1763,7 +1763,7 @@ impl<'a> CodeGenerator<'a> {
             .build_call(len_fn, &[val_ptr.into()], "list_len")
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or("mux_value_list_length returned no value")?;
         let list_len = len_result.into_int_value();
         let required_len = self
@@ -1803,7 +1803,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(get_fn, &[val_ptr.into(), idx.into()], "list_elem")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_value_list_get_value returned no value")?;
 
                 let pattern_val = self.generate_literal(lit)?;
@@ -1853,7 +1853,7 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(get_fn, &[val_ptr.into(), idx.into()], "list_elem")
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .ok_or("mux_value_list_get_value returned no value")?;
 
                 let alloca = self
@@ -1883,7 +1883,7 @@ impl<'a> CodeGenerator<'a> {
                 .build_call(len_fn, &[val_ptr.into()], "list_len")
                 .map_err(|e| e.to_string())?
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .ok_or("mux_value_list_length returned no value")?;
             let end_idx = len_result.into_int_value();
 
@@ -1899,7 +1899,7 @@ impl<'a> CodeGenerator<'a> {
                 )
                 .map_err(|e| e.to_string())?
                 .try_as_basic_value()
-                .left()
+                .basic()
                 .ok_or("mux_value_list_slice returned no value")?;
 
             let alloca = self
