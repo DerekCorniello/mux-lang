@@ -112,10 +112,10 @@ fn write_llvm_prefix_to_config(workspace_root: &Path, prefix: &str) {
     if let Ok(existing) = fs::read_to_string(&config_path) {
         // File exists — append to [env] section or create it.
         if existing.contains("[env]") {
-            let updated = format!(
-                "{}\nLLVM_SYS_170_PREFIX = \"{}\"\n",
-                existing.trim_end(),
-                prefix,
+            let updated = existing.replacen(
+                "[env]",
+                &format!("[env]\nLLVM_SYS_170_PREFIX = \"{}\"", prefix),
+                1,
             );
             fs::write(&config_path, updated).expect("failed to write .cargo/config.toml");
         } else {

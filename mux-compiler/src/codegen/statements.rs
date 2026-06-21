@@ -1673,8 +1673,11 @@ impl<'a> CodeGenerator<'a> {
             .try_as_basic_value()
             .left()
             .ok_or_else(|| format!("{} returned no value", func_name))?;
-        self.i32_to_bool(result.into_int_value())
-            .map(|v| v.into_int_value())
+        let int_val = match result {
+            BasicValueEnum::IntValue(v) => v,
+            _ => return Err(format!("runtime function {} must return i32", func_name)),
+        };
+        self.i32_to_bool(int_val).map(|v| v.into_int_value())
     }
 
     /// Generate an equality comparison between two values based on their type.
