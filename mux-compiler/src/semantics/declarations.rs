@@ -12,9 +12,21 @@ use std::collections::HashMap;
 
 impl SemanticAnalyzer {
     // first pass, collect hoistable declarations like functions and classes.
+    //
+    // Import statements are also resolved here, in source order, rather than
+    // waiting for the second pass (analyze_nodes). A class's `is Interface`
+    // clause is resolved during this same hoisting pass (via
+    // resolve_implemented_interfaces), so an interface imported from another
+    // module must already be in scope by the time hoisting reaches the class
+    // that implements it; otherwise the lookup silently finds nothing and the
+    // class ends up with no recorded interfaces. Import statements are
+    // processed again in the second pass too, but that is harmless: imported
+    // symbol/module registration is already idempotent (see
+    // add_import_symbol_if_absent).
     pub(super) fn collect_hoistable_declarations(
         &mut self,
         ast: &[AstNode],
+        mut files: Option<&mut Files>,
     ) -> Result<(), SemanticError> {
         for node in ast {
             match node {
@@ -50,7 +62,17 @@ impl SemanticAnalyzer {
                 } => {
                     self.collect_interface_symbol(name, type_params, fields, methods, node.span());
                 }
-                _ => {}
+                AstNode::Statement(stmt) => {
+                    if let StatementKind::Import { module_path, spec } = &stmt.kind {
+                        self.analyze_import_statement(
+                            module_path,
+                            spec,
+                            stmt.span,
+                            files.as_deref_mut(),
+                        )?;
+                        self.hoisted_import_spans.insert(stmt.span);
+                    }
+                }
             }
         }
         Ok(())

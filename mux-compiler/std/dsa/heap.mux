@@ -2,6 +2,7 @@ import std.dsa.collection.Collection
 
 class Heap<T is Comparable> is Collection<T> {
     list<T> items
+    bool is_max
 
     func len() returns int {
         return self.items.size()
@@ -15,7 +16,7 @@ class Heap<T is Comparable> is Collection<T> {
         while !self.items.is_empty() {
             self.items.pop_back()
         }
-    
+
         return
     }
 
@@ -23,10 +24,21 @@ class Heap<T is Comparable> is Collection<T> {
         return self.items
     }
 
+    func contains(T value) returns bool {
+        int i = 0
+        while i < self.items.size() {
+            if self.items[i] == value {
+                return true
+            }
+            i = i + 1
+        }
+        return false
+    }
+
     func push(T value) returns void {
         self.items.push_back(value)
         self.sift_up(self.items.size() - 1)
-    
+
         return
     }
 
@@ -58,18 +70,46 @@ class Heap<T is Comparable> is Collection<T> {
         }
     }
 
+    func merge(Heap<T> other) returns void {
+        auto other_items = other.items
+        list<T> combined = self.items
+        int i = 0
+        while i < other_items.size() {
+            combined.push_back(other_items[i])
+            i = i + 1
+        }
+        self.items = combined
+
+        int j = self.items.size() / 2 - 1
+        while j >= 0 {
+            self.sift_down(j)
+            j = j - 1
+        }
+
+        return
+    }
+
+    // True when child should rank above parent: smaller-first for a min-heap,
+    // larger-first for a max-heap.
+    func better_than(T a, T b) returns bool {
+        if self.is_max {
+            return b < a
+        }
+        return a < b
+    }
+
     func sift_up(int index) returns void {
         int i = index
         while i > 0 {
             int parent = (i - 1) / 2
-            if self.items[i] < self.items[parent] {
+            if self.better_than(self.items[i], self.items[parent]) {
                 self.swap(i, parent)
                 i = parent
             } else {
                 return
             }
         }
-    
+
         return
     }
 
@@ -80,22 +120,22 @@ class Heap<T is Comparable> is Collection<T> {
         while true {
             int left = i * 2 + 1
             int right = i * 2 + 2
-            int smallest = i
+            int best = i
 
-            if left < n && self.items[left] < self.items[smallest] {
-                smallest = left
+            if left < n && self.better_than(self.items[left], self.items[best]) {
+                best = left
             }
 
-            if right < n && self.items[right] < self.items[smallest] {
-                smallest = right
+            if right < n && self.better_than(self.items[right], self.items[best]) {
+                best = right
             }
 
-            if smallest == i {
+            if best == i {
                 return
             }
 
-            self.swap(i, smallest)
-            i = smallest
+            self.swap(i, best)
+            i = best
         }
     }
 
@@ -103,7 +143,39 @@ class Heap<T is Comparable> is Collection<T> {
         auto tmp = self.items[i]
         self.items[i] = self.items[j]
         self.items[j] = tmp
-    
+
         return
+    }
+
+    common func new_max() returns Heap<T> {
+        auto out = Heap<T>.new()
+        out.is_max = true
+        return out
+    }
+
+    common func from_list(list<T> values) returns Heap<T> {
+        auto out = Heap<T>.new()
+        out.items = values
+
+        int i = out.items.size() / 2 - 1
+        while i >= 0 {
+            out.sift_down(i)
+            i = i - 1
+        }
+
+        return out
+    }
+
+    common func from_list_max(list<T> values) returns Heap<T> {
+        auto out = Heap<T>.new_max()
+        out.items = values
+
+        int i = out.items.size() / 2 - 1
+        while i >= 0 {
+            out.sift_down(i)
+            i = i - 1
+        }
+
+        return out
     }
     }

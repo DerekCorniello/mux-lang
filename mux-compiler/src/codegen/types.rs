@@ -86,9 +86,10 @@ impl<'a> CodeGenerator<'a> {
                 Err(format!("Variable type '{}' should be resolved", name))
             }
             Type::Never => Err("Never type not allowed here".to_string()),
-            Type::Module(_) => {
-                panic!("Module types should not appear in codegen - they are compile-time only")
-            }
+            Type::Module(_) => Err(
+                "Module types should not appear in codegen - they are compile-time only"
+                    .to_string(),
+            ),
         }
     }
 
@@ -336,7 +337,6 @@ impl<'a> CodeGenerator<'a> {
                 Box::new(self.resolve_type_with_seen(l, seen_generic_params)?),
                 Box::new(self.resolve_type_with_seen(r, seen_generic_params)?),
             )),
-
             Type::Optional(inner) => Ok(Type::Optional(Box::new(
                 self.resolve_type_with_seen(inner, seen_generic_params)?,
             ))),
@@ -360,15 +360,106 @@ impl<'a> CodeGenerator<'a> {
                 returns: Box::new(self.resolve_type_with_seen(returns, seen_generic_params)?),
                 default_count: *default_count,
             }),
-            Type::Module(_) => {
-                panic!("Module types should not appear in codegen - they are compile-time only")
-            }
+            Type::Module(_) => Err(
+                "Module types should not appear in codegen - they are compile-time only"
+                    .to_string(),
+            ),
         }
     }
 
     pub(super) fn resolve_type(&self, type_: &Type) -> Result<Type, String> {
         let mut seen_generic_params = HashSet::new();
         self.resolve_type_with_seen(type_, &mut seen_generic_params)
+    }
+
+    /// Shared recursive type traversal helper. Walks all Type variants and recursively
+    /// processes containers (Named, List, Map, etc.). Delegates to `handle_var_fn` for
+    /// Variable/Generic leaf nodes. This reduces duplication between resolve_type_with_seen
+    /// and substitute_type_with_map.
+    fn traverse_type_recursive<F>(&self, type_: &Type, handle_var_fn: F) -> Result<Type, String>
+    where
+        F: Fn(&str) -> Result<Type, String> + Copy,
+    {
+        match type_ {
+            Type::Primitive(_)
+            | Type::Void
+            | Type::Never
+            | Type::EmptyList
+            | Type::EmptyMap
+            | Type::EmptySet
+            | Type::EmptySetOrMap
+            | Type::Module(_) => Ok(type_.clone()),
+            Type::Variable(name) | Type::Generic(name) => handle_var_fn(name),
+            Type::Named(name, type_args) => {
+                let resolved_args = type_args
+                    .iter()
+                    .map(|arg| self.traverse_type_recursive(arg, handle_var_fn))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Type::Named(name.clone(), resolved_args))
+            }
+            Type::Instantiated(name, type_args) => {
+                let resolved_args = type_args
+                    .iter()
+                    .map(|arg| self.traverse_type_recursive(arg, handle_var_fn))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Type::Instantiated(name.clone(), resolved_args))
+            }
+            Type::List(inner) => Ok(Type::List(Box::new(
+                self.traverse_type_recursive(inner, handle_var_fn)?,
+            ))),
+            Type::Set(inner) => Ok(Type::Set(Box::new(
+                self.traverse_type_recursive(inner, handle_var_fn)?,
+            ))),
+            Type::Map(k, v) => Ok(Type::Map(
+                Box::new(self.traverse_type_recursive(k, handle_var_fn)?),
+                Box::new(self.traverse_type_recursive(v, handle_var_fn)?),
+            )),
+            Type::Tuple(l, r) => Ok(Type::Tuple(
+                Box::new(self.traverse_type_recursive(l, handle_var_fn)?),
+                Box::new(self.traverse_type_recursive(r, handle_var_fn)?),
+            )),
+            Type::Optional(inner) => Ok(Type::Optional(Box::new(
+                self.traverse_type_recursive(inner, handle_var_fn)?,
+            ))),
+            Type::Result(ok, err) => Ok(Type::Result(
+                Box::new(self.traverse_type_recursive(ok, handle_var_fn)?),
+                Box::new(self.traverse_type_recursive(err, handle_var_fn)?),
+            )),
+            Type::Reference(inner) => Ok(Type::Reference(Box::new(
+                self.traverse_type_recursive(inner, handle_var_fn)?,
+            ))),
+            Type::Function {
+                params,
+                returns,
+                default_count,
+                ..
+            } => Ok(Type::Function {
+                params: params
+                    .iter()
+                    .map(|p| self.traverse_type_recursive(p, handle_var_fn))
+                    .collect::<Result<Vec<_>, _>>()?,
+                returns: Box::new(self.traverse_type_recursive(returns, handle_var_fn)?),
+                default_count: *default_count,
+            }),
+        }
+    }
+
+    /// Substitute any `Type::Variable`/`Type::Generic` named in `map` with its concrete
+    /// type, recursively. Used to resolve a class field's declared type (which still
+    /// names the class's own type parameters, e.g. `list<T>`) against a specific
+    /// instantiation's type arguments, independent of the codegen generic context.
+    pub(super) fn substitute_type_with_map(
+        &self,
+        type_: &Type,
+        map: &std::collections::HashMap<String, Type>,
+    ) -> Type {
+        self.traverse_type_recursive(type_, |name| {
+            Ok(map
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| Type::Variable(name.to_string())))
+        })
+        .unwrap_or_else(|_| type_.clone())
     }
 
     #[allow(clippy::only_used_in_recursion)]

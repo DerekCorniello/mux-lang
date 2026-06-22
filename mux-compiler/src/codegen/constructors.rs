@@ -25,38 +25,28 @@ impl<'a> CodeGenerator<'a> {
             .expect("should always return a value")
     }
 
-    fn compute_class_field_default_value(
+    /// Store an initialized field value at a given pointer location.
+    /// Handles both explicit default values and type-based initialization.
+    fn store_initialized_field(
         &mut self,
+        field_ptr: PointerValue<'a>,
         field: &Field,
-    ) -> Result<BasicValueEnum<'a>, String> {
+    ) -> Result<(), String> {
         if let Some(default_expr) = &field.default_value {
             let literal_val = self.generate_expression(default_expr)?;
-            if matches!(field.type_.kind, TypeKind::Primitive(_)) {
-                return Ok(self.box_value(literal_val).into());
-            }
-            return Ok(literal_val);
-        }
-
-        if matches!(field.type_.kind, TypeKind::Primitive(_)) {
-            let llvm_type = self.llvm_type_from_mux_type(&field.type_)?;
-            let zero_val = if llvm_type.is_int_type() {
-                llvm_type.into_int_type().const_zero().into()
-            } else if llvm_type.is_float_type() {
-                llvm_type.into_float_type().const_zero().into()
+            let stored_val = if matches!(field.type_.kind, TypeKind::Primitive(_)) {
+                self.box_value(literal_val).into()
             } else {
-                self.context
-                    .ptr_type(AddressSpace::default())
-                    .const_zero()
-                    .into()
+                literal_val
             };
-            return Ok(self.box_value(zero_val).into());
+            self.builder
+                .build_store(field_ptr, stored_val)
+                .map_err(|e| e.to_string())?;
+        } else {
+            let field_type = self.type_node_to_type(&field.type_);
+            self.initialize_field_by_type(field_ptr, &field_type, field.is_generic_param)?;
         }
-
-        Ok(self
-            .context
-            .ptr_type(AddressSpace::default())
-            .const_zero()
-            .into())
+        Ok(())
     }
 
     pub(super) fn generate_enum_constructors(
@@ -288,20 +278,19 @@ impl<'a> CodeGenerator<'a> {
                 )
                 .map_err(|e| e.to_string())?;
 
-            let default_value = self.compute_class_field_default_value(field)?;
-
-            self.builder
-                .build_store(field_ptr, default_value)
-                .map_err(|e| e.to_string())?;
+            self.store_initialized_field(field_ptr, field)?;
         }
 
-        // set vtable fields
+        // set vtable fields. Generic classes never get a vtable generated
+        // (see generate_class_vtables) since the vtable would have to
+        // reference an unspecialized method that has no body; skip those
+        // fields rather than erroring, since the vtable field is never read
+        // for dispatch (interfaces use static dispatch).
         for interface_name in interfaces.keys() {
             let vtable_key = format!("{}_{}", name, interface_name);
-            let vtable_ptr = self
-                .vtable_map
-                .get(&vtable_key)
-                .ok_or(format!("Vtable not found for {}", vtable_key))?;
+            let Some(vtable_ptr) = self.vtable_map.get(&vtable_key) else {
+                continue;
+            };
             let vtable_field_name = format!("vtable_{}", interface_name);
             let field_index = self
                 .field_map
@@ -582,7 +571,10 @@ impl<'a> CodeGenerator<'a> {
             type_params: self.build_type_param_map(class_name, type_args)?,
         };
 
-        // push context for recursive constructor calls
+        // Save whatever generic context was active before this call (e.g. the
+        // specialized common/static method this constructor call is nested inside)
+        // so it can be restored afterwards, rather than discarded.
+        let old_context = self.generic_context.take();
         self.context_stack.push(context.clone());
         self.generic_context = Some(context);
 
@@ -594,9 +586,9 @@ impl<'a> CodeGenerator<'a> {
         // generate constructor with context
         let result = self.generate_constructor_call(class_name, args);
 
-        // pop context after call
+        // restore the context that was active before this call
         self.context_stack.pop();
-        self.generic_context = self.context_stack.last().cloned();
+        self.generic_context = old_context;
 
         result
     }
@@ -691,28 +683,76 @@ impl<'a> CodeGenerator<'a> {
 
         let (obj_value_ptr, struct_ptr) = self.allocate_class_object(type_id_val)?;
 
-        // initialize fields based on their types
-        if let Some(fields) = self.classes.get(class_name) {
-            let fields_vec: Vec<_> = fields
-                .iter()
-                .enumerate()
-                .map(|(i, f)| (i, f.clone()))
-                .collect();
-            for (i, field) in fields_vec {
+        // initialize fields based on their types. Field struct indices come
+        // from field_map (keyed by name), not by enumerating self.classes
+        // positionally, because classes that implement interfaces have
+        // vtable pointer fields inserted ahead of the declared fields in the
+        // LLVM struct layout (see generate_class_type).
+        if let Some(fields) = self.classes.get(class_name).cloned() {
+            for field in &fields {
+                let field_index = *self
+                    .field_map
+                    .get(class_name)
+                    .ok_or_else(|| format!("Field map not found for class {}", class_name))?
+                    .get(&field.name)
+                    .ok_or_else(|| {
+                        format!("Field {} not found in class {}", field.name, class_name)
+                    })?;
                 let field_ptr = self
                     .builder
                     .build_struct_gep(
                         class_type.into_struct_type(),
                         struct_ptr,
-                        i as u32,
-                        &format!("field_{}", i),
+                        field_index as u32,
+                        &field.name,
                     )
                     .map_err(|e| e.to_string())?;
 
-                // convert TypeNode to Type for resolution
-                let field_type = self.type_node_to_type(&field.type_);
-                self.initialize_field_by_type(field_ptr, &field_type, field.is_generic_param)?;
+                self.store_initialized_field(field_ptr, field)?;
             }
+        }
+
+        // set vtable fields for any interfaces this class implements.
+        // Generic classes never get a vtable generated (see
+        // generate_class_vtables) since the vtable would have to reference
+        // an unspecialized method that has no body; skip those fields
+        // rather than erroring, since the vtable field is never read for
+        // dispatch (interfaces use static dispatch).
+        let interfaces = self
+            .analyzer
+            .all_symbols()
+            .get(class_name)
+            .map(|sym| sym.interfaces.clone())
+            .unwrap_or_default();
+        for interface_name in interfaces.keys() {
+            let vtable_key = format!("{}_{}", class_name, interface_name);
+            let Some(vtable_ptr) = self.vtable_map.get(&vtable_key).copied() else {
+                continue;
+            };
+            let vtable_field_name = format!("vtable_{}", interface_name);
+            let field_index = *self
+                .field_map
+                .get(class_name)
+                .ok_or_else(|| format!("Field map not found for class {}", class_name))?
+                .get(&vtable_field_name)
+                .ok_or_else(|| {
+                    format!(
+                        "Vtable field {} not found in class {}",
+                        vtable_field_name, class_name
+                    )
+                })?;
+            let field_ptr = self
+                .builder
+                .build_struct_gep(
+                    class_type.into_struct_type(),
+                    struct_ptr,
+                    field_index as u32,
+                    &vtable_field_name,
+                )
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(field_ptr, vtable_ptr)
+                .map_err(|e| e.to_string())?;
         }
 
         // return the allocated object as a boxed Value pointer

@@ -95,4 +95,175 @@ class Graph<T is Hashable & Stringable> is Collection<T> {
         return order
     }
 
+    func dfs(T start) returns list<T> {
+        list<T> order = []
+        if !self.adjacency.contains(start) {
+            return order
+        }
+
+        set<T> visited = {}
+        list<T> stack = []
+        stack.push_back(start)
+
+        while !stack.is_empty() {
+            auto top_idx = stack.size() - 1
+            auto current = stack[top_idx]
+            stack.pop_back()
+
+            if !visited.contains(current) {
+                visited.add(current)
+                order.push_back(current)
+
+                auto next_nodes = self.neighbors(current)
+                int i = next_nodes.size() - 1
+                while i >= 0 {
+                    stack.push_back(next_nodes[i])
+                    i = i - 1
+                }
+            }
+        }
+
+        return order
+    }
+
+    func contains(T value) returns bool {
+        return self.adjacency.contains(value)
+    }
+
+    func has_edge(T from, T to) returns bool {
+        if !self.adjacency.contains(from) {
+            return false
+        }
+
+        auto next_nodes = self.adjacency[from]
+        int i = 0
+        while i < next_nodes.size() {
+            if next_nodes[i] == to {
+                return true
+            }
+            i = i + 1
+        }
+
+        return false
+    }
+
+    func degree(T value) returns int {
+        return self.neighbors(value).size()
+    }
+
+    func remove_edge(T from, T to) returns void {
+        if !self.adjacency.contains(from) {
+            return
+        }
+
+        auto next_nodes = self.adjacency[from]
+        list<T> remaining = []
+        bool removed = false
+        int i = 0
+        while i < next_nodes.size() {
+            if !removed && next_nodes[i] == to {
+                removed = true
+            } else {
+                remaining.push_back(next_nodes[i])
+            }
+            i = i + 1
+        }
+
+        self.adjacency.put(from, remaining)
+
+        return
+    }
+
+    func remove_vertex(T value) returns void {
+        if !self.adjacency.contains(value) {
+            return
+        }
+
+        self.adjacency.remove(value)
+
+        list<T> remaining_vertices = []
+        int i = 0
+        while i < self.vertices.size() {
+            if self.vertices[i] != value {
+                remaining_vertices.push_back(self.vertices[i])
+            }
+            i = i + 1
+        }
+        self.vertices = remaining_vertices
+
+        int j = 0
+        while j < self.vertices.size() {
+            self.remove_edge(self.vertices[j], value)
+            j = j + 1
+        }
+
+        return
+    }
+
+    // Kahn's algorithm. Returns none when the graph has a cycle, since no
+    // valid linear ordering exists.
+    func topological_sort() returns optional<list<T>> {
+        map<T, int> in_degree = {}
+        int i = 0
+        while i < self.vertices.size() {
+            in_degree.put(self.vertices[i], 0)
+            i = i + 1
+        }
+
+        i = 0
+        while i < self.vertices.size() {
+            auto next_nodes = self.adjacency[self.vertices[i]]
+            int k = 0
+            while k < next_nodes.size() {
+                auto neighbor = next_nodes[k]
+                in_degree.put(neighbor, in_degree[neighbor] + 1)
+                k = k + 1
+            }
+            i = i + 1
+        }
+
+        list<T> queue = []
+        int head = 0
+        i = 0
+        while i < self.vertices.size() {
+            auto vertex = self.vertices[i]
+            if in_degree[vertex] == 0 {
+                queue.push_back(vertex)
+            }
+            i = i + 1
+        }
+
+        list<T> order = []
+        while head < queue.size() {
+            auto current = queue[head]
+            head = head + 1
+            order.push_back(current)
+
+            auto next_nodes = self.neighbors(current)
+            int k = 0
+            while k < next_nodes.size() {
+                auto neighbor = next_nodes[k]
+                auto remaining = in_degree[neighbor] - 1
+                in_degree.put(neighbor, remaining)
+                if remaining == 0 {
+                    queue.push_back(neighbor)
+                }
+                k = k + 1
+            }
+        }
+
+        if order.size() != self.vertices.size() {
+            return none
+        }
+
+        return some(order)
+    }
+
+    func has_cycle() returns bool {
+        match self.topological_sort() {
+            some(_) { return false }
+            none { return true }
+        }
+    }
+
     }

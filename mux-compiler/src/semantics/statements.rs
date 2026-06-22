@@ -435,7 +435,7 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn analyze_import_statement(
+    pub(super) fn analyze_import_statement(
         &mut self,
         module_path: &str,
         spec: &ImportSpec,
@@ -602,7 +602,13 @@ impl SemanticAnalyzer {
                 self.analyze_return_without_value(stmt.span)?;
             }
             StatementKind::Import { module_path, spec } => {
-                self.analyze_import_statement(module_path, spec, stmt.span, files)?;
+                // Already resolved during the hoisting pass (see
+                // collect_hoistable_declarations) so that classes hoisted
+                // later in that same pass can see interfaces this import
+                // brings into scope. Skip re-running it here.
+                if !self.hoisted_import_spans.contains(&stmt.span) {
+                    self.analyze_import_statement(module_path, spec, stmt.span, files)?;
+                }
             }
             StatementKind::Function(func) => {
                 self.analyze_function(func, None)?;

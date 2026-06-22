@@ -10,5 +10,10 @@ Write-Host "Installing LLVM 17 and clang toolchain"
 choco install llvm --version=17.0.6 -y --no-progress
 
 Write-Host "Installed contributor dependencies."
+
+Write-Host "Configuring git hooks..."
+git config core.hooksPath .github/hooks
+
+Write-Host "Git hooks configured."
 Write-Host "Use .\scripts\dev-cargo.ps1 for source builds without manual env vars."
 Write-Host "Example: .\scripts\dev-cargo.ps1 build"

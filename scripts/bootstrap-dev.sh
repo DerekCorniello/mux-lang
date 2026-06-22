@@ -56,5 +56,11 @@ fi
 
 echo
 echo "Installed contributor dependencies."
+
+# Set up git pre-commit hooks
+echo "Configuring git hooks..."
+git config core.hooksPath .github/hooks
+
+echo "Git hooks configured."
 echo "Use scripts/dev-cargo.sh for source builds without manual env vars."
 echo "Example: scripts/dev-cargo.sh build"

@@ -91,6 +91,40 @@ impl<'a> CodeGenerator<'a> {
             .map(|v| v.into())
     }
 
+    /// Query the semantic analyzer for an expression's type, then resolve away any
+    /// remaining generic type variables using codegen's active generic context.
+    ///
+    /// The analyzer's view of local variable/parameter types was captured once during
+    /// the initial whole-program analysis pass, before any generic class was
+    /// specialized for a concrete type. So for a generic method, it can return a type
+    /// that still names the class's own type parameter (e.g. `Variable("T")`) even
+    /// when codegen is currently generating the `int`-specialized version of that
+    /// method. Resolving through `self.resolve_type` substitutes any such leftover
+    /// type variable using the generic context active for the specialization being
+    /// generated right now.
+    pub(super) fn get_resolved_expression_type(
+        &mut self,
+        expr: &ExpressionNode,
+    ) -> Result<Type, String> {
+        let analyzer_result = self.analyzer.get_expression_type(expr);
+        let ty = match analyzer_result {
+            Ok(ty) => ty,
+            Err(e) => {
+                if let ExpressionKind::Identifier(name) = &expr.kind
+                    && let Some((_, _, ty)) = self
+                        .variables
+                        .get(name)
+                        .or_else(|| self.global_variables.get(name))
+                {
+                    ty.clone()
+                } else {
+                    return Err(e.to_string());
+                }
+            }
+        };
+        Ok(self.resolve_type(&ty).unwrap_or(ty))
+    }
+
     /// Resolve an expression type during codegen.
     /// Falls back to codegen variable tables when semantic scopes are no longer available.
     pub(super) fn resolve_expression_type_with_fallback(
@@ -102,11 +136,36 @@ impl<'a> CodeGenerator<'a> {
             ExpressionKind::ListAccess { .. } => self.resolve_list_access_type(expr),
             ExpressionKind::Call { .. } => self.resolve_call_type(expr),
             ExpressionKind::Binary { .. } => self.resolve_binary_type(expr),
-            _ => self
-                .analyzer
-                .get_expression_type(expr)
-                .map_err(|e| e.to_string()),
+            ExpressionKind::FieldAccess { expr: inner, field } => {
+                self.resolve_field_access_type_with_fallback(inner, field, expr)
+            }
+            _ => self.get_resolved_expression_type(expr),
         }
+    }
+
+    /// Resolve the type of `inner.field` using codegen's own variable/generic-context
+    /// tracking rather than the semantic analyzer, which has no record of local
+    /// variables or parameters by the time a generic method is lazily specialized
+    /// during codegen (its scope for that function body was already popped after the
+    /// initial whole-program analysis pass).
+    fn resolve_field_access_type_with_fallback(
+        &mut self,
+        inner: &ExpressionNode,
+        field: &str,
+        full_expr: &ExpressionNode,
+    ) -> Result<Type, String> {
+        let inner_type = self.resolve_expression_type_with_fallback(inner)?;
+        let resolved_inner_type = self.resolve_type(&inner_type).unwrap_or(inner_type);
+
+        if let Type::Named(class_name, type_args) = &resolved_inner_type
+            && let Some(class_symbol) = self.lookup_class_symbol(class_name)
+            && let Some((field_type, _)) = class_symbol.fields.get(field)
+        {
+            let type_param_map = self.build_type_param_map(class_name, type_args)?;
+            return Ok(self.substitute_type_with_map(field_type, &type_param_map));
+        }
+
+        self.get_resolved_expression_type(full_expr)
     }
 
     fn resolve_identifier_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
@@ -122,7 +181,7 @@ impl<'a> CodeGenerator<'a> {
             return Ok(ty.clone());
         }
 
-        if let Ok(ty) = self.analyzer.get_expression_type(expr) {
+        if let Ok(ty) = self.get_resolved_expression_type(expr) {
             return Ok(ty);
         }
 
@@ -180,7 +239,7 @@ impl<'a> CodeGenerator<'a> {
     fn resolve_call_type(&mut self, expr: &ExpressionNode) -> Result<Type, String> {
         match &expr.kind {
             ExpressionKind::Call { func, .. } => {
-                if let Ok(ty) = self.analyzer.get_expression_type(expr) {
+                if let Ok(ty) = self.get_resolved_expression_type(expr) {
                     return Ok(ty);
                 }
 

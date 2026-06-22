@@ -140,7 +140,7 @@ impl<'a> CodeGenerator<'a> {
             };
         }
 
-        let expr_type = self.analyzer.get_expression_type(expr).ok()?;
+        let expr_type = self.get_resolved_expression_type(expr).ok()?;
         match expr_type {
             Type::Named(name, _) => Some(name.clone()),
             Type::Reference(inner) => {
@@ -1201,8 +1201,7 @@ impl<'a> CodeGenerator<'a> {
         }
         let arg_expr = &args[0];
         let arg_type = self
-            .analyzer
-            .get_expression_type(arg_expr)
+            .get_resolved_expression_type(arg_expr)
             .map_err(|e| format!("Type inference failed: {}", e))?;
         let arg_val = self.generate_expression(arg_expr)?;
         let func_name = Self::ok_builtin_constructor_name(&arg_type)
@@ -1218,25 +1217,21 @@ impl<'a> CodeGenerator<'a> {
             return Err("Some takes 1 argument".to_string());
         }
         let arg_expr = &args[0];
-        let arg_type = self
-            .analyzer
-            .get_expression_type(arg_expr)
-            .or_else(|_| {
-                if let ExpressionKind::Identifier(name) = &arg_expr.kind {
-                    if let Some((_, _, ty)) = self
+        let arg_type = match self.get_resolved_expression_type(arg_expr) {
+            Ok(ty) => ty,
+            Err(_) => {
+                if let ExpressionKind::Identifier(name) = &arg_expr.kind
+                    && let Some((_, _, ty)) = self
                         .variables
                         .get(name)
                         .or_else(|| self.global_variables.get(name))
-                    {
-                        return Ok(ty.clone());
-                    }
+                {
+                    ty.clone()
+                } else {
+                    return Err("Type inference failed for Some() argument".to_string());
                 }
-                Err(crate::semantics::SemanticError::new(
-                    "Type inference failed for Some() argument",
-                    arg_expr.span,
-                ))
-            })
-            .map_err(|e| format!("Type inference failed: {}", e))?;
+            }
+        };
         let arg_val = self.generate_expression(arg_expr)?;
         let func_name = Self::some_builtin_constructor_name(&arg_type)
             .ok_or_else(|| format!("Some() not supported for type {:?}", arg_type))?;
@@ -1290,10 +1285,7 @@ impl<'a> CodeGenerator<'a> {
     ) -> Result<Vec<BasicMetadataValueEnum<'a>>, String> {
         let mut call_args = vec![];
         for arg in args {
-            let arg_type = self
-                .analyzer
-                .get_expression_type(arg)
-                .map_err(|e| e.message)?;
+            let arg_type = self.get_resolved_expression_type(arg)?;
 
             let needs_copy = if let Type::Named(class_name, _) = &arg_type {
                 if let Some(symbol) = self.analyzer.symbol_table().lookup(class_name) {
@@ -2019,8 +2011,7 @@ impl<'a> CodeGenerator<'a> {
                 .map(|(_, _, t)| matches!(t, Type::Reference(_)))
                 .unwrap_or(false);
         }
-        self.analyzer
-            .get_expression_type(expr)
+        self.get_resolved_expression_type(expr)
             .map(|t| matches!(t, Type::Reference(_)))
             .unwrap_or(false)
     }
@@ -2676,7 +2667,6 @@ impl<'a> CodeGenerator<'a> {
             ));
         }
         self.generate_generic_static_method_call(
-            class_name,
             &resolved_class_name,
             &resolved_type_args,
             field,
@@ -2687,7 +2677,6 @@ impl<'a> CodeGenerator<'a> {
 
     fn generate_generic_static_method_call(
         &mut self,
-        class_name: &str,
         resolved_class_name: &str,
         resolved_type_args: &[Type],
         field: &str,
@@ -2709,12 +2698,17 @@ impl<'a> CodeGenerator<'a> {
                 self.builder.position_at_end(block);
             }
             let call_args = self.build_call_args_from_expressions(args)?;
+            // Use the resolved (module-prefix-stripped) class name here: that's the
+            // name `generate_specialized_methods` actually registered the specialized
+            // method under. Using the original, possibly module-qualified `class_name`
+            // (e.g. "box.Box" rather than "Box") would look up a name that was never
+            // declared, silently falling through to the unspecialized method instead.
             let specialized_method_name =
-                self.create_specialized_method_name(class_name, resolved_type_args, field);
+                self.create_specialized_method_name(resolved_class_name, resolved_type_args, field);
             let function_name = if self.module.get_function(&specialized_method_name).is_some() {
                 specialized_method_name
             } else {
-                format!("{}.{}", class_name, field)
+                format!("{}.{}", resolved_class_name, field)
             };
             let call = self
                 .builder
@@ -2748,8 +2742,7 @@ impl<'a> CodeGenerator<'a> {
                 .map(|(_, _, t)| t.clone())
                 .ok_or_else(|| format!("Unknown variable: {}", name))?
         } else {
-            self.analyzer
-                .get_expression_type(expr)
+            self.resolve_expression_type_with_fallback(expr)
                 .map_err(|e| format!("Type inference failed: {}", e))?
         };
         self.generate_method_call(obj_value, &obj_type, field, args)
@@ -2907,10 +2900,7 @@ impl<'a> CodeGenerator<'a> {
         let llvm_param_types = func.get_type().get_param_types();
         let mut call_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
-            let arg_type = self
-                .analyzer
-                .get_expression_type(arg)
-                .map_err(|e| e.message)?;
+            let arg_type = self.get_resolved_expression_type(arg)?;
 
             let needs_copy = if let Type::Named(class_name, _) = &arg_type {
                 if let Some(symbol) = self.analyzer.symbol_table().lookup(class_name) {
@@ -2951,10 +2941,7 @@ impl<'a> CodeGenerator<'a> {
         args: &[ExpressionNode],
     ) -> Result<BasicValueEnum<'a>, String> {
         let closure_ptr = self.generate_expression(func)?.into_pointer_value();
-        let func_type = self
-            .analyzer
-            .get_expression_type(func)
-            .map_err(|e| e.to_string())?;
+        let func_type = self.get_resolved_expression_type(func)?;
         if let Type::Function {
             params, returns, ..
         } = func_type
@@ -3132,10 +3119,7 @@ impl<'a> CodeGenerator<'a> {
         expr: &ExpressionNode,
         field: &str,
     ) -> Result<Option<BasicValueEnum<'a>>, String> {
-        let expr_type = self
-            .analyzer
-            .get_expression_type(expr)
-            .map_err(|e| e.to_string())?;
+        let expr_type = self.get_resolved_expression_type(expr)?;
         let Type::Tuple(left_type, right_type) = expr_type else {
             return Ok(None);
         };
@@ -3180,10 +3164,7 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn is_csv_expression(&mut self, expr: &ExpressionNode) -> Result<bool, String> {
-        let expr_type = self
-            .analyzer
-            .get_expression_type(expr)
-            .map_err(|e| e.to_string())?;
+        let expr_type = self.get_resolved_expression_type(expr)?;
         Ok(matches!(expr_type, Type::Named(name, _) if name == "Csv"))
     }
 
@@ -4060,10 +4041,7 @@ impl<'a> CodeGenerator<'a> {
         if indices.len() == 1 {
             // BASE CASE: Simple assignment base[index] = value
             // Determine if base is a List or Map and call appropriate function
-            let base_type = self
-                .analyzer
-                .get_expression_type(base_expr)
-                .map_err(|e| e.message)?;
+            let base_type = self.get_resolved_expression_type(base_expr)?;
 
             let base_val = self.generate_expression(base_expr)?;
             let index_val = self.generate_expression(indices[0])?;
@@ -4107,10 +4085,7 @@ impl<'a> CodeGenerator<'a> {
             // 3. Write temp back to base[i1]
 
             // Determine if base is a List or Map
-            let base_type = self
-                .analyzer
-                .get_expression_type(base_expr)
-                .map_err(|e| e.message)?;
+            let base_type = self.get_resolved_expression_type(base_expr)?;
 
             let base_val = self.generate_expression(base_expr)?;
             let first_index_val = self.generate_expression(indices[0])?;
