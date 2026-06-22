@@ -1363,6 +1363,12 @@ impl SemanticAnalyzer {
                     .map(|arg| self.rename_type_vars(arg, mapping))
                     .collect(),
             ),
+            Type::Instantiated(name, args) => Type::Instantiated(
+                name.clone(),
+                args.iter()
+                    .map(|arg| self.rename_type_vars(arg, mapping))
+                    .collect(),
+            ),
             Type::Function {
                 params,
                 returns,

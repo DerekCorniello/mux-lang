@@ -25,6 +25,30 @@ impl<'a> CodeGenerator<'a> {
             .expect("should always return a value")
     }
 
+    /// Store an initialized field value at a given pointer location.
+    /// Handles both explicit default values and type-based initialization.
+    fn store_initialized_field(
+        &mut self,
+        field_ptr: PointerValue<'a>,
+        field: &Field,
+    ) -> Result<(), String> {
+        if let Some(default_expr) = &field.default_value {
+            let literal_val = self.generate_expression(default_expr)?;
+            let stored_val = if matches!(field.type_.kind, TypeKind::Primitive(_)) {
+                self.box_value(literal_val).into()
+            } else {
+                literal_val
+            };
+            self.builder
+                .build_store(field_ptr, stored_val)
+                .map_err(|e| e.to_string())?;
+        } else {
+            let field_type = self.type_node_to_type(&field.type_);
+            self.initialize_field_by_type(field_ptr, &field_type, field.is_generic_param)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn generate_enum_constructors(
         &mut self,
         name: &str,
@@ -254,20 +278,7 @@ impl<'a> CodeGenerator<'a> {
                 )
                 .map_err(|e| e.to_string())?;
 
-            if let Some(default_expr) = &field.default_value {
-                let literal_val = self.generate_expression(default_expr)?;
-                let stored_val = if matches!(field.type_.kind, TypeKind::Primitive(_)) {
-                    self.box_value(literal_val).into()
-                } else {
-                    literal_val
-                };
-                self.builder
-                    .build_store(field_ptr, stored_val)
-                    .map_err(|e| e.to_string())?;
-            } else {
-                let field_type = self.type_node_to_type(&field.type_);
-                self.initialize_field_by_type(field_ptr, &field_type, field.is_generic_param)?;
-            }
+            self.store_initialized_field(field_ptr, field)?;
         }
 
         // set vtable fields. Generic classes never get a vtable generated
@@ -697,21 +708,7 @@ impl<'a> CodeGenerator<'a> {
                     )
                     .map_err(|e| e.to_string())?;
 
-                if let Some(default_expr) = &field.default_value {
-                    let literal_val = self.generate_expression(default_expr)?;
-                    let stored_val = if matches!(field.type_.kind, TypeKind::Primitive(_)) {
-                        self.box_value(literal_val).into()
-                    } else {
-                        literal_val
-                    };
-                    self.builder
-                        .build_store(field_ptr, stored_val)
-                        .map_err(|e| e.to_string())?;
-                } else {
-                    // convert TypeNode to Type for resolution
-                    let field_type = self.type_node_to_type(&field.type_);
-                    self.initialize_field_by_type(field_ptr, &field_type, field.is_generic_param)?;
-                }
+                self.store_initialized_field(field_ptr, field)?;
             }
         }
 
