@@ -8,4 +8,4 @@ error: Undefined variable 'out'
  4 | print(out.to_string())
    |       ^^^
    |
-= help: Did you mean 'ok'?
+= help: Did you mean 'count'?
