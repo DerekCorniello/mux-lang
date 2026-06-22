@@ -68,7 +68,25 @@ class Queue<T> is Collection<T> {
         }
         self.items = next
         self.head = 0
-    
+
         return
+    }
+
+    func contains(T value) returns bool {
+        int i = self.head
+        while i < self.items.size() {
+            if self.items[i] == value {
+                return true
+            }
+            i = i + 1
+        }
+        return false
+    }
+
+    common func from_list(list<T> values) returns Queue<T> {
+        auto out = Queue<T>.new()
+        out.items = values
+        out.head = 0
+        return out
     }
     }

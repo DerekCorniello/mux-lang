@@ -326,8 +326,7 @@ impl<'a> CodeGenerator<'a> {
             .build_store(temp_alloca, temp_val)
             .map_err(|e| e.to_string())?;
         let actual_type = self
-            .analyzer
-            .get_expression_type(expr)
+            .get_resolved_expression_type(expr)
             .map_err(|e| format!("Type inference failed: {}", e))?;
         self.variables.insert(
             temp_name.clone(),
@@ -356,8 +355,7 @@ impl<'a> CodeGenerator<'a> {
             return t;
         }
 
-        self.analyzer
-            .get_expression_type(match_expr)
+        self.get_resolved_expression_type(match_expr)
             .map_err(|e| format!("Type inference failed: {}", e))
     }
 
@@ -403,35 +401,37 @@ impl<'a> CodeGenerator<'a> {
             return None;
         }
 
-        Some(
-            self.variables
-                .get("self")
-                .or_else(|| self.global_variables.get("self"))
-                .ok_or_else(|| "Self not found".to_string())
-                .and_then(|(_, _, t)| match t {
-                    Type::Named(class_name, _) => self
-                        .classes
-                        .get(class_name)
-                        .ok_or_else(|| format!("Class {} not found", class_name))
-                        .and_then(|fields| {
-                            fields
-                                .iter()
-                                .find(|f| f.name == *field)
-                                .ok_or_else(|| {
-                                    format!("Field {} not found in class {}", field, class_name)
-                                })
-                                .and_then(|f| {
-                                    self.analyzer
-                                        .resolve_type(&f.type_)
-                                        .map_err(|e| format!("Type resolution failed: {}", e))
-                                })
-                        }),
-                    _ => self
-                        .analyzer
-                        .get_expression_type(match_expr)
-                        .map_err(|e| format!("Type inference failed: {}", e)),
+        let self_type = match self
+            .variables
+            .get("self")
+            .or_else(|| self.global_variables.get("self"))
+        {
+            Some((_, _, t)) => t.clone(),
+            None => return Some(Err("Self not found".to_string())),
+        };
+
+        let result = match &self_type {
+            Type::Named(class_name, _) => self
+                .classes
+                .get(class_name)
+                .cloned()
+                .ok_or_else(|| format!("Class {} not found", class_name))
+                .and_then(|fields| {
+                    fields
+                        .iter()
+                        .find(|f| f.name == *field)
+                        .ok_or_else(|| format!("Field {} not found in class {}", field, class_name))
+                        .and_then(|f| {
+                            self.analyzer
+                                .resolve_type(&f.type_)
+                                .map_err(|e| format!("Type resolution failed: {}", e))
+                        })
                 }),
-        )
+            _ => self
+                .get_resolved_expression_type(match_expr)
+                .map_err(|e| format!("Type inference failed: {}", e)),
+        };
+        Some(result)
     }
 
     fn generate_match_statement_inner(
@@ -1512,7 +1512,9 @@ impl<'a> CodeGenerator<'a> {
         expr_val: BasicValueEnum<'a>,
         arms: &[crate::ast::MatchArm],
     ) -> Result<(), String> {
-        let enum_name = self.resolve_enum_match_name(match_expr)?;
+        let enum_name = self.resolve_enum_match_name(match_expr).or_else(|_| {
+            self.enum_name_from_type(match_expr_type, "Match expression must be an enum type")
+        })?;
         let expr_ptr_opt = self.enum_expr_ptr_for_payload_access(&enum_name, expr_val)?;
 
         let discriminant = self.load_enum_discriminant(&enum_name, expr_val)?;

@@ -202,4 +202,158 @@ class BinaryTree<T is Comparable> is Collection<T> {
         self.right_children.push_back(-1)
         return idx
     }
+
+    func min() returns optional<T> {
+        self.normalize_root()
+        if self.root == -1 {
+            return none
+        }
+
+        auto current = self.root
+        while self.left_children[current] != -1 {
+            current = self.left_children[current]
+        }
+
+        return some(self.values[current])
+    }
+
+    func max() returns optional<T> {
+        self.normalize_root()
+        if self.root == -1 {
+            return none
+        }
+
+        auto current = self.root
+        while self.right_children[current] != -1 {
+            current = self.right_children[current]
+        }
+
+        return some(self.values[current])
+    }
+
+    // -1 for an empty tree, 0 for a single node, matching the usual edge-count convention.
+    func height() returns int {
+        self.normalize_root()
+        if self.root == -1 {
+            return -1
+        }
+
+        list<int> node_stack = []
+        list<int> depth_stack = []
+        node_stack.push_back(self.root)
+        depth_stack.push_back(0)
+
+        int best = 0
+        while !node_stack.is_empty() {
+            auto top_idx = node_stack.size() - 1
+            auto node = node_stack[top_idx]
+            auto depth = depth_stack[top_idx]
+            node_stack.pop_back()
+            depth_stack.pop_back()
+
+            if depth > best {
+                best = depth
+            }
+
+            if self.left_children[node] != -1 {
+                node_stack.push_back(self.left_children[node])
+                depth_stack.push_back(depth + 1)
+            }
+            if self.right_children[node] != -1 {
+                node_stack.push_back(self.right_children[node])
+                depth_stack.push_back(depth + 1)
+            }
+        }
+
+        return best
+    }
+
+    func preorder() returns list<T> {
+        self.normalize_root()
+        list<T> result = []
+        list<int> stack = []
+        if self.root != -1 {
+            stack.push_back(self.root)
+        }
+
+        while !stack.is_empty() {
+            auto top_idx = stack.size() - 1
+            auto node = stack[top_idx]
+            stack.pop_back()
+
+            result.push_back(self.values[node])
+
+            if self.right_children[node] != -1 {
+                stack.push_back(self.right_children[node])
+            }
+            if self.left_children[node] != -1 {
+                stack.push_back(self.left_children[node])
+            }
+        }
+
+        return result
+    }
+
+    func postorder() returns list<T> {
+        self.normalize_root()
+        list<T> result = []
+        list<int> stack = []
+        if self.root != -1 {
+            stack.push_back(self.root)
+        }
+
+        while !stack.is_empty() {
+            auto top_idx = stack.size() - 1
+            auto node = stack[top_idx]
+            stack.pop_back()
+
+            result.push_back(self.values[node])
+
+            if self.left_children[node] != -1 {
+                stack.push_back(self.left_children[node])
+            }
+            if self.right_children[node] != -1 {
+                stack.push_back(self.right_children[node])
+            }
+        }
+
+        int i = 0
+        int j = result.size() - 1
+        while i < j {
+            auto tmp = result[i]
+            result[i] = result[j]
+            result[j] = tmp
+            i = i + 1
+            j = j - 1
+        }
+
+        return result
+    }
+
+    func level_order() returns list<T> {
+        self.normalize_root()
+        list<T> result = []
+        if self.root == -1 {
+            return result
+        }
+
+        list<int> queue = []
+        queue.push_back(self.root)
+        int head = 0
+
+        while head < queue.size() {
+            auto node = queue[head]
+            head = head + 1
+            result.push_back(self.values[node])
+
+            if self.left_children[node] != -1 {
+                queue.push_back(self.left_children[node])
+            }
+            if self.right_children[node] != -1 {
+                queue.push_back(self.right_children[node])
+            }
+        }
+
+        return result
+    }
     }

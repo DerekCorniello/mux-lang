@@ -55,6 +55,13 @@ pub struct SemanticAnalyzer {
     pub current_return_type: Option<Type>, // Track current function/lambda return type
     pub current_class_type_params: Option<Vec<(String, GenericBounds)>>, // Track class-level type params with bounds for method analysis
     expression_type_overrides: std::collections::HashMap<Span, Type>, // Override resolved types for expressions (e.g., {} resolved to EmptyMap in map context)
+    fresh_type_var_counter: usize, // Generates globally-unique names so a callee's type variables never collide with the caller's
+    // Import statements are resolved during the hoisting pass (so interfaces
+    // they bring into scope are visible to classes hoisted later in the same
+    // pass), then skipped during the second pass by span so they are not
+    // processed twice (some import side effects, like registering a
+    // submodule namespace symbol, are not safe to repeat).
+    pub(super) hoisted_import_spans: HashSet<Span>,
 }
 
 impl Default for SemanticAnalyzer {
@@ -87,6 +94,8 @@ impl SemanticAnalyzer {
             current_return_type: None,
             current_class_type_params: None,
             expression_type_overrides: std::collections::HashMap::new(),
+            fresh_type_var_counter: 0,
+            hoisted_import_spans: HashSet::new(),
         }
     }
 
@@ -229,6 +238,8 @@ impl SemanticAnalyzer {
             current_return_type: None,
             current_class_type_params: None,
             expression_type_overrides: std::collections::HashMap::new(),
+            fresh_type_var_counter: 0,
+            hoisted_import_spans: HashSet::new(),
         }
     }
 
@@ -531,9 +542,13 @@ impl SemanticAnalyzer {
         crate::semantics::stdlib::BUILT_IN_FUNCTIONS.get(name)
     }
 
-    pub fn analyze(&mut self, ast: &[AstNode], files: Option<&mut Files>) -> Vec<SemanticError> {
+    pub fn analyze(
+        &mut self,
+        ast: &[AstNode],
+        mut files: Option<&mut Files>,
+    ) -> Vec<SemanticError> {
         self.add_builtin_functions();
-        if let Err(e) = self.collect_hoistable_declarations(ast) {
+        if let Err(e) = self.collect_hoistable_declarations(ast, files.as_deref_mut()) {
             self.errors.push(e);
         }
         self.analyze_nodes(ast, files);
@@ -1242,20 +1257,140 @@ impl SemanticAnalyzer {
             )?;
         }
 
+        // Alpha-rename the callee's own type variables to globally-unique names before
+        // unifying. Without this, a callee whose type parameter happens to share a name
+        // with one already in scope at the call site (e.g. both called "T") can make the
+        // unifier's occurs check misfire: it would see the in-scope "T" nested inside an
+        // argument type (like list<T>) and mistake it for the callee's own "T", reporting
+        // a false recursive-type error even though the two are unrelated.
+        //
+        // This is scoped to plain identifier calls (free functions and the built-in
+        // constructors `some`/`ok`/`err`) rather than method calls on a field/receiver.
+        // Method calls on an interface-bound type parameter (e.g. `collection.to_list()`
+        // where `E is Collection<T>`) have no arguments to unify the receiver's own type
+        // parameter against, so their return type is resolved by the literal type
+        // parameter name matching the caller's in-scope name; renaming here would break
+        // that resolution.
+        let should_rename = matches!(func.kind, ExpressionKind::Identifier(_));
+        let mut rename_map = std::collections::HashMap::new();
+        let renamed_params: Vec<Type> = if should_rename {
+            params
+                .iter()
+                .map(|p| self.rename_type_vars(p, &mut rename_map))
+                .collect()
+        } else {
+            params.clone()
+        };
+        let renamed_returns = if should_rename {
+            self.rename_type_vars(&returns, &mut rename_map)
+        } else {
+            *returns.clone()
+        };
+
         let mut unifier = Unifier::new();
-        for (param, arg) in params.iter().zip(args.iter()) {
+        for (param, arg) in renamed_params.iter().zip(args.iter()) {
             let arg_type = self.get_expression_type(arg)?;
             unifier.unify(param, &arg_type, expr_span)?;
         }
 
         if let Some(func_name) = self.call_function_name(func) {
+            let reverse_rename_map: std::collections::HashMap<String, String> = rename_map
+                .iter()
+                .map(|(original, fresh)| (fresh.clone(), original.clone()))
+                .collect();
+            let mut substitutions_by_original_name: std::collections::HashMap<String, Type> =
+                unifier
+                    .substitutions
+                    .iter()
+                    .map(|(fresh, ty)| {
+                        let original = reverse_rename_map
+                            .get(fresh)
+                            .cloned()
+                            .unwrap_or_else(|| fresh.clone());
+                        (original, ty.clone())
+                    })
+                    .collect();
+
             self.infer_missing_type_params_from_function_bounds(
                 func_name,
-                &mut unifier.substitutions,
+                &mut substitutions_by_original_name,
             );
+
+            for (original, ty) in substitutions_by_original_name {
+                let fresh = rename_map.get(&original).cloned().unwrap_or(original);
+                unifier.substitutions.entry(fresh).or_insert(ty);
+            }
         }
 
-        Ok(unifier.apply(&returns))
+        Ok(unifier.apply(&renamed_returns))
+    }
+
+    // Renames every distinct `Type::Variable`/`Type::Generic` found in `t` to a fresh,
+    // globally-unique name, reusing the same fresh name for repeated occurrences within
+    // this call (so e.g. both occurrences of a callee's own "T" still unify with each
+    // other). See `resolve_function_call_type` for why this is needed.
+    fn rename_type_vars(
+        &mut self,
+        t: &Type,
+        mapping: &mut std::collections::HashMap<String, String>,
+    ) -> Type {
+        match t {
+            Type::Variable(name) => Type::Variable(self.fresh_name_for(name, mapping)),
+            Type::Generic(name) => Type::Generic(self.fresh_name_for(name, mapping)),
+            Type::List(inner) => Type::List(Box::new(self.rename_type_vars(inner, mapping))),
+            Type::Set(inner) => Type::Set(Box::new(self.rename_type_vars(inner, mapping))),
+            Type::Optional(inner) => {
+                Type::Optional(Box::new(self.rename_type_vars(inner, mapping)))
+            }
+            Type::Reference(inner) => {
+                Type::Reference(Box::new(self.rename_type_vars(inner, mapping)))
+            }
+            Type::Map(key, value) => Type::Map(
+                Box::new(self.rename_type_vars(key, mapping)),
+                Box::new(self.rename_type_vars(value, mapping)),
+            ),
+            Type::Tuple(left, right) => Type::Tuple(
+                Box::new(self.rename_type_vars(left, mapping)),
+                Box::new(self.rename_type_vars(right, mapping)),
+            ),
+            Type::Result(ok, err) => Type::Result(
+                Box::new(self.rename_type_vars(ok, mapping)),
+                Box::new(self.rename_type_vars(err, mapping)),
+            ),
+            Type::Named(name, args) => Type::Named(
+                name.clone(),
+                args.iter()
+                    .map(|arg| self.rename_type_vars(arg, mapping))
+                    .collect(),
+            ),
+            Type::Function {
+                params,
+                returns,
+                default_count,
+            } => Type::Function {
+                params: params
+                    .iter()
+                    .map(|p| self.rename_type_vars(p, mapping))
+                    .collect(),
+                returns: Box::new(self.rename_type_vars(returns, mapping)),
+                default_count: *default_count,
+            },
+            other => other.clone(),
+        }
+    }
+
+    fn fresh_name_for(
+        &mut self,
+        original: &str,
+        mapping: &mut std::collections::HashMap<String, String>,
+    ) -> String {
+        if let Some(existing) = mapping.get(original) {
+            return existing.clone();
+        }
+        self.fresh_type_var_counter += 1;
+        let fresh = format!("{}#{}", original, self.fresh_type_var_counter);
+        mapping.insert(original.to_string(), fresh.clone());
+        fresh
     }
 
     fn call_default_param_count(&self, func: &ExpressionNode, default_count: usize) -> usize {

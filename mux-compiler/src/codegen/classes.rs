@@ -276,6 +276,21 @@ impl<'a> CodeGenerator<'a> {
         class_name: &str,
         interfaces: &HashMap<String, (Vec<Type>, HashMap<String, MethodSig>)>,
     ) -> Result<(), String> {
+        // Generic classes only ever emit monomorphized method bodies (e.g.
+        // "Graph$string.len"), never an unspecialized "Graph.len" definition.
+        // A vtable built from the unspecialized name would reference a
+        // declaration with no body and fail at link time, and the vtable
+        // field is never read for dispatch anyway (interfaces use static
+        // dispatch), so skip vtable generation for generic classes entirely.
+        let is_generic = self
+            .analyzer
+            .all_symbols()
+            .get(class_name)
+            .is_some_and(|sym| !sym.type_params.is_empty());
+        if is_generic {
+            return Ok(());
+        }
+
         for (interface_name, (_, interface_methods)) in interfaces {
             let mut vtable_values = Vec::new();
             for method_name in interface_methods.keys() {

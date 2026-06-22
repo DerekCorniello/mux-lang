@@ -39,4 +39,21 @@ class Stack<T> is Collection<T> {
         }
         return self.items.get(self.items.size() - 1)
     }
+
+    func contains(T value) returns bool {
+        int i = 0
+        while i < self.items.size() {
+            if self.items[i] == value {
+                return true
+            }
+            i = i + 1
+        }
+        return false
+    }
+
+    common func from_list(list<T> values) returns Stack<T> {
+        auto out = Stack<T>.new()
+        out.items = values
+        return out
+    }
     }

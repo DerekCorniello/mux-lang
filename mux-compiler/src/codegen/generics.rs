@@ -147,7 +147,7 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
-    fn lookup_class_symbol(&self, class_name: &str) -> Option<crate::semantics::Symbol> {
+    pub(super) fn lookup_class_symbol(&self, class_name: &str) -> Option<crate::semantics::Symbol> {
         if let Some(symbol) = self.analyzer.symbol_table().lookup(class_name) {
             return Some(symbol);
         }

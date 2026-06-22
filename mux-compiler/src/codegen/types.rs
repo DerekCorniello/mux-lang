@@ -86,9 +86,10 @@ impl<'a> CodeGenerator<'a> {
                 Err(format!("Variable type '{}' should be resolved", name))
             }
             Type::Never => Err("Never type not allowed here".to_string()),
-            Type::Module(_) => {
-                panic!("Module types should not appear in codegen - they are compile-time only")
-            }
+            Type::Module(_) => Err(
+                "Module types should not appear in codegen - they are compile-time only"
+                    .to_string(),
+            ),
         }
     }
 
@@ -360,15 +361,77 @@ impl<'a> CodeGenerator<'a> {
                 returns: Box::new(self.resolve_type_with_seen(returns, seen_generic_params)?),
                 default_count: *default_count,
             }),
-            Type::Module(_) => {
-                panic!("Module types should not appear in codegen - they are compile-time only")
-            }
+            Type::Module(_) => Err(
+                "Module types should not appear in codegen - they are compile-time only"
+                    .to_string(),
+            ),
         }
     }
 
     pub(super) fn resolve_type(&self, type_: &Type) -> Result<Type, String> {
         let mut seen_generic_params = HashSet::new();
         self.resolve_type_with_seen(type_, &mut seen_generic_params)
+    }
+
+    /// Substitute any `Type::Variable`/`Type::Generic` named in `map` with its concrete
+    /// type, recursively. Used to resolve a class field's declared type (which still
+    /// names the class's own type parameters, e.g. `list<T>`) against a specific
+    /// instantiation's type arguments, independent of the codegen generic context.
+    pub(super) fn substitute_type_with_map(
+        &self,
+        type_: &Type,
+        map: &std::collections::HashMap<String, Type>,
+    ) -> Type {
+        match type_ {
+            Type::Variable(name) | Type::Generic(name) => {
+                map.get(name).cloned().unwrap_or_else(|| type_.clone())
+            }
+            Type::Named(name, args) => Type::Named(
+                name.clone(),
+                args.iter()
+                    .map(|a| self.substitute_type_with_map(a, map))
+                    .collect(),
+            ),
+            Type::Instantiated(name, args) => Type::Instantiated(
+                name.clone(),
+                args.iter()
+                    .map(|a| self.substitute_type_with_map(a, map))
+                    .collect(),
+            ),
+            Type::List(inner) => Type::List(Box::new(self.substitute_type_with_map(inner, map))),
+            Type::Set(inner) => Type::Set(Box::new(self.substitute_type_with_map(inner, map))),
+            Type::Map(k, v) => Type::Map(
+                Box::new(self.substitute_type_with_map(k, map)),
+                Box::new(self.substitute_type_with_map(v, map)),
+            ),
+            Type::Tuple(l, r) => Type::Tuple(
+                Box::new(self.substitute_type_with_map(l, map)),
+                Box::new(self.substitute_type_with_map(r, map)),
+            ),
+            Type::Optional(inner) => {
+                Type::Optional(Box::new(self.substitute_type_with_map(inner, map)))
+            }
+            Type::Result(ok, err) => Type::Result(
+                Box::new(self.substitute_type_with_map(ok, map)),
+                Box::new(self.substitute_type_with_map(err, map)),
+            ),
+            Type::Reference(inner) => {
+                Type::Reference(Box::new(self.substitute_type_with_map(inner, map)))
+            }
+            Type::Function {
+                params,
+                returns,
+                default_count,
+            } => Type::Function {
+                params: params
+                    .iter()
+                    .map(|p| self.substitute_type_with_map(p, map))
+                    .collect(),
+                returns: Box::new(self.substitute_type_with_map(returns, map)),
+                default_count: *default_count,
+            },
+            other => other.clone(),
+        }
     }
 
     #[allow(clippy::only_used_in_recursion)]

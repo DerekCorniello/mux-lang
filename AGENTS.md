@@ -12,6 +12,7 @@ Please also read the 10x Dev Skill that covers best practices at ~/.opencode/ski
 - **Never touch git** - do not run git commands, create commits, or modify git config. Let the user handle version control.
 - **If confused about language design**, check README.md first, then stop and ask for clarification.
 - **No clippy warnings** - code must pass `cargo clippy --all-targets --all-features -- -D warnings` (run this exact command for strict linting).
+- **Pre-existing Issues** - if you encounter an issue that seems to be pre‑existing, _ALWAYS_ bring it up that you uncovered it, and then proceed with fixes.
 - **Remove outdated comments** - ensure comments reflect current code.
 - **NEVER READ THE `.env` FILE** - do not read or parse the `.env` file. If environment variables are needed, ask the user to provide them explicitly.
 - When running commands that require environment variables, execute `source .env` in the shell to load them. This keeps secrets in process memory without exposing file contents to the AI context.
