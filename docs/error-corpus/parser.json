@@ -1,0 +1,46 @@
+[
+  {
+    "id": "parser_break_outside_loop",
+    "source": "break",
+    "error": "Cannot use 'break' outside of a loop",
+    "help": "'break' can only be used inside a 'for' or 'while' loop",
+    "category": "parser",
+    "relevant_docs": ["/docs/language-guide/control-flow/"]
+  },
+  {
+    "id": "parser_continue_outside_loop",
+    "source": "continue",
+    "error": "Cannot use 'continue' outside of a loop",
+    "help": "'continue' can only be used inside a 'for' or 'while' loop",
+    "category": "parser",
+    "relevant_docs": ["/docs/language-guide/control-flow/"]
+  },
+  {
+    "id": "parser_return_outside_func",
+    "source": "return 42",
+    "error": "Cannot use 'return' outside of a function",
+    "help": null,
+    "category": "parser",
+    "relevant_docs": ["/docs/language-guide/functions/", "/docs/reference/statements/"]
+  },
+  {
+    "id": "parser_missing_return_type",
+    "source": "func bar() returns",
+    "error": "Expected type",
+    "help": null,
+    "category": "parser",
+    "relevant_docs": ["/docs/language-guide/functions/"]
+  },
+  {
+    "id": "parser_missing_if_expr",
+    "source": "if { print(\"hi\") }",
+    "error": "Expected expression",
+    "help": null,
+    "category": "parser",
+    "relevant_docs": [
+      "/docs/language-guide/control-flow/",
+      "/docs/reference/expressions/",
+      "/docs/reference/statements/"
+    ]
+  }
+]

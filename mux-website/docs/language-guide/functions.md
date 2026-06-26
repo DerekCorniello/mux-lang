@@ -222,6 +222,25 @@ auto result = myString.to_int().to_string()
 auto doubled = square(add(2, 3))
 ```
 
+### Argument Count
+
+A call must pass exactly as many arguments as the function declares (after
+accounting for any defaults). Passing too few or too many arguments is a
+compile-time error, not a runtime one.
+
+```mux title="argument_count.mux"
+func add(int a, int b) returns int {
+    return a + b
+}
+
+auto ok = add(1, 2)   // correct: two arguments
+auto bad = add(1)     // error: Wrong number of arguments: expected 2, got 1
+```
+
+To call a function with fewer explicit arguments, give the trailing parameters
+default values (see Default Parameters above); parameters without defaults are
+always required.
+
 ### Calling `main()` Explicitly
 
 Mux allows explicit calls to `main()` from user code.

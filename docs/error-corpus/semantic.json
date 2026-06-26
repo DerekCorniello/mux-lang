@@ -1,0 +1,82 @@
+[
+  {
+    "id": "semantic_type_mismatch",
+    "source": "int n = \"hello\"",
+    "error": "Type mismatch: expected int, got string",
+    "help": null,
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/types/", "/docs/language-guide/variables/"]
+  },
+  {
+    "id": "semantic_wrong_return",
+    "source": "func baz() returns int { return \"str\" }",
+    "error": "Type mismatch: expected int, got string",
+    "help": null,
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/functions/", "/docs/language-guide/types/"]
+  },
+  {
+    "id": "semantic_undefined_var",
+    "source": "print(x)",
+    "error": "Undefined variable 'x'",
+    "help": null,
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/variables/"]
+  },
+  {
+    "id": "semantic_duplicate_var",
+    "source": "auto x = 5\nauto x = 6",
+    "error": "Duplicate declaration of 'x'",
+    "help": null,
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/variables/"]
+  },
+  {
+    "id": "semantic_match_missing_wildcard",
+    "source": "match x { 1 { print(\"one\") } 2 { print(\"two\") } }",
+    "error": "Non-exhaustive match on type 'int'",
+    "help": "Add a wildcard '_' pattern as the last match arm to handle all remaining cases",
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/control-flow/"]
+  },
+  {
+    "id": "semantic_wrong_interface",
+    "source": "interface I { func foo() returns void }\nclass C is I {}",
+    "error": "Class 'C' does not implement method 'foo' required by interface 'I'",
+    "help": "Add a method 'foo' to class 'C' with the signature required by interface 'I'",
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/classes/"]
+  },
+  {
+    "id": "semantic_missing_return_if",
+    "source": "func get_value(int x) returns int { if x > 0 { return x * 2 } }",
+    "error": "Function must return a value of type 'int' on all code paths",
+    "help": "Add a return statement at the end of every branch (if/else, match, etc.)",
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/functions/", "/docs/language-guide/control-flow/"]
+  },
+  {
+    "id": "semantic_assign_const",
+    "source": "const x = 5\nx = 10",
+    "error": "Cannot assign to constant 'x'",
+    "help": null,
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/variables/"]
+  },
+  {
+    "id": "semantic_undefined_type_list_new",
+    "source": "auto empty_list = list.new()",
+    "error": "Undefined variable 'list'",
+    "help": "List has no '.new()' constructor. Use '[]' for an empty list or '[1, 2, 3]' for elements.",
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/collections/"]
+  },
+  {
+    "id": "semantic_wrong_arg_count",
+    "source": "func add(int a, int b) returns int { return a + b }\nadd(1)",
+    "error": "Wrong number of arguments: expected 2, got 1",
+    "help": null,
+    "category": "semantic",
+    "relevant_docs": ["/docs/language-guide/functions/"]
+  }
+]

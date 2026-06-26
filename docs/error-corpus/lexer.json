@@ -1,0 +1,34 @@
+[
+  {
+    "id": "lexer_unterminated_string",
+    "source": "\"hello",
+    "error": "Unterminated string",
+    "help": "Make sure to close the string with a matching quote",
+    "category": "lexer",
+    "relevant_docs": ["/docs/reference/lexical-structure/", "/docs/language-guide/types/"]
+  },
+  {
+    "id": "lexer_invalid_char",
+    "source": "§",
+    "error": "Unexpected character: '§'",
+    "help": "This character is not recognized as valid Mux syntax. Check for accidental special characters or encoding issues.",
+    "category": "lexer",
+    "relevant_docs": []
+  },
+  {
+    "id": "lexer_unknown_escape",
+    "source": "auto s = \"hi\\z\"",
+    "error": "Unknown escape sequence: \\z",
+    "help": "Valid escape sequences: \\n, \\t, \\r, \\0, \\\\, \\', \\\"",
+    "category": "lexer",
+    "relevant_docs": ["/docs/language-guide/types/"]
+  },
+  {
+    "id": "lexer_unterminated_comment",
+    "source": "/* unclosed comment",
+    "error": "Unterminated block comment",
+    "help": "Make sure to close the block comment with '*/'",
+    "category": "lexer",
+    "relevant_docs": []
+  }
+]
