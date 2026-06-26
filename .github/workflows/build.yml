@@ -98,8 +98,9 @@ jobs:
         run: ./scripts/integration-checks.sh
   sonarqube:
     name: SonarQube
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'push' }}
+    # Runs on every push and pull request (no path gating): SonarQube analyzes
+    # the whole project, including the TypeScript/JS under mux-website, workers/,
+    # and tools/, so it must not be skipped just because no Rust files changed.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
