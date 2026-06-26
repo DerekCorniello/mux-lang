@@ -13,7 +13,7 @@ export interface ExtractedDoc {
 }
 
 function parseFrontMatter(raw: string): { frontMatter: Record<string, unknown>; content: string } {
-  const match = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(raw.slice(0, 10240));
+  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(raw.slice(0, 10240));
   if (!match) {
     return { frontMatter: {}, content: raw.trim() };
   }
@@ -38,7 +38,7 @@ function deriveTitle(docId: string, frontMatter: Record<string, unknown>, conten
     return frontMatter.title.trim();
   }
 
-  const headingMatch = /^#\s+(.+)$/m.exec(content);
+  const headingMatch = /^#[ \t]+(\S.*)$/m.exec(content);
   if (headingMatch) {
     return headingMatch[1].trim();
   }

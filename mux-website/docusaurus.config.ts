@@ -22,7 +22,7 @@ function parseFrontMatter(fileContent: string): {
   content: string;
 } {
   // Limit searchable content to prevent ReDoS on malformed front matter
-  const frontMatterMatch = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(
+  const frontMatterMatch = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(
     fileContent.slice(0, 10240),
   );
 

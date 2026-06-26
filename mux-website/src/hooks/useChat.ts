@@ -11,9 +11,13 @@ const ERROR_COPY: Record<ChatErrorCode, string> = {
   MODEL_UNAVAILABLE: 'The AI assistant is temporarily unavailable. Please try again shortly.',
 };
 
+function newId(): string {
+  return crypto.randomUUID();
+}
+
 function getSessionCount(): number {
   try {
-    return parseInt(sessionStorage.getItem(SESSION_COUNT_KEY) ?? '0', 10) || 0;
+    return Number.parseInt(sessionStorage.getItem(SESSION_COUNT_KEY) ?? '0', 10) || 0;
   } catch {
     return 0;
   }
@@ -53,7 +57,7 @@ const useChat = () => {
         return;
       }
 
-      const userMessage: ChatMessage = { role: 'user', content: trimmed };
+      const userMessage: ChatMessage = { id: newId(), role: 'user', content: trimmed };
       const nextMessages = [...messages, userMessage];
       setMessages(nextMessages);
       setLoading(true);
@@ -74,7 +78,7 @@ const useChat = () => {
         }
         setMessages([
           ...nextMessages,
-          { role: 'assistant', content: response.message, sources: response.sources ?? [] },
+          { id: newId(), role: 'assistant', content: response.message, sources: response.sources ?? [] },
         ]);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Unknown error');

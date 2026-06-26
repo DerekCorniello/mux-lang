@@ -26,7 +26,9 @@ interface VectorizeRecord {
 }
 
 function vectorId(docId: string, chunkIndex: number): string {
-  return createHash('sha1').update(`${docId}:${chunkIndex}`).digest('hex');
+  // SHA-256 (not SHA-1) purely as a stable, collision-resistant id for the
+  // chunk; not a security context, but avoids flagging a weak hash algorithm.
+  return createHash('sha256').update(`${docId}:${chunkIndex}`).digest('hex');
 }
 
 function toRecord(entry: IndexedChunk): VectorizeRecord {
@@ -93,6 +95,11 @@ export function computeStaleIds(oldIds: string[] | null, newIds: string[]): stri
   return oldIds.filter((id) => !current.has(id));
 }
 
+// Absolute path to the wrangler binary installed in the worker package, so the
+// command does not rely on PATH resolution (which could pick up an attacker-
+// controlled `npx`/`wrangler` earlier on PATH).
+const WRANGLER_BIN = path.join(WORKER_DIR, 'node_modules', '.bin', 'wrangler');
+
 // Strip the local embedding-only API token so wrangler falls back to the
 // `wrangler login` OAuth session, which has Vectorize permissions.
 function wranglerEnv(): NodeJS.ProcessEnv {
@@ -102,8 +109,8 @@ function wranglerEnv(): NodeJS.ProcessEnv {
 
 export function upsertToVectorize(ndjsonPath: string): void {
   execFileSync(
-    'npx',
-    ['wrangler', 'vectorize', 'upsert', 'mux-docs', '--file', ndjsonPath],
+    WRANGLER_BIN,
+    ['vectorize', 'upsert', 'mux-docs', '--file', ndjsonPath],
     { cwd: WORKER_DIR, stdio: 'inherit', env: wranglerEnv() },
   );
 }
@@ -112,8 +119,8 @@ export function deleteVectors(ids: string[]): void {
   for (let i = 0; i < ids.length; i += DELETE_BATCH_SIZE) {
     const batch = ids.slice(i, i + DELETE_BATCH_SIZE);
     execFileSync(
-      'npx',
-      ['wrangler', 'vectorize', 'delete-vectors', 'mux-docs', '--ids', ...batch],
+      WRANGLER_BIN,
+      ['vectorize', 'delete-vectors', 'mux-docs', '--ids', ...batch],
       { cwd: WORKER_DIR, stdio: 'inherit', env: wranglerEnv() },
     );
   }

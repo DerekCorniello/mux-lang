@@ -1,4 +1,6 @@
 export interface ChatMessage {
+  /** Stable client-side id, used as the React list key. */
+  id: string;
   role: 'user' | 'assistant';
   content: string;
   sources?: ChatSource[];

@@ -5,7 +5,7 @@ interface RootProps {
   children: ReactNode;
 }
 
-export default function Root({ children }: RootProps): ReactNode {
+export default function Root({ children }: Readonly<RootProps>): ReactNode {
   return (
     <>
       {children}

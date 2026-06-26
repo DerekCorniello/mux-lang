@@ -237,6 +237,34 @@ function parseChatRequest(body: unknown): ChatRequest | null {
   return b as unknown as ChatRequest;
 }
 
+type ValidatedChat =
+  | { ok: true; messages: ChatMessage[]; lastUserIndex: number }
+  | { ok: false; error: string };
+
+// Parse and validate a chat request body: shape, per-message size, and the
+// presence of a user message. Extracted from handleChat to keep that handler's
+// branching (and cognitive complexity) low.
+function validateChatBody(body: unknown): ValidatedChat {
+  const chatRequest = parseChatRequest(body);
+  if (!chatRequest || chatRequest.messages.length === 0) {
+    return { ok: false, error: 'messages must be a non-empty array of {role, content}' };
+  }
+  if (chatRequest.messages.some((m) => m.content.length > MAX_CONTENT_CHARS)) {
+    return { ok: false, error: `Each message must be at most ${MAX_CONTENT_CHARS} characters.` };
+  }
+  let lastUserIndex = -1;
+  for (let i = chatRequest.messages.length - 1; i >= 0; i--) {
+    if (chatRequest.messages[i].role === 'user') {
+      lastUserIndex = i;
+      break;
+    }
+  }
+  if (lastUserIndex === -1) {
+    return { ok: false, error: 'At least one user message is required' };
+  }
+  return { ok: true, messages: chatRequest.messages, lastUserIndex };
+}
+
 async function handleChat(request: Request, env: Env): Promise<Response> {
   const start = Date.now();
 
@@ -260,45 +288,19 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     return jsonResponse({ error: 'Invalid JSON body' } satisfies ChatResponse, env, 400);
   }
 
-  const chatRequest = parseChatRequest(body);
-  if (!chatRequest || chatRequest.messages.length === 0) {
-    return jsonResponse(
-      { error: 'messages must be a non-empty array of {role, content}' } satisfies ChatResponse,
-      env,
-      400,
-    );
+  const validated = validateChatBody(body);
+  if (!validated.ok) {
+    return jsonResponse({ error: validated.error } satisfies ChatResponse, env, 400);
   }
-
-  if (chatRequest.messages.some((m) => m.content.length > MAX_CONTENT_CHARS)) {
-    return jsonResponse(
-      { error: `Each message must be at most ${MAX_CONTENT_CHARS} characters.` } satisfies ChatResponse,
-      env,
-      400,
-    );
-  }
-
-  let lastUserIndex = -1;
-  for (let i = chatRequest.messages.length - 1; i >= 0; i--) {
-    if (chatRequest.messages[i].role === 'user') {
-      lastUserIndex = i;
-      break;
-    }
-  }
-  if (lastUserIndex === -1) {
-    return jsonResponse(
-      { error: 'At least one user message is required' } satisfies ChatResponse,
-      env,
-      400,
-    );
-  }
-  const lastUserMessage = chatRequest.messages[lastUserIndex];
+  const { messages, lastUserIndex } = validated;
+  const lastUserMessage = messages[lastUserIndex];
 
   // Request is valid and about to hit the AI calls; consume the cooldown slot now.
   markRequest(ip);
 
-  log({ event: 'chat_request', turn_count: chatRequest.messages.length });
+  log({ event: 'chat_request', turn_count: messages.length });
 
-  const retrievalQuery = buildRetrievalQuery(chatRequest.messages);
+  const retrievalQuery = buildRetrievalQuery(messages);
 
   let chunks: SearchResult[];
   try {
@@ -334,7 +336,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
   // Build the messages array for the generation model. Everything before the
   // last user message is prior context (capped for bounded cost); that last user
   // message is the one we inject the retrieved excerpts into below.
-  const priorMessages = chatRequest.messages.slice(0, lastUserIndex).slice(-GENERATION_HISTORY_LIMIT);
+  const priorMessages = messages.slice(0, lastUserIndex).slice(-GENERATION_HISTORY_LIMIT);
   const augmentedUserContent = buildUserMessageWithContext(lastUserMessage.content, chunks);
 
   const llmMessages = [

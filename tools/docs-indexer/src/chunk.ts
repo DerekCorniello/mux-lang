@@ -39,7 +39,7 @@ function splitIntoSections(content: string): Section[] {
   };
 
   for (const line of lines) {
-    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(line);
+    const headingMatch = /^(#{1,6})[ \t]+(\S.*)$/.exec(line);
     if (headingMatch) {
       flush();
       currentHeading = headingMatch[2].trim();

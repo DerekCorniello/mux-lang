@@ -1101,7 +1101,7 @@ hr {
 .playground-output-text {
   margin: 0;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
   font-family: var(--ifm-font-family-monospace);
   font-size: 0.86rem;
   line-height: 1.55;
@@ -1329,6 +1329,10 @@ hr {
   max-height: 70vh;
   display: flex;
   flex-direction: column;
+  /* Reset native <dialog> user-agent defaults (padding, margin) so the panel
+     layout is unaffected by using a semantic dialog element. */
+  margin: 0;
+  padding: 0;
   border: 1px solid var(--terminal-border);
   border-radius: 12px;
   background-color: var(--ifm-background-surface-color);

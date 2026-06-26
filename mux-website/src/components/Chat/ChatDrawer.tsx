@@ -28,7 +28,7 @@ const ChatDrawer: React.FC<ChatDrawerProps> = ({ open, onClose }) => {
   }
 
   return (
-    <div className="mux-chat-drawer" role="dialog" aria-modal="true" aria-label="Mux AI assistant">
+    <dialog className="mux-chat-drawer" open aria-label="Mux AI assistant">
       <div className="mux-chat-drawer-header">
         <span className="mux-chat-drawer-title">Mux AI</span>
         <div className="mux-chat-drawer-header-actions">
@@ -57,8 +57,8 @@ const ChatDrawer: React.FC<ChatDrawerProps> = ({ open, onClose }) => {
             Ask a question about Mux and I will answer using the official docs.
           </p>
         )}
-        {messages.map((message, index) => (
-          <ChatMessage key={index} message={message} />
+        {messages.map((message) => (
+          <ChatMessage key={message.id} message={message} />
         ))}
         {loading && <ChatTypingIndicator />}
         {error && <p className="mux-chat-drawer-error">{error}</p>}
@@ -70,7 +70,7 @@ const ChatDrawer: React.FC<ChatDrawerProps> = ({ open, onClose }) => {
       </div>
 
       <ChatInput onSend={sendMessage} disabled={loading || sessionLimitReached} />
-    </div>
+    </dialog>
   );
 };
 
