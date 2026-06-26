@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import ChatTypingIndicator from './ChatTypingIndicator';
@@ -12,13 +12,23 @@ interface ChatDrawerProps {
 const ChatDrawer: React.FC<ChatDrawerProps> = ({ open, onClose }) => {
   const { messages, loading, error, sessionLimitReached, sendMessage, clearConversation } =
     useChat();
+  const messagesRef = useRef<HTMLDivElement>(null);
+
+  // Keep the newest message (and the typing indicator) in view as the
+  // conversation grows, instead of leaving it below the visible area.
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, loading]);
 
   if (!open) {
     return null;
   }
 
   return (
-    <div className="mux-chat-drawer" role="dialog" aria-label="Mux AI assistant">
+    <div className="mux-chat-drawer" role="dialog" aria-modal="true" aria-label="Mux AI assistant">
       <div className="mux-chat-drawer-header">
         <span className="mux-chat-drawer-title">Mux AI</span>
         <div className="mux-chat-drawer-header-actions">
@@ -41,7 +51,7 @@ const ChatDrawer: React.FC<ChatDrawerProps> = ({ open, onClose }) => {
         </div>
       </div>
 
-      <div className="mux-chat-drawer-messages">
+      <div className="mux-chat-drawer-messages" ref={messagesRef}>
         {messages.length === 0 && !loading && (
           <p className="mux-chat-drawer-empty">
             Ask a question about Mux and I will answer using the official docs.

@@ -25,7 +25,10 @@ function incrementSessionCount(): number {
     sessionStorage.setItem(SESSION_COUNT_KEY, String(next));
     return next;
   } catch {
-    return MAX_MESSAGES_PER_SESSION;
+    // sessionStorage unavailable (e.g. strict private-browsing); degrade
+    // gracefully instead of immediately hitting the limit and locking the user
+    // out permanently after one message.
+    return getSessionCount() + 1;
   }
 }
 

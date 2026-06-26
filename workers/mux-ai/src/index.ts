@@ -116,18 +116,25 @@ function sweepExpired(now: number): void {
   }
 }
 
-function checkRateLimit(request: Request): boolean {
-  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+function clientIp(request: Request): string {
+  return request.headers.get('CF-Connecting-IP') ?? 'unknown';
+}
+
+// Read-only cooldown check; does not record the request. Recording is deferred
+// to markRequest() so a request rejected by validation (bad JSON, oversized)
+// never burns the caller's cooldown, and only requests that actually reach the
+// AI calls consume a slot.
+function isWithinCooldown(ip: string): boolean {
   const now = Date.now();
   if (lastRequestByIp.size > RATE_LIMIT_MAP_CAP) {
     sweepExpired(now);
   }
   const last = lastRequestByIp.get(ip) ?? 0;
-  if (now - last < RATE_LIMIT_MS) {
-    return false;
-  }
-  lastRequestByIp.set(ip, now);
-  return true;
+  return now - last < RATE_LIMIT_MS;
+}
+
+function markRequest(ip: string): void {
+  lastRequestByIp.set(ip, Date.now());
 }
 
 async function embedQuery(query: string, env: Env): Promise<number[]> {
@@ -233,7 +240,8 @@ function parseChatRequest(body: unknown): ChatRequest | null {
 async function handleChat(request: Request, env: Env): Promise<Response> {
   const start = Date.now();
 
-  if (!checkRateLimit(request)) {
+  const ip = clientIp(request);
+  if (isWithinCooldown(ip)) {
     log({ event: 'rate_limit' });
     return jsonResponse(
       {
@@ -284,6 +292,9 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     );
   }
   const lastUserMessage = chatRequest.messages[lastUserIndex];
+
+  // Request is valid and about to hit the AI calls; consume the cooldown slot now.
+  markRequest(ip);
 
   log({ event: 'chat_request', turn_count: chatRequest.messages.length });
 
