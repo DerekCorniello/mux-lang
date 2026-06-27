@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="DerekCorniello/mux-lang"
+REPO="muxlang/mux-compiler"
 INSTALL_DIR_DEFAULT="${HOME}/.local/bin"
 INSTALL_DIR="${MUX_INSTALL_DIR:-$INSTALL_DIR_DEFAULT}"
 LIB_DIR_DEFAULT="$(dirname "$INSTALL_DIR")/lib"

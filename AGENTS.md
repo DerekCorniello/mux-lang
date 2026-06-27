@@ -62,7 +62,7 @@ When feature complete and ready for testing a feature:
    ```bash
    source .env && npx --yes sonar-scanner -Dsonar.token="$SONARQUBE_TOKEN" -Dsonar.host.url="$SONARQUBE_URL"
    ```
-   Results appear at `https://sonarcloud.io/dashboard?id=DerekCorniello_mux-lang`, please fetch them (this does not require login or auth).
+   Results appear at `https://sonarcloud.io/dashboard?id=muxlang_mux-compiler`, please fetch them (this does not require login or auth).
 6. Run greptile cli tool for contrast against main via:
    ```bash
    greptile review -b main --plain

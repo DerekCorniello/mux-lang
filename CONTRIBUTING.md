@@ -112,7 +112,7 @@ We generally don't accept contributions that:
 - Use the provided issue templates for bugs and features.
 - Link your PR to an existing issue when possible.
 - Respond to review comments promptly and respectfully.
-- Add me, @DerekCorniello, as a reviewer to your PRs.
+- Add the @muxlang/maintainers team as a reviewer to your PRs.
 
 ---
 

@@ -6,12 +6,12 @@
 
 **The Programming Language For Everyone**
 
-[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg?style=flat-square)](https://github.com/DerekCorniello/mux-lang/releases)
+[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg?style=flat-square)](https://github.com/muxlang/mux-compiler/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/mux-lang.svg?style=flat-square)](https://crates.io/crates/mux-lang)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg?style=flat-square)](https://mux-lang.dev)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg?style=flat-square)]()
-[![Sonar Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=DerekCorniello_mux-lang&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=DerekCorniello_mux-lang)
+[![Sonar Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=muxlang_mux-compiler&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=muxlang_mux-compiler)
 
 </div>
 
@@ -35,7 +35,7 @@
 ### Installation (One-Line)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/muxlang/mux-compiler/main/scripts/install.sh | sh
 ```
 
 [Full installation guide](https://mux-lang.dev/docs/getting-started/quick-start) | [Other options](#installation)
@@ -80,12 +80,12 @@ The fastest way to get started. No Rust or LLVM required.
 
 **Linux & macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/muxlang/mux-compiler/main/scripts/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/DerekCorniello/mux-lang/main/scripts/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/muxlang/mux-compiler/main/scripts/install.ps1 | iex
 ```
 
 **Custom installation directory:**
@@ -108,8 +108,8 @@ Note: LLVM 22 and clang must be installed first for source builds.
 For contributors and those who want the latest features:
 
 ```bash
-git clone https://github.com/DerekCorniello/mux-lang
-cd mux-lang
+git clone https://github.com/muxlang/mux-compiler
+cd mux-compiler
 ./scripts/bootstrap-dev.sh   # Installs LLVM 22 automatically
 ./scripts/dev-cargo.sh build
 ```
@@ -161,8 +161,8 @@ func main() returns void {
 Mux is an open-source project and welcomes contributions! Whether you're adding features, fixing bugs, improving documentation, or testing, your help is valuable.
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
-- Check [GitHub Issues](https://github.com/DerekCorniello/mux-lang/issues) for tasks
-- Join [GitHub Discussions](https://github.com/DerekCorniello/mux-lang/discussions) for questions and ideas
+- Check [GitHub Issues](https://github.com/muxlang/mux-compiler/issues) for tasks
+- Join [GitHub Discussions](https://github.com/muxlang/mux-compiler/discussions) for questions and ideas
 
 ### Profiling
 

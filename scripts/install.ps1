@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$Repo = "DerekCorniello/mux-lang"
+$Repo = "muxlang/mux-compiler"
 $InstallDir = if ($env:MUX_INSTALL_DIR) { $env:MUX_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".mux\bin" }
 $LibDir = if ($env:MUX_LIB_DIR) { $env:MUX_LIB_DIR } else { Join-Path (Split-Path -Parent $InstallDir) "lib" }
 $BaseUrl = if ($env:MUX_RELEASE_BASE_URL) { $env:MUX_RELEASE_BASE_URL } else { "https://github.com/$Repo/releases/latest/download" }
