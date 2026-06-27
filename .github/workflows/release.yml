@@ -287,7 +287,7 @@ jobs:
           $aliases = @{
             "z.lib" = @("zlib.lib", "zlibstatic.lib", "zdll.lib")
             "zstd.dll.lib" = @("zstd.lib", "zstd_static.lib", "libzstd.lib")
-            "xml2.lib" = @("libxml2.lib")
+            "xml2.lib" = @("libxml2.lib", "libxml2.dll.lib", "libxml2_a.lib")
           }
 
           foreach ($libName in $requiredLibNames) {
@@ -324,6 +324,14 @@ jobs:
             if ($sourcePath) {
               Copy-Item $sourcePath $targetPath
               Write-Host "Created $baseName shim from $(Split-Path -Leaf $sourcePath)"
+            } elseif ($baseName -eq "xml2.lib") {
+              $xmlCandidate = Get-ChildItem -Path $llvmLib -Filter "*xml2*" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($xmlCandidate) {
+                Copy-Item $xmlCandidate.FullName $targetPath
+                Write-Host "Created $baseName shim from $($xmlCandidate.Name) (fallback glob)"
+              } else {
+                Write-Warning "Could not create xml2.lib shim; no xml2 lib found in $llvmLib"
+              }
             }
           }
 
