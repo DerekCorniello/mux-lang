@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.1] - 2026-06-27
 
 ### Fixed
-- **Windows CI linker failure (`xml2.lib`)**: Expanded the libxml2 import-library shim to try `libxml2.dll.lib` and `libxml2_a.lib` in addition to `libxml2.lib`, and added a glob fallback that searches for any `*xml2*` file in the conda lib directory. Prevents `LNK1181: cannot open input file 'xml2.lib'` on `windows-latest` runners when conda-forge ships the import library under a different filename.
+- **Windows CI linker failure (`xml2.lib`)**: The conda-forge `libxml2` packages do not install any `.lib` import library into `Library/lib/`, causing `LNK1181: cannot open input file 'xml2.lib'` on `windows-latest` runners. Fixed by adding a dedicated step after MSVC toolchain setup that generates `xml2.lib` from the installed `libxml2*.dll` using `dumpbin /exports` and `lib.exe`.
 
 ## [0.4.0] - 2026-06-26
 
