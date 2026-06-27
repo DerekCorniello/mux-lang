@@ -114,7 +114,7 @@ function textmateGrammar() {
           },
           {
             name: 'keyword.operator.comparison.mux',
-            match: String.raw`(==|!=|<=|>=|<|>)`,
+            match: '(==|!=|<=|>=|<|>)',
           },
           {
             name: 'keyword.operator.logical.mux',
