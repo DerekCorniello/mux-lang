@@ -49,6 +49,47 @@ fn main() {
     detect_and_emit_llvm_version();
 
     generate_embedded_std_sources(&manifest_dir);
+
+    emit_runtime_version(workspace_root);
+}
+
+/// Read the locked `mux-runtime` version from the workspace `Cargo.lock` and
+/// emit it as `MUX_RUNTIME_VERSION`. Decouples the runtime version from the
+/// compiler version: the compiler releases independently while still resolving
+/// and reporting the exact runtime it was built against.
+fn emit_runtime_version(workspace_root: &Path) {
+    let lock_path = workspace_root.join("Cargo.lock");
+    println!("cargo:rerun-if-changed={}", lock_path.display());
+
+    let version = read_locked_runtime_version(&lock_path).unwrap_or_else(|| {
+        panic!(
+            "could not determine mux-runtime version from {}",
+            lock_path.display()
+        )
+    });
+    println!("cargo:rustc-env=MUX_RUNTIME_VERSION={}", version);
+}
+
+/// Parse `Cargo.lock` for the `[[package]] name = "mux-runtime"` entry and
+/// return its `version`.
+fn read_locked_runtime_version(lock_path: &Path) -> Option<String> {
+    let contents = fs::read_to_string(lock_path).ok()?;
+    let mut in_runtime_pkg = false;
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[[package]]" {
+            in_runtime_pkg = false;
+            continue;
+        }
+        if trimmed == "name = \"mux-runtime\"" {
+            in_runtime_pkg = true;
+            continue;
+        }
+        if in_runtime_pkg && let Some(rest) = trimmed.strip_prefix("version = \"") {
+            return Some(rest.trim_end_matches('"').to_string());
+        }
+    }
+    None
 }
 
 /// Ensure `LLVM_SYS_221_PREFIX` is configured so `llvm-sys` links against

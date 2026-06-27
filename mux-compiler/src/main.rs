@@ -407,7 +407,7 @@ fn find_runtime_source_dir() -> Option<PathBuf> {
 
     let cargo_home = cargo_home_dir()?;
     let registry_src = cargo_home.join("registry").join("src");
-    let version = env!("CARGO_PKG_VERSION");
+    let version = env!("MUX_RUNTIME_VERSION");
     let dir_name = format!("mux-runtime-{}", version);
 
     for entry in fs::read_dir(registry_src).ok()? {
@@ -424,7 +424,7 @@ fn find_runtime_source_dir() -> Option<PathBuf> {
 fn build_runtime_in_cache(profile: &str, features: &[String]) -> Option<PathBuf> {
     let target_root = default_cache_root()
         .join("runtime")
-        .join(env!("CARGO_PKG_VERSION"))
+        .join(env!("MUX_RUNTIME_VERSION"))
         .join(runtime_feature_key(features));
     let profile_dir = target_root.join(profile);
 
@@ -642,7 +642,11 @@ fn parse_args_or_exit() -> (PathBuf, bool, Option<PathBuf>, bool) {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Version {} => {
-            println!("mux version {}", env!("CARGO_PKG_VERSION"));
+            println!(
+                "mux version {} (runtime {})",
+                env!("CARGO_PKG_VERSION"),
+                env!("MUX_RUNTIME_VERSION")
+            );
             process::exit(0);
         }
         Commands::Doctor { dev } => {
@@ -920,17 +924,63 @@ fn main() {
 mod tests {
     use super::full_runtime_features;
 
+    /// Locate the `mux-runtime` `Cargo.toml`, mirroring the binary's runtime
+    /// source resolution: in-workspace/sibling checkout, then `MUX_RUNTIME_SRC`,
+    /// then the fetched crate in the cargo registry. Returns `None` when no
+    /// source is available (e.g. CI that only links the published crate's lib).
+    fn locate_runtime_cargo_toml() -> Option<std::path::PathBuf> {
+        use std::path::{Path, PathBuf};
+
+        // 1. In-workspace / sibling checkout (`../mux-runtime`).
+        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR")
+            && let Some(parent) = Path::new(&manifest_dir).parent()
+        {
+            let sibling = parent.join("mux-runtime").join("Cargo.toml");
+            if sibling.exists() {
+                return Some(sibling);
+            }
+        }
+
+        // 2. Explicit override for coupled local dev.
+        if let Ok(src) = std::env::var("MUX_RUNTIME_SRC") {
+            let p = Path::new(&src).join("Cargo.toml");
+            if p.exists() {
+                return Some(p);
+            }
+        }
+
+        // 3. Fetched crate in the cargo registry (production path).
+        let cargo_home = std::env::var("CARGO_HOME")
+            .map(PathBuf::from)
+            .ok()
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|h| PathBuf::from(h).join(".cargo"))
+            })?;
+        let registry_src = cargo_home.join("registry").join("src");
+        let dir_name = format!("mux-runtime-{}", env!("MUX_RUNTIME_VERSION"));
+        for entry in std::fs::read_dir(registry_src).ok()?.flatten() {
+            let candidate = entry.path().join(&dir_name).join("Cargo.toml");
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+
+        None
+    }
+
     #[test]
     fn full_runtime_features_matches_cargo_toml() {
-        // Get the workspace root (parent of mux-compiler)
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-        let workspace_root = std::path::Path::new(&manifest_dir)
-            .parent()
-            .expect("mux-compiler should have a parent directory");
-
-        let cargo_toml_path = workspace_root.join("mux-runtime").join("Cargo.toml");
+        let Some(cargo_toml_path) = locate_runtime_cargo_toml() else {
+            eprintln!(
+                "skipping full_runtime_features parity check: mux-runtime source not \
+                 found (set MUX_RUNTIME_SRC or check out mux-runtime as a sibling)"
+            );
+            return;
+        };
         let cargo_toml_content = std::fs::read_to_string(&cargo_toml_path)
-            .expect("Failed to read mux-runtime/Cargo.toml");
+            .expect("Failed to read mux-runtime Cargo.toml");
 
         // Parse the [features] section to find the `full` feature
         let mut in_features_section = false;
