@@ -73,6 +73,39 @@ The user will run `cargo test` and insta snapshot tests separately. Do not manua
 ### Common Issues
 - Executable output seems cut off → likely a segfault due to incorrect LLVM IR generation. Review codegen changes carefully.
 
+## Release Process
+
+The root `VERSION` file is the single source of truth. Follow this checklist in order when cutting a new release.
+
+Steps 1-5 are agent-safe and should be done by the agent. Steps 6-8 are **MAINTAINER-ONLY**: the agent must NOT run git, crates.io publish, or deploy commands. The agent should prepare everything, then hand these commands to the user to run themselves.
+
+1. **Gather changes**: Review merged PRs, closed issues, and commits since the last release tag (use the GitHub MCP tools or `git log <last-tag>..HEAD`). Be diligent: read each PR/issue body so the changelog is accurate, not just commit subjects.
+2. **Update `CHANGELOG.md`**: Add a new `## [X.Y.Z] - YYYY-MM-DD` section above the previous one, grouped into `Added` / `Changed` / `Fixed` (and `Security` if relevant). Reference issue/PR numbers (e.g. `Closes #211`). `sync-version.sh` fails if the latest changelog section does not match `VERSION`.
+3. **Bump `VERSION`**: Set it to the new `X.Y.Z`.
+4. **Sync version fields**: Run `./scripts/sync-version.sh`. This updates and validates all 8 tracked fields:
+   - `mux-compiler/Cargo.toml` package version
+   - `mux-compiler/Cargo.toml` `mux-runtime` dependency version
+   - `mux-runtime/Cargo.toml` package version
+   - `README.md` version badge
+   - `README.md` `- **Current Version:**` line
+   - `mux-website/package.json` version
+   - `mux-syntax-highlighting/textmate-mux/vscode-language-mux/package.json` version
+   - `mux-syntax-highlighting/tree-sitter-mux/tree-sitter.json` version
+5. **Refresh lockfiles**: Run `cargo build` to update `Cargo.lock` with the new workspace versions. If website lockfile metadata needs refreshing, run `npm install` in `mux-website/`. Re-run `./scripts/sync-version.sh` to confirm it prints `Version check passed`.
+
+The following steps are **MAINTAINER-ONLY**. The agent must hand these to the user, who will run them; the agent must not execute them.
+
+6. **Git tag** (USER RUNS THIS): `git tag -a vX.Y.Z -m "Release vX.Y.Z"` then `git push origin vX.Y.Z`.
+7. **Publish to crates.io** (USER RUNS THIS): Order matters because `mux-lang` (the `mux-compiler` crate) depends on `mux-runtime`. Publish the runtime first, wait for it to be indexed, then the compiler:
+   ```bash
+   cargo publish -p mux-runtime
+   cargo publish -p mux-lang   # package name is "mux-lang"; binary/crate name is "mux"
+   ```
+   Note: `mux-compiler/Cargo.toml` is published as `mux-lang`; the `[[bin]]` name is `mux`.
+8. **Deploy the compiler API** (USER RUNS THIS): The Fly.io app is `mux-lang-api` (see `fly.toml`, builds from `Dockerfile`). Run `fly deploy` from the repo root. `fly.toml` has no hardcoded version, so no edit is needed there.
+
+Note: The CLI/editor tooling (VSCode extension, tree-sitter) version fields are synced by step 4 but are not separately published by this checklist.
+
 ## System Architecture
 The Mux compiler is a workspace with three main partitions:
 
