@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-27
+
+### Fixed
+- **Windows CI linker failure (`xml2.lib`)**: Expanded the libxml2 import-library shim to try `libxml2.dll.lib` and `libxml2_a.lib` in addition to `libxml2.lib`, and added a glob fallback that searches for any `*xml2*` file in the conda lib directory. Prevents `LNK1181: cannot open input file 'xml2.lib'` on `windows-latest` runners when conda-forge ships the import library under a different filename.
+
 ## [0.4.0] - 2026-06-26
 
 ### Added
