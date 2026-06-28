@@ -73,8 +73,15 @@ echo "Downloading ${ARCHIVE}"
 curl -fsSL "$ARCHIVE_URL" -o "$tmp_dir/$ARCHIVE"
 curl -fsSL "$CHECKSUM_URL" -o "$tmp_dir/$ARCHIVE.sha256"
 
+# Compare the hash directly rather than `sha256sum -c`: the published checksum
+# file may reference a path (e.g. "dist/mux-...") that does not exist locally.
 if command -v sha256sum >/dev/null 2>&1; then
-  (cd "$tmp_dir" && sha256sum -c "$ARCHIVE.sha256")
+  expected="$(awk '{print $1}' "$tmp_dir/$ARCHIVE.sha256")"
+  actual="$(sha256sum "$tmp_dir/$ARCHIVE" | awk '{print $1}')"
+  if [[ "$expected" != "$actual" ]]; then
+    echo "Checksum verification failed"
+    exit 1
+  fi
 elif command -v shasum >/dev/null 2>&1; then
   expected="$(awk '{print $1}' "$tmp_dir/$ARCHIVE.sha256")"
   actual="$(shasum -a 256 "$tmp_dir/$ARCHIVE" | awk '{print $1}')"

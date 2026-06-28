@@ -470,7 +470,9 @@ jobs:
             fi
           done
           tar -C dist -czf dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }} mux-${{ matrix.target }}
-          shasum -a 256 dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }} > dist/mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
+          # Write the checksum with a bare filename (run from dist/) so
+          # `sha256sum -c` works from the artifact directory.
+          ( cd dist && shasum -a 256 "mux-${{ matrix.target }}.${{ matrix.archive_ext }}" > "mux-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256" )
 
       - name: Package artifact (Windows)
         if: runner.os == 'Windows' && matrix.publish
