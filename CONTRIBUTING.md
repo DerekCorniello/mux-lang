@@ -57,7 +57,7 @@ Thanks for your interest! This guide explains how to contribute to Mux.
 10. Profile the compiler and runtime with external tools (see the Setup documentation for platform-specific guidance).
 
 11. Always run `cargo fmt` and `cargo clippy` before committing changes.
-12. For releases, update `VERSION` first, then update the matching section in `CHANGELOG.md`, then run `./scripts/sync-version.sh`.
+12. For releases, bump `version` in `mux-compiler/Cargo.toml`, add the matching section in `CHANGELOG.md`, and update the README version badge (see the Release Process in AGENTS.md).
 13. Create a new branch for your changes, named with the tag first, and description after, e.g., `bug/xyz-fix` or `feature/new-feat`.
 14. Make your changes.
 15. Run tests again to ensure nothing is broken.

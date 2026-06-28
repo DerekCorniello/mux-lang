@@ -75,31 +75,22 @@ The user will run `cargo test` and insta snapshot tests separately. Do not manua
 
 ## Release Process
 
-The root `VERSION` file is the single source of truth. Follow this checklist in order when cutting a new release.
+Versions are independent per repo; there is no root `VERSION` file or sync script.
+The COMPILER version lives in `mux-compiler/Cargo.toml` (read as `CARGO_PKG_VERSION`)
+and is the canonical "Mux version".
 
-Steps 1-5 are agent-safe and should be done by the agent. Steps 6-8 are **MAINTAINER-ONLY**: the agent must NOT run git, crates.io publish, or deploy commands. The agent should prepare everything, then hand these commands to the user to run themselves.
+Steps 1-4 are agent-safe. Steps 5-7 are **MAINTAINER-ONLY**: the agent must NOT run git, crates.io publish, or deploy commands. Prepare everything, then hand these to the user.
 
-1. **Gather changes**: Review merged PRs, closed issues, and commits since the last release tag (use the GitHub MCP tools or `git log <last-tag>..HEAD`). Be diligent: read each PR/issue body so the changelog is accurate, not just commit subjects.
-2. **Update `CHANGELOG.md`**: Add a new `## [X.Y.Z] - YYYY-MM-DD` section above the previous one, grouped into `Added` / `Changed` / `Fixed` (and `Security` if relevant). Reference issue/PR numbers (e.g. `Closes #211`). `sync-version.sh` fails if the latest changelog section does not match `VERSION`.
-3. **Bump `VERSION`**: Set it to the new `X.Y.Z`.
-4. **Sync version fields**: Run `./scripts/sync-version.sh`. This updates and validates all 8 tracked fields:
-   - `mux-compiler/Cargo.toml` package version
-   - `README.md` version badge
-   - `README.md` `- **Current Version:**` line
-5. **Refresh lockfiles**: Run `cargo build` to update `Cargo.lock` with the new workspace versions. If website lockfile metadata needs refreshing, run `npm install` in `mux-website/`. Re-run `./scripts/sync-version.sh` to confirm it prints `Version check passed`.
+1. **Gather changes**: Review merged PRs, closed issues, and commits since the last release tag (`git log <last-tag>..HEAD`). Read each PR/issue body so the changelog is accurate, not just commit subjects.
+2. **Update `CHANGELOG.md`**: Add a new `## [X.Y.Z] - YYYY-MM-DD` section above the previous one, grouped into `Added` / `Changed` / `Fixed` (and `Security` if relevant). Reference issue/PR numbers (e.g. `Closes #211`).
+3. **Bump the version**: set `version` in `mux-compiler/Cargo.toml`, and update the `README.md` version badge and the `- **Current Version:**` line to match.
+4. **Refresh the lockfile**: run `cargo build` to update `Cargo.lock`.
 
-The following steps are **MAINTAINER-ONLY**. The agent must hand these to the user, who will run them; the agent must not execute them.
+The following steps are **MAINTAINER-ONLY**. Hand them to the user; do not execute them.
 
-6. **Git tag** (USER RUNS THIS): `git tag -a vX.Y.Z -m "Release vX.Y.Z"` then `git push origin vX.Y.Z`.
-7. **Publish to crates.io** (USER RUNS THIS): Order matters because `mux-lang` (the `mux-compiler` crate) depends on `mux-runtime`. Publish the runtime first, wait for it to be indexed, then the compiler:
-   ```bash
-   cargo publish -p mux-runtime
-   cargo publish -p mux-lang   # package name is "mux-lang"; binary/crate name is "mux"
-   ```
-   Note: `mux-compiler/Cargo.toml` is published as `mux-lang`; the `[[bin]]` name is `mux`.
-8. **Deploy the playground API** (USER RUNS THIS): The Fly.io app `mux-lang-api` now lives in its own repo, `muxlang/mux-website-api`. Its Dockerfile installs the RELEASED `mux` binary pinned via `ARG MUX_VERSION`, so after this release is published, bump `MUX_VERSION` there and run `fly deploy` from that repo to put the new compiler on the playground.
-
-Note: The CLI/editor tooling (VSCode extension, tree-sitter) version fields are synced by step 4 but are not separately published by this checklist.
+5. **Git tag** (USER RUNS THIS): `git tag -a vX.Y.Z -m "Release vX.Y.Z"` then `git push origin vX.Y.Z`.
+6. **Publish to crates.io** (USER RUNS THIS): `cargo publish` (package name `mux-lang`; the `[[bin]]` name is `mux`). The runtime is versioned and published INDEPENDENTLY from `muxlang/mux-runtime` - it is no longer in this workspace. If this release needs a new runtime, publish `mux-runtime` from its own repo first, then bump the `mux-runtime = "X.Y"` dependency range in `mux-compiler/Cargo.toml`.
+7. **Deploy the playground API** (USER RUNS THIS): in `muxlang/mux-website-api`, bump `ARG MUX_VERSION` in the Dockerfile to this release and run `fly deploy`.
 
 ## System Architecture
 The Mux compiler is a workspace with three main partitions:

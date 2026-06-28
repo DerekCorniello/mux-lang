@@ -178,12 +178,12 @@ Profiling is done with external tools so it stays decoupled from the compiler an
 
 ## Versioning
 
-Mux uses the root `VERSION` file as the single source of truth.
+The compiler version lives in `mux-compiler/Cargo.toml` (`CARGO_PKG_VERSION`) and is
+the canonical "Mux version" - there is no separate version file.
 
-- Update `VERSION` to the next release version.
-- Run `./scripts/sync-version.sh` to synchronize all Mux-owned hardcoded version fields.
-- If website lockfile metadata needs refresh, run `npm install` in `mux-website/`.
-- `./scripts/sync-version.sh` fails immediately if `CHANGELOG.md` is not up to date with `VERSION`.
+- When releasing, bump `version` in `mux-compiler/Cargo.toml`, update the badge and
+  the `- **Current Version:**` line above, then run `cargo build` to refresh `Cargo.lock`.
+- The runtime versions independently (see [muxlang/mux-runtime](https://github.com/muxlang/mux-runtime)); `mux --version` reports both compiler and runtime.
 - **License:** MIT
 - **Maintainer:** [Derek Corniello](https://github.com/DerekCorniello)
 
