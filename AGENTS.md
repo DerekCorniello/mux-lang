@@ -2,6 +2,9 @@
 
 Please also read the 10x Dev Skill that covers best practices at ~/.opencode/skills/derek-10x-dev-practices/SKILL.md if present.
 
+> Cross-repo architecture, design rationale, the feature map, and the release
+> process live in [muxlang/context](https://github.com/muxlang/context).
+
 ## Critical Rules
 - **No hacks or workarounds** - write clean, production‑ready code. No hardcoding, no temporary solutions, no fighting the type system. If something is hard, ask for clarification, then do it the right way.
 - **No special characters** - avoid em‑dashes, emojis, or other non‑ASCII characters in code, comments, or commit messages.
@@ -76,21 +79,13 @@ The user will run `cargo test` and insta snapshot tests separately. Do not manua
 ## Release Process
 
 Versions are independent per repo; there is no root `VERSION` file or sync script.
-The COMPILER version lives in `mux-compiler/Cargo.toml` (read as `CARGO_PKG_VERSION`)
-and is the canonical "Mux version".
+The compiler version (`mux-compiler/Cargo.toml`, `CARGO_PKG_VERSION`) is the
+canonical "Mux version". Preparing a release (changelog, version bump, lockfile)
+is agent-safe; tagging, `cargo publish`, and `fly deploy` are MAINTAINER-ONLY -
+prepare everything, then hand those to the user.
 
-Steps 1-4 are agent-safe. Steps 5-7 are **MAINTAINER-ONLY**: the agent must NOT run git, crates.io publish, or deploy commands. Prepare everything, then hand these to the user.
-
-1. **Gather changes**: Review merged PRs, closed issues, and commits since the last release tag (`git log <last-tag>..HEAD`). Read each PR/issue body so the changelog is accurate, not just commit subjects.
-2. **Update `CHANGELOG.md`**: Add a new `## [X.Y.Z] - YYYY-MM-DD` section above the previous one, grouped into `Added` / `Changed` / `Fixed` (and `Security` if relevant). Reference issue/PR numbers (e.g. `Closes #211`).
-3. **Bump the version**: set `version` in `mux-compiler/Cargo.toml`, and update the `README.md` version badge and the `- **Current Version:**` line to match.
-4. **Refresh the lockfile**: run `cargo build` to update `Cargo.lock`.
-
-The following steps are **MAINTAINER-ONLY**. Hand them to the user; do not execute them.
-
-5. **Git tag** (USER RUNS THIS): `git tag -a vX.Y.Z -m "Release vX.Y.Z"` then `git push origin vX.Y.Z`.
-6. **Publish to crates.io** (USER RUNS THIS): `cargo publish` (package name `mux-lang`; the `[[bin]]` name is `mux`). The runtime is versioned and published INDEPENDENTLY from `muxlang/mux-runtime` - it is no longer in this workspace. If this release needs a new runtime, publish `mux-runtime` from its own repo first, then bump the `mux-runtime = "X.Y"` dependency range in `mux-compiler/Cargo.toml`.
-7. **Deploy the playground API** (USER RUNS THIS): in `muxlang/mux-website-api`, bump `ARG MUX_VERSION` in the Dockerfile to this release and run `fly deploy`.
+Full steps:
+[muxlang/context release process](https://github.com/muxlang/context/blob/main/docs/release-process.md#mux-compiler).
 
 ## System Architecture
 The Mux compiler is a workspace with three main partitions:
