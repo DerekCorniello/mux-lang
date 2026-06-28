@@ -7,6 +7,8 @@ INSTALL_DIR="${MUX_INSTALL_DIR:-$INSTALL_DIR_DEFAULT}"
 LIB_DIR_DEFAULT="$(dirname "$INSTALL_DIR")/lib"
 LIB_DIR="${MUX_LIB_DIR:-$LIB_DIR_DEFAULT}"
 BASE_URL="${MUX_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/latest/download}"
+# awk program that extracts the first whitespace-separated field (the checksum).
+AWK_FIRST_FIELD='{print $1}'
 
 if [[ "${1:-}" == "--help" ]]; then
   echo "Mux installer"
@@ -76,15 +78,15 @@ curl -fsSL "$CHECKSUM_URL" -o "$tmp_dir/$ARCHIVE.sha256"
 # Compare the hash directly rather than `sha256sum -c`: the published checksum
 # file may reference a path (e.g. "dist/mux-...") that does not exist locally.
 if command -v sha256sum >/dev/null 2>&1; then
-  expected="$(awk '{print $1}' "$tmp_dir/$ARCHIVE.sha256")"
-  actual="$(sha256sum "$tmp_dir/$ARCHIVE" | awk '{print $1}')"
+  expected="$(awk "$AWK_FIRST_FIELD" "$tmp_dir/$ARCHIVE.sha256")"
+  actual="$(sha256sum "$tmp_dir/$ARCHIVE" | awk "$AWK_FIRST_FIELD")"
   if [[ "$expected" != "$actual" ]]; then
     echo "Checksum verification failed"
     exit 1
   fi
 elif command -v shasum >/dev/null 2>&1; then
-  expected="$(awk '{print $1}' "$tmp_dir/$ARCHIVE.sha256")"
-  actual="$(shasum -a 256 "$tmp_dir/$ARCHIVE" | awk '{print $1}')"
+  expected="$(awk "$AWK_FIRST_FIELD" "$tmp_dir/$ARCHIVE.sha256")"
+  actual="$(shasum -a 256 "$tmp_dir/$ARCHIVE" | awk "$AWK_FIRST_FIELD")"
   if [[ "$expected" != "$actual" ]]; then
     echo "Checksum verification failed"
     exit 1
