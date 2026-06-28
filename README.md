@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./mux-website/static/img/mux-logo.png" alt="Mux Logo" width="120">
+<img src="https://mux-lang.dev/img/mux-logo.png" alt="Mux Logo" width="120">
 
 # Mux
 
