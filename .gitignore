@@ -28,15 +28,6 @@ target
 *.so
 *.vsix
 *.ll
-mux-syntax-highlighting/textmate-mux/source.mux.json
-mux-syntax-highlighting/textmate-mux/vscode-language-mux/source.mux.json
-mux-syntax-highlighting/tree-sitter-mux/queries/highlights.scm
-mux-syntax-highlighting/tree-sitter-mux/generated/syntax.js
-mux-syntax-highlighting/tree-sitter-mux/src/grammar.json
-mux-syntax-highlighting/tree-sitter-mux/src/node-types.json
-mux-syntax-highlighting/tree-sitter-mux/src/parser.c
-mux-syntax-highlighting/tree-sitter-mux/mux.so
-mux-syntax-highlighting/textmate-mux/vscode-language-mux/language-mux-*.vsix
 test_scripts/*
 !test_scripts/*.mux
 test_scripts/error_cases/*.mux

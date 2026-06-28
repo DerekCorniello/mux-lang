@@ -84,13 +84,8 @@ Steps 1-5 are agent-safe and should be done by the agent. Steps 6-8 are **MAINTA
 3. **Bump `VERSION`**: Set it to the new `X.Y.Z`.
 4. **Sync version fields**: Run `./scripts/sync-version.sh`. This updates and validates all 8 tracked fields:
    - `mux-compiler/Cargo.toml` package version
-   - `mux-compiler/Cargo.toml` `mux-runtime` dependency version
-   - `mux-runtime/Cargo.toml` package version
    - `README.md` version badge
    - `README.md` `- **Current Version:**` line
-   - `mux-website/package.json` version
-   - `mux-syntax-highlighting/textmate-mux/vscode-language-mux/package.json` version
-   - `mux-syntax-highlighting/tree-sitter-mux/tree-sitter.json` version
 5. **Refresh lockfiles**: Run `cargo build` to update `Cargo.lock` with the new workspace versions. If website lockfile metadata needs refreshing, run `npm install` in `mux-website/`. Re-run `./scripts/sync-version.sh` to confirm it prints `Version check passed`.
 
 The following steps are **MAINTAINER-ONLY**. The agent must hand these to the user, who will run them; the agent must not execute them.

@@ -19,8 +19,6 @@ repo_root = Path(sys.argv[1])
 version_file = repo_root / "VERSION"
 compiler_toml = repo_root / "mux-compiler" / "Cargo.toml"
 readme = repo_root / "README.md"
-syntax_package = repo_root / "mux-syntax-highlighting" / "textmate-mux" / "vscode-language-mux" / "package.json"
-tree_sitter_json = repo_root / "mux-syntax-highlighting" / "tree-sitter-mux" / "tree-sitter.json"
 changelog = repo_root / "CHANGELOG.md"
 
 
@@ -110,32 +108,6 @@ def update_readme(version: str) -> None:
     write_text(readme, "\n".join(lines) + "\n")
 
 
-def update_syntax_package(version: str) -> None:
-    content = read_text(syntax_package)
-    updated, count = re.subn(
-        r'("version"\s*:\s*")([^"\n]+)(")',
-        rf'\g<1>{version}\g<3>',
-        content,
-        count=1,
-    )
-    if count != 1:
-        raise SystemExit(f"Could not update version in {syntax_package}")
-    write_text(syntax_package, updated)
-
-
-def update_tree_sitter_json(version: str) -> None:
-    content = read_text(tree_sitter_json)
-    updated, count = re.subn(
-        r'("version"\s*:\s*")([^"\n]+)(")',
-        rf'\g<1>{version}\g<3>',
-        content,
-        count=1,
-    )
-    if count != 1:
-        raise SystemExit(f"Could not update version in {tree_sitter_json}")
-    write_text(tree_sitter_json, updated)
-
-
 def is_synced(version: str) -> tuple[bool, list[str]]:
     failures: list[str] = []
 
@@ -147,10 +119,6 @@ def is_synced(version: str) -> tuple[bool, list[str]]:
         failures.append("README.md version badge")
     if f"- **Current Version:** {version}" not in readme_text:
         failures.append("README.md current version")
-    if f'"version": "{version}"' not in read_text(syntax_package):
-        failures.append("mux-syntax-highlighting/textmate-mux/vscode-language-mux/package.json version")
-    if f'"version": "{version}"' not in read_text(tree_sitter_json):
-        failures.append("mux-syntax-highlighting/tree-sitter-mux/tree-sitter.json version")
 
     return len(failures) == 0, failures
 
@@ -168,8 +136,6 @@ if synced:
 
 update_toml_scalar(compiler_toml, "package", "version", version)
 update_readme(version)
-update_syntax_package(version)
-update_tree_sitter_json(version)
 
 print(
     "Synchronized Mux version references to "

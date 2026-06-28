@@ -6,7 +6,7 @@ HAS_RUST=false
 
 for file in $STAGED_FILES; do
   case "$file" in
-    mux-compiler/*|mux-runtime/*|Cargo.toml|Cargo.lock|clippy.toml|scripts/run-checks.sh|scripts/dev-cargo.sh|editor-support/*|mux-syntax-highlighting/*)
+    mux-compiler/*|Cargo.toml|Cargo.lock|clippy.toml|scripts/run-checks.sh|scripts/dev-cargo.sh)
       HAS_RUST=true
       ;;
   esac
