@@ -33,7 +33,6 @@ jobs:
               - 'scripts/sync-version.sh'
               - 'editor-support/**'
               - 'mux-syntax-highlighting/**'
-              - 'Dockerfile'
               - 'infra/**'
 
   rust_checks:

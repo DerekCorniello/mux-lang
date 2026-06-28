@@ -102,7 +102,7 @@ The following steps are **MAINTAINER-ONLY**. The agent must hand these to the us
    cargo publish -p mux-lang   # package name is "mux-lang"; binary/crate name is "mux"
    ```
    Note: `mux-compiler/Cargo.toml` is published as `mux-lang`; the `[[bin]]` name is `mux`.
-8. **Deploy the compiler API** (USER RUNS THIS): The Fly.io app is `mux-lang-api` (see `fly.toml`, builds from `Dockerfile`). Run `fly deploy` from the repo root. `fly.toml` has no hardcoded version, so no edit is needed there.
+8. **Deploy the playground API** (USER RUNS THIS): The Fly.io app `mux-lang-api` now lives in its own repo, `muxlang/mux-website-api`. Its Dockerfile installs the RELEASED `mux` binary pinned via `ARG MUX_VERSION`, so after this release is published, bump `MUX_VERSION` there and run `fly deploy` from that repo to put the new compiler on the playground.
 
 Note: The CLI/editor tooling (VSCode extension, tree-sitter) version fields are synced by step 4 but are not separately published by this checklist.
 
