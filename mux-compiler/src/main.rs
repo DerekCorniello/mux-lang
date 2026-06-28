@@ -982,55 +982,23 @@ mod tests {
         let cargo_toml_content = std::fs::read_to_string(&cargo_toml_path)
             .expect("Failed to read mux-runtime Cargo.toml");
 
-        // Parse the [features] section to find the `full` feature
-        let mut in_features_section = false;
-        let mut full_feature_line = String::new();
-
-        for line in cargo_toml_content.lines() {
-            let trimmed = line.trim();
-            if trimmed == "[features]" {
-                in_features_section = true;
-                continue;
-            }
-
-            if in_features_section {
-                // Stop at next section
-                if trimmed.starts_with('[') && trimmed.ends_with(']') {
-                    break;
-                }
-
-                // Look for the full feature line
-                if trimmed.starts_with("full =") {
-                    full_feature_line = trimmed.to_string();
-                    break;
-                }
-            }
-        }
-
-        assert!(
-            !full_feature_line.is_empty(),
-            "Could not find 'full = [...]' in mux-runtime/Cargo.toml"
-        );
-
-        // Extract the array content: full = ["core", "json", "csv", "net", "sql", "sync"]
-        let start = full_feature_line
-            .find('[')
-            .expect("Could not find '[' in full feature line")
-            + 1;
-        let end = full_feature_line
-            .rfind(']')
-            .expect("Could not find ']' in full feature line");
-        let array_content = &full_feature_line[start..end];
-
-        // Parse the array elements
-        let mut toml_features: Vec<String> = array_content
-            .split(',')
-            .map(|s| s.trim())
-            .map(|s| s.trim_matches('"').to_string())
+        // Parse the [features].full array. Use a real TOML parser: cargo
+        // normalizes the published manifest (the array may span multiple lines),
+        // so naive line parsing is not reliable.
+        let manifest: toml::Value =
+            toml::from_str(&cargo_toml_content).expect("Failed to parse mux-runtime Cargo.toml");
+        let full = manifest
+            .get("features")
+            .and_then(|features| features.get("full"))
+            .and_then(|value| value.as_array())
+            .expect("mux-runtime Cargo.toml has no [features].full array");
+        // Remove "core": it is a meta-feature, not a stdlib module that needs checking.
+        let mut toml_features: Vec<String> = full
+            .iter()
+            .filter_map(|value| value.as_str())
+            .filter(|name| *name != "core")
+            .map(|name| name.to_string())
             .collect();
-
-        // Remove "core" as it's a meta-feature (not a stdlib module that needs feature checking)
-        toml_features.retain(|f| f != "core");
         toml_features.sort();
 
         // Get the runtime features from our function

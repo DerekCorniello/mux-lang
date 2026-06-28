@@ -18,7 +18,6 @@ repo_root = Path(sys.argv[1])
 
 version_file = repo_root / "VERSION"
 compiler_toml = repo_root / "mux-compiler" / "Cargo.toml"
-runtime_toml = repo_root / "mux-runtime" / "Cargo.toml"
 readme = repo_root / "README.md"
 syntax_package = repo_root / "mux-syntax-highlighting" / "textmate-mux" / "vscode-language-mux" / "package.json"
 tree_sitter_json = repo_root / "mux-syntax-highlighting" / "tree-sitter-mux" / "tree-sitter.json"
@@ -141,14 +140,9 @@ def is_synced(version: str) -> tuple[bool, list[str]]:
     failures: list[str] = []
 
     compiler = read_text(compiler_toml)
-    runtime = read_text(runtime_toml)
     readme_text = read_text(readme)
     if f'version = "{version}"' not in compiler:
         failures.append("mux-compiler/Cargo.toml package version")
-    if f'mux-runtime = "{version}"' not in compiler:
-        failures.append("mux-compiler/Cargo.toml mux-runtime dependency version")
-    if f'version = "{version}"' not in runtime:
-        failures.append("mux-runtime/Cargo.toml package version")
     if f"img.shields.io/badge/version-{version}-blue.svg?style=flat-square" not in readme_text:
         failures.append("README.md version badge")
     if f"- **Current Version:** {version}" not in readme_text:
@@ -173,8 +167,6 @@ if synced:
     raise SystemExit(0)
 
 update_toml_scalar(compiler_toml, "package", "version", version)
-update_toml_scalar(compiler_toml, "dependencies", "mux-runtime", version)
-update_toml_scalar(runtime_toml, "package", "version", version)
 update_readme(version)
 update_syntax_package(version)
 update_tree_sitter_json(version)
