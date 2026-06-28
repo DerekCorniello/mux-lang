@@ -20,7 +20,6 @@ version_file = repo_root / "VERSION"
 compiler_toml = repo_root / "mux-compiler" / "Cargo.toml"
 runtime_toml = repo_root / "mux-runtime" / "Cargo.toml"
 readme = repo_root / "README.md"
-website_package = repo_root / "mux-website" / "package.json"
 syntax_package = repo_root / "mux-syntax-highlighting" / "textmate-mux" / "vscode-language-mux" / "package.json"
 tree_sitter_json = repo_root / "mux-syntax-highlighting" / "tree-sitter-mux" / "tree-sitter.json"
 changelog = repo_root / "CHANGELOG.md"
@@ -89,7 +88,7 @@ def update_readme(version: str) -> None:
     lines = read_text(readme).splitlines()
     badge_line = (
         f"[![Version](https://img.shields.io/badge/version-{version}-blue.svg?style=flat-square)]"
-        "(https://github.com/DerekCorniello/mux-lang/releases)"
+        "(https://github.com/muxlang/mux-compiler/releases)"
     )
     current_version_line = f"- **Current Version:** {version}"
 
@@ -110,19 +109,6 @@ def update_readme(version: str) -> None:
         raise SystemExit("Could not find README current version line")
 
     write_text(readme, "\n".join(lines) + "\n")
-
-
-def update_website_package(version: str) -> None:
-    content = read_text(website_package)
-    updated, count = re.subn(
-        r'("version"\s*:\s*")([^"\n]+)(")',
-        rf'\g<1>{version}\g<3>',
-        content,
-        count=1,
-    )
-    if count != 1:
-        raise SystemExit(f"Could not update version in {website_package}")
-    write_text(website_package, updated)
 
 
 def update_syntax_package(version: str) -> None:
@@ -167,8 +153,6 @@ def is_synced(version: str) -> tuple[bool, list[str]]:
         failures.append("README.md version badge")
     if f"- **Current Version:** {version}" not in readme_text:
         failures.append("README.md current version")
-    if f'"version": "{version}"' not in read_text(website_package):
-        failures.append("mux-website/package.json version")
     if f'"version": "{version}"' not in read_text(syntax_package):
         failures.append("mux-syntax-highlighting/textmate-mux/vscode-language-mux/package.json version")
     if f'"version": "{version}"' not in read_text(tree_sitter_json):
@@ -192,7 +176,6 @@ update_toml_scalar(compiler_toml, "package", "version", version)
 update_toml_scalar(compiler_toml, "dependencies", "mux-runtime", version)
 update_toml_scalar(runtime_toml, "package", "version", version)
 update_readme(version)
-update_website_package(version)
 update_syntax_package(version)
 update_tree_sitter_json(version)
 
