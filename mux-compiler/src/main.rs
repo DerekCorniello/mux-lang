@@ -923,6 +923,148 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::full_runtime_features;
+    use super::{
+        REQUIRED_LLVM_MAJOR, default_cache_root, extract_clang_major, find_runtime_lib_in_dir,
+        llvm_config_candidates, normalize_runtime_features, pick_llvm_for_dev,
+        report_clang_for_doctor, runtime_feature_key, runtime_profile, validate_llvm_for_doctor,
+    };
+    use std::path::PathBuf;
+
+    fn sv(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn unique_tmp(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("mux_{}_{}_{}", tag, std::process::id(), nanos))
+    }
+
+    // Mirror the platform-specific library names used by find_runtime_lib_in_dir.
+    fn static_lib_name() -> &'static str {
+        if cfg!(target_family = "windows") {
+            "mux_runtime.lib"
+        } else {
+            "libmux_runtime.a"
+        }
+    }
+
+    fn dynamic_lib_name() -> &'static str {
+        if cfg!(target_family = "windows") {
+            "mux_runtime.dll"
+        } else if cfg!(target_os = "macos") {
+            "libmux_runtime.dylib"
+        } else {
+            "libmux_runtime.so"
+        }
+    }
+
+    #[test]
+    fn normalize_runtime_features_dedups_sorts_and_drops_empty() {
+        assert_eq!(
+            normalize_runtime_features(&sv(&["math", "json", "math", "", "csv"])),
+            sv(&["csv", "json", "math"])
+        );
+        assert!(normalize_runtime_features(&[]).is_empty());
+    }
+
+    #[test]
+    fn runtime_feature_key_uses_core_for_empty_and_joins_otherwise() {
+        assert_eq!(runtime_feature_key(&[]), "core");
+        assert_eq!(runtime_feature_key(&sv(&["json", "math"])), "json+math");
+    }
+
+    #[test]
+    fn runtime_profile_is_a_known_cargo_profile() {
+        assert!(matches!(runtime_profile(), "debug" | "release"));
+    }
+
+    #[test]
+    fn pick_llvm_for_dev_selects_required_major() {
+        let empty: Vec<(String, String, u32)> = Vec::new();
+        assert!(pick_llvm_for_dev(&empty).is_none());
+
+        let versions = vec![
+            ("llvm-config-17".to_string(), "17.0.0".to_string(), 17),
+            (
+                "llvm-config-22".to_string(),
+                "22.1.6".to_string(),
+                REQUIRED_LLVM_MAJOR,
+            ),
+        ];
+        let picked = pick_llvm_for_dev(&versions).expect("required major present");
+        assert_eq!(picked.0, "llvm-config-22");
+        assert_eq!(picked.2, REQUIRED_LLVM_MAJOR);
+
+        let mismatch = vec![("other".to_string(), "17.0.0".to_string(), 17)];
+        assert!(pick_llvm_for_dev(&mismatch).is_none());
+    }
+
+    #[test]
+    fn llvm_config_candidates_always_includes_defaults() {
+        let candidates = llvm_config_candidates();
+        assert!(candidates.iter().any(|c| c == "llvm-config"));
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c == &format!("llvm-config-{}", REQUIRED_LLVM_MAJOR))
+        );
+    }
+
+    #[test]
+    fn find_runtime_lib_in_dir_detects_static_dynamic_and_missing() {
+        // Empty directory: nothing found.
+        let empty_dir = unique_tmp("rtlib_empty");
+        std::fs::create_dir_all(&empty_dir).unwrap();
+        assert!(find_runtime_lib_in_dir(&empty_dir).is_none());
+        std::fs::remove_dir_all(&empty_dir).ok();
+
+        // Static library takes precedence and is returned.
+        let static_dir = unique_tmp("rtlib_static");
+        std::fs::create_dir_all(&static_dir).unwrap();
+        let static_path = static_dir.join(static_lib_name());
+        std::fs::write(&static_path, b"x").unwrap();
+        assert_eq!(find_runtime_lib_in_dir(&static_dir), Some(static_path));
+        std::fs::remove_dir_all(&static_dir).ok();
+
+        // Dynamic library is found when only it is present.
+        let dyn_dir = unique_tmp("rtlib_dyn");
+        std::fs::create_dir_all(&dyn_dir).unwrap();
+        let dyn_path = dyn_dir.join(dynamic_lib_name());
+        std::fs::write(&dyn_path, b"x").unwrap();
+        assert_eq!(find_runtime_lib_in_dir(&dyn_dir), Some(dyn_path));
+        std::fs::remove_dir_all(&dyn_dir).ok();
+    }
+
+    #[test]
+    fn validate_llvm_for_doctor_covers_dev_and_user_modes() {
+        let found = || Some(("llvm-config-22".to_string(), "22.1.6".to_string(), 22));
+        // Dev mode requires the toolchain: present -> ok, absent -> fail.
+        assert!(validate_llvm_for_doctor(true, found()));
+        assert!(!validate_llvm_for_doctor(true, None));
+        // User mode is lenient either way.
+        assert!(validate_llvm_for_doctor(false, found()));
+        assert!(validate_llvm_for_doctor(false, None));
+    }
+
+    #[test]
+    fn clang_doctor_helpers_handle_missing_clang() {
+        // No clang at all is a failure.
+        assert!(!report_clang_for_doctor(None));
+        // A command that cannot be executed yields no major version...
+        assert!(extract_clang_major("mux-nonexistent-clang-binary-xyz").is_none());
+        // ...and report treats an unparseable/missing version as "installed".
+        assert!(report_clang_for_doctor(Some(
+            "mux-nonexistent-clang-binary-xyz"
+        )));
+    }
+
+    #[test]
+    fn default_cache_root_is_namespaced() {
+        assert!(default_cache_root().to_string_lossy().contains("mux-lang"));
+    }
 
     /// Locate the `mux-runtime` `Cargo.toml`, mirroring the binary's runtime
     /// source resolution: in-workspace/sibling checkout, then `MUX_RUNTIME_SRC`,
