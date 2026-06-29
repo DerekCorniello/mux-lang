@@ -71,7 +71,7 @@ The full language reference, guides, and standard-library docs live at
 - **[Standard Library](https://mux-lang.dev/docs/stdlib/)** - Built-in modules and functions
 
 For how the compiler and runtime work internally (design rationale, the value
-model, codegen, memory), see the **[muxlang/context](https://github.com/muxlang/context)**
+model, codegen, memory), see the **[muxlang/mux-context](https://github.com/muxlang/mux-context)**
 knowledge hub.
 
 ---
@@ -173,7 +173,7 @@ The compiler emits LLVM IR and invokes `clang` to produce a native binary that
 links the [runtime](https://github.com/muxlang/mux-runtime) (reference counting,
 strings, collections, stdlib). Use `mux run -i <file.mux>` to view the generated
 IR. The deeper design notes (value representation, monomorphization, the object
-system, memory model) live in [muxlang/context](https://github.com/muxlang/context/tree/main/docs/design).
+system, memory model) live in [muxlang/mux-context](https://github.com/muxlang/mux-context/tree/main/docs/design).
 
 ---
 
@@ -205,7 +205,7 @@ the canonical "Mux version" - there is no separate version file.
 - When releasing, bump `version` in `mux-compiler/Cargo.toml`, update the badge and
   the `- **Current Version:**` line above, then run `cargo build` to refresh `Cargo.lock`.
 - The runtime versions independently (see [muxlang/mux-runtime](https://github.com/muxlang/mux-runtime)); `mux --version` reports both compiler and runtime.
-- Full release steps: [muxlang/context](https://github.com/muxlang/context/blob/main/docs/release-process.md#mux-compiler).
+- Full release steps: [muxlang/mux-context](https://github.com/muxlang/mux-context/blob/main/docs/release-process.md#mux-compiler).
 - **License:** MIT
 - **Maintainer:** [Derek Corniello](https://github.com/DerekCorniello)
 
@@ -213,7 +213,7 @@ the canonical "Mux version" - there is no separate version file.
 
 ## Runtime ABI Note
 
-The runtime uses a unified representation for `optional<T>` and `result<T, E>` at the FFI level (boxed `Value` pointers). Compiler-generated code and FFI should treat optionals/results as `*mut Value` and use the runtime discriminant helpers when inspecting variants. See [error-handling](https://github.com/muxlang/context/blob/main/docs/design/error-handling.md).
+The runtime uses a unified representation for `optional<T>` and `result<T, E>` at the FFI level (boxed `Value` pointers). Compiler-generated code and FFI should treat optionals/results as `*mut Value` and use the runtime discriminant helpers when inspecting variants. See [error-handling](https://github.com/muxlang/mux-context/blob/main/docs/design/error-handling.md).
 
 ---
 
@@ -226,7 +226,7 @@ The runtime uses a unified representation for `optional<T>` and `result<T, E>` a
 | [mux-website-api](https://github.com/muxlang/mux-website-api) | Compile/run API behind the playground |
 | [tree-sitter-mux](https://github.com/muxlang/tree-sitter-mux) | Tree-sitter grammar + highlight queries |
 | [mux-syntax-highlighting](https://github.com/muxlang/mux-syntax-highlighting) | TextMate grammar, VSCode extension, canonical syntax spec |
-| [context](https://github.com/muxlang/context) | Cross-repo architecture, design rationale, glossary, releases |
+| [mux-context](https://github.com/muxlang/mux-context) | Cross-repo architecture, design rationale, glossary, releases |
 
 ## License
 

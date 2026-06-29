@@ -3,7 +3,7 @@
 Please also read the 10x Dev Skill that covers best practices at ~/.opencode/skills/derek-10x-dev-practices/SKILL.md if present.
 
 > Cross-repo architecture, design rationale, the feature map, and the release
-> process live in [muxlang/context](https://github.com/muxlang/context).
+> process live in [muxlang/mux-context](https://github.com/muxlang/mux-context).
 
 ## Critical Rules
 - **No hacks or workarounds** - write clean, production‑ready code. No hardcoding, no temporary solutions, no fighting the type system. If something is hard, ask for clarification, then do it the right way.
@@ -85,7 +85,7 @@ is agent-safe; tagging, `cargo publish`, and `fly deploy` are MAINTAINER-ONLY -
 prepare everything, then hand those to the user.
 
 Full steps:
-[muxlang/context release process](https://github.com/muxlang/context/blob/main/docs/release-process.md#mux-compiler).
+[muxlang/mux-context release process](https://github.com/muxlang/mux-context/blob/main/docs/release-process.md#mux-compiler).
 
 ## System Architecture
 The Mux compiler is a workspace with three main partitions:
