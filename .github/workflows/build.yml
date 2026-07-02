@@ -55,7 +55,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/mux-lang/runtime
-          key: ${{ runner.os }}-muxrt-${{ steps.runtime_sha.outputs.sha }}
+          key: ${{ runner.os }}-muxrt-1.93.1-${{ steps.runtime_sha.outputs.sha }}
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
