@@ -664,7 +664,7 @@ impl<'a> CodeGenerator<'a> {
         if let (Ok(left_int), Ok(right_int)) =
             (self.get_raw_int_value(left), self.get_raw_int_value(right))
         {
-            self.emit_div_by_zero_check(right_int, span, "div")?;
+            self.emit_div_by_zero_check(right_int, span, "div", "division by zero")?;
             self.builder
                 .build_int_signed_div(left_int, right_int, "div")
                 .map_err(|e| e.to_string())
@@ -683,13 +683,15 @@ impl<'a> CodeGenerator<'a> {
         }
     }
 
-    /// Panic with "division by zero" if the integer divisor is zero.
-    /// Positions the builder at a new "continue" block for the division.
+    /// Panic with `message` if the integer `divisor` is zero, so division and
+    /// modulo can report their own operation. Positions the builder at a new
+    /// "continue" block for the operation.
     fn emit_div_by_zero_check(
         &mut self,
         divisor: IntValue<'a>,
         span: Option<&Span>,
         block_prefix: &str,
+        message: &str,
     ) -> Result<(), String> {
         let zero = divisor.get_type().const_zero();
         let is_zero = self
@@ -721,8 +723,15 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
 
         self.builder.position_at_end(error_bb);
+        let msg = self
+            .builder
+            .build_global_string_ptr(message, &format!("{}_zero_msg", block_prefix))
+            .map_err(|e| e.to_string())?;
         let loc = self.panic_location_arg(span, &format!("{}_zero_error", block_prefix))?;
-        self.generate_runtime_call("mux_panic_div_by_zero", &[loc.into()]);
+        self.generate_runtime_call(
+            "mux_panic_cstr",
+            &[msg.as_pointer_value().into(), loc.into()],
+        );
         self.builder
             .build_unreachable()
             .map_err(|e| e.to_string())?;
@@ -779,7 +788,7 @@ impl<'a> CodeGenerator<'a> {
         if let (Ok(left_int), Ok(right_int)) =
             (self.get_raw_int_value(left), self.get_raw_int_value(right))
         {
-            self.emit_div_by_zero_check(right_int, span, "mod")?;
+            self.emit_div_by_zero_check(right_int, span, "mod", "modulo by zero")?;
             self.builder
                 .build_int_signed_rem(left_int, right_int, "mod")
                 .map_err(|e| e.to_string())

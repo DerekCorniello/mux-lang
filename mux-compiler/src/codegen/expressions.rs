@@ -2989,14 +2989,14 @@ impl<'a> CodeGenerator<'a> {
                     .builder
                     .build_call(
                         self.runtime_function("mux_list_length")
-                            .expect("mux_list_length must be declared in runtime"),
+                            .ok_or("mux_list_length not found")?,
                         &[raw_list_ptr.into()],
                         "index_len",
                     )
                     .map_err(|e| e.to_string())?
                     .try_as_basic_value()
                     .basic()
-                    .expect("mux_list_length should return a basic value");
+                    .ok_or("mux_list_length should return a basic value")?;
 
                 // call mux_list_get_value (returns direct value or null)
                 let raw_result = self
@@ -3023,10 +3023,12 @@ impl<'a> CodeGenerator<'a> {
                     .build_call(free_list, &[raw_list_ptr.into()], "free_list")
                     .map_err(|e| e.to_string())?;
 
-                // Bounds-check the result pointer
+                // Bounds-check the result pointer. Report the user's original
+                // index (pre-normalization) so `values[-5]` reads "-5", not the
+                // wrapped value.
                 self.check_list_bounds(
                     result_ptr,
-                    normalized_index,
+                    index_val,
                     list_length,
                     Some(index.span()),
                     "index",
@@ -3765,14 +3767,14 @@ impl<'a> CodeGenerator<'a> {
             .builder
             .build_call(
                 self.runtime_function("mux_list_length")
-                    .expect("mux_list_length must be declared in runtime"),
+                    .ok_or("mux_list_length not found")?,
                 &[list.into()],
                 &format!("{}_len", block_prefix),
             )
             .map_err(|e| e.to_string())?
             .try_as_basic_value()
             .basic()
-            .expect("mux_list_length should return a basic value");
+            .ok_or("mux_list_length should return a basic value")?;
 
         let next = self
             .builder
@@ -3787,14 +3789,9 @@ impl<'a> CodeGenerator<'a> {
             .basic()
             .expect("mux_list_get_value should return a basic value");
 
-        // Bounds check: a null result means the index was out of range.
-        self.check_list_bounds(
-            next.into_pointer_value(),
-            normalized_index,
-            length,
-            span,
-            block_prefix,
-        )?;
+        // Bounds check: a null result means the index was out of range. Report
+        // the user's original index (pre-normalization).
+        self.check_list_bounds(next.into_pointer_value(), index, length, span, block_prefix)?;
 
         // Free the raw list.
         let free_list_fn = self

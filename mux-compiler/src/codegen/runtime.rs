@@ -130,11 +130,6 @@ impl<'a> CodeGenerator<'a> {
             None,
         );
         module.add_function(
-            "mux_panic",
-            void_type.fn_type(&[i8_ptr.into()], false),
-            None,
-        );
-        module.add_function(
             "mux_panic_cstr",
             void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
             None,
@@ -147,11 +142,6 @@ impl<'a> CodeGenerator<'a> {
         module.add_function(
             "mux_panic_key_not_found",
             void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
-            None,
-        );
-        module.add_function(
-            "mux_panic_div_by_zero",
-            void_type.fn_type(&[i8_ptr.into()], false),
             None,
         );
         module.add_function("malloc", i8_ptr.fn_type(&[i64_type.into()], false), None);
