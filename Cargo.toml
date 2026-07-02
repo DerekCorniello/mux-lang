@@ -1,6 +1,11 @@
 [workspace]
 members = ["mux-compiler"]
 default-members = ["mux-compiler"]
+# CI checks out muxlang/mux-runtime into ./mux-runtime so the compiler can build
+# it from source (see .github/workflows/build.yml). Exclude it so Cargo does not
+# try to attach that standalone crate to this workspace. Harmless when the
+# directory is absent (local sibling checkouts, normal builds).
+exclude = ["mux-runtime"]
 resolver = "2"
 
 [profile.release]
