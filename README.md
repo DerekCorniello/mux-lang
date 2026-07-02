@@ -151,8 +151,8 @@ func main() returns void {
         ok(value) {
             print("Result: " + value.to_string())
         }
-        // The err arm is optional - the compiler falls through silently
-        // if it's omitted, so only add it when you need to handle errors.
+        // Note: shown here for brevity. See the Language Guide for the
+        // full exhaustiveness rules around result and optional matches.
     }
 }
 ```
