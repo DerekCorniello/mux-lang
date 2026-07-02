@@ -151,9 +151,8 @@ func main() returns void {
         ok(value) {
             print("Result: " + value.to_string())
         }
-        err(error) {
-            print("Error: " + error)
-        }
+        // The err arm is optional - the compiler falls through silently
+        // if it's omitted, so only add it when you need to handle errors.
     }
 }
 ```
