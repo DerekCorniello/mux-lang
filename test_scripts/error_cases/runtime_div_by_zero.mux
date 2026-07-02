@@ -1,0 +1,5 @@
+// Integer division by zero panics with the unified runtime panic.
+
+int numerator = 10
+int denominator = 0
+print((numerator / denominator).to_string())

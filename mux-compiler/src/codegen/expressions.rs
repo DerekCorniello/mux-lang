@@ -18,8 +18,9 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
 
 use crate::ast::{
     BinaryOp, ExpressionKind, ExpressionNode, FunctionNode, LiteralNode, Param, PrimitiveType,
-    StatementNode, TypeKind, TypeNode, UnaryOp,
+    Spanned, StatementNode, TypeKind, TypeNode, UnaryOp,
 };
+use crate::lexer::Span;
 use crate::semantics::{GenericContext, SymbolKind, Type};
 
 use super::CodeGenerator;
@@ -2982,6 +2983,21 @@ impl<'a> CodeGenerator<'a> {
                 // Normalize the index to handle negative wraparound
                 let normalized_index = self.normalize_list_index(index_val, raw_list_ptr)?;
 
+                // Capture the length for the out-of-bounds panic message
+                // while the raw list pointer is still alive.
+                let list_length = self
+                    .builder
+                    .build_call(
+                        self.runtime_function("mux_list_length")
+                            .expect("mux_list_length must be declared in runtime"),
+                        &[raw_list_ptr.into()],
+                        "index_len",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .try_as_basic_value()
+                    .basic()
+                    .expect("mux_list_length should return a basic value");
+
                 // call mux_list_get_value (returns direct value or null)
                 let raw_result = self
                     .builder
@@ -3008,7 +3024,13 @@ impl<'a> CodeGenerator<'a> {
                     .map_err(|e| e.to_string())?;
 
                 // Bounds-check the result pointer
-                self.check_non_null_pointer(result_ptr, "List index out of bounds", "index")?;
+                self.check_list_bounds(
+                    result_ptr,
+                    normalized_index,
+                    list_length,
+                    Some(index.span()),
+                    "index",
+                )?;
 
                 // Use extract_value_from_ptr to properly extract based on type
                 let (extracted_val, _) =
@@ -3031,10 +3053,10 @@ impl<'a> CodeGenerator<'a> {
                     .expect("mux_value_get_map should return a basic value")
                     .into_pointer_value();
 
-                // map_get_or_panic handles the lookup, key-not-found error
+                // map_get_or_panic handles the lookup, key-not-found panic
                 // block, and Optional unwrap, then frees the raw map.
                 let value_ptr = self
-                    .map_get_or_panic(raw_map_ptr, index_val, "Key not found in map", "map")?
+                    .map_get_or_panic(raw_map_ptr, index_val, Some(index.span()), "map")?
                     .into_pointer_value();
 
                 // Use extract_value_from_ptr to properly extract based on type
@@ -3585,30 +3607,23 @@ impl<'a> CodeGenerator<'a> {
             .ok_or("mux_value_to_string should return a basic value".to_string())
     }
 
-    /// Emit a "print error message and exit(1); unreachable" terminator.
-    /// The current block is consumed and a new unreachable block follows.
-    fn emit_runtime_fatal(&mut self, message: &str, block_name: &str) -> Result<(), String> {
-        let _current_function = self
-            .builder
-            .get_insert_block()
-            .expect("Builder should have an insertion block")
-            .get_parent()
-            .ok_or("No current function")?;
-
+    /// Emit a unified runtime panic terminator: the message and an optional
+    /// `--> file:line:col` location go to stderr and the process exits with
+    /// code 1. The current block is consumed and left unreachable.
+    pub(super) fn emit_runtime_fatal(
+        &mut self,
+        message: &str,
+        span: Option<&Span>,
+        block_name: &str,
+    ) -> Result<(), String> {
         let error_msg = self
             .builder
             .build_global_string_ptr(message, &format!("{}_msg", block_name))
             .map_err(|e| e.to_string())?;
-        let error_str = self
-            .generate_runtime_call(
-                "mux_new_string_from_cstr",
-                &[error_msg.as_pointer_value().into()],
-            )
-            .expect("mux_new_string_from_cstr should always return a value");
-        self.generate_runtime_call("mux_print", &[error_str.into()]);
+        let loc = self.panic_location_arg(span, block_name)?;
         self.generate_runtime_call(
-            "exit",
-            &[self.context.i32_type().const_int(1, false).into()],
+            "mux_panic_cstr",
+            &[error_msg.as_pointer_value().into(), loc.into()],
         );
         self.builder
             .build_unreachable()
@@ -3616,16 +3631,41 @@ impl<'a> CodeGenerator<'a> {
         Ok(())
     }
 
+    /// Build the `file:line:col` location argument for the runtime panic
+    /// functions: a global string pointer, or null when no span is available.
+    pub(super) fn panic_location_arg(
+        &mut self,
+        span: Option<&Span>,
+        block_name: &str,
+    ) -> Result<BasicValueEnum<'a>, String> {
+        match span {
+            Some(span) => {
+                let loc = self.panic_location(span);
+                let global = self
+                    .builder
+                    .build_global_string_ptr(&loc, &format!("{}_loc", block_name))
+                    .map_err(|e| e.to_string())?;
+                Ok(global.as_pointer_value().into())
+            }
+            None => Ok(self
+                .context
+                .ptr_type(AddressSpace::default())
+                .const_null()
+                .into()),
+        }
+    }
+
     /// Look up `key` in the raw `map` and return the unwrapped value, freeing
-    /// the raw map pointer. If the key is missing, emits a fatal error block
-    /// and branches to a new "continue" block where the caller can continue.
+    /// the raw map pointer. If the key is missing, emits a key-not-found panic
+    /// block and branches to a new "continue" block where the caller can
+    /// continue.
     ///
     /// Returns the unwrapped value (`BasicValueEnum`).
     fn map_get_or_panic(
         &mut self,
         map: PointerValue<'a>,
         key: BasicValueEnum<'a>,
-        error_message: &str,
+        span: Option<&Span>,
         block_prefix: &str,
     ) -> Result<BasicValueEnum<'a>, String> {
         let boxed_key = self.box_value(key);
@@ -3676,9 +3716,13 @@ impl<'a> CodeGenerator<'a> {
             .build_conditional_branch(is_some, continue_bb, error_bb)
             .map_err(|e| e.to_string())?;
 
-        // Error block: print and exit
+        // Error block: panic with the missing key and source location
         self.builder.position_at_end(error_bb);
-        self.emit_runtime_fatal(error_message, &format!("{}_error", block_prefix))?;
+        let loc = self.panic_location_arg(span, &format!("{}_error", block_prefix))?;
+        self.generate_runtime_call("mux_panic_key_not_found", &[boxed_key.into(), loc.into()]);
+        self.builder
+            .build_unreachable()
+            .map_err(|e| e.to_string())?;
 
         // Continue block: free the raw map, then unwrap the optional
         self.builder.position_at_end(continue_bb);
@@ -3704,18 +3748,31 @@ impl<'a> CodeGenerator<'a> {
 
     /// Look up `index` in the raw `list` (after negative-index normalization)
     /// and return the value, freeing the raw list pointer. If the index is
-    /// out of bounds, emits a fatal error block and branches to a new
-    /// "continue" block.
+    /// out of bounds, emits an index-out-of-bounds panic block and branches
+    /// to a new "continue" block.
     ///
     /// Returns the unwrapped value (`BasicValueEnum`).
     fn list_get_or_panic(
         &mut self,
         list: PointerValue<'a>,
         index: BasicValueEnum<'a>,
-        error_message: &str,
+        span: Option<&Span>,
         block_prefix: &str,
     ) -> Result<BasicValueEnum<'a>, String> {
         let normalized_index = self.normalize_list_index(index, list)?;
+
+        let length = self
+            .builder
+            .build_call(
+                self.runtime_function("mux_list_length")
+                    .expect("mux_list_length must be declared in runtime"),
+                &[list.into()],
+                &format!("{}_len", block_prefix),
+            )
+            .map_err(|e| e.to_string())?
+            .try_as_basic_value()
+            .basic()
+            .expect("mux_list_length should return a basic value");
 
         let next = self
             .builder
@@ -3730,8 +3787,14 @@ impl<'a> CodeGenerator<'a> {
             .basic()
             .expect("mux_list_get_value should return a basic value");
 
-        // Bounds check: delegate to the shared null-pointer helper.
-        self.check_non_null_pointer(next.into_pointer_value(), error_message, block_prefix)?;
+        // Bounds check: a null result means the index was out of range.
+        self.check_list_bounds(
+            next.into_pointer_value(),
+            normalized_index,
+            length,
+            span,
+            block_prefix,
+        )?;
 
         // Free the raw list.
         let free_list_fn = self
@@ -3744,14 +3807,16 @@ impl<'a> CodeGenerator<'a> {
         Ok(next)
     }
 
-    /// If `ptr` is null, emit a fatal-error block with the given message
-    /// and position the builder at a new "continue" block. Used by list
-    /// index access to check out-of-bounds after a raw `mux_list_get_value`
-    /// call.
-    fn check_non_null_pointer(
+    /// If `ptr` is null (an out-of-bounds `mux_list_get_value` result), emit
+    /// an index-out-of-bounds panic block carrying the index, list length,
+    /// and source location, then position the builder at a new "continue"
+    /// block.
+    fn check_list_bounds(
         &mut self,
         ptr: inkwell::values::PointerValue<'a>,
-        error_message: &str,
+        index: BasicValueEnum<'a>,
+        length: BasicValueEnum<'a>,
+        span: Option<&Span>,
         block_prefix: &str,
     ) -> Result<(), String> {
         let is_null = self
@@ -3778,7 +3843,14 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
 
         self.builder.position_at_end(error_bb);
-        self.emit_runtime_fatal(error_message, &format!("{}_error", block_prefix))?;
+        let loc = self.panic_location_arg(span, &format!("{}_error", block_prefix))?;
+        self.generate_runtime_call(
+            "mux_panic_index_oob",
+            &[index.into(), length.into(), loc.into()],
+        );
+        self.builder
+            .build_unreachable()
+            .map_err(|e| e.to_string())?;
 
         self.builder.position_at_end(continue_bb);
         Ok(())
@@ -4111,7 +4183,7 @@ impl<'a> CodeGenerator<'a> {
                     self.list_get_or_panic(
                         raw_base_list,
                         first_index_val,
-                        "List index out of bounds in nested assignment",
+                        Some(indices[0].span()),
                         "nested_assign_list",
                     )?
                 }
@@ -4134,7 +4206,7 @@ impl<'a> CodeGenerator<'a> {
                     self.map_get_or_panic(
                         raw_base_map,
                         first_index_val,
-                        "Key not found in map during nested assignment",
+                        Some(indices[0].span()),
                         "nested_assign_map",
                     )?
                 }
@@ -4146,61 +4218,8 @@ impl<'a> CodeGenerator<'a> {
                 }
             };
 
-            // Check for null (out of bounds) - only for Lists
-            // Maps already handled the error case above
-            if matches!(base_type, crate::semantics::Type::List(_)) {
-                let intermediate_ptr = intermediate_val.into_pointer_value();
-                let is_null = self
-                    .builder
-                    .build_is_null(intermediate_ptr, "is_null")
-                    .map_err(|e| e.to_string())?;
-
-                let current_function = self
-                    .builder
-                    .get_insert_block()
-                    .expect("Builder should have an insertion block")
-                    .get_parent()
-                    .ok_or("No current function")?;
-
-                let error_bb = self
-                    .context
-                    .append_basic_block(current_function, "nested_index_error");
-                let continue_bb = self
-                    .context
-                    .append_basic_block(current_function, "nested_index_continue");
-
-                self.builder
-                    .build_conditional_branch(is_null, error_bb, continue_bb)
-                    .map_err(|e| e.to_string())?;
-
-                // Error block
-                self.builder.position_at_end(error_bb);
-                let error_msg = self
-                    .builder
-                    .build_global_string_ptr(
-                        "Index out of bounds in nested assignment",
-                        "nested_error_msg",
-                    )
-                    .map_err(|e| e.to_string())?;
-                let error_str = self
-                    .generate_runtime_call(
-                        "mux_new_string_from_cstr",
-                        &[error_msg.as_pointer_value().into()],
-                    )
-                    .expect("mux_new_string_from_cstr should always return a value");
-                self.generate_runtime_call("mux_print", &[error_str.into()]);
-                self.generate_runtime_call("mux_flush_stdout", &[]);
-                self.generate_runtime_call(
-                    "exit",
-                    &[self.context.i32_type().const_int(1, false).into()],
-                );
-                self.builder
-                    .build_unreachable()
-                    .map_err(|e| e.to_string())?;
-
-                // Continue block
-                self.builder.position_at_end(continue_bb);
-            }
+            // list_get_or_panic / map_get_or_panic already panicked on a
+            // missing element, so intermediate_val is guaranteed non-null.
 
             // Now we need to handle: intermediate_val[i2]...[iN] = value
             // But intermediate_val is a *mut Value, not an ExpressionNode
@@ -4330,7 +4349,7 @@ impl<'a> CodeGenerator<'a> {
                     self.list_get_or_panic(
                         raw_list,
                         first_index_val,
-                        "Index out of bounds in nested assignment",
+                        Some(indices[0].span()),
                         "apply_list",
                     )?
                 }
@@ -4353,7 +4372,7 @@ impl<'a> CodeGenerator<'a> {
                     self.map_get_or_panic(
                         raw_map,
                         first_index_val,
-                        "Key not found in map during nested assignment",
+                        Some(indices[0].span()),
                         "apply_map",
                     )?
                 }

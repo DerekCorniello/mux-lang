@@ -1,0 +1,5 @@
+// Missing map key panics with the offending key.
+
+map<string, int> ages = {"alice": 30}
+string missing = "bob"
+print(ages[missing].to_string())

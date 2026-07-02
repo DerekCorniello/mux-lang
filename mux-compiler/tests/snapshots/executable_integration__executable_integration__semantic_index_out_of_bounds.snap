@@ -1,6 +1,6 @@
 ---
 source: mux-compiler/tests/executable_integration.rs
-expression: output_to_snapshot
+expression: normalized
 ---
-List index out of bounds
-Program exited with status: exit status: 1
+panic: list index out of bounds: index 10, length 3
+--> semantic_index_out_of_bounds.mux:3:14

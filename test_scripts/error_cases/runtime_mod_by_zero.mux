@@ -1,0 +1,5 @@
+// Integer modulo by zero panics with the unified runtime panic.
+
+int value = 10
+int divisor = 0
+print((value % divisor).to_string())

@@ -30,9 +30,9 @@ target
 *.ll
 test_scripts/*
 !test_scripts/*.mux
-test_scripts/error_cases/*.mux
-!test_scripts/error_cases/*.mux
+!test_scripts/error_cases/
 test_scripts/error_cases/*
+!test_scripts/error_cases/*.mux
 
 # JavaScript / Node (mux-website, workers/, tools/). Global rule so any future
 # JS subdir is covered automatically rather than relying on a per-dir .gitignore.
