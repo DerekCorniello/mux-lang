@@ -103,6 +103,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The dev container mounts the repo at /workspace and sets
+      # MUX_RUNTIME_SRC=/workspace/mux-runtime, so the compiler builds the
+      # runtime from source. Check it out here (root Cargo.toml excludes it
+      # from the workspace) instead of falling back to the crates.io pin.
+      - uses: actions/checkout@v4
+        with:
+          repository: muxlang/mux-runtime
+          ref: main
+          path: mux-runtime
       - name: Docker info
         run: docker compose version
       - name: Service-backed checks
