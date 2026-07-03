@@ -847,7 +847,11 @@ fn main() {
     let runtime_features = resolve_runtime_features(&analyzer.required_runtime_features());
 
     let context = inkwell::context::Context::create();
-    let mut codegen = codegen::CodeGenerator::new(&context, &mut analyzer);
+    let source_name = file_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| file_path.to_string_lossy().into_owned());
+    let mut codegen = codegen::CodeGenerator::new(&context, &mut analyzer, &source_name);
 
     let ir_file = format!(
         "{}.ll",

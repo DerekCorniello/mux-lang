@@ -8,7 +8,8 @@
 
 use inkwell::values::{BasicValueEnum, IntValue, PointerValue};
 
-use crate::ast::{BinaryOp, ExpressionKind, ExpressionNode, LiteralNode, PrimitiveType};
+use crate::ast::{BinaryOp, ExpressionKind, ExpressionNode, LiteralNode, PrimitiveType, Spanned};
+use crate::lexer::Span;
 use crate::semantics::Type;
 
 use super::CodeGenerator;
@@ -658,10 +659,12 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         left: BasicValueEnum<'a>,
         right: BasicValueEnum<'a>,
+        span: Option<&Span>,
     ) -> Result<BasicValueEnum<'a>, String> {
         if let (Ok(left_int), Ok(right_int)) =
             (self.get_raw_int_value(left), self.get_raw_int_value(right))
         {
+            self.emit_div_by_zero_check(right_int, span, "div", "division by zero")?;
             self.builder
                 .build_int_signed_div(left_int, right_int, "div")
                 .map_err(|e| e.to_string())
@@ -670,6 +673,7 @@ impl<'a> CodeGenerator<'a> {
             self.get_raw_float_value(left),
             self.get_raw_float_value(right),
         ) {
+            // Float division follows IEEE 754 semantics (inf/nan), no check.
             self.builder
                 .build_float_div(left_float, right_float, "fdiv")
                 .map_err(|e| e.to_string())
@@ -677,6 +681,63 @@ impl<'a> CodeGenerator<'a> {
         } else {
             Err("Unsupported div operands".to_string())
         }
+    }
+
+    /// Panic with `message` if the integer `divisor` is zero, so division and
+    /// modulo can report their own operation. Positions the builder at a new
+    /// "continue" block for the operation.
+    fn emit_div_by_zero_check(
+        &mut self,
+        divisor: IntValue<'a>,
+        span: Option<&Span>,
+        block_prefix: &str,
+        message: &str,
+    ) -> Result<(), String> {
+        let zero = divisor.get_type().const_zero();
+        let is_zero = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::EQ,
+                divisor,
+                zero,
+                &format!("{}_is_zero", block_prefix),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let current_function = self
+            .builder
+            .get_insert_block()
+            .expect("Builder should have an insertion block")
+            .get_parent()
+            .ok_or("No current function")?;
+
+        let error_bb = self
+            .context
+            .append_basic_block(current_function, &format!("{}_zero_error", block_prefix));
+        let continue_bb = self
+            .context
+            .append_basic_block(current_function, &format!("{}_zero_continue", block_prefix));
+
+        self.builder
+            .build_conditional_branch(is_zero, error_bb, continue_bb)
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(error_bb);
+        let msg = self
+            .builder
+            .build_global_string_ptr(message, &format!("{}_zero_msg", block_prefix))
+            .map_err(|e| e.to_string())?;
+        let loc = self.panic_location_arg(span, &format!("{}_zero_error", block_prefix))?;
+        self.generate_runtime_call(
+            "mux_panic_cstr",
+            &[msg.as_pointer_value().into(), loc.into()],
+        );
+        self.builder
+            .build_unreachable()
+            .map_err(|e| e.to_string())?;
+
+        self.builder.position_at_end(continue_bb);
+        Ok(())
     }
 
     fn generate_exponent_op(
@@ -722,10 +783,12 @@ impl<'a> CodeGenerator<'a> {
         &mut self,
         left: BasicValueEnum<'a>,
         right: BasicValueEnum<'a>,
+        span: Option<&Span>,
     ) -> Result<BasicValueEnum<'a>, String> {
         if let (Ok(left_int), Ok(right_int)) =
             (self.get_raw_int_value(left), self.get_raw_int_value(right))
         {
+            self.emit_div_by_zero_check(right_int, span, "mod", "modulo by zero")?;
             self.builder
                 .build_int_signed_rem(left_int, right_int, "mod")
                 .map_err(|e| e.to_string())
@@ -989,7 +1052,7 @@ impl<'a> CodeGenerator<'a> {
             BinaryOp::Add => self.generate_add_op(left_expr, left, right),
             BinaryOp::Subtract => self.generate_subtract_op(left, right),
             BinaryOp::Multiply => self.generate_multiply_op(left, right),
-            BinaryOp::Divide => self.generate_divide_op(left, right),
+            BinaryOp::Divide => self.generate_divide_op(left, right, Some(right_expr.span())),
             BinaryOp::Exponent => self.generate_exponent_op(left, right),
             BinaryOp::Equal => self.generate_equal_op(left_expr, left, right),
             BinaryOp::Less => self.generate_numeric_compare(
@@ -1026,7 +1089,7 @@ impl<'a> CodeGenerator<'a> {
                 // and should not reach here
                 Err("Logical AND/OR should use short-circuit evaluation".to_string())
             }
-            BinaryOp::Modulo => self.generate_modulo_op(left, right),
+            BinaryOp::Modulo => self.generate_modulo_op(left, right, Some(right_expr.span())),
             BinaryOp::In => self.generate_in_op(left_expr, right_expr, left, right),
             _ => Err("Binary op not implemented".to_string()),
         }

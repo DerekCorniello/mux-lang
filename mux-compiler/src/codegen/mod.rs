@@ -61,6 +61,7 @@ pub struct CodeGenerator<'a> {
     context_stack: Vec<GenericContext>,
     generated_methods: HashMap<String, bool>,
     rc_scope_stack: Vec<Vec<(String, PointerValue<'a>)>>,
+    source_name: String,
 }
 
 impl<'a> CodeGenerator<'a> {
@@ -400,7 +401,11 @@ impl<'a> CodeGenerator<'a> {
 
     // small helpers for runtime declarations were moved to runtime.rs
 
-    pub fn new(context: &'a Context, analyzer: &'a mut SemanticAnalyzer) -> Self {
+    pub fn new(
+        context: &'a Context,
+        analyzer: &'a mut SemanticAnalyzer,
+        source_name: &str,
+    ) -> Self {
         let module = context.create_module("mux_module");
         let runtime_signatures = context.create_module("mux_runtime_signatures");
         let builder = context.create_builder();
@@ -471,7 +476,14 @@ impl<'a> CodeGenerator<'a> {
             context_stack: Vec::new(),
             generated_methods: HashMap::new(),
             rc_scope_stack: Vec::new(),
+            source_name: source_name.to_string(),
         }
+    }
+
+    /// Render a `file:line:col` location for runtime panic messages, matching
+    /// the compiler diagnostic emitter's `--> file:line:col` locator.
+    fn panic_location(&self, span: &crate::lexer::Span) -> String {
+        format!("{}:{}:{}", self.source_name, span.row_start, span.col_start)
     }
 
     // Runtime declarations are implemented in the `runtime` submodule to keep

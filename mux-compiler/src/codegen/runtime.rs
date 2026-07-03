@@ -129,6 +129,21 @@ impl<'a> CodeGenerator<'a> {
             void_type.fn_type(&[context.i32_type().into()], false),
             None,
         );
+        module.add_function(
+            "mux_panic_cstr",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_panic_index_oob",
+            void_type.fn_type(&[i64_type.into(), i64_type.into(), i8_ptr.into()], false),
+            None,
+        );
+        module.add_function(
+            "mux_panic_key_not_found",
+            void_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false),
+            None,
+        );
         module.add_function("malloc", i8_ptr.fn_type(&[i64_type.into()], false), None);
 
         let params = &[i8_ptr.into(), i8_ptr.into()];
@@ -1442,25 +1457,7 @@ impl<'a> CodeGenerator<'a> {
             .map_err(|e| e.to_string())?;
 
         self.builder.position_at_end(error_bb);
-        let error_msg = self
-            .builder
-            .build_global_string_ptr("Cannot copy object of this type", "copy_error_msg")
-            .map_err(|e| e.to_string())?;
-        let error_str = self
-            .generate_runtime_call(
-                "mux_new_string_from_cstr",
-                &[error_msg.as_pointer_value().into()],
-            )
-            .ok_or("mux_new_string_from_cstr should always return a value")?;
-        self.generate_runtime_call("mux_print", &[error_str.into()]);
-        self.generate_runtime_call("mux_flush_stdout", &[]);
-        self.generate_runtime_call(
-            "exit",
-            &[self.context.i32_type().const_int(1, false).into()],
-        );
-        self.builder
-            .build_unreachable()
-            .map_err(|e| e.to_string())?;
+        self.emit_runtime_fatal("cannot copy object of this type", None, "copy_error")?;
 
         self.builder.position_at_end(continue_bb);
         Ok(copied)
